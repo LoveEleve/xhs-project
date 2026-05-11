@@ -1,0 +1,40 @@
+# Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Eclipse
+.project
+.classpath
+.settings/
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+
+# Log files
+*.log
+logs/
+
+# Java
+*.class
+*.jar
+*.war
+*.ear
+
+# Temp files
+*.swp
+*.bak
+*.tmp
+*~
+
+# Env files
+.env
+.env.local

@@ -1,0 +1,77 @@
+server:
+  port: 9000
+
+spring:
+  application:
+    name: my-xhs-gateway
+  cloud:
+    nacos:
+      discovery:
+        server-addr: localhost:8848
+      namespace: public
+    gateway:
+      routes:
+        # Phase 1
+        - id: user-service
+          uri: lb://my-xhs-user
+          predicates:
+            - Path=/api/user/**
+        - id: content-service
+          uri: lb://my-xhs-content
+          predicates:
+            - Path=/api/note/**,/api/comment/**
+        - id: analytics-service
+          uri: lb://my-xhs-analytics
+          predicates:
+            - Path=/api/social/**
+        - id: counter-service
+          uri: lb://my-xhs-counter
+          predicates:
+            - Path=/api/counter/**
+        # Phase 2
+        - id: product-service
+          uri: lb://my-xhs-product
+          predicates:
+            - Path=/api/product/**
+        - id: cart-service
+          uri: lb://my-xhs-cart
+          predicates:
+            - Path=/api/cart/**
+        - id: inventory-service
+          uri: lb://my-xhs-inventory
+          predicates:
+            - Path=/api/inventory/**
+        - id: coupon-service
+          uri: lb://my-xhs-coupon
+          predicates:
+            - Path=/api/coupon/**
+        - id: order-service
+          uri: lb://my-xhs-order
+          predicates:
+            - Path=/api/order/**
+        - id: payment-service
+          uri: lb://my-xhs-payment
+          predicates:
+            - Path=/api/payment/**
+        # Phase 3
+        - id: search-service
+          uri: lb://my-xhs-search
+          predicates:
+            - Path=/api/search/**
+        - id: home-service
+          uri: lb://my-xhs-home
+          predicates:
+            - Path=/api/home/**
+        - id: notification-service
+          uri: lb://my-xhs-notification
+          predicates:
+            - Path=/api/notification/**
+        # Phase 4
+        - id: im-service
+          uri: lb://my-xhs-im
+          predicates:
+            - Path=/api/im/**
+        - id: admin-service
+          uri: lb://my-xhs-admin
+          predicates:
+            - Path=/api/admin/**

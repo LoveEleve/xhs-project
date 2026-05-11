@@ -1,0 +1,29 @@
+server:
+  port: 9015
+
+spring:
+  application:
+    name: my-xhs-home
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  cloud:
+    nacos:
+      discovery:
+        server-addr: localhost:8848
+      config:
+        server-addr: localhost:8848
+        file-extension: yaml
+
+# BFF聚合线程池
+home:
+  aggregator:
+    core-pool-size: 20
+    max-pool-size: 50
+    queue-capacity: 200
+    keep-alive-seconds: 60
+    thread-name-prefix: "home-aggregator-"
+
+# Caffeine本地缓存
+spring.cache.type: caffeine
