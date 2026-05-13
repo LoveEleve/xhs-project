@@ -138,11 +138,10 @@ public class UserService {
             throw new BizException(ResultCode.ACCOUNT_LOCKED);
         }
 
-        // 3. 查询用户
+        // 3. 查询用户（@TableLogic 会自动追加 deleted = 0 条件）
         User user = userMapper.selectOne(
                 new LambdaQueryWrapper<User>()
                         .eq(User::getUsername, username)
-                        .eq(User::getDeleted, 0)
         );
         if (user == null) {
             incrementLoginFail(username);
@@ -193,13 +192,10 @@ public class UserService {
      * 获取用户信息（带缓存）
      */
     public UserInfoResponse getUserInfo(Long userId) {
+        // @TableLogic 会自动追加 deleted = 0 条件，无需手动指定
         User user = cacheHelper.getWithCacheAside(
                 RedisKeyConstants.USER_INFO + userId,
-                () -> userMapper.selectOne(
-                        new LambdaQueryWrapper<User>()
-                                .eq(User::getId, userId)
-                                .eq(User::getDeleted, 0)
-                ),
+                () -> userMapper.selectById(userId),
                 30, TimeUnit.MINUTES
         );
 
@@ -243,10 +239,15 @@ public class UserService {
         if (request.getEmail() != null) updateWrapper.set(User::getEmail, request.getEmail());
         if (request.getSignature() != null) updateWrapper.set(User::getSignature, request.getSignature());
 
+        // 先删缓存
+        String cacheKey = RedisKeyConstants.USER_INFO + userId;
+        redisOperator.delete(cacheKey);
+
+        // 更新 DB
         userMapper.update(null, updateWrapper);
 
-        // 延迟双删缓存
-        cacheHelper.delayDoubleDelete(RedisKeyConstants.USER_INFO + userId);
+        // 延迟再删缓存（标准延迟双删：删缓存 → 更新DB → 延迟再删）
+        cacheHelper.delayDoubleDelete(cacheKey);
 
         log.info("[用户] 更新用户信息, userId={}", userId);
         return getUserInfoDirect(userId);

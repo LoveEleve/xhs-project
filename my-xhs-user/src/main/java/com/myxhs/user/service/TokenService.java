@@ -2,13 +2,17 @@ package com.myxhs.user.service;
 
 import com.myxhs.common.cache.RedisOperator;
 import com.myxhs.common.constants.RedisKeyConstants;
+import com.myxhs.common.exception.BizException;
+import com.myxhs.common.response.ResultCode;
 import com.myxhs.common.util.JwtUtil;
 import com.myxhs.user.config.JwtProperties;
 import com.myxhs.user.dto.response.TokenResponse;
+import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.Date;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -75,23 +79,30 @@ public class TokenService {
     public TokenResponse refreshToken(String refreshToken) {
         String secret = jwtProperties.getSecret();
 
-        // 1. 解析 Refresh Token
-        String userId = JwtUtil.getUserId(refreshToken, secret);
-        String tokenType = JwtUtil.getTokenType(refreshToken, secret);
+        // 1. 一次性解析 Refresh Token，提取所有需要的字段
+        Claims claims;
+        try {
+            claims = JwtUtil.parseToken(refreshToken, secret);
+        } catch (Exception e) {
+            throw new BizException(ResultCode.TOKEN_INVALID);
+        }
+
+        String tokenType = claims.get("type", String.class);
         if (!"refresh".equals(tokenType)) {
-            throw new IllegalArgumentException("Token 类型错误，需要 Refresh Token");
+            throw new BizException(ResultCode.TOKEN_INVALID, "Token 类型错误，需要 Refresh Token");
         }
 
         // 2. 检查是否在黑名单中
-        String jti = JwtUtil.getJti(refreshToken, secret);
+        String jti = claims.getId();
         if (isBlacklisted(jti)) {
-            throw new IllegalArgumentException("Token 已失效");
+            throw new BizException(ResultCode.TOKEN_REVOKED);
         }
 
-        // 3. 将旧 Refresh Token 加入黑名单
-        blacklistToken(refreshToken);
+        // 3. 将旧 Refresh Token 加入黑名单（直接用已解析的 claims）
+        blacklistByClaims(claims);
 
         // 4. 生成新的 Token 对
+        String userId = claims.getSubject();
         return generateTokenPair(Long.parseLong(userId));
     }
 
@@ -118,23 +129,32 @@ public class TokenService {
     }
 
     /**
-     * 将 Token 加入黑名单
+     * 将 Token 加入黑名单（解析 Token 获取 jti 和过期时间）
      */
     private void blacklistToken(String token) {
         try {
             String secret = jwtProperties.getSecret();
-            String jti = JwtUtil.getJti(token, secret);
-            long remainingMs = JwtUtil.getRemainingMs(token, secret);
-            if (remainingMs > 0) {
-                redisOperator.set(
-                        RedisKeyConstants.USER_TOKEN_BLACKLIST + jti,
-                        "1",
-                        remainingMs / 1000 + 1,
-                        TimeUnit.SECONDS
-                );
-            }
+            Claims claims = JwtUtil.parseToken(token, secret);
+            blacklistByClaims(claims);
         } catch (Exception e) {
             log.warn("[Token] 加入黑名单失败: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 根据已解析的 Claims 加入黑名单（避免重复解析 Token）
+     */
+    private void blacklistByClaims(Claims claims) {
+        String jti = claims.getId();
+        Date expiration = claims.getExpiration();
+        long remainingMs = expiration.getTime() - System.currentTimeMillis();
+        if (remainingMs > 0) {
+            redisOperator.set(
+                    RedisKeyConstants.USER_TOKEN_BLACKLIST + jti,
+                    "1",
+                    remainingMs / 1000 + 1,
+                    TimeUnit.SECONDS
+            );
         }
     }
 

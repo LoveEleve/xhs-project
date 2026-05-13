@@ -13,8 +13,8 @@ import javax.imageio.ImageIO;
 import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.security.SecureRandom;
 import java.util.Base64;
-import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -38,6 +38,7 @@ public class CaptchaService {
     private static final int WIDTH = 120;
     private static final int HEIGHT = 40;
     private static final long EXPIRE_MINUTES = 5;
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     /**
      * 生成图形验证码
@@ -77,10 +78,11 @@ public class CaptchaService {
             throw new BizException(ResultCode.CAPTCHA_EXPIRED);
         }
 
-        // 校验后立即删除（防止重复使用）
+        // 先校验，再删除（校验失败也删除，防止暴力枚举）
+        boolean matched = cached.toString().equalsIgnoreCase(code);
         redisOperator.delete(redisKey);
 
-        if (!cached.toString().equalsIgnoreCase(code)) {
+        if (!matched) {
             throw new BizException(ResultCode.CAPTCHA_ERROR);
         }
     }
@@ -89,10 +91,9 @@ public class CaptchaService {
      * 生成随机验证码字符串
      */
     private String generateCode() {
-        Random random = new Random();
         StringBuilder sb = new StringBuilder(CODE_LENGTH);
         for (int i = 0; i < CODE_LENGTH; i++) {
-            sb.append(CHAR_SET.charAt(random.nextInt(CHAR_SET.length())));
+            sb.append(CHAR_SET.charAt(SECURE_RANDOM.nextInt(CHAR_SET.length())));
         }
         return sb.toString();
     }
@@ -103,7 +104,6 @@ public class CaptchaService {
     private String drawCaptchaImage(String code) {
         BufferedImage image = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = image.createGraphics();
-        Random random = new Random();
 
         // 背景
         g.setColor(new Color(245, 245, 245));
@@ -111,22 +111,22 @@ public class CaptchaService {
 
         // 绘制干扰线
         for (int i = 0; i < 6; i++) {
-            g.setColor(new Color(random.nextInt(200), random.nextInt(200), random.nextInt(200)));
-            g.drawLine(random.nextInt(WIDTH), random.nextInt(HEIGHT),
-                    random.nextInt(WIDTH), random.nextInt(HEIGHT));
+            g.setColor(new Color(SECURE_RANDOM.nextInt(200), SECURE_RANDOM.nextInt(200), SECURE_RANDOM.nextInt(200)));
+            g.drawLine(SECURE_RANDOM.nextInt(WIDTH), SECURE_RANDOM.nextInt(HEIGHT),
+                    SECURE_RANDOM.nextInt(WIDTH), SECURE_RANDOM.nextInt(HEIGHT));
         }
 
         // 绘制验证码字符
         g.setFont(new Font("Arial", Font.BOLD, 28));
         for (int i = 0; i < code.length(); i++) {
-            g.setColor(new Color(20 + random.nextInt(110), 20 + random.nextInt(110), 20 + random.nextInt(110)));
+            g.setColor(new Color(20 + SECURE_RANDOM.nextInt(110), 20 + SECURE_RANDOM.nextInt(110), 20 + SECURE_RANDOM.nextInt(110)));
             g.drawString(String.valueOf(code.charAt(i)), 10 + i * 26, 30);
         }
 
         // 绘制噪点
         for (int i = 0; i < 30; i++) {
-            g.setColor(new Color(random.nextInt(255), random.nextInt(255), random.nextInt(255)));
-            g.fillRect(random.nextInt(WIDTH), random.nextInt(HEIGHT), 1, 1);
+            g.setColor(new Color(SECURE_RANDOM.nextInt(255), SECURE_RANDOM.nextInt(255), SECURE_RANDOM.nextInt(255)));
+            g.fillRect(SECURE_RANDOM.nextInt(WIDTH), SECURE_RANDOM.nextInt(HEIGHT), 1, 1);
         }
 
         g.dispose();
