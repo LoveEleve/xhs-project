@@ -84,17 +84,20 @@ public class TokenService {
         try {
             claims = JwtUtil.parseToken(refreshToken, secret);
         } catch (Exception e) {
+            log.info("[Token] 刷新失败, Token 解析异常: {}", e.getMessage());
             throw new BizException(ResultCode.TOKEN_INVALID);
         }
 
         String tokenType = claims.get("type", String.class);
         if (!"refresh".equals(tokenType)) {
+            log.info("[Token] 刷新失败, Token 类型错误: type={}, userId={}", tokenType, claims.getSubject());
             throw new BizException(ResultCode.TOKEN_INVALID, "Token 类型错误，需要 Refresh Token");
         }
 
         // 2. 检查是否在黑名单中
         String jti = claims.getId();
         if (isBlacklisted(jti)) {
+            log.info("[Token] 刷新失败, Token 已在黑名单中, jti={}, userId={}", jti, claims.getSubject());
             throw new BizException(ResultCode.TOKEN_REVOKED);
         }
 
@@ -103,6 +106,7 @@ public class TokenService {
 
         // 4. 生成新的 Token 对
         String userId = claims.getSubject();
+        log.info("[Token] 刷新成功, userId={}, 旧jti={}", userId, jti);
         return generateTokenPair(Long.parseLong(userId));
     }
 
@@ -116,16 +120,17 @@ public class TokenService {
         }
 
         // 清除 Redis 中存储的 Token
+        String userId = null;
         try {
             String secret = jwtProperties.getSecret();
-            String userId = JwtUtil.getUserId(accessToken, secret);
+            userId = JwtUtil.getUserId(accessToken, secret);
             redisOperator.delete(RedisKeyConstants.USER_TOKEN_ACCESS + userId);
             redisOperator.delete(RedisKeyConstants.USER_TOKEN_REFRESH + userId);
         } catch (Exception e) {
             log.warn("[Token] 清除 Redis Token 失败", e);
         }
 
-        log.info("[Token] 用户注销成功");
+        log.info("[Token] 用户注销成功, userId={}", userId);
     }
 
     /**
@@ -155,6 +160,7 @@ public class TokenService {
                     remainingMs / 1000 + 1,
                     TimeUnit.SECONDS
             );
+            log.info("[Token] 加入黑名单, jti={}, 剩余有效期={}秒", jti, remainingMs / 1000);
         }
     }
 

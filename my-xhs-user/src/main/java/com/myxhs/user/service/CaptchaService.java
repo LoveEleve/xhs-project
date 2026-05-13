@@ -57,7 +57,7 @@ public class CaptchaService {
         // 3. 绘制验证码图片
         String base64Image = drawCaptchaImage(code);
 
-        log.debug("[验证码] 生成成功, key={}", key);
+        log.info("[验证码] 生成成功, key={}", key);
         return CaptchaResponse.builder()
                 .captchaKey(key)
                 .captchaImage("data:image/png;base64," + base64Image)
@@ -75,6 +75,7 @@ public class CaptchaService {
         Object cached = redisOperator.get(redisKey);
 
         if (cached == null) {
+            log.info("[验证码] 校验失败(已过期), key={}", key);
             throw new BizException(ResultCode.CAPTCHA_EXPIRED);
         }
 
@@ -83,8 +84,11 @@ public class CaptchaService {
         redisOperator.delete(redisKey);
 
         if (!matched) {
+            log.info("[验证码] 校验失败(输入错误), key={}", key);
             throw new BizException(ResultCode.CAPTCHA_ERROR);
         }
+
+        log.info("[验证码] 校验成功, key={}", key);
     }
 
     /**

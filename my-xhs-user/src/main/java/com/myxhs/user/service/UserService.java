@@ -135,6 +135,7 @@ public class UserService {
         // 2. 检查账号是否被锁定
         String lockKey = RedisKeyConstants.USER_LOGIN_LOCK + username;
         if (redisOperator.get(lockKey) != null) {
+            log.info("[登录] 账号已被锁定, username={}", username);
             throw new BizException(ResultCode.ACCOUNT_LOCKED);
         }
 
@@ -144,17 +145,20 @@ public class UserService {
                         .eq(User::getUsername, username)
         );
         if (user == null) {
+            log.info("[登录] 用户不存在, username={}", username);
             incrementLoginFail(username);
             throw new BizException(ResultCode.PASSWORD_ERROR, "用户名或密码错误");
         }
 
         // 4. 检查账号状态
         if (user.getStatus() == 0) {
+            log.info("[登录] 账号已禁用, userId={}, username={}", user.getId(), username);
             throw new BizException(ResultCode.ACCOUNT_DISABLED);
         }
 
         // 5. 校验密码
         if (!PASSWORD_ENCODER.matches(request.getPassword(), user.getPassword())) {
+            log.info("[登录] 密码错误, userId={}, username={}", user.getId(), username);
             incrementLoginFail(username);
             throw new BizException(ResultCode.PASSWORD_ERROR, "用户名或密码错误");
         }
@@ -200,9 +204,11 @@ public class UserService {
         );
 
         if (user == null) {
+            log.info("[用户] 用户不存在, userId={}", userId);
             throw new BizException(ResultCode.USER_NOT_FOUND);
         }
 
+        log.info("[用户] 获取用户信息成功, userId={}, username={}", userId, user.getUsername());
         return toUserInfoResponse(user);
     }
 
@@ -264,6 +270,7 @@ public class UserService {
 
         // 校验旧密码
         if (!PASSWORD_ENCODER.matches(request.getOldPassword(), user.getPassword())) {
+            log.info("[用户] 修改密码失败(旧密码错误), userId={}", userId);
             throw new BizException(ResultCode.PASSWORD_ERROR, "旧密码错误");
         }
 
@@ -284,6 +291,8 @@ public class UserService {
     private void incrementLoginFail(String username) {
         String failKey = RedisKeyConstants.USER_LOGIN_FAIL + username;
         Long failCount = redisOperator.increment(failKey);
+
+        log.info("[登录] 登录失败计数, username={}, 当前失败次数={}", username, failCount);
 
         if (failCount == 1) {
             // 首次失败，设置过期时间

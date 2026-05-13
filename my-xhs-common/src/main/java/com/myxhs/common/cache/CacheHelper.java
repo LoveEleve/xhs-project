@@ -55,12 +55,15 @@ public class CacheHelper {
         if (cached != null) {
             // 空值标记（防穿透）
             if (isNullPlaceholder(cached)) {
+                log.info("[缓存] 命中空值标记(防穿透), key={}", key);
                 return null;
             }
+            log.info("[缓存] 命中, key={}", key);
             return cached;
         }
 
         // 2. 缓存未命中，查 DB
+        log.info("[缓存] 未命中, 查询DB, key={}", key);
         T dbResult = dbFallback.get();
 
         if (dbResult != null) {
@@ -68,9 +71,11 @@ public class CacheHelper {
             long timeoutSeconds = unit.toSeconds(timeout);
             long randomOffset = ThreadLocalRandom.current().nextLong(0, timeoutSeconds / 6 + 1);
             redisOperator.set(key, dbResult, timeoutSeconds + randomOffset, TimeUnit.SECONDS);
+            log.info("[缓存] 回填成功, key={}, TTL={}秒", key, timeoutSeconds + randomOffset);
         } else {
             // 4. 缓存空值（短 TTL 防穿透，2 分钟）
             redisOperator.set(key, "NULL_PLACEHOLDER", 2, TimeUnit.MINUTES);
+            log.info("[缓存] DB未查到, 缓存空值(防穿透), key={}", key);
         }
 
         return dbResult;
@@ -102,7 +107,7 @@ public class CacheHelper {
         DELAY_SCHEDULER.schedule(() -> {
             try {
                 redisOperator.delete(key);
-                log.debug("[延迟双删] 第二次删除完成, key={}", key);
+                log.info("[延迟双删] 第二次删除完成, key={}", key);
             } catch (Exception e) {
                 log.warn("[延迟双删] 第二次删除失败, key={}", key, e);
             }
