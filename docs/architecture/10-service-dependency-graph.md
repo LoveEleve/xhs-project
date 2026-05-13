@@ -190,7 +190,7 @@ public interface CounterClient {
 }
 
 // ❌ 错误：基础服务反向调用业务服务
-@FeignClient(name = "my-xhs-social")  // Counter不应该调用Social
+@FeignClient(name = "my-xhs-analytics")  // Counter不应该调用Analytics
 @Layer(level = 3)  // Layer3禁止调用Layer2
 public interface SocialClient { ... }
 ```

@@ -2289,4 +2289,3 @@ stateDiagram-v2
 | my-xhs-search | 9011 | — (ES) | 3 |
 | my-xhs-notification | 9012 | my_xhs_notification | 2 |
 | my-xhs-im | 9014 | my_xhs_im | 4 |
-| my-xhs-admin | 9013 | my_xhs_admin | 4 |

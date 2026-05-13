@@ -28,7 +28,6 @@
         <module>my-xhs-im</module>
         <module>my-xhs-notification</module>
         <module>my-xhs-payment</module>
-        <module>my-xhs-admin</module>
     </modules>
 
     <properties>
@@ -57,6 +56,9 @@
         
         <!-- 搜索引擎 -->
         <elasticsearch.version>8.12.2</elasticsearch.version>
+        
+        <!-- Jackson 版本统一（ES 8.12 依赖 2.16.x，需与 Spring Boot 管理的版本对齐） -->
+        <jackson.version>2.16.1</jackson.version>
         
         <!-- 工具库 -->
         <lombok.version>1.18.30</lombok.version>
@@ -92,6 +94,17 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- Jackson BOM - 必须在 Spring Boot BOM 之前声明，确保 Jackson 全家桶版本统一为 2.16.1 -->
+            <!-- ES 8.12 依赖 jackson-databind:2.16.1，而 Spring Boot 3.2.5 管理的是 2.15.4 -->
+            <!-- 2.15.4 缺少 JsonTypeInfo$Value 内部类，导致 activateDefaultTyping 报 ClassNotFoundException -->
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${jackson.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            
             <!-- Spring Boot BOM -->
             <dependency>
                 <groupId>org.springframework.boot</groupId>
@@ -173,11 +186,6 @@
                 <groupId>co.elastic.clients</groupId>
                 <artifactId>elasticsearch-java</artifactId>
                 <version>${elasticsearch.version}</version>
-            </dependency>
-            
-            <dependency>
-                <groupId>com.fasterxml.jackson.core</groupId>
-                <artifactId>jackson-databind</artifactId>
             </dependency>
             
             <!-- Lombok -->
@@ -346,6 +354,12 @@
                     <target>${java.version}</target>
                 </configuration>
             </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-install-plugin</artifactId>
+                <version>3.1.2</version>
+            </plugin>
         </plugins>
     </build>
 
@@ -362,4 +376,18 @@
             </snapshots>
         </repository>
     </repositories>
+
+    <pluginRepositories>
+        <pluginRepository>
+            <id>aliyun-plugin</id>
+            <name>Aliyun Plugin Repository</name>
+            <url>https://maven.aliyun.com/repository/public</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </pluginRepository>
+    </pluginRepositories>
 </project>

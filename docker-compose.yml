@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  # ==========================================
+  # MySQL 8.0 — 非标准端口 13306
+  # ==========================================
+  mysql:
+    image: mysql:8.0
+    container_name: my-xhs-mysql
+    network_mode: host
+    environment:
+      MYSQL_ROOT_PASSWORD: Xhs@2026#MySQL
+      MYSQL_CHARSET: utf8mb4
+      TZ: Asia/Shanghai
+    command: >
+      --port=13306
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+      --max-connections=500
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./sql/init-databases.sql:/docker-entrypoint-initdb.d/01-init-databases.sql
+    restart: unless-stopped
+
+  # ==========================================
+  # Redis 7 — 非标准端口 16379
+  # ==========================================
+  redis:
+    image: redis:7-alpine
+    container_name: my-xhs-redis
+    network_mode: host
+    command: redis-server --port 16379 --requirepass Xhs@2026#Redis --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
+  # ==========================================
+  # Nacos 2.3 — 非标准端口 18848 (主端口) / 18849(gRPC) / 18850(gRPC)
+  # ==========================================
+  nacos:
+    image: nacos/nacos-server:v2.3.2
+    container_name: my-xhs-nacos
+    network_mode: host
+    environment:
+      MODE: standalone
+      NACOS_SERVER_PORT: 18848
+      NACOS_SERVER_IP: 127.0.0.1
+      SPRING_DATASOURCE_PLATFORM: mysql
+      MYSQL_SERVICE_HOST: 127.0.0.1
+      MYSQL_SERVICE_PORT: 13306
+      MYSQL_SERVICE_DB_NAME: nacos_config
+      MYSQL_SERVICE_USER: root
+      MYSQL_SERVICE_PASSWORD: Xhs@2026#MySQL
+      JVM_XMS: 256m
+      JVM_XMX: 512m
+    depends_on:
+      - mysql
+    restart: unless-stopped
+
+  # ==========================================
+  # RocketMQ NameServer — 非标准端口 19876
+  # ==========================================
+  rocketmq-namesrv:
+    image: apache/rocketmq:5.1.4
+    container_name: my-xhs-mq-namesrv
+    network_mode: host
+    command: sh mqnamesrv -n 127.0.0.1:19876
+    environment:
+      JAVA_OPT_EXT: "-server -Xms256m -Xmx256m"
+    restart: unless-stopped
+
+  # ==========================================
+  # RocketMQ Broker — 端口 11911
+  # ==========================================
+  rocketmq-broker:
+    image: apache/rocketmq:5.1.4
+    container_name: my-xhs-mq-broker
+    network_mode: host
+    command: sh mqbroker -n 127.0.0.1:19876 -c /home/rocketmq/rocketmq-5.1.4/conf/broker.conf
+    environment:
+      JAVA_OPT_EXT: "-server -Xms512m -Xmx512m"
+    volumes:
+      - ./config/rocketmq/broker.conf:/home/rocketmq/rocketmq-5.1.4/conf/broker.conf
+      - mq-logs:/home/rocketmq/logs
+      - mq-store:/home/rocketmq/store
+    depends_on:
+      - rocketmq-namesrv
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
+  redis-data:
+  mq-logs:
+  mq-store:

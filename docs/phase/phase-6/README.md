@@ -64,7 +64,6 @@
 | my-xhs-coupon | 9010 | my_xhs_coupon (分库) | ❌ 已存在(增强) | 优惠券（补齐消息可靠性验证、分布式ID增强） |
 | my-xhs-search | 9011 | my_xhs_search (ES+MySQL) | ❌ 已存在(增强) | 搜索（补齐数据备份ES Snapshot、压测基线） |
 | my-xhs-notification | 9012 | my_xhs_notification | ❌ 已存在(增强) | 通知（补齐消息可靠性验证、SSE推送降级） |
-| my-xhs-admin | 9013 | my_xhs_admin | ❌ 已存在(增强) | 后台管理（补齐RBAC权限、审计日志、网络隔离） |
 | my-xhs-im | 9014 | my_xhs_im | ❌ 已存在(增强) | IM（补齐WebSocket连接故障预案、混沌演练场景） |
 | my-xhs-home | 9015 | 无（BFF聚合） | ❌ 已存在(增强) | Home BFF（补齐压测基线、降级规范） |
 
@@ -111,7 +110,7 @@ DrillReportMapper.java        — 演练报告Mapper
 DrillReportService.java       — 演练报告服务
 ```
 
-**admin/chaos/**
+**common/chaos/**
 ```
 ChaosDrillController.java     — 演练管理API（创建演练/查询报告/导出报告）
 ```
@@ -142,7 +141,6 @@ ChaosDrillController.java     — 演练管理API（创建演练/查询报告/�
 | my-xhs-gateway | 安全入口 | HMAC签名校验、JWT鉴权、CORS、防重放 |
 | my-xhs-user | 认证中心 | JWT签发/刷新/黑名单、BCrypt密码、RBAC权限 |
 | my-xhs-content | 数据安全 | XSS过滤、敏感词过滤、内容审核 |
-| my-xhs-admin | 管理安全 | RBAC权限、操作审计、网络隔离、二次确认 |
 | my-xhs-common | 基础组件 | SecurityHelper封装、XssFilter、SensitiveDataFilter |
 
 #### 3.30.3 安全体系清单
@@ -179,7 +177,7 @@ AuditLog.java                 — 审计日志实体
 AuditLogMapper.java           — 审计日志Mapper
 ```
 
-**admin/security/**
+**user/security/**
 ```
 RbacController.java           — RBAC管理API（角色CRUD、权限分配）
 AuditLogController.java       — 审计日志查询API
@@ -261,6 +259,128 @@ LogstashEncoderConfig.java    — Logstash编码器配置（自定义字段：se
 | 日志存储 | Loki | 按service/level/traceId标签索引，低成本存储 |
 | 日志查询 | Grafana Explore | LogQL查询：`{service="my-xhs-order"} \|="下单失败"` |
 | 日志与链路关联 | Grafana → SkyWalking → Loki 跳转 | 点击Span→自动跳转Loki查该TraceId日志 |
+
+#### 3.31.7 Spring Boot 3.x Observation API 深度（P0 补充）
+
+> 云原生架构训练营§5的核心洞察：可观测性的三根支柱（Metrics/Tracing/Logging）长期各自为战，Spring Boot 3.0 引入的 Observation API 是统一抽象的关键一步。my-xhs 当前使用 Micrometer + SkyWalking Agent 的组合方案，存在以下痛点：
+> - **重复埋点**：同一个方法既要加 `@Timed`（Metrics）又要加 `@Trace`（Tracing），观察点写两遍
+> - **Agent 依赖**：SkyWalking Java Agent 在容器中需要额外挂载（initContainer），升级 JDK 时 Agent 兼容性是坑
+> - **上下文断裂**：Metrics 用 Micrometer Context、Tracing 用 SkyWalking Context、Logging 用 MDC，三者上下文无法统一传播
+
+##### （1）Observation API 核心思想
+
+Spring Boot 3.0 的 `io.micrometer:observation-api` 提供了一个统一抽象——**一次埋点，自动生成 Metrics + Tracing + Logging 三种信号**：
+
+```java
+// 传统方式：同一个操作写两遍观察点
+@Timed(value = "order.create", description = "创建订单耗时")
+@Trace(operationName = "order-create")  // SkyWalking 注解
+public OrderDTO createOrder(CreateOrderRequest request) { ... }
+
+// Observation API：一次埋点，自动生成 Metric + Span + 日志
+public OrderDTO createOrder(CreateOrderRequest request) {
+    return observationRegistry.observe("order.create", () -> {
+        // 业务逻辑
+        return orderService.doCreate(request);
+    });
+    // 自动产出：
+    // 1. Metrics: order.create.timer (count, totalTime, max, percentiles)
+    // 2. Tracing: Span "order.create" (startTime, endTime, tags, events)
+    // 3. Logging: 自动注入 traceId/spanId 到 MDC（Spring Boot 3.4+ 原生支持）
+}
+```
+
+**关键接口**：
+```java
+// Observation 的生命周期
+public interface Observation {
+    void start();                    // 开始观察
+    void stop();                     // 结束观察，自动记录耗时
+    void error(Throwable t);         // 记录错误
+    void event(Event event);         // 记录事件（如"cache.hit"/"db.query"）
+    ObservationContext getContext();  // 上下文（可携带自定义数据）
+}
+
+// ObservationHandler：处理观察信号的扩展点
+// 每种信号对应一个 Handler 实现
+public interface ObservationHandler<T extends Observation.Context> {
+    void onStart(T context);         // → Tracing: 创建 Span; Metrics: 开始计时
+    void onStop(T context);          // → Tracing: 关闭 Span; Metrics: 记录耗时
+    void onError(T context);         // → Tracing: 标记 error tag; Metrics: 递增 error counter
+}
+```
+
+##### （2）架构演进对比
+
+```
+┌───────────────────────────────────────────────────────────┐
+│  传统方案（my-xhs 当前）                                    │
+│                                                           │
+│  @Controller → @Timed(Micrometer) → Prometheus → Grafana  │
+│  @Controller → SkyWalking Agent    → SkyWalking → Grafana │
+│  @Controller → MDC(Logback)        → Loki → Grafana       │
+│                                                           │
+│  问题：三套上下文、重复埋点、Agent 挂载复杂                    │
+└───────────────────────────────────────────────────────────┘
+                          ↓ 演进
+┌───────────────────────────────────────────────────────────┐
+│  Observation API 方案                                      │
+│                                                           │
+│  @Controller → Observation API ─┬→ Micrometer → Prometheus │
+│                                 ├→ Micrometer Tracing →    │
+│                                 │   Zipkin/Jaeger/Otel     │
+│                                 └→ MDC/Structured Logging  │
+│                                                           │
+│  优势：一次埋点、统一上下文、无 Agent 依赖                    │
+└───────────────────────────────────────────────────────────┘
+```
+
+##### （3）my-xhs 迁移路径
+
+| 阶段 | 目标 | 具体动作 | 风险 |
+|------|------|---------|------|
+| **短期**（当前） | 保持现状 | Micrometer + SkyWalking Agent + MDC 继续使用 | 无 |
+| **中期**（Phase-6 开发期） | 引入 Observation API 作为标准埋点方式 | 新代码用 `ObservationRegistry.observe()` 替代 `@Timed`；Spring Boot 3.x 的 `spring-boot-starter-observation` 自动注册 Handler | 低，新旧方案可并行 |
+| **长期**（生产稳定后） | 去掉 SkyWalking Agent 依赖 | 用 `micrometer-tracing-bridge-otel` + `opentelemetry-exporter-zipkin` 替代 Agent | 中，需验证链路完整性 |
+
+**关键依赖**：
+```xml
+<!-- 引入 Observation API + Micrometer Tracing + OTel Bridge -->
+<dependency>
+    <groupId>io.micrometer</groupId>
+    <artifactId>micrometer-observation</artifactId>
+</dependency>
+<dependency>
+    <groupId>io.micrometer</groupId>
+    <artifactId>micrometer-tracing-bridge-otel</artifactId>
+</dependency>
+<dependency>
+    <groupId>io.opentelemetry</groupId>
+    <artifactId>opentelemetry-exporter-zipkin</artifactId>
+</dependency>
+```
+
+##### （4）Observation API 自动覆盖的 Spring 组件
+
+> Spring Boot 3.x 已在以下组件内置 Observation 支持，**无需手动埋点**：
+
+| 组件 | 自动观察的 Operation | 产出的信号 |
+|------|---------------------|-----------|
+| Spring MVC | `http.server.requests` | 请求耗时 Metric + HTTP Span |
+| Spring WebFlux | `http.server.requests` | 同上 |
+| RestTemplate | `http.client.requests` | 外部调用耗时 Metric + Client Span |
+| WebClient | `http.client.requests` | 同上 |
+| JDBC（HikariCP） | `hikaricp.connections` | 连接池 Metric |
+| Redis（Lettuce） | `redis.commands` | Redis 命令耗时 Metric + Span |
+| RocketMQ | `rocketmq.produce`/`rocketmq.consume` | 消息发送/消费 Metric + Span |
+| Feign | `http.client.requests` | Feign 调用自动观察 |
+| Gateway | `http.server.requests` | 网关请求自动观察 |
+
+**批判性思考**：
+- Observation API 是 **可观测性领域的正确方向**——从"每个信号各自埋点"到"一次观察、多维信号"
+- 但 `micrometer-tracing` 生态目前不如 SkyWalking 成熟（缺少拓扑图、告警规则、慢SQL分析等开箱即用功能）
+- **建议 my-xhs 采用渐进式迁移**：新代码用 Observation API 标准埋点，但保留 SkyWalking Agent 做深度分析。等 `micrometer-tracing` 生态成熟后再考虑完全替换
+- 特别注意：Spring Boot 3.4+ 才原生支持 Observation 自动注入 MDC（`structured.logging.enabled=true`），my-xhs 需升级到 3.4+ 才能完整受益
 
 ---
 
@@ -365,6 +485,129 @@ k8s/                          — K8s部署清单
 | 优雅停机 | Spring Boot graceful shutdown + K8s preStop | preStop: 注销Nacos→sleep 15s→graceful shutdown 30s |
 | 自动伸缩 | K8s HPA (Horizontal Pod Autoscaler) | CPU>70%自动扩容，min=2, max=10 |
 | 镜像版本管理 | Git Commit Hash + Build Number | 镜像Tag: {service}:{buildNumber}-{gitHash} |
+
+#### 3.32.8 K8s 原生服务发现与 Spring Cloud 桥接（P1 补充）
+
+> 云原生架构训练营§2 的核心洞察：当应用部署到 K8s 后，服务注册与发现存在"双重注册"问题——Spring Cloud 用 Nacos 注册，K8s 用 Service + Endpoint 注册。两个系统各自维护一份服务列表，导致：①信息不一致（Pod 滚动更新时 Nacos 和 K8s Endpoint 不同步）②流量路由冲突（Spring Cloud LoadBalancer 按 Nacos 实例列表路由，K8s Service 按 Endpoint 路由）③运维复杂度翻倍（两套健康检查、两套负载均衡）。
+
+##### （1）双重注册问题全景
+
+```
+传统 Spring Cloud 部署（VM）：
+  Provider → Nacos 注册 → Consumer 从 Nacos 发现 → 直连 Provider IP
+
+K8s 部署（双重注册）：
+  Provider Pod → Nacos 注册（Spring Cloud 自动）
+  Provider Pod → K8s Endpoint 注册（kube-proxy 自动）
+  
+  Consumer 走哪条路？
+  - 路径 A：Consumer → Nacos 发现 → 直连 Pod IP → 绕过 K8s Service
+  - 路径 B：Consumer → K8s Service → kube-proxy iptables → Pod IP → 绕过 Nacos
+
+  问题：
+  - 走路径 A：K8s 的 Service Mesh（Istio）、NetworkPolicy、HPA 全部失效
+  - 走路径 B：Spring Cloud 的 LoadBalancer、灰度路由、区域感知全部失效
+```
+
+##### （2）三种解决策略
+
+**策略 1：Spring Cloud 为主，K8s Service 为辅（my-xhs 当前方案）**
+
+```
+架构：
+  Consumer → Spring Cloud LoadBalancer → Nacos 发现 → 直连 Pod IP
+  外部流量 → Ingress → K8s Service → Pod
+
+特点：
+  ✅ Spring Cloud 完整能力（灰度路由、区域感知、权重调节）
+  ✅ 开发/测试环境可用 Nacos，生产环境也用 Nacos
+  ⚠️ 绕过 K8s Service，无法使用 Istio Service Mesh
+  ⚠️ Pod 滚动更新时，Nacos 注销和 K8s Endpoint 更新存在时间差
+
+最佳实践：
+  1. preStop 钩子：先从 Nacos 注销 → sleep 15s → 再接收 K8s SIGTERM
+  2. Spring Cloud LoadBalancer 缓存刷新间隔：设为 3s（默认 35s 太长）
+  3. 健康检查：readinessProbe 确保只有 Nacos 注册的 Pod 才接流量
+```
+
+**策略 2：K8s Service 为主，Spring Cloud 服务发现为辅**
+
+```
+架构：
+  Consumer → K8s Service → kube-proxy → Pod IP
+  服务治理 → Istio VirtualService + DestinationRule
+
+特点：
+  ✅ 完全融入 K8s 生态（NetworkPolicy、Istio、HPA 全部生效）
+  ✅ 无需维护 Nacos 集群
+  ❌ 失去 Spring Cloud 的编程式路由能力（灰度、区域感知需用 Istio YAML）
+  ❌ 开发/测试环境需部署 K8s 集群（minikube/kind），本地开发不便
+  ❌ Istio 学习曲线陡峭
+```
+
+**策略 3：Spring Cloud Kubernetes 桥接**
+
+```xml
+<!-- 用 K8s API 替代 Nacos 做服务发现 -->
+<dependency>
+    <groupId>org.springframework.cloud</groupId>
+    <artifactId>spring-cloud-starter-kubernetes-fabric8</artifactId>
+</dependency>
+```
+
+```
+架构：
+  Consumer → Spring Cloud LoadBalancer → K8s API 发现 Endpoint → 直连 Pod IP
+  
+特点：
+  ✅ Spring Cloud 编程式路由 + K8s 原生服务列表，两全其美
+  ✅ 无需 Nacos 做注册中心（配置中心仍需 Nacos 或 K8s ConfigMap）
+  ❌ spring-cloud-kubernetes 项目已进入维护模式，社区活跃度低
+  ❌ 依赖 K8s API Server 稳定性（API Server 压力大时服务发现延迟）
+  ❌ 本地开发仍需 K8s 环境
+```
+
+##### （3）my-xhs 的务实选择
+
+| 环境 | 服务发现方式 | 理由 |
+|------|------------|------|
+| **dev（本地）** | Nacos 单机 | Docker Compose 一键启动，无需 K8s |
+| **test/pre** | Nacos 集群 + K8s Service（双路） | Nacos 做服务发现 + 灰度路由，K8s Service 做运维入口 |
+| **prod** | Nacos 集群 + K8s Service（双路） | 同上，但需严格保证 preStop 钩子执行 |
+
+**关键操作：消除双重注册的时间差**
+
+```yaml
+# K8s Deployment 关键配置
+spec:
+  terminationGracePeriodSeconds: 45  # 给足优雅停机时间
+  template:
+    spec:
+      containers:
+      - name: my-xhs-order
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - |
+                # 1. 先从 Nacos 注销（通过 HTTP 调用 Nacos API）
+                curl -X DELETE "http://nacos:8848/nacos/v1/ns/instance?serviceName=my-xhs-order&ip=${POD_IP}&port=9006"
+                # 2. 等待 Nacos 推送变更给所有 Consumer（默认 3s 刷新）
+                sleep 15
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 9006
+          initialDelaySeconds: 30  # 等 Nacos 注册完成后再接流量
+          periodSeconds: 5
+```
+
+**批判性思考**：
+- 双重注册不是"bug"，而是 **VM 思维和容器思维碰撞的必然结果**——Spring Cloud 为 VM 设计，K8s 为容器设计
+- 长期看，**Service Mesh 是终极解**——Istio 用 Sidecar 代理接管流量，Spring Cloud 不再需要注册中心。但 Istio 的成熟度和运维成本是门槛
+- my-xhs 当前阶段用 **Nacos 为主 + K8s Service 为辅** 是最务实的选择——开发和生产体验一致，Spring Cloud 生态完整
 
 ---
 
@@ -539,6 +782,244 @@ NacosConfigListener.java      — Nacos配置变更监听器（变更日志+告�
 | 配置版本 | Nacos历史版本 + Git | Nacos自动保留30天历史，关键变更Git备份 |
 | 敏感配置加密 | Nacos加密配置 | datasource.password→加密存储，服务端解密 |
 
+#### 3.35.7 配置中心选型对比（P1 补充）
+
+> Stage-3 课程 026-027 讲了 Nacos Config 和 etcd 配置中心，但缺少选型对比。以下是批判性分析。
+
+##### （1）主流配置中心对比
+
+| 维度 | Nacos | Apollo | etcd | Spring Cloud Config |
+|------|-------|--------|------|-------------------|
+| **配置推送** | 长轮询（1.x）/ gRPC（2.x） | 长轮询 + 实时推送 | Watch（事件监听） | Webhook + Bus（需MQ） |
+| **一致性协议** | Distro（AP）+ Raft（CP） | Eureka（AP） | Raft（CP） | Git（最终一致） |
+| **多环境隔离** | Namespace + Group | AppId + Cluster + Namespace | Prefix（键前缀） | Git Branch / Profile |
+| **灰度发布** | ✅ 原生支持（Beta配置） | ✅ 原生支持（灰度规则） | ❌ 需自行实现 | ❌ 需自行实现 |
+| **权限控制** | ✅ RBAC | ✅ 细粒度权限 | ⚠️ 基础RBAC | ❌ 依赖Git权限 |
+| **配置回滚** | ✅ 历史版本一键回滚 | ✅ 历史版本+审计 | ⚠️ 需自行维护 | ✅ Git版本管理 |
+| **运维复杂度** | 低（单组件） | 中（ConfigService+AdminService+Portal） | 低（单组件，但需配合Confd等） | 中（需Git Server+MQ） |
+| **K8s集成** | ⚠️ 需部署Nacos Server | ⚠️ 需部署Apollo | ✅ K8s原生etcd | ⚠️ 需部署Config Server |
+| **社区活跃度** | 高（阿里巴巴） | 高（携程） | 高（CNCF） | 中（Spring官方） |
+
+**批判性思考**：
+- 小马哥课程介绍了 etcd 作为配置中心，但 etcd **更擅长做注册中心/分布式锁/Leader选举**，做配置中心需要大量自研（Watch监听+版本管理+灰度发布+多环境隔离），**投入产出比不高**
+- Nacos 是**最实用的配置中心**：开箱即用、灰度发布、多环境隔离、权限控制，my-xhs 已经在用
+- Apollo 功能最全（细粒度权限、审计、灰度），但组件多、部署复杂
+- Spring Cloud Config 依赖 Git + MQ，架构重、推送延迟高，**不推荐新项目使用**
+
+**my-xhs 选型结论**：继续使用 Nacos Config，无需更换。etcd 的 Watch/Lease 机制作为**前置知识**理解即可。
+
+##### （2）etcd Watch/Lease 机制（理解配置中心底层原理）
+
+> etcd 的 Watch + Lease + Compare-And-Swap 是配置中心的核心原语，理解它们有助于深入理解 Nacos Config 的设计。
+
+```
+Watch 机制：
+  客户端注册 Watch(key prefix) → etcd 任意键变更 → 推送事件给客户端
+  → Nacos 的长轮询本质上是对 Watch 的模拟（HTTP 长连接替代 gRPC 推送）
+  → Nacos 2.x 已改用 gRPC 长连接，与 etcd Watch 原理一致
+
+Lease 机制：
+  客户端创建 Lease(TTL=10s) → 续租(KeepAlive) → TTL 到期键自动删除
+  → 用于配置的临时属性（如服务实例配置，实例下线后配置自动清理）
+  → Nacos 的临时实例也用了类似机制（心跳续约）
+
+Compare-And-Swap（CAS）：
+  etcd Txn: IF key.value = old THEN key.value = new ELSE fail
+  → 用于配置的原子更新（防止并发修改覆盖）
+  → Nacos Config 的 MD5 比对本质上是 CAS 的简化版
+```
+
+**Nacos Config 工作原理（与 etcd 对照理解）**：
+
+| Nacos Config 概念 | etcd 对应概念 | 说明 |
+|------------------|-------------|------|
+| 长轮询/gRPC推送 | Watch | 变更通知机制 |
+| MD5比对 | Revision/ModRevision | 版本检测，避免全量拉取 |
+| Namespace | Prefix | 隔离维度 |
+| Group | Prefix | 分组维度 |
+| β灰度发布 | — | Nacos独有，etcd需自研 |
+| 本地缓存文件 | — | Nacos客户端自带容灾，etcd需自研 |
+
+##### （3）分布式配置客户端手写实现要点（P1 补充）
+
+> Stage-3 课程 028 讲了手写配置客户端，以下是核心设计要点，可作为 mini-nacos 的迭代参考。
+
+```java
+// 配置客户端核心流程
+public class MiniConfigClient {
+    // 1. 长轮询：定时向服务端发送请求，服务端hold住直到配置变更或超时
+    public void startLongPolling() {
+        scheduler.scheduleWithFixedDelay(() -> {
+            for (String dataId : watchedConfigs) {
+                // 发送HTTP请求，携带MD5（版本标识）
+                // 服务端比较MD5：相同则hold 30s，不同则立即返回
+                ConfigResponse resp = httpClient.post("/listener",
+                    Map.of("dataId", dataId, "md5", localMd5.get(dataId)));
+                if (resp.isChanged()) {
+                    // 2. 配置变更 → 拉取最新配置
+                    String newConfig = fetchConfig(dataId);
+                    // 3. 更新本地缓存
+                    localCache.put(dataId, newConfig);
+                    localMd5.put(dataId, md5(newConfig));
+                    // 4. 通知监听器
+                    listeners.forEach(l -> l.onChange(dataId, newConfig));
+                }
+            }
+        }, 0, 100, TimeUnit.MILLISECONDS);  // 长轮询间隔
+    }
+
+    // 5. 本地缓存容灾：服务端不可用时从本地文件读取
+    public String getConfig(String dataId) {
+        String config = localCache.get(dataId);
+        if (config == null) {
+            config = readFromLocalFile(dataId);  // {user.home}/nacos/config/{dataId}
+        }
+        return config;
+    }
+}
+```
+
+**5 大核心设计要点**：
+
+| 要点 | 实现 | 作用 |
+|------|------|------|
+| 长轮询 | 请求携带MD5，服务端hold到变更或超时 | 准实时感知变更，降低拉取频率 |
+| MD5比对 | 客户端本地存储配置MD5 | 避免全量传输，只拉取变更的配置 |
+| 本地缓存 | 配置写入本地文件（`{user.home}/nacos/config/`） | 服务端不可用时容灾 |
+| 监听器回调 | Observer模式，配置变更通知监听器 | 解耦配置获取和业务处理 |
+| 防抖合并 | 短时间内多次变更只通知一次 | 避免频繁刷新Bean |
+
+#### 3.35.8 配置元数据处理机制 — APT + Spring Metadata（P1 补充）
+
+> 云原生架构训练营§3 的核心洞察：Spring Boot 的 `@ConfigurationProperties` 之所以能在 IDE 中自动补全、提示类型和默认值，靠的不是魔法，而是**配置元数据**（`spring-configuration-metadata.json`）。这个文件的生成链路是：`Java APT` → `@ConfigurationProperties` → `spring-boot-configuration-processor` → `metadata JSON` → `IDE 自动补全`。理解这条链路，才能理解 Spring Boot 自动配置的"最后一公里"。
+
+##### （1）配置元数据生成链路
+
+```
+源码编译时：
+┌──────────────────────────────────────────────────────────────┐
+│  @ConfigurationProperties(prefix = "myxhs.order")            │
+│  public class OrderProperties {                               │
+│      private int timeout = 3000;  // ← 注释会生成描述          │
+│      private boolean enabled = true;                           │
+│  }                                                            │
+│                     ↓ javac 编译                               │
+│  spring-boot-configuration-processor（APT处理器）               │
+│    → 扫描 @ConfigurationProperties 类                          │
+│    → 提取字段名/类型/默认值/注释                                │
+│    → 生成 META-INF/spring-configuration-metadata.json         │
+│                     ↓                                          │
+│  {                                                            │
+│    "groups": [{                                               │
+│      "name": "myxhs.order",                                   │
+│      "type": "com.myxhs.order.config.OrderProperties"         │
+│    }],                                                        │
+│    "properties": [{                                           │
+│      "name": "myxhs.order.timeout",                           │
+│      "type": "java.lang.Integer",                             │
+│      "defaultValue": 3000,                                    │
+│      "description": "订单超时时间（毫秒）"                       │
+│    }, {                                                       │
+│      "name": "myxhs.order.enabled",                           │
+│      "type": "java.lang.Boolean",                             │
+│      "defaultValue": true,                                    │
+│      "description": "是否启用订单功能"                          │
+│    }]                                                         │
+│  }                                                            │
+│                     ↓ IDE 读取                                 │
+│  application.yml 中输入 "myxhs.order." → 自动补全 + 提示        │
+└──────────────────────────────────────────────────────────────┘
+```
+
+##### （2）Java APT（Annotation Processing Tool）原理
+
+> APT 是 JDK 内置的编译期注解处理工具，在 `javac` 编译期间运行，可以**读取注解 → 生成新文件**（不会修改已有源码）。
+
+```java
+// 自定义 APT 处理器的基本结构
+@SupportedAnnotationTypes("com.myxhs.*")  // 处理哪些注解
+@SupportedSourceVersion(SourceVersion.RELEASE_17)
+public class MyConfigProcessor extends AbstractProcessor {
+
+    @Override
+    public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment roundEnv) {
+        // 1. 扫描所有被 @ConfigurationProperties 标注的类
+        for (Element element : roundEnv.getElementsAnnotatedWith(ConfigurationProperties.class)) {
+            // 2. 提取字段信息
+            for (Element field : element.getEnclosedElements()) {
+                String fieldName = field.getSimpleName().toString();
+                String fieldType = field.asType().toString();
+                // 3. 生成 metadata JSON
+            }
+        }
+        // 4. 写入 META-INF/spring-configuration-metadata.json
+        Filer filer = processingEnv.getFiler();
+        FileObject file = filer.createResource(StandardLocation.CLASS_OUTPUT, "",
+            "META-INF/spring-configuration-metadata.json");
+        try (Writer writer = file.openWriter()) {
+            writer.write(metadataJson);
+        }
+        return true;  // 声明已处理
+    }
+}
+```
+
+**APT 的关键特性**：
+- **编译期执行**：不侵入运行时，零性能开销
+- **只能生成文件，不能修改源码**：这是 Lombok 争议的根源（Lombok 用了 hack 方式修改 AST，绕过了 APT 的限制）
+- **多轮处理**：APT 可能运行多轮（第一轮生成的新代码可能带新注解，触发第二轮）
+- **注册方式**：`META-INF/services/javax.annotation.processing.Processor` 文件声明处理器
+
+##### （3）Spring Boot 配置处理器的工作方式
+
+```xml
+<!-- pom.xml 中引入配置处理器（编译期依赖，不打入最终 JAR） -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-configuration-processor</artifactId>
+    <optional>true</optional>
+</dependency>
+```
+
+**处理器自动提取的信息**：
+
+| 源码元素 | 提取的元数据 | 示例 |
+|---------|------------|------|
+| `@ConfigurationProperties(prefix)` | group name + type | `myxhs.order` + `OrderProperties` |
+| 字段名 + prefix | property name | `timeout` → `myxhs.order.timeout` |
+| 字段类型 | property type | `int` → `java.lang.Integer` |
+| 字段默认值 | defaultValue | `3000` |
+| Javadoc / `@value` 描述 | description | `/** 订单超时时间 */` → description |
+| `@Deprecated` 标记 | deprecated 标记 | IDE 中会划删除线 |
+
+**额外元数据文件**：`META-INF/additional-spring-configuration-metadata.json`
+```json
+{
+  "properties": [{
+    "name": "myxhs.order.strategy",
+    "type": "java.lang.String",
+    "description": "订单策略，可选值：NORMAL, FLASH_SALE, GROUP_BUY",
+    "sourceType": "com.myxhs.order.config.OrderProperties"
+  }]
+}
+```
+> 用于补充无法通过 APT 提取的元数据（如第三方库的配置、枚举值的描述等）。
+
+##### （4）为什么这很重要？— my-xhs 项目视角
+
+| 场景 | 没有元数据 | 有元数据 |
+|------|----------|---------|
+| 新人接手项目 | 翻源码找配置项 | IDE 自动补全，输入 `myxhs.` 即可看到全部配置 |
+| 配置项变更 | 改了属性名但忘记改 yml | IDE 标红提示：unknown property |
+| 配置类型错误 | `timeout: abc`（String 赋给 int） | IDE 标红提示：type mismatch |
+| Starter 开发 | 使用者不知道有哪些配置 | 自动补全 + 描述 + 默认值 |
+
+**批判性思考**：
+- 配置元数据是 **"开发者体验"（DX）的基础设施**——它让 Starter 从"黑盒"变成"白盒"
+- APT 不只是配置元数据的工具——**Lombok、MapStruct、QueryDSL、AutoValue、Dagger 2** 都基于 APT
+- my-xhs 如果开发自定义 Starter（如 `my-xhs-common-starter`），**必须生成配置元数据**，否则使用者无法自动补全
+- 与 Microsphere 框架的关系：小马哥在课程中用 Microsphere 扩展了 Spring 的配置元数据机制，增加了"配置校验"、"配置文档生成"等能力。思路值得借鉴，但 my-xhs 不需要引入 Microsphere，用标准 `spring-boot-configuration-processor` 即可
+
 ---
 
 ### 专题 36：高可用与故障预案
@@ -656,6 +1137,96 @@ IpRateLimitFilter.java        — IP级限流GlobalFilter（Redis Lua滑动窗�
 | @RateLimit AOP | Aspect + SpEL解析key | 解析"#userId"→实际值→拼限流Key→Lua执行 |
 | 熔断降级 | Sentinel DegradeRule | 慢调用比例>50%→熔断10秒→降级返回 |
 | 规则持久化 | Nacos DataSource | Sentinel规则推送到Nacos→服务启动自动加载 |
+
+#### 3.37.7 Resilience4j vs Sentinel 选型对比（P1 补充）
+
+> 云原生架构训练营§4 同时讲了 Sentinel 和 Resilience4j，并用 Microsphere 封装了两者。但 my-xhs 需要明确选型理由——面试必问"为什么选 Sentinel 不选 Resilience4j"。
+
+##### （1）核心设计哲学对比
+
+| 维度 | Sentinel | Resilience4j |
+|------|---------|-------------|
+| **设计哲学** | 面向**流量控制**（限流优先，熔断其次） | 面向**容错**（熔断优先，限流其次） |
+| **核心抽象** | Resource（资源 = 接口/方法） | Decorator（装饰器 = 函数式包装） |
+| **编程风格** | 声明式（注解 + 规则配置） | 函数式（Supplier/Runnable 包装） |
+| **运行模式** | SDK + 独立 Dashboard（推拉结合） | 纯 SDK（无 Dashboard，需自建或用 Grafana） |
+| **生态归属** | 阿里巴巴（Spring Cloud Alibaba） | 社区（Spring Boot 官方推荐替代 Hystrix） |
+
+##### （2）功能逐项对比
+
+| 功能 | Sentinel | Resilience4j | 胜出 |
+|------|---------|-------------|------|
+| **限流（Flow Control）** | ✅ QPS/线程数 + 5种流控效果（快速失败/Warm Up/排队等待/速率限制/冷启动） | ⚠️ 限流功能弱，只有 RateLimiter（令牌桶） | **Sentinel** |
+| **熔断（Circuit Breaker）** | ✅ 慢调用比例/异常比例/异常数 3种策略 | ✅ 慢调用比例/异常比例 2种策略 + 3种状态机（CLOSED/OPEN/HALF_OPEN） | **平手** |
+| **系统保护** | ✅ Load/CPU/RT/线程数/入口QPS 5维系统级保护 | ❌ 无 | **Sentinel** |
+| **热点参数限流** | ✅ 按参数值限流（如按 SKU ID 限流） | ❌ 无 | **Sentinel** |
+| **集群限流** | ✅ Token Server 模式（集群统一限流） | ❌ 无（单机限流） | **Sentinel** |
+| **Dashboard** | ✅ 开箱即用的 Web Dashboard（实时监控+规则推送） | ❌ 无（需 Micrometer + Grafana 自建） | **Sentinel** |
+| **规则持久化** | ✅ Nacos/ZooKeeper/Apollo 多种数据源 | ⚠️ 需自行实现（如用 Spring Cloud Config） | **Sentinel** |
+| **函数式 API** | ❌ 偏声明式，函数式 API 不如 R4j 优雅 | ✅ 原生函数式，`Supplier.decorateWithCircuitBreaker()` | **Resilience4j** |
+| **轻量性** | ⚠️ 核心约 600KB + Dashboard 约 50MB | ✅ 核心约 200KB，无外部依赖 | **Resilience4j** |
+| **Spring Boot 3 兼容** | ⚠️ Sentinel 1.8.7+ 兼容，但 Dashboard 需独立部署 | ✅ 原生支持 | **Resilience4j** |
+| **云原生友好** | ⚠️ Dashboard 是有状态服务，K8s 中需额外部署 | ✅ 无状态，更适合 Service Mesh | **Resilience4j** |
+
+##### （3）my-xhs 选 Sentinel 的 4 个核心理由
+
+**理由 1：流量控制是 my-xhs 的第一优先级**
+
+my-xhs 是社交+电商双场景，流量特征是**突发尖峰**（热搜、秒杀、KOL 发帖）。限流比熔断更关键——熔断是"已经出问题了才断"，限流是"还没出问题就挡住"。
+
+```
+Sentinel 的限流能力远超 Resilience4j：
+- QPS 限流（接口级）：下单接口 QPS ≤ 5000
+- 线程数限流（并发控制）：数据库查询线程 ≤ 50
+- 热点参数限流（SKU 级）：热门商品 SKU 详情 ≤ 100/s
+- 系统级保护（全局兜底）：CPU > 80% 自动限流
+- 集群限流（多实例统一口径）：全集群下单 QPS ≤ 10000
+```
+
+**理由 2：Dashboard 开箱即用，降低运维成本**
+
+Resilience4j 没有 Dashboard，要实现实时监控需要 `Micrometer + Prometheus + Grafana` 三件套。而 Sentinel Dashboard 提供：
+- 实时监控（秒级 QPS/RT/通过数/拒绝数）
+- 动态规则推送（修改规则实时生效，无需重启）
+- 集群流量分布（哪个实例流量最高）
+- 热点参数 Top N（哪个 SKU 被访问最多）
+
+**理由 3：Nacos 生态整合，规则与配置统一管理**
+
+Sentinel 的规则可以直接持久化到 Nacos，与 my-xhs 已有的 Nacos 配置体系无缝整合：
+```yaml
+# Sentinel 规则持久化到 Nacos
+spring:
+  cloud:
+    sentinel:
+      datasource:
+        flow:
+          nacos:
+            server-addr: ${NACOS_ADDR}
+            namespace: ${NACOS_NAMESPACE}
+            group-id: SENTINEL_GROUP
+            data-id: flow-rules.json
+            rule-type: flow
+```
+
+**理由 4：与 Spring Cloud Alibaba 一体化**
+
+my-xhs 使用 Spring Cloud Alibaba（Nacos + Sentinel + Seata），三者天然整合。如果换成 Resilience4j，限流用 R4j、熔断用 R4j、配置用 Nacos、监控用 Micrometer——碎片化严重。
+
+##### （4）Resilience4j 值得学习的 3 个设计点
+
+> 虽然不选用，但 R4j 的设计思想值得借鉴：
+
+| 设计点 | R4j 做法 | Sentinel 对应 | 可借鉴之处 |
+|--------|---------|-------------|-----------|
+| **函数式装饰器模式** | `Supplier<String> decorated = CircuitBreaker.decorateSupplier(cb, () -> call());` | `SphU.entry("resource")` try-catch | R4j 的装饰器模式更优雅，可参考改进 `@RateLimit` AOP |
+| **熔断器状态机** | CLOSED → OPEN → HALF_OPEN，精确的状态转换条件 | 类似但接口不够清晰 | 理解状态机有助于排查"为什么突然熔断/为什么一直不恢复" |
+| **CallRateLimiter 优先级** | 限流在熔断之外独立决策 | 限流和熔断在 Slot Chain 中串行 | R4j 的正交设计更清晰——限流和熔断是两个独立关注点 |
+
+**批判性思考**：
+- Sentinel 的"大一统"设计（限流+熔断+系统保护+热点+集群+Dashboard）对中小项目是福音，但对大型项目可能"过度集成"
+- 如果 my-xhs 未来迁移到 Service Mesh，Sentinel 的 SDK 模式需要改为 Istio RateLimit，而 R4j 的函数式 API 更容易做 Sidecar 适配
+- **面试回答策略**：先说"选 Sentinel 是因为限流能力+Dashboard+Nacos 整合"，再说"Resilience4j 的函数式 API 和轻量设计也值得学习"，体现全面思考
 
 ---
 
@@ -1046,8 +1617,8 @@ StressTestTag.java            — 压测标记注解（标记压测专用API，�
 - [ ] common补齐 `SensitiveDataFilter.java`（自定义Jackson序列化器：手机号/邮箱/地址脱敏）
 - [ ] user服务补齐 `RbacService.java`（角色→菜单→权限映射）
 - [ ] user服务补齐 `AuditLogService.java` + `AuditLog.java`（审计日志记录）
-- [ ] admin服务补齐 `RbacController.java` + `AuditLogController.java`
-- [ ] admin服务配置网络隔离（只在内网暴露）
+- [ ] user服务补齐 `RbacController.java` + `AuditLogController.java`
+- [ ] user服务配置网络隔离（只在内网暴露管理API）
 - [ ] Gateway增强JWT黑名单校验（Redis SET: token:blacklist:{jti}）
 - [ ] 编写单元测试验证XSS过滤
 - [ ] 编写集成测试验证RBAC权限
@@ -1122,7 +1693,7 @@ StressTestTag.java            — 压测标记注解（标记压测专用API，�
 
 - [ ] common补齐 `ChaosDrillRunner.java`（ChaosBlade CLI调用封装）
 - [ ] common补齐 `DrillReport.java` + `DrillReportMapper.java` + `DrillReportService.java`
-- [ ] admin补齐 `ChaosDrillController.java`（演练管理API）
+- [ ] common补齐 `ChaosDrillController.java`（演练管理API）
 - [ ] 编写7个演练场景脚本（ChaosBlade命令）
 - [ ] 测试环境执行7个演练场景
 - [ ] 记录实际结果 vs 预期结果
@@ -1183,7 +1754,7 @@ gateway:
       enabled: true
       allowed-tags: "a,img,p,br,b,i,em,strong"
     cors:
-      allowed-origins: "https://myxhs.com,https://admin.myxhs.com"
+      allowed-origins: "https://myxhs.com"
 
 # 监控指标暴露
 management:
@@ -1313,8 +1884,8 @@ backup:
 | 14 | gateway缺IpRateLimitFilter | 需补齐IP级滑动窗口限流 | ❌ 待实现 |
 | 15 | gateway缺XSS过滤增强 | 需补齐Jsoup白名单XssFilter | ❌ 待实现 |
 | 16 | user服务缺RbacService/AuditLogService | 需补齐RBAC权限+审计日志 | ❌ 待实现 |
-| 17 | admin服务缺RbacController/AuditLogController | 需补齐RBAC管理+审计查询API | ❌ 待实现 |
-| 18 | admin服务缺网络隔离配置 | 需配置K8s NetworkPolicy只允许内网访问 | ❌ 待配置 |
+| 17 | user服务缺RbacController/AuditLogController | 需补齐RBAC管理+审计查询API | ❌ 待实现 |
+| 18 | user服务缺网络隔离配置 | 需配置管理API只允许内网访问 | ❌ 待配置 |
 | 19 | 各服务缺Sentinel规则配置 | 需配置Nacos规则持久化+Dashboard连接 | ❌ 待配置 |
 | 20 | 各服务缺JMeter压测脚本 | 需编写7个核心场景压测脚本 | ❌ 待编写 |
 | 21 | Dockerfile未编写 | 需为每个服务编写多阶段构建Dockerfile | ❌ 待编写 |
@@ -1342,7 +1913,7 @@ backup:
 | my_xhs_user | t_menu | 菜单表（menu_name, parent_id, path, icon, sort） | 30-安全合规 |
 | my_xhs_user | t_user_role | 用户角色关联表（user_id, role_id） | 30-安全合规 |
 | my_xhs_user | t_role_permission | 角色权限关联表（role_id, permission_id） | 30-安全合规 |
-| my_xhs_admin | t_drill_report | 演练报告表（scenario, expected, actual, passed, issues） | 29-混沌工程 |
+| my_xhs_user | t_drill_report | 演练报告表（scenario, expected, actual, passed, issues） | 29-混沌工程 |
 
 ### 10.2 号段表结构
 
@@ -1369,7 +1940,7 @@ CREATE TABLE t_audit_log (
     id          BIGINT PRIMARY KEY COMMENT '日志ID(雪花ID)',
     operator_id BIGINT NOT NULL COMMENT '操作人ID',
     operator_name VARCHAR(64) NOT NULL COMMENT '操作人姓名',
-    module      VARCHAR(64) NOT NULL COMMENT '模块(user/order/content/admin)',
+    module      VARCHAR(64) NOT NULL COMMENT '模块(user/order/content/product)',
     action      VARCHAR(64) NOT NULL COMMENT '操作(create/update/delete/audit)',
     target_id   VARCHAR(128) COMMENT '操作对象ID',
     ip          VARCHAR(64) COMMENT '操作IP',

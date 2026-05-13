@@ -1904,4 +1904,3 @@ Gateway (9000)
 | my-xhs-coupon | 9010 | my_xhs_coupon | 2 |
 | my-xhs-search | 9011 | my_xhs_search | 3 |
 | my-xhs-notification | 9012 | my_xhs_notification | 3 |
-| my-xhs-admin | 9013 | my_xhs_admin | 4 |

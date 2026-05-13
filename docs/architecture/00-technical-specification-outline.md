@@ -25,8 +25,8 @@
 |------|--------|------|------|--------|
 | 1 | my-xhs-gateway | 9000 | API网关、鉴权、限流、路由 | 无 |
 | 2 | my-xhs-user | 9001 | 用户注册登录、收货地址 | my_xhs_user |
-| 3 | my-xhs-note | 9002 | 笔记发布、评论 | my_xhs_note |
-| 4 | my-xhs-social | 9003 | 关注、点赞、收藏 | my_xhs_social |
+| 3 | my-xhs-content | 9002 | 笔记发布、评论、话题 | my_xhs_content |
+| 4 | my-xhs-analytics | 9003 | 关注、点赞、收藏、行为分析 | my_xhs_analytics |
 | 5 | my-xhs-counter | 9004 | 计数服务（赞/藏/评/粉） | my_xhs_counter |
 | 6 | my-xhs-home | 9005 | 首页Feed流聚合 | 无(聚合服务) |
 | 7 | my-xhs-product | 9006 | 商品SPU/SKU、分类 | my_xhs_product |
@@ -35,9 +35,9 @@
 | 10 | my-xhs-inventory | 9009 | 库存管理 | my_xhs_inventory |
 | 11 | my-xhs-coupon | 9010 | 优惠券 | my_xhs_coupon (分库) |
 | 12 | my-xhs-order | 9011 | 订单 | my_xhs_order (分库) |
-| 13 | my-xhs-push | 9012 | 消息推送(通知中心) | my_xhs_push |
-| 14 | my-xhs-im | 9013 | 即时通讯(私信) | my_xhs_im |
-| 15 | my-xhs-admin | 9014 | 后台管理 | my_xhs_admin |
+| 13 | my-xhs-payment | 9012 | 支付服务（Mock实现） | my_xhs_payment |
+| 14 | my-xhs-notification | 9013 | 消息推送(通知中心) | my_xhs_notification |
+| 15 | my-xhs-im | 9014 | 即时通讯(私信) | my_xhs_im |
 
 > **说明**：前端不需要实现；支付用模拟实现（不依赖支付宝/微信SDK），订单服务内置MockPayService，生产环境切真实支付只需加1个实现类
 
@@ -677,106 +677,6 @@ CREATE TABLE t_chat_user_relation (
     KEY idx_accept_uid (accept_uid, created_at),
     KEY idx_send_accept (send_uid, accept_uid, created_at)
 ) ENGINE=InnoDB COMMENT='IM用户会话关系表';
-```
-
----
-
-### 2.13 后台管理服务 (my_xhs_admin)
-
-| 表名 | 说明 | 预估数据量 |
-|------|------|-----------|
-| t_system_admin | 后台管理员表 | 1000 |
-| t_system_role | 角色表 | 100 |
-| t_system_menu | 菜单权限表 | 500 |
-| t_system_attachment | 附件管理表 | 100万 |
-| t_system_category | 分类表 | 1万 |
-| t_system_city | 城市表(省市区) | 5000 |
-
-```sql
--- 后台管理员表
-CREATE TABLE t_system_admin (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    account VARCHAR(32) NOT NULL COMMENT '管理员账号',
-    pwd VARCHAR(64) NOT NULL COMMENT '密码',
-    real_name VARCHAR(16) NOT NULL COMMENT '姓名',
-    roles VARCHAR(128) NOT NULL COMMENT '角色ID列表',
-    last_ip VARCHAR(16) COMMENT '最后登录IP',
-    login_count INT DEFAULT 0 COMMENT '登录次数',
-    level TINYINT DEFAULT 1 COMMENT '管理员级别',
-    status TINYINT DEFAULT 1 COMMENT '状态:0禁用1正常',
-    phone VARCHAR(15) COMMENT '手机号',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uk_account (account)
-) ENGINE=InnoDB COMMENT='后台管理员表';
-
--- 角色表
-CREATE TABLE t_system_role (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    role_name VARCHAR(32) NOT NULL COMMENT '角色名称',
-    role_desc VARCHAR(128) COMMENT '角色描述',
-    menu_ids TEXT COMMENT '菜单权限ID列表',
-    status TINYINT DEFAULT 1,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB COMMENT='角色表';
-
--- 菜单权限表
-CREATE TABLE t_system_menu (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    pid INT DEFAULT 0 COMMENT '父级ID',
-    path VARCHAR(255) DEFAULT '/0/' COMMENT '路径',
-    name VARCHAR(50) NOT NULL COMMENT '菜单名称',
-    type TINYINT DEFAULT 5 COMMENT '类型:1产品分类2附件分类3文章分类4设置分类5菜单分类',
-    url VARCHAR(255) COMMENT 'URL地址',
-    icon VARCHAR(64) COMMENT '图标',
-    status TINYINT DEFAULT 1,
-    sort INT DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB COMMENT='菜单权限表';
-
--- 附件管理表
-CREATE TABLE t_system_attachment (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    name VARCHAR(100) NOT NULL COMMENT '附件名称',
-    att_dir VARCHAR(200) COMMENT '附件路径',
-    satt_dir VARCHAR(200) COMMENT '压缩图片路径',
-    att_size VARCHAR(30) COMMENT '附件大小',
-    att_type VARCHAR(30) COMMENT '附件类型',
-    pid INT DEFAULT 0 COMMENT '分类ID',
-    image_type TINYINT DEFAULT 1 COMMENT '存储类型:1本地2七牛3OSS4COS',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB COMMENT='附件管理表';
-
--- 分类表 (通用分类)
-CREATE TABLE t_system_category (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    pid INT DEFAULT 0 COMMENT '父级ID',
-    path VARCHAR(255) DEFAULT '/0/' COMMENT '路径',
-    name VARCHAR(50) NOT NULL COMMENT '分类名称',
-    type TINYINT DEFAULT 1 COMMENT '类型',
-    url VARCHAR(255) COMMENT 'URL',
-    extra TEXT COMMENT '扩展字段JSON',
-    status TINYINT DEFAULT 1,
-    sort INT DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB COMMENT='分类表';
-
--- 城市表 (省市区数据)
-CREATE TABLE t_system_city (
-    id INT PRIMARY KEY,
-    city_id INT NOT NULL DEFAULT 0 COMMENT '城市ID',
-    level INT NOT NULL DEFAULT 0 COMMENT '级别:1省2市3区县',
-    parent_id INT NOT NULL DEFAULT 0 COMMENT '父级ID',
-    area_code VARCHAR(30) COMMENT '区号',
-    name VARCHAR(100) NOT NULL COMMENT '名称',
-    merger_name VARCHAR(255) COMMENT '合并名称(如:中国,广东省,深圳市)',
-    lng VARCHAR(50) COMMENT '经度',
-    lat VARCHAR(50) COMMENT '纬度',
-    is_show TINYINT DEFAULT 1 COMMENT '是否展示:0否1是',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    KEY idx_parent_id (parent_id),
-    KEY idx_city_id (city_id)
-) ENGINE=InnoDB COMMENT='城市表';
 ```
 
 ---

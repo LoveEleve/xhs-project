@@ -16,7 +16,7 @@
 | huazai_cart.sql | 46 行 | 1 | ✅ 完成 |
 | huazai_im.sql | 69 行 | 2 | ✅ 完成 |
 | huazai_order.sql | 105 行 | 2 | ✅ 完成 |
-| huazai_admin.sql | 600+ 行 | 4 | ✅ 完成 |
+
 | huazai_coupon.sql | 9245 行 | 6 | ✅ 完成 |
 | huazai_coupon_0.sql | 6940 行 | 67 (分表) | ✅ 完成 |
 | huazai_buyer_order_0.sql | 2152 行 | 33 (分表) | ✅ 完成 |
@@ -90,14 +90,7 @@
 | `coupon_push_cron_fail` | `t_coupon_push_task_fail` | ✅ 已覆盖 | |
 | `user_coupon` | `t_user_coupon` | ✅ 已覆盖 | |
 
-### 2.8 后台管理服务
 
-| huazai-ecshop | my-xhs | 覆盖状态 | 备注 |
-|--------------|--------|---------|------|
-| `system_admin` | `t_system_admin` | ✅ 已覆盖 | |
-| `system_attachment` | `t_system_attachment` | ✅ 已覆盖 | |
-| `system_category` | `t_system_category` | ✅ 已覆盖 | |
-| `system_city` | `t_system_city` | ✅ 已补充 | |
 
 ---
 
@@ -146,7 +139,7 @@
 | 优惠券 | ✅ | ✅ | 已覆盖 |
 | 订单 | ✅ | ✅ | 已覆盖 |
 | IM私信 | ✅ | ✅ | 已覆盖 |
-| 后台管理 | ✅ | ✅ | 已覆盖 |
+
 | 省市区数据 | ✅ | ✅ | 已补充 |
 
 ### 4.2 按要求排除的模块

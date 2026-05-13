@@ -208,8 +208,8 @@ DDL变更前必须备份：
 
 ```
 my-xhs-user     → db_user     → classpath:db/migration/user/
-my-xhs-note     → db_note     → classpath:db/migration/note/
-my-xhs-social   → db_social   → classpath:db/migration/social/
+my-xhs-content   → db_content   → classpath:db/migration/content/
+my-xhs-analytics  → db_analytics  → classpath:db/migration/analytics/
 my-xhs-product  → db_product  → classpath:db/migration/product/
 my-xhs-order    → db_order    → classpath:db/migration/order/
 my-xhs-counter  → db_counter  → classpath:db/migration/counter/

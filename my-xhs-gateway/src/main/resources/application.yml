@@ -7,7 +7,7 @@ spring:
   cloud:
     nacos:
       discovery:
-        server-addr: localhost:8848
+        server-addr: localhost:18848
       namespace: public
     gateway:
       routes:
@@ -19,11 +19,11 @@ spring:
         - id: content-service
           uri: lb://my-xhs-content
           predicates:
-            - Path=/api/note/**,/api/comment/**
+            - Path=/api/content/**,/api/note/**,/api/comment/**,/api/topic/**
         - id: analytics-service
           uri: lb://my-xhs-analytics
           predicates:
-            - Path=/api/social/**
+            - Path=/api/analytics/**,/api/social/**
         - id: counter-service
           uri: lb://my-xhs-counter
           predicates:
@@ -71,7 +71,3 @@ spring:
           uri: lb://my-xhs-im
           predicates:
             - Path=/api/im/**
-        - id: admin-service
-          uri: lb://my-xhs-admin
-          predicates:
-            - Path=/api/admin/**

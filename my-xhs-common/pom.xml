@@ -69,10 +69,11 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- RocketMQ -->
+        <!-- RocketMQ（optional：仅消息服务使用，其他服务不强制引入） -->
         <dependency>
             <groupId>org.apache.rocketmq</groupId>
             <artifactId>rocketmq-spring-boot-starter</artifactId>
+            <optional>true</optional>
         </dependency>
 
         <!-- Lombok -->
@@ -117,16 +118,18 @@
             <artifactId>mapstruct</artifactId>
         </dependency>
 
-        <!-- Caffeine -->
+        <!-- Caffeine（optional：仅需要本地缓存的服务引入） -->
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>
             <artifactId>caffeine</artifactId>
+            <optional>true</optional>
         </dependency>
 
-        <!-- CosId 雪花ID生成器 -->
+        <!-- CosId 雪花ID生成器（optional：仅需要雪花算法的服务引入，号段模式不依赖它） -->
         <dependency>
             <groupId>me.ahoo.cosid</groupId>
             <artifactId>cosid-spring-boot-starter</artifactId>
+            <optional>true</optional>
         </dependency>
 
         <!-- Spring Boot Starter Test -->

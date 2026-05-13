@@ -51,7 +51,38 @@ find /backup/mysql -name "*.sql.gz" -mtime +7 -delete
 # ossutil cp /backup/mysql/ oss://my-xhs-backup/mysql/
 ```
 
-### 3.2 Redis恢复流程
+### 3.2 MySQL binlog 恢复脚本（指定时间点恢复）
+
+```bash
+#!/bin/bash
+# deploy/scripts/mysql-restore-pit.sh
+# Point-in-Time Recovery：恢复到指定时间点
+
+RESTORE_TIME="$1"  # 格式：2026-05-12 14:30:00
+BACKUP_FILE="$2"   # 全量备份文件路径
+BINLOG_DIR="/var/lib/mysql"
+
+if [ -z "$RESTORE_TIME" ] || [ -z "$BACKUP_FILE" ]; then
+    echo "用法: $0 '2026-05-12 14:30:00' /backup/mysql/full_20260512.sql.gz"
+    exit 1
+fi
+
+echo "=== Step 1: 恢复全量备份 ==="
+gunzip -c "$BACKUP_FILE" | mysql -h localhost -u root -proot123
+
+echo "=== Step 2: 应用 binlog 增量（到指定时间点）==="
+# 找到全量备份后的 binlog 文件
+BINLOG_FILES=$(ls $BINLOG_DIR/mysql-bin.* | sort)
+for binlog in $BINLOG_FILES; do
+    echo "应用 binlog: $binlog (截止 $RESTORE_TIME)"
+    mysqlbinlog --stop-datetime="$RESTORE_TIME" "$binlog" | mysql -h localhost -u root -proot123
+done
+
+echo "=== 恢复完成 ==="
+echo "已恢复到: $RESTORE_TIME"
+```
+
+### 3.3 Redis恢复流程
 
 ```
 Redis数据丢失(主从切换/内存淘汰/误删)
@@ -66,7 +97,161 @@ Redis数据丢失(主从切换/内存淘汰/误删)
 3. 非关键数据靠自然回填(下次访问时从DB加载)
 ```
 
-### 3.3 ES全量重建
+### 3.4 Redis 全量重建 Java 代码
+
+```java
+/**
+ * Redis 缓存全量重建服务
+ * 场景：Redis 主从切换后数据丢失、Redis 内存淘汰导致大量 Key 丢失
+ * 策略：分页查询 MySQL → Pipeline 批量写入 Redis
+ */
+@Service
+@Slf4j
+public class RedisCacheRebuildService {
+
+    private static final int BATCH_SIZE = 1000;
+
+    /**
+     * 重建用户信息缓存
+     * 分页查询 MySQL → Pipeline 批量写入 Redis
+     */
+    public void rebuildUserInfoCache() {
+        log.info("开始重建用户信息缓存...");
+        long total = 0;
+        long lastId = 0;
+
+        while (true) {
+            // 分页查询（基于 ID 游标，避免 OFFSET 深分页）
+            List<User> users = userMapper.selectBatchAfterId(lastId, BATCH_SIZE);
+            if (users.isEmpty()) break;
+
+            // Pipeline 批量写入 Redis
+            redisTemplate.executePipelined((RedisCallback<Object>) connection -> {
+                for (User user : users) {
+                    byte[] key = ("user:info:" + user.getId()).getBytes(StandardCharsets.UTF_8);
+                    // 构建 Map<byte[], byte[]>（hMSet 要求的参数类型）
+                    Map<byte[], byte[]> hash = new HashMap<>();
+                    hash.put("nickname".getBytes(), user.getNickname().getBytes(StandardCharsets.UTF_8));
+                    hash.put("avatar".getBytes(), (user.getAvatar() != null ? user.getAvatar() : "").getBytes(StandardCharsets.UTF_8));
+                    hash.put("gender".getBytes(), String.valueOf(user.getGender()).getBytes(StandardCharsets.UTF_8));
+                    connection.hMSet(key, hash);
+                    // 设置 TTL（30min + 随机偏移，防雪崩）
+                    long ttl = 1800 + ThreadLocalRandom.current().nextInt(300);
+                    connection.expire(key, ttl);
+                }
+                return null;
+            });
+
+            lastId = users.get(users.size() - 1).getId();
+            total += users.size();
+            log.info("已重建用户缓存: {} 条, lastId={}", total, lastId);
+        }
+
+        log.info("用户信息缓存重建完成，共 {} 条", total);
+    }
+
+    /**
+     * 重建计数缓存（点赞数/收藏数/评论数）
+     */
+    public void rebuildCounterCache() {
+        log.info("开始重建计数缓存...");
+        long total = 0;
+        long lastId = 0;
+
+        while (true) {
+            List<CounterRecord> records = counterMapper.selectBatchAfterId(lastId, BATCH_SIZE);
+            if (records.isEmpty()) break;
+
+            redisTemplate.executePipelined((RedisCallback<Object>) connection -> {
+                for (CounterRecord record : records) {
+                    String key = "counter:" + record.getBizType() + ":" + record.getBizId();
+                    connection.set(key.getBytes(),
+                            String.valueOf(record.getCount()).getBytes());
+                    long ttl = 3600 + ThreadLocalRandom.current().nextInt(600);
+                    connection.expire(key.getBytes(), ttl);
+                }
+                return null;
+            });
+
+            lastId = records.get(records.size() - 1).getId();
+            total += records.size();
+        }
+
+        log.info("计数缓存重建完成，共 {} 条", total);
+    }
+}
+```
+
+### 3.5 Redis vs MySQL 对账修复
+
+```java
+/**
+ * 缓存对账服务
+ * 定时对比 Redis 和 MySQL 的数据，发现不一致时自动修复
+ * 运行频率：每天凌晨 3 点（XXL-Job 触发）
+ */
+@Component
+public class CacheReconciliationJob {
+
+    /**
+     * 对账入口
+     */
+    @XxlJob("cacheReconciliation")
+    public void execute() {
+        log.info("开始缓存对账...");
+        ReconciliationReport report = new ReconciliationReport();
+
+        // 1. 对账计数数据（Redis counter vs MySQL t_counter）
+        reconcileCounters(report);
+
+        // 2. 对账用户信息（Redis user:info vs MySQL t_user）
+        reconcileUserInfo(report);
+
+        // 3. 输出报告
+        log.info("对账完成: 检查={}, 不一致={}, 已修复={}",
+                report.getTotalChecked(), report.getInconsistent(), report.getFixed());
+
+        // 4. 不一致数量超阈值则告警
+        if (report.getInconsistent() > 100) {
+            alertService.sendAlert("缓存对账异常",
+                    "不一致数量: " + report.getInconsistent());
+        }
+    }
+
+    private void reconcileCounters(ReconciliationReport report) {
+        long lastId = 0;
+        while (true) {
+            List<CounterRecord> dbRecords = counterMapper.selectBatchAfterId(lastId, 1000);
+            if (dbRecords.isEmpty()) break;
+
+            for (CounterRecord dbRecord : dbRecords) {
+                report.incrementChecked();
+                String key = "counter:" + dbRecord.getBizType() + ":" + dbRecord.getBizId();
+                String redisValue = redisTemplate.opsForValue().get(key);
+
+                if (redisValue == null) {
+                    // Redis 缺失 → 回填
+                    redisTemplate.opsForValue().set(key,
+                            String.valueOf(dbRecord.getCount()), 1, TimeUnit.HOURS);
+                    report.incrementFixed();
+                } else if (!redisValue.equals(String.valueOf(dbRecord.getCount()))) {
+                    // 值不一致 → 以 MySQL 为准修复
+                    log.warn("计数不一致: key={}, redis={}, mysql={}",
+                            key, redisValue, dbRecord.getCount());
+                    redisTemplate.opsForValue().set(key,
+                            String.valueOf(dbRecord.getCount()), 1, TimeUnit.HOURS);
+                    report.incrementInconsistent();
+                    report.incrementFixed();
+                }
+            }
+
+            lastId = dbRecords.get(dbRecords.size() - 1).getId();
+        }
+    }
+}
+```
+
+### 3.6 ES全量重建
 
 ```
 ES索引损坏/数据不一致
@@ -75,6 +260,33 @@ ES索引损坏/数据不一致
 2. 按ID分页查询MySQL + 断点续传
 3. 批量写入ES(Bulk API, 每批1000条)
 4. 完成后对账(MySQL count vs ES count)
+```
+
+### 3.7 恢复演练计划
+
+```
+每季度执行一次恢复演练（测试环境）：
+
+演练1: MySQL 误删恢复
+  1. 在测试库执行 DELETE FROM t_order WHERE id = 12345
+  2. 使用 binlog 恢复脚本恢复到删除前
+  3. 验证数据完整性
+
+演练2: Redis 全量重建
+  1. 执行 FLUSHALL 清空 Redis
+  2. 触发 RedisCacheRebuildService 全量重建
+  3. 验证缓存命中率恢复到正常水平
+
+演练3: ES 索引重建
+  1. 删除 ES 索引
+  2. 触发 XXL-Job 全量重建
+  3. 验证搜索结果与 MySQL 数据一致
+
+演练4: 整体灾难恢复
+  1. 模拟整机故障（K8s 删除所有 Pod）
+  2. 验证 K8s 自动重新调度
+  3. 验证数据从 PVC 恢复
+  4. 验证服务恢复时间 < 5 分钟
 ```
 
 ---

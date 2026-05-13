@@ -75,8 +75,7 @@ my-xhs/
 ├── my-xhs-payment/          # 支付服务（接口抽象+Mock实现）
 ├── my-xhs-search/           # 搜索服务（ES双索引、搜索建议、热搜滑动窗口）
 ├── my-xhs-notification/     # 通知中心（MQ异步分发、SSE推送、Bitmap已读）
-├── my-xhs-im/               # 即时通讯（WebSocket私信、会话管理、已读回执）
-└── my-xhs-admin/            # 后台管理
+└── my-xhs-im/               # 即时通讯（WebSocket私信、会话管理、已读回执）
 ```
 
 ### 服务端口规划
@@ -89,7 +88,6 @@ my-xhs/
 | Order | 9006 | Payment | 9007 |
 | Inventory | 9008 | Cart | 9009 |
 | Coupon | 9010 | Search | 9011 |
-| Notification | 9012 | Admin | 9013 |
 | IM | 9014 | Home (BFF) | 9015 |
 
 ---

@@ -80,20 +80,19 @@ my-xhs/
 ├── my-xhs-common/           # 公共基础
 ├── my-xhs-gateway/          # API网关
 ├── my-xhs-user/             # 用户服务
-├── my-xhs-note/             # 笔记服务
-├── my-xhs-social/           # 社交服务
+├── my-xhs-content/          # 内容服务（笔记+评论）
+├── my-xhs-analytics/        # 分析服务（社交+行为分析）
 ├── my-xhs-product/          # 商品服务
 ├── my-xhs-cart/             # 购物车服务
 ├── my-xhs-order/            # 订单服务
 ├── my-xhs-inventory/        # 库存服务
 ├── my-xhs-coupon/           # 优惠券服务
+├── my-xhs-payment/          # 支付服务（Mock实现）
 ├── my-xhs-search/           # 搜索服务
-├── my-xhs-push/             # 通知中心
+├── my-xhs-notification/     # 通知中心
 ├── my-xhs-counter/          # 计数服务
 ├── my-xhs-home/             # 首页聚合服务
 ├── my-xhs-im/               # 即时通讯服务
-├── my-xhs-admin/            # 后台管理服务
-├── deploy/                   # 部署(Dockerfile/Compose/K8s/SkyWalking/Prometheus/Grafana)
 └── docs/                     # 文档
 ```
 
@@ -111,8 +110,8 @@ my-xhs/
 |------|------|------|
 | my-xhs-gateway | 9000 | API网关 |
 | my-xhs-user | 9001 | 用户服务 |
-| my-xhs-note | 9002 | 笔记服务 |
-| my-xhs-social | 9003 | 社交服务 |
+| my-xhs-content | 9002 | 内容服务 |
+| my-xhs-analytics | 9003 | 分析服务 |
 | my-xhs-counter | 9004 | 计数服务 |
 | my-xhs-home | 9005 | 首页聚合 |
 | my-xhs-product | 9006 | 商品服务 |
@@ -121,23 +120,23 @@ my-xhs/
 | my-xhs-inventory | 9009 | 库存服务 |
 | my-xhs-coupon | 9010 | 优惠券 |
 | my-xhs-order | 9011 | 订单服务 |
-| my-xhs-push | 9012 | 通知中心 |
-| my-xhs-im | 9013 | 即时通讯 |
-| my-xhs-admin | 9014 | 后台管理 |
+| my-xhs-payment | 9012 | 支付服务 |
+| my-xhs-notification | 9013 | 通知中心 |
+| my-xhs-im | 9014 | 即时通讯 |
 | 团队边界 | 按业务领域划分，每个服务2-3人维护 |
 
 ### 领域深度分类
 
 | 分类 | 服务 | my-xhs实现 | 后续独立深入方向 |
 |------|------|-----------|-----------------|
-| 🏆 独立项目级 | social(Feed流) | **完整版** | 推荐算法、内容去重、阅读进度同步 |
+| 🏆 独立项目级 | analytics(社交+分析) | **完整版** | 推荐算法、内容去重、阅读进度同步 |
 | 🏆 独立项目级 | order(交易) | **完整版** | TCC分布式事务、支付集成、对账系统、退款链路 |
 | 🏆 独立项目级 | inventory(秒杀/库存) | **完整版** | 秒杀排队、防刷策略、动态定价、库存预测 |
 | 🏆 独立项目级 | search(搜索) | **完整版** | 搜索排序优化、个性化搜索、ES集群调优、向量搜索 |
-| 🏆 独立项目级 | push(通知) | **精简版** | 多端同步、通知偏好、推送策略A/B测试 |
+| 🏆 独立项目级 | notification(通知) | **精简版** | 多端同步、通知偏好、推送策略A/B测试 |
 | 🏆 独立项目级 | im(即时通讯) | **精简版** | 群聊、已读回执、消息漫游、音视频通话 |
 | 🔧 基础设施级 | gateway、counter、home、cart | 完整版 | — |
-| 🔧 业务支撑级 | user、note、product、coupon、admin | 完整版 | — |
+| 🔧 业务支撑级 | user、content、product、coupon、payment | 完整版 | — |
 
 > **说明**：🏆 标记的服务技术深度足以独立成一个学习项目。在 my-xhs 中核心链路做完整版（social/order/inventory/search），
 > 独立系统做精简版（push/im），架构上保证可扩展。
@@ -154,7 +153,7 @@ my-xhs/
 
 | 概念 | my-xhs 落地 | 说明 |
 |------|-------------|------|
-| **限界上下文** | 每个微服务 = 一个限界上下文 | User/Note/Social/Order等，服务边界=领域边界 |
+| **限界上下文** | 每个微服务 = 一个限界上下文 | User/Content/Analytics/Order等，服务边界=领域边界 |
 | **聚合根** | 订单(Order)、笔记(Note)、用户(User) | 聚合根拥有完整生命周期，外部通过聚合根访问内部实体 |
 | **领域事件** | MQ消息 = 领域事件 | `OrderCreatedEvent`、`NotePublishedEvent`，跨服务通信用事件驱动 |
 | **值对象** | Address(地址)、Money(金额) | 无唯一标识，通过属性值相等判断 |
@@ -164,9 +163,9 @@ my-xhs/
 ┌────────────────────────────────────────────────────────────────┐
 │                    my-xhs 限界上下文划分                         │
 ├────────────┬────────────┬────────────┬────────────┬───────────┤
-│   用户域    │   内容域    │   社交域    │   交易域    │  营销域    │
-│  (User)    │  (Note)    │  (Social)  │  (Order)   │ (Coupon)  │
-│            │            │  (Counter) │ (Inventory)│           │
+│   用户域    │   内容域    │  社交分析域  │   交易域    │  营销域    │
+│  (User)    │ (Content)  │(Analytics) │  (Order)   │ (Coupon)  │
+│            │            │ (Counter)  │(Inventory) │           │
 │            │            │   (Feed)   │  (Cart)    │           │
 └────────────┴────────────┴────────────┴────────────┴───────────┘
 ```
@@ -176,7 +175,7 @@ my-xhs/
 | 服务 | 中台定位 | 说明 |
 |------|----------|------|
 | **counter** | 计数中台 | 点赞/收藏/评论数统一由counter服务管理，所有业务复用 |
-| **push** | 消息中台 | 通知能力下沉，业务服务只发事件，push负责分发 |
+| **notification** | 消息中台 | 通知能力下沉，业务服务只发事件，notification负责分发 |
 | **search** | 搜索中台 | 笔记搜索、商品搜索统一由search服务提供，ES能力复用 |
 | **gateway** | 接入中台 | 鉴权、限流、路由、签名验证统一在网关，业务服务不重复实现 |
 
@@ -198,11 +197,10 @@ my-xhs/
 ### 服务间调用关系
 
 ```
-Gateway → User(鉴权) → Social(关注状态) → Note(笔记内容)
+Gateway → User(鉴权) → Analytics(关注状态) → Content(笔记内容)
        → Product(商品) → Inventory(库存) → Order(下单)
        → Cart(购物车) → Coupon(优惠券)
-       → Search(搜索) → Counter(计数) → Notification(通知)
-```
+       → Search(搜索) → Counter(计数) → Notification(通知)```
 
 ---
 
@@ -226,7 +224,7 @@ Gateway → User(鉴权) → Social(关注状态) → Note(笔记内容)
          ┌─────────┬───────────┼───────────┬─────────┐
          │         │           │           │         │
     ┌────▼──┐ ┌───▼───┐ ┌────▼──┐ ┌────▼──┐ ┌────▼──┐
-    │ User  │ │ Note  │ │Social │ │  ...  │ │ Order │
+    │ User  │ │Content│ │Analyt │ │  ...  │ │ Order │
     └───┬───┘ └───┬───┘ └───┬───┘ └───┬───┘ └───┬───┘
         │         │         │         │         │
         └─────────┴─────────┴────┬────┴─────────┘
@@ -263,7 +261,7 @@ Gateway → User(鉴权) → Social(关注状态) → Note(笔记内容)
 | JDK | 17 | 17 | 一致 |
 | Spring Boot | 2.6.13（已EOL） | **3.2.x** | 生产环境不能用EOL版本，安全漏洞无人修复 |
 | Spring Cloud | 2021.0.5 | **2023.0.x** | 与Boot 3.x配套 |
-| 模块数 | 16（含空壳） | **13（每个都有实质代码）** | 不做空壳服务 |
+| 模块数 | 16（含空壳） | **17（每个都有实质代码）** | 不做空壳服务 |
 | API文档 | Springfox 3.0（停更） | **SpringDoc 2.x** | Springfox已停更，生产环境需维护 |
 | JWT | jjwt 0.7.0（有漏洞） | **jjwt 0.12.x** | CVE漏洞，生产不可用 |
 | 搜索 | 耦合在product | **独立搜索服务** | 搜索QPS高，独立扩容 |

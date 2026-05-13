@@ -22,6 +22,174 @@
 
 ChaosBlade 是阿里巴巴开源的混沌工程实验工具（CNCF Sandbox项目），支持丰富的故障注入场景。
 
+### 2.1 安装与使用
+
+```bash
+# 下载 ChaosBlade（Linux）
+wget https://github.com/chaosblade-io/chaosblade/releases/download/v1.7.2/chaosblade-1.7.2-linux-amd64.tar.gz
+tar -zxvf chaosblade-1.7.2-linux-amd64.tar.gz
+cd chaosblade-1.7.2
+
+# 基本命令格式
+./blade create [target] [action] [flags]
+./blade destroy [uid]    # 恢复故障
+./blade status [uid]     # 查看状态
+```
+
+### 2.2 Java Agent 集成（JVM 故障注入）
+
+```bash
+# 挂载 Java Agent（可注入方法延迟、异常、返回值篡改等）
+./blade prepare jvm --process my-xhs-order --port 9669
+
+# 注入方法延迟：OrderService.createOrder 延迟 3 秒
+./blade create jvm delay --time 3000 \
+  --classname com.myxhs.order.service.impl.OrderServiceImpl \
+  --methodname createOrder \
+  --process my-xhs-order
+
+# 注入方法异常：InventoryFeignClient.deduct 抛出 RuntimeException
+./blade create jvm throwCustomException \
+  --exception java.lang.RuntimeException \
+  --exception-message "模拟库存服务异常" \
+  --classname com.myxhs.order.feign.InventoryFeignClient \
+  --methodname deduct \
+  --process my-xhs-order
+
+# 卸载 Java Agent
+./blade revoke [prepare-uid]
+```
+
+### 2.3 自动化演练脚本
+
+```bash
+#!/bin/bash
+# deploy/scripts/chaos-drill.sh
+# 自动化混沌演练脚本 — 一键执行所有场景并生成报告
+
+BLADE_HOME="/opt/chaosblade"
+REPORT_DIR="/data/chaos-reports/$(date +%Y%m%d)"
+mkdir -p "$REPORT_DIR"
+
+# 颜色输出
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+# 演练函数：注入故障 → 等待 → 验证 → 恢复
+run_drill() {
+    local name="$1"
+    local inject_cmd="$2"
+    local verify_cmd="$3"
+    local wait_seconds="${4:-30}"
+
+    echo "========== 演练场景: $name =========="
+
+    # 1. 注入故障
+    echo "[注入] $inject_cmd"
+    uid=$($BLADE_HOME/blade $inject_cmd | grep -oP '"uid":"\K[^"]+')
+    echo "故障UID: $uid"
+
+    # 2. 等待故障生效
+    sleep "$wait_seconds"
+
+    # 3. 验证结果
+    echo "[验证] $verify_cmd"
+    result=$(eval "$verify_cmd" 2>&1)
+    echo "$result"
+
+    # 4. 恢复故障
+    echo "[恢复] blade destroy $uid"
+    $BLADE_HOME/blade destroy "$uid"
+
+    # 5. 记录报告
+    echo "场景: $name" >> "$REPORT_DIR/report.txt"
+    echo "注入: $inject_cmd" >> "$REPORT_DIR/report.txt"
+    echo "结果: $result" >> "$REPORT_DIR/report.txt"
+    echo "---" >> "$REPORT_DIR/report.txt"
+}
+
+# 场景1: Redis 不可用 → 验证降级走 DB
+run_drill "Redis不可用" \
+    "create network drop --port 6379" \
+    "curl -s -o /dev/null -w '%{http_code}' http://localhost:9001/api/user/profile -H 'Authorization: Bearer test'" \
+    10
+
+# 场景2: 库存服务网络隔离 → 验证 Sentinel 熔断
+run_drill "库存服务网络隔离" \
+    "create network drop --remote-port 9009" \
+    "curl -s http://localhost:9011/api/order/create -X POST -H 'Content-Type: application/json' -d '{\"skuItems\":[{\"skuId\":1,\"quantity\":1}]}'" \
+    15
+
+# 场景3: CPU 满载 → 验证限流
+run_drill "CPU满载" \
+    "create cpu fullload --cpu-count 2" \
+    "curl -s http://localhost:9000/actuator/health" \
+    20
+
+echo "演练完成，报告已生成: $REPORT_DIR/report.txt"
+```
+
+### 2.4 Spring Boot 集成（演练结果自动上报）
+
+```java
+/**
+ * 混沌演练结果收集器
+ * 在演练期间自动收集关键指标，演练结束后生成报告
+ */
+@Component
+public class ChaosMetricsCollector {
+
+    private final MeterRegistry meterRegistry;
+    private final List<ChaosMetricSnapshot> snapshots = new CopyOnWriteArrayList<>();
+    private volatile ScheduledExecutorService scheduler; // 保存引用，用于停止采集
+
+    /**
+     * 开始收集（演练开始时调用）
+     */
+    public void startCollecting(String drillName) {
+        snapshots.clear();
+        // 每秒采集一次关键指标
+        scheduler = Executors.newSingleThreadScheduledExecutor();
+        scheduler.scheduleAtFixedRate(() -> {
+            ChaosMetricSnapshot snapshot = new ChaosMetricSnapshot();
+            snapshot.setTimestamp(LocalDateTime.now());
+            snapshot.setDrillName(drillName);
+            snapshot.setHttpErrorRate(getGaugeValue("http.server.requests.error.rate"));
+            snapshot.setAvgResponseTime(getGaugeValue("http.server.requests.avg.rt"));
+            snapshot.setActiveThreads(getGaugeValue("jvm.threads.live"));
+            snapshot.setCircuitBreakerOpen(getGaugeValue("sentinel.circuit.breaker.open"));
+            snapshots.add(snapshot);
+        }, 0, 1, TimeUnit.SECONDS);
+    }
+
+    /**
+     * 停止收集（演练结束时调用）
+     */
+    public void stopCollecting() {
+        if (scheduler != null && !scheduler.isShutdown()) {
+            scheduler.shutdown();
+        }
+    }
+
+    /**
+     * 生成演练报告（自动停止采集）
+     */
+    public ChaosDrillReport generateReport() {
+        stopCollecting(); // 停止采集后再生成报告
+        ChaosDrillReport report = new ChaosDrillReport();
+        report.setMaxErrorRate(snapshots.stream()
+                .mapToDouble(ChaosMetricSnapshot::getHttpErrorRate).max().orElse(0));
+        report.setMaxResponseTime(snapshots.stream()
+                .mapToDouble(ChaosMetricSnapshot::getAvgResponseTime).max().orElse(0));
+        report.setCircuitBreakerTriggered(snapshots.stream()
+                .anyMatch(s -> s.getCircuitBreakerOpen() > 0));
+        report.setSnapshots(snapshots);
+        return report;
+    }
+}
+```
+
 ---
 
 ## 📋 三、my-xhs 混沌演练计划（7大场景）

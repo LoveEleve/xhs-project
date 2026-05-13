@@ -27,19 +27,29 @@
 > **注意**：
 > - `my-xhs-home` 是 BFF（Backend For Frontend）聚合层，**不拥有数据库**，只聚合其他服务数据
 > - `my-xhs-search` 使用 MySQL + Elasticsearch，MySQL 存储热搜快照/用户行为/推荐数据，ES 存储搜索索引
-> - 技术规格大纲中 home 端口为 9005，但 product 实际占用 9005，home 新分配端口 9015
+> - 所有端口已统一为 9000-9015 连续分配，技术规格大纲已同步更新
 
 ### 2.1 端口对照说明
 
 | 服务 | 技术规格大纲端口 | 实际端口 | 说明 |
 |------|-----------------|---------|------|
-| my-xhs-home | 9005 | **9015** | product 实际占用 9005，home 调整为 9015 |
-| my-xhs-product | 9006 | **9005** | 实际端口与大纲不一致，以 application.yml 为准 |
-| my-xhs-search | 9007 | **9011** | 实际端口与大纲不一致，以 application.yml 为准 |
-| my-xhs-push(即notification) | 9012 | **9012** | 大纲中叫 push，实际模块名 notification |
-| my-xhs-admin | 9014 | **9013** | 实际端口与大纲不一致，以 application.yml 为准 |
+| my-xhs-gateway | 9000 | **9000** | ✅ 一致 |
+| my-xhs-user | 9001 | **9001** | ✅ 一致 |
+| my-xhs-content | 9002 | **9002** | ✅ 一致 |
+| my-xhs-analytics | 9003 | **9003** | ✅ 一致 |
+| my-xhs-counter | 9004 | **9004** | ✅ 一致 |
+| my-xhs-home | 9005 | **9005** | ✅ 一致 |
+| my-xhs-product | 9006 | **9006** | ✅ 一致 |
+| my-xhs-search | 9007 | **9007** | ✅ 一致 |
+| my-xhs-cart | 9008 | **9008** | ✅ 一致 |
+| my-xhs-inventory | 9009 | **9009** | ✅ 一致 |
+| my-xhs-coupon | 9010 | **9010** | ✅ 一致 |
+| my-xhs-order | 9011 | **9011** | ✅ 一致 |
+| my-xhs-payment | 9012 | **9012** | ✅ 一致 |
+| my-xhs-notification | 9013 | **9013** | ✅ 一致 |
+| my-xhs-im | 9014 | **9014** | ✅ 一致 |
 
-> **原则**：所有端口以各服务 `application.yml` 实际配置为准，技术规格大纲仅作初始参考。
+> **原则**：所有端口已统一为 9000-9015 连续分配，代码和文档保持一致。
 
 ---
 
@@ -942,7 +952,7 @@ elasticsearch:
 | 10 | search application.yml 缺少 Redis 配置 | Redis未配置 | ✅ 已补充 |
 | 11 | 文档中 PushFeignClient 应改为 NotificationFeignClient | 项目中推送服务实际叫 notification，不叫 push | ✅ 已修复 |
 | 12 | 配置文件清单中 home YAML 有重复 spring 顶级key | spring.data.redis 和 spring.cache 在两个独立的 spring: 块中 | ✅ 已修复（application.yml 中合并） |
-| 13 | 端口总表中 admin 端口写为 9014，实际为 9013 | 以 application.yml 为准 | ✅ 已修复 |
+| 13 | 端口总表中 admin 端口写为 9014，实际为 9013 | 已移除admin模块 | ✅ 已处理 |
 
 ---
 
@@ -1378,5 +1388,4 @@ home:
 | my-xhs-search | 9011 | my_xhs_search (ES+MySQL) | 3 |
 | my-xhs-notification | 9012 | my_xhs_notification | 2 |
 | my-xhs-im | 9014 | my_xhs_im | 4 |
-| my-xhs-admin | 9013 | my_xhs_admin | 4 |
 | my-xhs-home | 9015 | 无（BFF聚合） | 3 |
