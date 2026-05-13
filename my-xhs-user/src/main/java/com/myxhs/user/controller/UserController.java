@@ -1,0 +1,62 @@
+package com.myxhs.user.controller;
+
+import com.myxhs.common.response.R;
+import com.myxhs.user.dto.request.ChangePasswordRequest;
+import com.myxhs.user.dto.request.UpdateUserRequest;
+import com.myxhs.user.dto.response.UserInfoResponse;
+import com.myxhs.user.service.UserService;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.annotation.*;
+
+/**
+ * 用户信息接口
+ * <p>
+ * 注意：这些接口需要登录后才能访问。
+ * 当前阶段通过 Header 中的 X-User-Id 传递用户 ID（后续由 Gateway 统一注入）。
+ * </p>
+ */
+@RestController
+@RequestMapping("/api/user")
+@RequiredArgsConstructor
+public class UserController {
+
+    private final UserService userService;
+
+    /**
+     * 获取当前用户信息
+     */
+    @GetMapping("/me")
+    public R<UserInfoResponse> getCurrentUser(@RequestHeader("X-User-Id") Long userId) {
+        return R.ok(userService.getUserInfo(userId));
+    }
+
+    /**
+     * 获取指定用户信息（公开接口）
+     */
+    @GetMapping("/{userId}")
+    public R<UserInfoResponse> getUserInfo(@PathVariable Long userId) {
+        return R.ok(userService.getUserInfo(userId));
+    }
+
+    /**
+     * 更新当前用户信息
+     */
+    @PutMapping("/me")
+    public R<UserInfoResponse> updateCurrentUser(
+            @RequestHeader("X-User-Id") Long userId,
+            @Valid @RequestBody UpdateUserRequest request) {
+        return R.ok(userService.updateUserInfo(userId, request));
+    }
+
+    /**
+     * 修改密码
+     */
+    @PutMapping("/me/password")
+    public R<Void> changePassword(
+            @RequestHeader("X-User-Id") Long userId,
+            @Valid @RequestBody ChangePasswordRequest request) {
+        userService.changePassword(userId, request);
+        return R.ok();
+    }
+}
