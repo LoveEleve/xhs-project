@@ -46,7 +46,7 @@
             <artifactId>redisson</artifactId>
         </dependency>
         
-        <!-- Caffeine -->
+        <!-- Caffeine 本地缓存（多级缓存 L1） -->
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>
             <artifactId>caffeine</artifactId>

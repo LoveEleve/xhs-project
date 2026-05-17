@@ -52,7 +52,7 @@
         
         <!-- 消息队列 -->
         <rocketmq.version>5.1.4</rocketmq.version>
-        <rocketmq.spring.version>2.2.3</rocketmq.spring.version>
+<rocketmq.spring.version>2.3.0</rocketmq.spring.version>
         
         <!-- 搜索引擎 -->
         <elasticsearch.version>8.12.2</elasticsearch.version>
@@ -77,11 +77,14 @@
         <skywalking.version>9.7.0</skywalking.version>
         
         <!-- 分库分表 -->
-        <shardingsphere.version>5.4.1</shardingsphere.version>
+        <shardingsphere.version>5.5.1</shardingsphere.version>
         <cosid.version>2.6.8</cosid.version>
         
         <!-- 热点数据检测 -->
         <hotkey.version>1.0.0</hotkey.version>
+        
+        <!-- XXL-Job 分布式调度 -->
+        <xxl.job.version>2.4.2</xxl.job.version>
         
         <!-- 测试 -->
         <testcontainers.version>1.19.8</testcontainers.version>
@@ -248,7 +251,7 @@
             <!-- ShardingSphere -->
             <dependency>
                 <groupId>org.apache.shardingsphere</groupId>
-                <artifactId>shardingsphere-jdbc-core</artifactId>
+                <artifactId>shardingsphere-jdbc</artifactId>
                 <version>${shardingsphere.version}</version>
             </dependency>
             
@@ -326,6 +329,13 @@
                 <version>${jwt.version}</version>
                 <scope>runtime</scope>
             </dependency>
+
+            <!-- XXL-Job 分布式调度 -->
+            <dependency>
+                <groupId>com.xuxueli</groupId>
+                <artifactId>xxl-job-core</artifactId>
+                <version>${xxl.job.version}</version>
+            </dependency>
             
             <!-- Testcontainers -->
             <dependency>
@@ -338,13 +348,23 @@
     </dependencyManagement>
 
     <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <version>${spring.boot.version}</version>
+                    <executions>
+                        <execution>
+                            <goals>
+                                <goal>repackage</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+            </plugins>
+        </pluginManagement>
         <plugins>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-                <version>${spring.boot.version}</version>
-            </plugin>
-            
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>

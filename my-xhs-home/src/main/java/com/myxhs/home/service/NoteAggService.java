@@ -1,0 +1,230 @@
+package com.myxhs.home.service;
+
+import com.myxhs.common.response.R;
+import com.myxhs.home.dto.NoteDetailAggVO;
+import com.myxhs.home.feign.*;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
+/**
+ * 笔记详情聚合服务
+ * <p>
+ * 核心职责：将笔记详情页所需的多源数据并行聚合为一个完整的 VO。
+ * <p>
+ * 聚合编排（2 层并行）：
+ * 第 1 层（并行）：笔记详情 + 点赞状态 + 收藏状态 + 计数
+ * 第 2 层（依赖第 1 层的 authorId）：作者信息 + 关注关系 + 热门评论
+ * <p>
+ * 降级策略：任何下游服务超时/异常，对应字段返回默认值，不影响整体。
+ * </p>
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class NoteAggService {
+
+    private final ContentFeignClient contentFeignClient;
+    private final UserFeignClient userFeignClient;
+    private final AnalyticsFeignClient analyticsFeignClient;
+    private final CounterFeignClient counterFeignClient;
+    private final ExecutorService aggregatorPool;
+
+    /**
+     * 聚合笔记详情
+     *
+     * @param noteId 笔记ID
+     * @param userId 当前登录用户ID（可为 null，未登录时社交状态全部为 false）
+     */
+    @SuppressWarnings("unchecked")
+    public NoteDetailAggVO getNoteDetail(Long noteId, Long userId) {
+
+        // 全局请求级超时控制：整个聚合不超过 4 秒
+        long startTime = System.nanoTime();
+        long globalTimeoutMs = 4000;
+
+        // ========== 第 1 层并行：笔记详情 + 社交状态 + 计数 ==========
+
+        // 1a. 笔记详情
+        CompletableFuture<R<Map<String, Object>>> noteFuture = CompletableFuture
+                .supplyAsync(() -> {
+                    try {
+                        R<Map<String, Object>> r = contentFeignClient.getNoteDetail(noteId);
+                        return r != null ? r : R.fail(503, "content服务无响应");
+                    } catch (Exception e) {
+                        log.warn("[笔记详情] 获取笔记详情异常: noteId={}", noteId, e);
+                        return R.fail(503, "content服务异常");
+                    }
+                }, aggregatorPool);
+
+        // 1b. 点赞状态
+        CompletableFuture<Boolean> likeFuture = CompletableFuture
+                .supplyAsync(() -> {
+                    if (userId == null) return false;
+                    R<Map<Long, Boolean>> r = analyticsFeignClient.batchCheckLikeStatus(userId, 1, String.valueOf(noteId));
+                    return (r != null && r.isSuccess() && r.getData() != null)
+                            ? r.getData().getOrDefault(noteId, false) : false;
+                }, aggregatorPool);
+
+        // 1c. 收藏状态
+        CompletableFuture<Boolean> collectFuture = CompletableFuture
+                .supplyAsync(() -> {
+                    if (userId == null) return false;
+                    try {
+                        R<Boolean> r = analyticsFeignClient.checkFavoriteStatus(userId, noteId);
+                        return (r != null && r.isSuccess() && r.getData() != null) ? r.getData() : false;
+                    } catch (Exception e) {
+                        log.warn("[笔记详情] 查询收藏状态失败: noteId={}", noteId);
+                        return false;
+                    }
+                }, aggregatorPool);
+
+        // 1d. 计数（点赞/收藏/评论）
+        CompletableFuture<Map<String, Long>> counterFuture = CompletableFuture
+                .supplyAsync(() -> {
+                    try {
+                        Map<String, Object> query = new HashMap<>();
+                        query.put("targetType", 1);
+                        query.put("targetId", noteId);
+                        query.put("countTypes", List.of(1, 2, 3));
+                        Map<String, Object> request = Map.of("queries", List.of(query));
+                        R<Map<String, Map<String, Long>>> r = counterFeignClient.batchGetCounts(request);
+                        if (r != null && r.isSuccess() && r.getData() != null) {
+                            String key = "1:" + noteId;
+                            return r.getData().getOrDefault(key, Collections.emptyMap());
+                        }
+                    } catch (Exception e) {
+                        log.warn("[笔记详情] 获取计数失败: noteId={}", noteId);
+                    }
+                    return Collections.emptyMap();
+                }, aggregatorPool);
+
+        // 等待第 1 层完成（总超时 3 秒）
+        try {
+            CompletableFuture.allOf(noteFuture, likeFuture, collectFuture, counterFuture)
+                    .get(3, TimeUnit.SECONDS);
+        } catch (TimeoutException e) {
+            log.warn("[笔记详情] 第1层聚合超时，部分数据降级");
+        } catch (Exception e) {
+            log.warn("[笔记详情] 第1层聚合异常", e);
+        }
+
+        R<Map<String, Object>> noteResult = noteFuture.getNow(R.fail(503, "超时降级"));
+        // 区分"服务降级"和"笔记不存在"：
+        // - 服务降级（503）：不返回 null，而是抛出异常让上层感知
+        // - 数据为空（成功但 data 为 null/empty）：笔记确实不存在
+        if (noteResult == null || !noteResult.isSuccess()) {
+            // 服务不可用，不能确定笔记是否存在，返回 null 让 Controller 返回 503
+            log.warn("[笔记详情] content服务不可用，无法获取笔记: noteId={}", noteId);
+            return null;
+        }
+        Map<String, Object> noteData = noteResult.getData();
+        if (noteData == null || noteData.isEmpty()) {
+            return null; // 笔记确实不存在
+        }
+
+        Boolean isLiked = likeFuture.getNow(false);
+        Boolean isCollected = collectFuture.getNow(false);
+        Map<String, Long> counters = counterFuture.getNow(Collections.emptyMap());
+
+        // 提取作者 ID
+        Long authorId = noteData.get("userId") != null ? ((Number) noteData.get("userId")).longValue() : null;
+
+        // ========== 第 2 层并行（依赖第 1 层的 authorId）：作者信息 + 关注关系 + 热门评论 ==========
+
+        // 2a. 作者信息
+        CompletableFuture<Map<String, Object>> authorFuture = CompletableFuture
+                .supplyAsync(() -> {
+                    if (authorId == null) return Collections.<String, Object>emptyMap();
+                    R<Map<String, Object>> r = userFeignClient.getUserPublicInfo(authorId);
+                    return (r != null && r.isSuccess() && r.getData() != null) ? r.getData() : Collections.emptyMap();
+                }, aggregatorPool);
+
+        // 2b. 关注关系
+        CompletableFuture<Map<String, Boolean>> relationFuture = CompletableFuture
+                .supplyAsync(() -> {
+                    if (userId == null || authorId == null || userId.equals(authorId)) {
+                        return Collections.<String, Boolean>emptyMap();
+                    }
+                    R<Map<String, Boolean>> r = analyticsFeignClient.checkRelation(userId, authorId);
+                    return (r != null && r.isSuccess() && r.getData() != null) ? r.getData() : Collections.emptyMap();
+                }, aggregatorPool);
+
+        // 2c. 热门评论（前 3 条）
+        CompletableFuture<List<Map<String, Object>>> commentsFuture = CompletableFuture
+                .supplyAsync(() -> {
+                    try {
+                        R<Map<String, Object>> r = contentFeignClient.getCommentPage(noteId, 1, 3);
+                        if (r != null && r.isSuccess() && r.getData() != null) {
+                            Object list = r.getData().get("list");
+                            if (list instanceof List) {
+                                return (List<Map<String, Object>>) list;
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.warn("[笔记详情] 获取热门评论失败: noteId={}", noteId);
+                    }
+                    return Collections.<Map<String, Object>>emptyList();
+                }, aggregatorPool);
+
+        // 等待第 2 层完成（动态超时：全局超时 - 第1层已用时间）
+        long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);
+        long layer2TimeoutMs = Math.max(500, globalTimeoutMs - elapsedMs); // 至少 500ms
+        try {
+            CompletableFuture.allOf(authorFuture, relationFuture, commentsFuture)
+                    .get(layer2TimeoutMs, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            log.warn("[笔记详情] 第2层聚合超时({}ms)，部分数据降级", layer2TimeoutMs);
+        } catch (Exception e) {
+            log.warn("[笔记详情] 第2层聚合异常", e);
+        }
+
+        Map<String, Object> authorData = authorFuture.getNow(Collections.emptyMap());
+        Map<String, Boolean> relationData = relationFuture.getNow(Collections.emptyMap());
+        List<Map<String, Object>> hotComments = commentsFuture.getNow(Collections.emptyList());
+
+        // ========== 组装 VO ==========
+        return NoteDetailAggVO.builder()
+                .noteId(noteId)
+                .title((String) noteData.get("title"))
+                .content((String) noteData.get("content"))
+                .images(noteData.get("images") instanceof List ? (List<String>) noteData.get("images") : Collections.emptyList())
+                .videoUrl((String) noteData.get("videoUrl"))
+                .coverUrl((String) noteData.get("coverUrl"))
+                .noteType(noteData.get("noteType") != null ? ((Number) noteData.get("noteType")).intValue() : 0)
+                .tags(noteData.get("tags") instanceof List ? (List<String>) noteData.get("tags") : Collections.emptyList())
+                .createdAt(parseDateTime(noteData.get("createdAt")))
+                .authorId(authorId)
+                .authorNickname((String) authorData.get("nickname"))
+                .authorAvatar((String) authorData.get("avatar"))
+                .likeCount(counters.getOrDefault("like", 0L))
+                .collectCount(counters.getOrDefault("collect", 0L))
+                .commentCount(counters.getOrDefault("comment", 0L))
+                .isLiked(isLiked)
+                .isCollected(isCollected)
+                .isFollowed(relationData.getOrDefault("isFollowing", false))
+                .hotComments(hotComments)
+                .build();
+    }
+
+    /**
+     * 安全解析日期时间
+     */
+    private LocalDateTime parseDateTime(Object value) {
+        if (value == null) return null;
+        if (value instanceof LocalDateTime) return (LocalDateTime) value;
+        try {
+            return LocalDateTime.parse(value.toString(), DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+}

@@ -46,8 +46,10 @@ public final class SpELParser {
             Object value = PARSER.parseExpression(expression).getValue(context);
             return value != null ? value.toString() : "null";
         } catch (Exception e) {
-            // SpEL 解析失败时返回原始表达式，避免 NPE 导致业务中断
-            return expression;
+            // SpEL 解析失败时抛出异常（暴露配置错误，避免不同参数的请求共享同一个 Key）
+            // 例：@Idempotent(key = "#request.userId") 但参数名是 req → 所有请求解析为同一个 Key → 误拦截
+            throw new IllegalArgumentException(
+                    "SpEL 表达式解析失败: '" + expression + "', 请检查注解中的 key 表达式是否正确", e);
         }
     }
 }

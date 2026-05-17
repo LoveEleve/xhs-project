@@ -9,12 +9,13 @@
 ```
 my-xhs/docs/
 │
-├── 📁 architecture/              # 架构设计（5篇）
+├── 📁 architecture/              # 架构设计（6篇）
 │   ├── 00-document-directory-outline.md    # 文档目录大纲
 │   ├── 00-technical-specification-outline.md # 技术规格大纲
 │   ├── 07-architecture-knowledge-tracing.md  # 架构知识溯源
 │   ├── 08-architecture-decision-critical-analysis.md # 架构决策分析
-│   └── 10-service-dependency-graph.md       # 服务间调用依赖图
+│   ├── 10-service-dependency-graph.md       # 服务间调用依赖图
+│   └── 20-project-panorama-summary.md       # 🆕 项目全景透视与亮点难点总结
 │
 ├── 📁 business/                  # 业务模块设计（4篇）
 │   ├── 01-project-overview.md              # 项目总览
@@ -22,10 +23,23 @@ my-xhs/docs/
 │   ├── 12-content-audit-system-design.md    # 内容审核系统设计
 │   └── 16-note-topic-and-tag-system-design.md # 笔记标签/话题系统
 │
-├── 📁 distributed/               # 分布式解决方案（3篇）
-│   ├── 03-distributed-solutions.md         # 分布式解决方案
+├── 📁 distributed/               # 分布式解决方案（3篇 + 11个深度技术点）
+│   ├── 03-distributed-solutions.md         # 分布式解决方案（含15-25章深度技术点）
 │   ├── 17-seller-order-query-solution.md    # 卖家维度订单查询方案
 │   └── 19-incremental-data-reconciliation.md # 数据增量对账方案
+│
+│   # 03-distributed-solutions.md 中新增的深度技术点（华仔项目未涉及）：
+│   # §15 请求级超时预算（Timeout Budget）— Google SRE实践
+│   # §16 自动降级决策引擎 — 多指标综合→L0-L3自动降级→半开恢复
+│   # §17 数据倾斜检测与自动再均衡 — 分片监控+在线扩分片
+│   # §18 幂等性增强：返回上次成功结果 — 对标支付宝幂等设计
+│   # §19 慢查询自动发现与治理闭环 — slow_log→ES→Grafana→自动EXPLAIN→周报
+│   # §20 数据生命周期自动化管理 — XXL-Job分批归档+ES ILM Policy
+│   # §21 JVM调优参数模板 — G1 GC科学计算+GC日志分析
+│   # §22 连接池参数科学计算 — HikariCP/Lettuce/RocketMQ公式推导
+│   # §23 API版本兼容性矩阵 — 版本生命周期管理+废弃通知机制
+│   # §24 Service Mesh预留设计 — Spring Cloud→Istio演进路径
+│   # §25 事件溯源（Event Sourcing）— 订单事件表+快照表互补
 │
 ├── 📁 infrastructure/            # 基础设施与运维（4篇）
 │   ├── 04-infrastructure-and-deployment.md  # 基础设施与部署
@@ -45,7 +59,9 @@ my-xhs/docs/
 │   ├── 05-feature-coverage-comparison.md    # 功能覆盖比对
 │   └── 99-coverage-verification-report.md   # 覆盖验证报告
 │
-├── 📁 dev/                       # 开发日志（6个Phase 41篇）
+├── 📁 dev/                       # 开发日志（7个Phase 47篇）
+│   └── Phase-5/24-performance-optimization-and-stress-testing/
+│       └── massive-data-generation.md  # 🆕 亿级测试数据生成方案
 ├── 📁 references/                # 参考资料（3篇）
 └── 📁 design/                    # 服务详细设计（规划中）
 └── 📁 interview/                 # 面试专题（规划中）
@@ -844,6 +860,8 @@ my-xhs/docs/
 | P2 | 36-高可用与故障预案/ | 架构重点、P0-P3分级 |
 | P2 | 39-分布式ID方案/ | 分库分表必会 |
 | P2 | 41-全链路压测基线/ | 性能工程、基线对比 |
+| **P0** | **🆕 massive-data-generation.md** | **亿级测试数据生成（参考华仔41/46/98篇）** |
+| **P1** | **🆕 20-project-panorama-summary.md** | **项目全景透视（参考华仔95篇）** |
 | P3 | 32-CI/CD与自动化部署/ | DevOps实践 |
 | P3 | 33-测试策略与质量保障/ | 工程实践 |
 | P3 | 34-数据备份与容灾/ | 生产必备但频率低 |

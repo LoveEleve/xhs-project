@@ -63,8 +63,10 @@ public class IdGeneratorUtil {
         String dateStr = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
         String key = "id:serial:" + prefix + ":" + dateStr;
         Long seq = stringRedisTemplate.opsForValue().increment(key);
-        // 设置 2 天过期（跨天后旧 Key 自动清理）
-        stringRedisTemplate.expire(key, 2, TimeUnit.DAYS);
+        // 只在首次创建 Key 时设置过期（seq==1 说明是新 Key），避免每次调用都 expire 的多余网络往返
+        if (seq != null && seq == 1) {
+            stringRedisTemplate.expire(key, 2, TimeUnit.DAYS);
+        }
         return prefix + dateStr + String.format("%06d", seq);
     }
 }

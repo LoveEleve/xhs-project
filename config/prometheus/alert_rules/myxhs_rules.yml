@@ -1,0 +1,157 @@
+# my-xhs 告警规则
+# 覆盖：系统级 + 应用级 + 业务级
+
+groups:
+  # ==================== 应用级告警 ====================
+  - name: myxhs_application_alerts
+    rules:
+      # 5xx 错误率 > 1%（持续 2 分钟）→ P1
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(myxhs_http_request_duration_seconds_count{status_group="5xx"}[5m])) by (application)
+            /
+            sum(rate(myxhs_http_request_duration_seconds_count[5m])) by (application)
+          ) > 0.01
+        for: 2m
+        labels:
+          severity: critical
+          level: P1
+        annotations:
+          summary: "服务 {{ $labels.application }} 5xx 错误率超过 1%"
+          description: "当前错误率: {{ $value | humanizePercentage }}，持续 2 分钟"
+
+      # P99 响应时间 > 1s（持续 5 分钟）→ P2
+      - alert: HighResponseTime
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(myxhs_http_request_duration_seconds_bucket[5m])) by (application, le)
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+          level: P2
+        annotations:
+          summary: "服务 {{ $labels.application }} P99 响应时间超过 1 秒"
+          description: "当前 P99: {{ $value | humanizeDuration }}"
+
+      # JVM 堆内存使用率 > 85%（持续 5 分钟）→ P1
+      - alert: HighJvmMemoryUsage
+        expr: |
+          (
+            jvm_memory_used_bytes{area="heap"}
+            /
+            jvm_memory_max_bytes{area="heap"}
+          ) > 0.85
+        for: 5m
+        labels:
+          severity: critical
+          level: P1
+        annotations:
+          summary: "服务 {{ $labels.application }} JVM 堆内存使用率超过 85%"
+          description: "当前使用率: {{ $value | humanizePercentage }}"
+
+      # GC 暂停时间均值 > 500ms → P2
+      # 使用 > 0 过滤分母为零的情况（5 分钟内无 GC 事件时 count increase 为 0）
+      - alert: HighGcPause
+        expr: |
+          (
+            increase(jvm_gc_pause_seconds_sum[5m])
+            /
+            (increase(jvm_gc_pause_seconds_count[5m]) > 0)
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          level: P2
+        annotations:
+          summary: "服务 {{ $labels.application }} GC 平均暂停时间超过 500ms"
+          description: "5 分钟内 GC 平均暂停: {{ $value | humanizeDuration }}"
+
+      # HikariCP 连接池使用率 > 90% → P2
+      - alert: HighHikariPoolUsage
+        expr: |
+          hikaricp_connections_active
+          /
+          hikaricp_connections_max
+          > 0.9
+        for: 3m
+        labels:
+          severity: warning
+          level: P2
+        annotations:
+          summary: "服务 {{ $labels.application }} 数据库连接池使用率超过 90%"
+          description: "活跃连接: {{ $value }}，可能导致请求排队"
+
+      # 服务实例宕机（Prometheus 采集失败）→ P0
+      - alert: ServiceDown
+        expr: up{job="my-xhs-services"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          level: P0
+        annotations:
+          summary: "服务 {{ $labels.service }} 实例 {{ $labels.instance }} 宕机"
+          description: "Prometheus 无法采集到该实例的指标，持续 1 分钟"
+
+  # ==================== 业务级告警 ====================
+  - name: myxhs_business_alerts
+    rules:
+      # 下单失败率 > 5% → P1
+      - alert: HighOrderFailRate
+        expr: |
+          (
+            sum(rate(myxhs_order_create_total{status="fail"}[5m]))
+            /
+            sum(rate(myxhs_order_create_total[5m]))
+          ) > 0.05
+        for: 3m
+        labels:
+          severity: critical
+          level: P1
+        annotations:
+          summary: "下单失败率超过 5%"
+          description: "当前失败率: {{ $value | humanizePercentage }}，请立即排查"
+
+      # 支付成功率 < 99% → P1
+      - alert: LowPaymentSuccessRate
+        expr: |
+          (
+            sum(rate(myxhs_payment_total{status="success"}[5m]))
+            /
+            sum(rate(myxhs_payment_total[5m]))
+          ) < 0.99
+        for: 3m
+        labels:
+          severity: critical
+          level: P1
+        annotations:
+          summary: "支付成功率低于 99%"
+          description: "当前成功率: {{ $value | humanizePercentage }}"
+
+      # MQ 消费积压 > 10000 → P1
+      - alert: HighMqConsumeLag
+        expr: myxhs_mq_consume_lag > 10000
+        for: 5m
+        labels:
+          severity: warning
+          level: P1
+        annotations:
+          summary: "MQ 消费积压超过 10000"
+          description: "Topic: {{ $labels.topic }}, 消费组: {{ $labels.consumer_group }}, 积压: {{ $value }}"
+
+      # 登录失败率 > 10% → P2（可能被攻击）
+      - alert: HighLoginFailRate
+        expr: |
+          (
+            sum(rate(myxhs_login_total{status="fail"}[5m]))
+            /
+            sum(rate(myxhs_login_total[5m]))
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          level: P2
+        annotations:
+          summary: "登录失败率超过 10%，可能存在暴力破解攻击"
+          description: "当前失败率: {{ $value | humanizePercentage }}"

@@ -1,0 +1,161 @@
+# ============================================================
+# ShardingSphere-JDBC 分库分表配置
+# ============================================================
+# 架构：同一 MySQL 实例（13306）上 4 个 database × 4 张分表/库 = 16 张逻辑表
+# 分片键：user_id
+# 库路由：user_id % 4 → ds0(my_xhs_order_0) ~ ds3(my_xhs_order_3)
+# 表路由：(user_id / 4) % 4 → t_xxx_0 ~ t_xxx_3
+#
+# 说明：开发环境使用同一 MySQL 实例的多 database 模拟分库，
+#       生产环境只需修改 jdbcUrl 指向不同 MySQL 实例即可水平扩展。
+# ============================================================
+
+dataSources:
+  ds0:
+    dataSourceClassName: com.zaxxer.hikari.HikariDataSource
+    driverClassName: com.mysql.cj.jdbc.Driver
+    jdbcUrl: jdbc:mysql://localhost:13306/my_xhs_order_0?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: "Xhs@2026#MySQL"
+    connectionTimeoutMilliseconds: 10000
+    idleTimeoutMilliseconds: 30000
+    maxLifetimeMilliseconds: 1800000
+    maxPoolSize: 10
+    minPoolSize: 2
+  ds1:
+    dataSourceClassName: com.zaxxer.hikari.HikariDataSource
+    driverClassName: com.mysql.cj.jdbc.Driver
+    jdbcUrl: jdbc:mysql://localhost:13306/my_xhs_order_1?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: "Xhs@2026#MySQL"
+    connectionTimeoutMilliseconds: 10000
+    idleTimeoutMilliseconds: 30000
+    maxLifetimeMilliseconds: 1800000
+    maxPoolSize: 10
+    minPoolSize: 2
+  ds2:
+    dataSourceClassName: com.zaxxer.hikari.HikariDataSource
+    driverClassName: com.mysql.cj.jdbc.Driver
+    jdbcUrl: jdbc:mysql://localhost:13306/my_xhs_order_2?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: "Xhs@2026#MySQL"
+    connectionTimeoutMilliseconds: 10000
+    idleTimeoutMilliseconds: 30000
+    maxLifetimeMilliseconds: 1800000
+    maxPoolSize: 10
+    minPoolSize: 2
+  ds3:
+    dataSourceClassName: com.zaxxer.hikari.HikariDataSource
+    driverClassName: com.mysql.cj.jdbc.Driver
+    jdbcUrl: jdbc:mysql://localhost:13306/my_xhs_order_3?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: "Xhs@2026#MySQL"
+    connectionTimeoutMilliseconds: 10000
+    idleTimeoutMilliseconds: 30000
+    maxLifetimeMilliseconds: 1800000
+    maxPoolSize: 10
+    minPoolSize: 2
+
+rules:
+  - !SHARDING
+    tables:
+      # 订单主表
+      t_order:
+        actualDataNodes: ds${0..3}.t_order_${0..3}
+        databaseStrategy:
+          standard:
+            shardingColumn: user_id
+            shardingAlgorithmName: db-inline
+        tableStrategy:
+          standard:
+            shardingColumn: user_id
+            shardingAlgorithmName: t-order-inline
+        keyGenerateStrategy:
+          column: id
+          keyGeneratorName: snowflake
+      # 订单明细表
+      t_order_item:
+        actualDataNodes: ds${0..3}.t_order_item_${0..3}
+        databaseStrategy:
+          standard:
+            shardingColumn: user_id
+            shardingAlgorithmName: db-inline
+        tableStrategy:
+          standard:
+            shardingColumn: user_id
+            shardingAlgorithmName: t-order-item-inline
+        keyGenerateStrategy:
+          column: id
+          keyGeneratorName: snowflake
+      # 本地消息表
+      t_local_message:
+        actualDataNodes: ds${0..3}.t_local_message_${0..3}
+        databaseStrategy:
+          standard:
+            shardingColumn: user_id
+            shardingAlgorithmName: db-inline
+        tableStrategy:
+          standard:
+            shardingColumn: user_id
+            shardingAlgorithmName: t-local-message-inline
+        keyGenerateStrategy:
+          column: id
+          keyGeneratorName: snowflake
+      # 订单快照表
+      t_order_snapshot:
+        actualDataNodes: ds${0..3}.t_order_snapshot_${0..3}
+        databaseStrategy:
+          standard:
+            shardingColumn: user_id
+            shardingAlgorithmName: db-inline
+        tableStrategy:
+          standard:
+            shardingColumn: user_id
+            shardingAlgorithmName: t-order-snapshot-inline
+        keyGenerateStrategy:
+          column: id
+          keyGeneratorName: snowflake
+
+    # 绑定表组：保证关联查询不产生笛卡尔积
+    bindingTables:
+      - t_order,t_order_item,t_local_message,t_order_snapshot
+
+    # 分片算法（使用 INLINE 表达式，兼容 standard 策略）
+    shardingAlgorithms:
+      # 库路由：user_id % 4 → ds0~ds3
+      db-inline:
+        type: INLINE
+        props:
+          algorithm-expression: ds${user_id % 4}
+      # 表路由：(user_id / 4) % 4 → t_xxx_0~t_xxx_3
+      t-order-inline:
+        type: INLINE
+        props:
+          algorithm-expression: t_order_${(user_id.intdiv(4)) % 4}
+      t-order-item-inline:
+        type: INLINE
+        props:
+          algorithm-expression: t_order_item_${(user_id.intdiv(4)) % 4}
+      t-local-message-inline:
+        type: INLINE
+        props:
+          algorithm-expression: t_local_message_${(user_id.intdiv(4)) % 4}
+      t-order-snapshot-inline:
+        type: INLINE
+        props:
+          algorithm-expression: t_order_snapshot_${(user_id.intdiv(4)) % 4}
+
+    # 主键生成器
+    keyGenerators:
+      snowflake:
+        type: SNOWFLAKE
+        props:
+          # worker-id 由 ShardingSphereDataSourceConfig 动态覆盖
+          # 基于本机 IP 后两段计算，保证多实例不冲突
+          worker-id: 1
+
+props:
+  # SQL 日志打印（开发环境开启，生产关闭）
+  sql-show: true
+  # 查询线程池大小
+  max-connections-size-per-query: 2

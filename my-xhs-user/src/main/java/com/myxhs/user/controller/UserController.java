@@ -4,6 +4,7 @@ import com.myxhs.common.response.R;
 import com.myxhs.user.dto.request.ChangePasswordRequest;
 import com.myxhs.user.dto.request.UpdateUserRequest;
 import com.myxhs.user.dto.response.UserInfoResponse;
+import com.myxhs.user.dto.response.UserPublicInfoResponse;
 import com.myxhs.user.service.UserService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -33,10 +34,14 @@ public class UserController {
 
     /**
      * 获取指定用户信息（公开接口）
+     * <p>
+     * 只返回非敏感字段（昵称、头像、性别、签名），不暴露手机号、邮箱等隐私信息。
+     * 路径设计为 /{userId}/info，与 Gateway 白名单 /api/user/&#42;/info 匹配。
+     * </p>
      */
-    @GetMapping("/{userId}")
-    public R<UserInfoResponse> getUserInfo(@PathVariable Long userId) {
-        return R.ok(userService.getUserInfo(userId));
+    @GetMapping("/{userId}/info")
+    public R<UserPublicInfoResponse> getUserPublicInfo(@PathVariable Long userId) {
+        return R.ok(userService.getUserPublicInfo(userId));
     }
 
     /**

@@ -4,6 +4,23 @@
 
 ---
 
+## ⚠️ 技术约束（Code Review 决策，开发前必读）
+
+> **缓存一致性方案：必须使用 Canal + Binlog 订阅，禁止使用延迟双删。**
+>
+> **决策来源**：`docs/dev/GLOBAL-CODE-REVIEW.md` → 11.6 跨阶段技术决策待办 #1
+>
+> **原因**：库存是高并发强一致性场景，延迟双删在高并发读写交叉时有 500ms 不一致窗口（并发读可能读到旧值并回填缓存），对库存扣减场景不可接受，攻击者可利用此窗口超卖。
+>
+> **实施方案**：
+> 1. 部署 Canal Server 监听 MySQL Binlog
+> 2. Canal Client 解析 `t_inventory` 表变更事件
+> 3. 变更后主动删除 Redis 缓存 Key（`myxhs:inventory:stock:{skuId}`）
+> 4. 配合分布式锁 + Lua 脚本保证扣减原子性
+> 5. 参考：`docs/dev/Phase-5-advanced-topics/27-canal-data-synchronization/README.md`
+
+---
+
 ## 🎯 一、需求分析
 
 ### 1.1 业务场景

@@ -716,3 +716,860 @@ XXL-Job兜底策略：
 > "延时消息是关单的主方案——精确到分钟级，比XXL-Job扫描更及时。但延时消息不是100%可靠，所以XXL-Job每分钟扫描兜底。两者配合：延时消息及时关单，XXL-Job补偿漏网之鱼。关单操作本身是幂等的——只有'已创建'状态的订单才会被关，重复执行不会出问题。"
 >
 > **故障兜底**：延时消息丢失 → XXL-Job兜底扫描；XXL-Job不可用 → 延时消息正常关单；两者都不可用 → 人工对账（极低概率）。
+
+---
+
+## 15. 请求级超时预算（Timeout Budget）
+
+> 📖 **知识来源**：Google SRE — Chapter 22: Addressing Cascading Failures
+> - 核心观点："每个请求都有一个总预算，子调用的超时不能超过剩余预算。否则6个服务串行调用，每个3秒超时，用户最坏等18秒"
+> - 关键原则："超时预算通过Header透传，子调用超时 = min(自身超时, 剩余预算)"
+> - my-xhs对照：Gateway注入总预算 → Feign Interceptor透传 → 各服务动态计算子调用超时
+
+### 15.1 问题场景
+
+```
+传统方式（华仔的做法）：
+  每个Feign调用超时3秒，下单链路调用6个服务
+  最坏情况：3s × 6 = 18秒 → 用户等18秒才返回超时
+
+超时预算方式（my-xhs的做法）：
+  用户可接受最大等待 = 3秒
+  Gateway注入 X-Timeout-Budget-Ms: 3000
+  每个子调用消耗预算，剩余不足时跳过非关键调用
+```
+
+### 15.2 下单链路预算分配
+
+```
+Gateway → Order: 总预算 3000ms
+  │
+  ├─ Order → User(查地址): 预算 300ms（并行）
+  ├─ Order → Product(快照): 预算 300ms（并行）
+  │  并行调用耗时 = max(300, 300) = 300ms，剩余 2700ms
+  │
+  ├─ Order → Inventory(扣库存): 预算 500ms（串行，必须等）
+  │  剩余 2200ms
+  │
+  ├─ Order → Coupon(扣券): 预算 500ms（串行，必须等）
+  │  剩余 1700ms
+  │
+  ├─ Order 本地逻辑(写DB+发MQ): 预算 400ms
+  │  剩余 1300ms
+  │
+  └─ 预留缓冲: 1300ms（网络延迟+GC停顿+重试）
+
+规则：
+  - 子调用超时 = min(自身超时, 剩余预算)
+  - 剩余预算 < 200ms 时，跳过非关键调用（如通知）
+  - 超时预算通过 Header 透传（X-Timeout-Budget-Ms）
+```
+
+### 15.3 实现方案
+
+```java
+// 1. Gateway注入总预算
+public class TimeoutBudgetFilter implements GlobalFilter {
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        long budget = getTimeoutBudget(exchange.getRequest().getPath());
+        exchange.getRequest().mutate()
+            .header("X-Timeout-Budget-Ms", String.valueOf(budget))
+            .header("X-Request-Start-Ms", String.valueOf(System.currentTimeMillis()));
+        return chain.filter(exchange);
+    }
+}
+
+// 2. Feign Interceptor透传并计算剩余预算
+public class TimeoutBudgetInterceptor implements RequestInterceptor {
+    @Override
+    public void apply(RequestTemplate template) {
+        long startMs = Long.parseLong(RequestContextHolder.getHeader("X-Request-Start-Ms"));
+        long totalBudget = Long.parseLong(RequestContextHolder.getHeader("X-Timeout-Budget-Ms"));
+        long elapsed = System.currentTimeMillis() - startMs;
+        long remaining = totalBudget - elapsed;
+        
+        template.header("X-Timeout-Budget-Ms", String.valueOf(remaining));
+        template.header("X-Request-Start-Ms", String.valueOf(System.currentTimeMillis()));
+        
+        // 动态设置Feign超时 = min(默认超时, 剩余预算)
+        Options options = new Options(
+            1000, TimeUnit.MILLISECONDS,  // 连接超时
+            Math.min(3000, remaining), TimeUnit.MILLISECONDS  // 读超时
+        );
+    }
+}
+```
+
+### 15.4 生产考量
+
+> "每个请求都有超时预算，Gateway注入总预算3秒，通过Header透传到每个子调用。子调用的超时 = min(自身超时, 剩余预算)。剩余预算不足时跳过非关键调用（如通知推送），保证核心链路在预算内完成。这样用户最多等3秒，不会出现'6个服务串行超时等18秒'的情况。"
+>
+> **故障兜底**：Header丢失 → 使用默认超时配置；预算耗尽 → 快速失败返回"系统繁忙"；非关键调用被跳过 → MQ异步补偿。
+
+---
+
+## 16. 自动降级决策引擎
+
+> 📖 **知识来源**：Netflix Hystrix设计理念 + Sentinel自适应保护
+> - 核心观点："降级不应该依赖人工开关，而是基于实时指标自动决策。人工开关的问题：凌晨3点故障没人值班"
+> - 关键区别："Sentinel熔断是'单服务自保'，自动降级引擎是'全局决策'——根据多个指标综合判断降级级别"
+> - my-xhs对照：Sentinel熔断(单服务) + DegradeDecisionEngine(全局) + Nacos配置(开关)
+
+### 16.1 降级级别定义
+
+| 级别 | 触发条件 | 降级策略 | 恢复条件 |
+|------|----------|----------|----------|
+| L0 正常 | 所有指标正常 | 全功能可用 | — |
+| L1 轻度降级 | 错误率>5%持续30秒 或 RT P99>3秒持续1分钟 | 关闭推荐/热搜/搜索建议 | 错误率<1%持续5分钟 |
+| L2 中度降级 | 错误率>20%持续10秒 或 Redis不可用 | L1 + 关闭通知/SSE推送 + 缓存降级走DB | 错误率<5%持续5分钟 |
+| L3 重度降级 | 核心链路不可用 或 MySQL主库不可用 | L2 + 关闭非核心接口 + 只保留下单/支付 | 核心链路恢复持续10分钟 |
+
+### 16.2 决策引擎架构
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  DegradeDecisionEngine                   │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│  ┌──────────┐   ┌──────────┐   ┌──────────┐            │
+│  │Prometheus│   │ Sentinel │   │  Health   │            │
+│  │  指标     │   │  指标     │   │  Check   │            │
+│  └────┬─────┘   └────┬─────┘   └────┬─────┘            │
+│       │              │              │                    │
+│       └──────────────┼──────────────┘                    │
+│                      ▼                                   │
+│              ┌───────────────┐                           │
+│              │  规则引擎       │                           │
+│              │  (多指标综合)   │                           │
+│              └───────┬───────┘                           │
+│                      ▼                                   │
+│              ┌───────────────┐                           │
+│              │  决策输出       │                           │
+│              │  L0/L1/L2/L3  │                           │
+│              └───────┬───────┘                           │
+│                      ▼                                   │
+│              ┌───────────────┐                           │
+│              │  Nacos配置更新  │  ← 自动更新降级开关       │
+│              └───────────────┘                           │
+│                                                          │
+│  恢复策略：半开模式 → 先放10%流量验证 → 逐步恢复          │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 16.3 恢复策略（半开模式）
+
+```
+降级恢复不是"一刀切恢复"，而是渐进式：
+
+L2 → L1 恢复流程：
+  1. 错误率<5%持续5分钟 → 进入"半开"状态
+  2. 半开状态：恢复10%的降级功能（如开启搜索建议）
+  3. 观察2分钟：错误率仍<5% → 恢复50%
+  4. 再观察2分钟：错误率仍<5% → 完全恢复到L1
+  5. 任何阶段错误率回升 → 立即回退到L2
+
+L1 → L0 恢复流程：同上，但观察时间更长（5分钟）
+```
+
+### 16.4 生产考量
+
+> "降级不靠人工开关，靠自动决策引擎。引擎综合Prometheus指标（错误率/RT）、Sentinel指标（熔断状态）、健康检查（中间件可用性）三个维度，自动判断降级级别并更新Nacos配置。恢复采用半开模式——先放10%流量验证，逐步恢复，避免'恢复后又崩'的二次故障。"
+>
+> **故障兜底**：决策引擎本身故障 → 保持当前降级级别不变（安全优先）；Nacos不可用 → 本地缓存的降级配置生效；误判降级 → 人工可通过Nacos覆盖自动决策。
+
+---
+
+## 17. 数据倾斜检测与自动再均衡
+
+> 📖 **知识来源**：《高性能MySQL》第7章 — 分区与分片 + ShardingSphere官方文档
+> - 核心观点："分库分表只解决了'怎么分'的问题，没有解决'分完之后不均匀怎么办'"
+> - 关键场景："按buyer_id % 4分库，如果某些用户是大买家，某个分片数据量可能是其他分片的10倍"
+> - my-xhs对照：XXL-Job定时检测 + Prometheus告警 + 在线扩分片方案
+
+### 17.1 倾斜类型
+
+| 倾斜类型 | 表现 | 检测方式 | 影响 |
+|----------|------|----------|------|
+| 数据量倾斜 | 某分片行数远超其他分片 | 定时统计各分片行数 | 磁盘/内存不均匀 |
+| QPS倾斜 | 某分片请求量远超其他分片 | Prometheus监控各分片QPS | 热点分片成为瓶颈 |
+| 热点Key倾斜 | 大V/大买家集中在某分片 | 慢查询分析+QPS监控 | 单分片性能劣化 |
+
+### 17.2 检测方案
+
+```sql
+-- XXL-Job定时任务：每天凌晨统计各分片数据量
+-- 订单分片数据量检测
+SELECT 
+    'order_db_0' AS shard, COUNT(*) AS row_count FROM my_xhs_order_0.t_order
+UNION ALL
+SELECT 
+    'order_db_1' AS shard, COUNT(*) AS row_count FROM my_xhs_order_1.t_order
+UNION ALL
+SELECT 
+    'order_db_2' AS shard, COUNT(*) AS row_count FROM my_xhs_order_2.t_order
+UNION ALL
+SELECT 
+    'order_db_3' AS shard, COUNT(*) AS row_count FROM my_xhs_order_3.t_order;
+
+-- 告警规则：某分片数据量 > 平均值 × 2 → 触发告警
+-- Prometheus指标：shard_row_count{db="order", shard="0"} = 25000000
+```
+
+### 17.3 再均衡方案（在线扩分片 4→8）
+
+```
+在线扩分片流程（零停机）：
+
+Phase 1: 准备期
+  1. 新建4个分片库(order_db_4 ~ order_db_7)
+  2. 配置ShardingSphere新分片规则(buyer_id % 8)，但暂不生效
+
+Phase 2: 双写期
+  3. 开启双写：写操作同时写旧分片和新分片
+  4. 全量数据迁移：XXL-Job分批迁移旧分片数据到新分片
+  5. 增量对账：Canal监听旧分片binlog，补偿迁移期间的增量
+
+Phase 3: 切换期
+  6. 停止双写，切换读写到新分片规则(buyer_id % 8)
+  7. 验证数据一致性（全量对账）
+  8. 清理旧分片中已迁移的数据
+
+关键保障：
+  - 双写期间幂等：通过订单号唯一键保证不重复写入
+  - 切换瞬间：Gateway短暂限流(1秒)，等待进行中的写操作完成
+  - 回滚方案：切换失败 → 回退到旧分片规则，双写数据不影响
+```
+
+### 17.4 生产考量
+
+> "分库分表后必须监控数据倾斜。XXL-Job每天凌晨统计各分片行数和QPS，某分片超过平均值2倍触发告警。扩分片采用双写+全量迁移+增量对账的零停机方案，切换瞬间Gateway短暂限流保证数据一致。"
+>
+> **故障兜底**：倾斜未及时发现 → Prometheus告警兜底；扩分片失败 → 回退旧规则；数据不一致 → 全量对账修复。
+
+---
+
+## 18. 幂等性增强：返回上次成功结果
+
+> 📖 **知识来源**：HTTP幂等性规范 + 支付宝/微信支付幂等设计
+> - 核心观点："生产级幂等不是'报错重复请求'，而是'返回上次成功结果'。支付宝的幂等就是这样——重复支付请求返回上次支付结果"
+> - 关键区别："报错型幂等(华仔) vs 结果缓存型幂等(my-xhs)"
+> - my-xhs对照：@Idempotent注解增强 + Redis结果缓存 + SpEL表达式提取幂等键
+
+### 18.1 华仔的幂等 vs my-xhs的幂等
+
+| 维度 | 华仔的幂等 | my-xhs的幂等（增强版） |
+|------|-----------|---------------------|
+| 命中行为 | 返回"重复请求"错误 | **返回上次成功结果** |
+| 幂等键 | 硬编码 | **SpEL表达式动态提取** |
+| 结果缓存 | 无 | **Redis缓存上次返回值** |
+| 适用场景 | 防重复提交 | 防重复提交 + 网络重试 + MQ重复消费 |
+
+### 18.2 增强版@Idempotent注解
+
+```java
+@Target(ElementType.METHOD)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface Idempotent {
+    /**
+     * 幂等键，支持SpEL表达式
+     * 示例: "#request.orderNo + ':' + #request.userId"
+     */
+    String key();
+    
+    /**
+     * 幂等键提取策略
+     */
+    KeyStrategy keyStrategy() default KeyStrategy.SPEL;
+    
+    /**
+     * 过期时间(秒)
+     */
+    int expireSeconds() default 300;
+    
+    /**
+     * 幂等命中时的行为
+     * RETURN_CACHED: 返回上次成功结果（默认，生产级）
+     * REJECT: 返回错误信息（简单场景）
+     */
+    IdempotentAction action() default IdempotentAction.RETURN_CACHED;
+    
+    /**
+     * REJECT模式下的错误消息
+     */
+    String rejectMessage() default "请勿重复操作";
+}
+
+// 使用示例
+@Idempotent(
+    key = "#request.orderNo + ':' + #request.userId",
+    expireSeconds = 300,
+    action = IdempotentAction.RETURN_CACHED
+)
+public OrderResponse createOrder(CreateOrderRequest request) {
+    // 首次执行：正常创建订单，结果自动缓存到Redis
+    // 重复执行：直接返回上次缓存的OrderResponse，不再执行方法体
+}
+```
+
+### 18.3 实现原理
+
+```
+首次请求：
+  1. 计算幂等键: idempotent:order:create:ORD123:USER456
+  2. Redis SETNX(key, "PROCESSING", 300s) → 成功
+  3. 执行业务方法 → 得到结果 OrderResponse
+  4. Redis SET(key, JSON序列化(OrderResponse), 300s) → 缓存结果
+  5. 返回 OrderResponse
+
+重复请求：
+  1. 计算幂等键: idempotent:order:create:ORD123:USER456
+  2. Redis GET(key) → 得到缓存的 OrderResponse JSON
+  3. 反序列化 → 直接返回 OrderResponse（不执行方法体）
+
+并发请求：
+  1. 请求A: SETNX成功 → 执行业务
+  2. 请求B: SETNX失败 → 等待100ms → 重试GET → 得到结果 → 返回
+  3. 请求B最多等待3秒，超时返回"系统处理中，请稍后查询"
+```
+
+### 18.4 生产考量
+
+> "生产级幂等不是报错'重复请求'，而是返回上次成功结果。用户网络抖动重试、MQ重复投递，都应该得到正确的结果而非错误。@Idempotent注解支持SpEL表达式动态提取幂等键，命中时从Redis读取上次缓存的返回值直接返回。"
+>
+> **故障兜底**：Redis不可用 → 降级为DB唯一键兜底（报错模式）；缓存结果过期 → 重新执行业务方法（业务本身也是幂等的）；并发请求 → 等待+重试机制。
+
+---
+
+## 19. 慢查询自动发现与治理闭环
+
+> 📖 **知识来源**：《高性能MySQL》第3章 — 查询性能优化
+> - 核心观点："慢查询不是'发现了就完了'，而是要形成'发现→分析→优化→验证'的闭环"
+> - my-xhs对照：slow_query_log → Filebeat → ES → Grafana看板 → XXL-Job自动分析 → 索引建议
+
+### 19.1 慢查询治理架构
+
+```
+┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│  MySQL   │───→│ Filebeat │───→│    ES    │───→│ Grafana  │
+│slow_query│    │  采集     │    │  存储    │    │  看板    │
+│  _log    │    │          │    │          │    │          │
+└──────────┘    └──────────┘    └──────────┘    └──────────┘
+                                                      │
+                                                      ▼
+                                               ┌──────────┐
+                                               │ XXL-Job  │
+                                               │ 自动分析  │
+                                               │ 周报生成  │
+                                               └──────────┘
+```
+
+### 19.2 MySQL慢查询配置
+
+```sql
+-- MySQL慢查询配置
+SET GLOBAL slow_query_log = ON;
+SET GLOBAL long_query_time = 0.2;  -- 200ms以上算慢查询
+SET GLOBAL log_queries_not_using_indexes = ON;  -- 未使用索引的查询也记录
+SET GLOBAL slow_query_log_file = '/var/log/mysql/slow.log';
+```
+
+### 19.3 自动分析与治理
+
+```
+XXL-Job定时任务（每周一凌晨3点）：
+
+1. 从ES查询过去7天的慢查询Top20
+2. 对每条慢查询执行EXPLAIN分析
+3. 自动识别问题类型：
+   - type=ALL → 全表扫描 → 建议添加索引
+   - rows > 10万 → 扫描行数过多 → 建议优化WHERE条件
+   - Using filesort → 文件排序 → 建议添加排序索引
+   - Using temporary → 临时表 → 建议优化GROUP BY
+4. 生成慢查询周报（Markdown格式）
+5. 发送到企微/钉钉告警群
+
+周报示例：
+  | 排名 | SQL摘要 | 平均RT | 执行次数 | 问题 | 建议 |
+  | 1 | SELECT * FROM t_order WHERE status=1 | 1.2s | 5000 | 全表扫描 | 添加idx_status索引 |
+  | 2 | SELECT * FROM t_note ORDER BY created_at | 0.8s | 3000 | 文件排序 | 添加idx_created_at索引 |
+```
+
+### 19.4 生产考量
+
+> "慢查询治理不是'发现了就完了'，而是闭环：MySQL慢查询日志→Filebeat采集→ES存储→Grafana实时看板→XXL-Job每周自动分析生成Top20周报→自动EXPLAIN标记问题→推送到告警群。从发现到治理全自动化。"
+>
+> **故障兜底**：Filebeat采集失败 → 慢查询日志本地保留7天可手动分析；ES不可用 → 降级为直接分析MySQL慢查询日志文件。
+
+---
+
+## 20. 数据生命周期自动化管理
+
+> 📖 **知识来源**：《大型网站技术架构》第6章 — 数据管理
+> - 核心观点："数据不是'写进去就不管了'，热数据→温数据→冷数据→归档的全生命周期必须自动化"
+> - my-xhs对照：XXL-Job定时归档 + ES ILM Policy + 分批迁移防长事务
+
+### 20.1 数据归档策略
+
+| 数据类型 | 热数据 | 温数据 | 冷数据 | 归档/删除 | 归档方式 |
+|----------|--------|--------|--------|-----------|----------|
+| 订单 | 3个月（MySQL主库） | 1年（MySQL从库） | 3年（归档库） | 3年后归档 | XXL-Job分批迁移 |
+| 笔记 | 6个月（MySQL+Redis） | 2年（MySQL） | 永久（冷库） | 不删除 | 标记不可见 |
+| 日志 | 7天（ES热索引） | 30天（ES温索引） | 90天（ES冷索引） | 90天后删除 | ES ILM Policy |
+| 通知 | 1个月（Redis+MySQL） | 6个月（MySQL） | 1年（归档库） | 1年后归档 | XXL-Job分批迁移 |
+| 计数流水 | 1天（MySQL） | — | — | 每天清理 | XXL-Job每日清理 |
+
+### 20.2 订单归档实现
+
+```java
+/**
+ * XXL-Job定时任务：订单归档（每天凌晨2点）
+ * 策略：扫描超过3个月的订单 → 分批迁移到归档表 → 延迟7天后删除原表数据
+ */
+@XxlJob("orderArchiveTask")
+public void orderArchive() {
+    LocalDateTime archiveDate = LocalDateTime.now().minusMonths(3);
+    int batchSize = 10000;  // 每批1万条，避免长事务
+    
+    while (true) {
+        // 1. 分批查询待归档订单
+        List<Order> orders = orderMapper.selectByCreatedBefore(archiveDate, batchSize);
+        if (orders.isEmpty()) break;
+        
+        // 2. 批量插入归档表（同库事务）
+        orderArchiveMapper.batchInsert(orders);
+        
+        // 3. 标记原表为"已归档"（不立即删除，延迟7天防误删）
+        List<Long> ids = orders.stream().map(Order::getId).collect(Collectors.toList());
+        orderMapper.markArchived(ids);
+        
+        // 4. 每批间隔100ms，避免DB压力过大
+        Thread.sleep(100);
+    }
+}
+
+/**
+ * XXL-Job定时任务：清理已归档订单（每天凌晨4点）
+ * 策略：删除7天前标记为"已归档"的订单
+ */
+@XxlJob("orderArchiveCleanTask")
+public void orderArchiveClean() {
+    LocalDateTime cleanDate = LocalDateTime.now().minusDays(7);
+    orderMapper.deleteArchivedBefore(cleanDate);
+}
+```
+
+### 20.3 ES索引生命周期管理（ILM Policy）
+
+```json
+{
+  "policy": {
+    "phases": {
+      "hot": {
+        "min_age": "0ms",
+        "actions": {
+          "rollover": { "max_size": "50gb", "max_age": "7d" }
+        }
+      },
+      "warm": {
+        "min_age": "7d",
+        "actions": {
+          "shrink": { "number_of_shards": 1 },
+          "forcemerge": { "max_num_segments": 1 }
+        }
+      },
+      "cold": {
+        "min_age": "30d",
+        "actions": {
+          "freeze": {}
+        }
+      },
+      "delete": {
+        "min_age": "90d",
+        "actions": {
+          "delete": {}
+        }
+      }
+    }
+  }
+}
+```
+
+### 20.4 生产考量
+
+> "数据生命周期全自动化：订单超过3个月自动归档到归档表，延迟7天后删除原表（防误删）。ES日志用ILM Policy自动管理：7天热索引→30天温索引→90天冷索引→自动删除。每批1万条分批迁移，避免长事务锁表。"
+>
+> **故障兜底**：归档任务失败 → 下次执行自动续传（按ID范围）；误删数据 → 7天延迟窗口内可从归档表恢复；ES ILM失败 → 手动触发索引管理。
+
+---
+
+## 21. JVM调优参数模板与GC日志分析
+
+> 📖 **知识来源**：《深入理解Java虚拟机》第3-5章 + G1 GC官方调优指南
+> - 核心观点："JVM参数不是'抄网上的'，而是根据应用特征和硬件配置科学计算"
+> - my-xhs对照：G1 GC + 固定堆大小 + GC日志分析 + Prometheus JVM监控
+
+### 21.1 生产JVM参数模板
+
+```bash
+# ============================================
+# my-xhs 生产JVM参数模板（4C8G机器）
+# ============================================
+
+# 堆大小：固定4G，避免动态扩缩导致GC停顿
+-Xms4g -Xmx4g
+
+# G1收集器（JDK 17默认）
+-XX:+UseG1GC
+
+# 目标停顿200ms（根据SLA P99<500ms倒推，GC停顿不能超过200ms）
+-XX:MaxGCPauseMillis=200
+
+# Region大小8MB（堆4G / 2048个Region ≈ 2MB，设8MB减少Region数量）
+-XX:G1HeapRegionSize=8m
+
+# 45%堆占用时触发并发标记（默认45%，适合大多数场景）
+-XX:InitiatingHeapOccupancyPercent=45
+
+# 并行引用处理（加速Finalizer/WeakReference处理）
+-XX:+ParallelRefProcEnabled
+
+# 元空间：固定256MB（微服务类不多，256MB足够）
+-XX:MetaspaceSize=256m -XX:MaxMetaspaceSize=256m
+
+# GC日志（JDK 17统一日志框架）
+-Xlog:gc*:file=/logs/gc.log:time,uptime,level,tags:filecount=10,filesize=100m
+
+# OOM时自动dump堆（排查内存泄漏必备）
+-XX:+HeapDumpOnOutOfMemoryError
+-XX:HeapDumpPath=/logs/heapdump.hprof
+
+# 关闭偏向锁（JDK 15+已废弃，JDK 17默认关闭）
+-XX:-UseBiasedLocking
+```
+
+### 21.2 不同服务的JVM参数差异
+
+| 服务 | 堆大小 | 特殊参数 | 原因 |
+|------|--------|----------|------|
+| Gateway | 2G | -XX:MaxDirectMemorySize=512m | Netty使用堆外内存 |
+| Order | 4G | 默认模板 | 订单对象较大 |
+| Search | 4G | -XX:MaxGCPauseMillis=100 | 搜索对RT敏感 |
+| Counter | 2G | -XX:G1HeapRegionSize=4m | 对象小但数量多 |
+| IM | 2G | -XX:MaxDirectMemorySize=1g | WebSocket大量堆外内存 |
+
+### 21.3 GC日志分析要点
+
+| 指标 | 正常范围 | 异常判断 | 排查方向 |
+|------|----------|----------|----------|
+| Young GC频率 | < 5次/秒 | > 10次/秒 | 新生代太小，或对象创建过快 |
+| Young GC停顿 | < 50ms | > 100ms | Region数量过多，或存活对象过多 |
+| Full GC频率 | < 1次/天 | > 1次/小时 | 内存泄漏嫌疑，dump堆分析 |
+| Mixed GC占比 | < 30% | > 50% | 老年代增长过快，检查大对象 |
+| GC总停顿占比 | < 1% | > 5% | 整体GC压力过大，考虑加内存 |
+
+### 21.4 生产考量
+
+> "JVM参数不是抄网上的，每个参数都有计算依据。堆大小固定4G避免动态扩缩；G1目标停顿200ms是根据SLA P99<500ms倒推的；Region 8MB是根据堆大小计算的。GC日志必须开启，Young GC>10次/秒说明新生代太小，Full GC>1次/小时说明有内存泄漏。"
+>
+> **故障兜底**：OOM → 自动dump堆+告警；GC停顿过长 → Prometheus告警；内存泄漏 → MAT分析heapdump。
+
+---
+
+## 22. 连接池参数科学计算
+
+> 📖 **知识来源**：HikariCP官方Wiki + Lettuce官方文档 + 《高性能MySQL》第11章
+> - 核心观点："连接池参数不是'拍脑袋'，而是根据QPS、RT、线程数科学计算"
+> - 公式来源：HikariCP作者推荐公式 — connections = ((core_count * 2) + effective_spindle_count)
+> - my-xhs对照：按公式计算 + 压测验证 + 动态调整
+
+### 22.1 MySQL连接池（HikariCP）
+
+```yaml
+# HikariCP参数计算（4核1磁盘机器）
+spring:
+  datasource:
+    hikari:
+      # 最小空闲连接 = CPU核数 = 4
+      minimum-idle: 4
+      
+      # 最大连接数 = CPU核数 × 2 + 磁盘数 = 4 × 2 + 1 = 9
+      # 实际取10（留1个余量）
+      maximum-pool-size: 10
+      
+      # 连接超时 = 慢查询P99 × 2 = 200ms × 2 = 400ms
+      # 实际取3000ms（包含网络延迟+排队等待）
+      connection-timeout: 3000
+      
+      # 空闲超时 = 10分钟（避免MySQL wait_timeout 8小时断开）
+      idle-timeout: 600000
+      
+      # 连接最大生命周期 = 30分钟（小于MySQL wait_timeout）
+      max-lifetime: 1800000
+      
+      # 连接验证超时 = 5秒
+      validation-timeout: 5000
+      
+      # 连接验证SQL
+      connection-test-query: SELECT 1
+```
+
+### 22.2 Redis连接池（Lettuce）
+
+```yaml
+# Lettuce连接池参数计算
+# 场景：2个服务实例，每实例200线程，3个Redis节点
+spring:
+  data:
+    redis:
+      lettuce:
+        pool:
+          # 最大连接数 = 服务实例线程数 / Redis节点数 × 1.5
+          # = 200 / 3 × 1.5 ≈ 100
+          max-active: 100
+          
+          # 最小空闲 = 最大连接数 × 0.1 = 10
+          min-idle: 10
+          
+          # 最大空闲 = 最大连接数 × 0.5 = 50
+          max-idle: 50
+          
+          # 获取连接超时 = Redis P99 RT × 10 = 1ms × 10 = 10ms
+          # 实际取200ms（包含排队等待）
+          max-wait: 200ms
+      
+      # 命令超时 = 3秒（包含网络延迟）
+      timeout: 3000ms
+```
+
+### 22.3 RocketMQ连接参数
+
+```yaml
+# RocketMQ连接参数
+rocketmq:
+  producer:
+    # Producer连接数 = 1（复用，RocketMQ Producer线程安全）
+    # 发送超时 = 3秒
+    send-message-timeout: 3000
+    # 重试次数 = 2（总共3次）
+    retry-times-when-send-failed: 2
+    
+  consumer:
+    # 消费线程数 = CPU核数 × 2 = 8
+    consume-thread-min: 8
+    consume-thread-max: 8
+    # 每次拉取消息数 = 32（默认值，适合大多数场景）
+    pull-batch-size: 32
+```
+
+### 22.4 参数验证方法
+
+```
+压测验证连接池参数是否合理：
+
+1. 观察HikariCP指标：
+   - hikaricp_connections_active: 活跃连接数
+   - hikaricp_connections_pending: 等待获取连接的线程数
+   - 如果pending > 0持续出现 → maximum-pool-size太小
+
+2. 观察Redis连接池指标：
+   - lettuce_pool_active: 活跃连接数
+   - lettuce_pool_idle: 空闲连接数
+   - 如果active接近max-active → 连接池太小
+
+3. 调优原则：
+   - 连接池不是越大越好（MySQL连接数有上限，连接切换有开销）
+   - 先按公式计算，再压测验证，最后微调
+```
+
+### 22.5 生产考量
+
+> "连接池参数按公式计算：MySQL最大连接数=CPU核数×2+磁盘数=9，Redis最大连接数=线程数/节点数×1.5=100。不是拍脑袋，每个参数都有计算依据。压测时观察HikariCP的pending指标，如果持续>0说明连接池太小。"
+>
+> **故障兜底**：连接池耗尽 → 请求排队等待（connection-timeout控制最大等待时间）；MySQL连接断开 → HikariCP自动检测并重建；Redis连接超时 → Lettuce自动重连。
+
+---
+
+## 23. API版本兼容性矩阵
+
+> 📖 **知识来源**：RESTful API设计最佳实践 + Stripe API版本管理
+> - 核心观点："API版本不是'改了就改了'，需要兼容性矩阵管理，旧版本保留6个月"
+> - my-xhs对照：Gateway Header版本路由 + 兼容性矩阵 + 废弃通知机制
+
+### 23.1 版本路由机制
+
+```
+请求头：X-Api-Version: v2
+
+Gateway路由规则：
+  - X-Api-Version: v1 → 路由到v1处理器
+  - X-Api-Version: v2 → 路由到v2处理器
+  - 无版本头 → 路由到最新稳定版(v1)
+```
+
+### 23.2 兼容性矩阵
+
+| 接口 | v1 | v2 | 变更说明 | 废弃时间 |
+|------|----|----|---------|----------|
+| POST /api/user/login | ✅ | ✅ | v2新增设备指纹字段 | — |
+| POST /api/order/create | ✅ | ✅ | v2新增couponCode字段 | — |
+| GET /api/note/{id} | ✅ | ✅ | v2返回值增加topicList | — |
+| GET /api/user/info | ⚠️ 废弃 | ✅ | v2改用/api/user/profile | 2026-12-01 |
+| POST /api/social/follow | ✅ | ✅ | 无变更 | — |
+
+### 23.3 版本生命周期管理
+
+```
+版本策略：
+  1. 新版本发布后，旧版本保留6个月
+  2. 废弃版本返回Warning Header：
+     Warning: 299 - "API v1 /api/user/info is deprecated, use v2 /api/user/profile"
+  3. 废弃期结束后返回 410 Gone
+  4. 紧急安全修复：所有版本同时修复
+
+版本发布流程：
+  1. 新增v2接口（不修改v1）
+  2. 更新兼容性矩阵文档
+  3. v1接口添加@Deprecated注解 + Warning Header
+  4. 6个月后v1接口返回410 Gone
+  5. 12个月后删除v1代码
+```
+
+### 23.4 生产考量
+
+> "API版本通过Gateway Header路由，新版本发布不影响旧版本。废弃接口先返回Warning Header提醒客户端升级，6个月后返回410 Gone。兼容性矩阵文档记录每个接口的版本状态，避免'改了接口忘了通知'。"
+
+---
+
+## 24. Service Mesh预留设计
+
+> 📖 **知识来源**：Istio官方文档 + 《云原生服务网格Istio》
+> - 核心观点："Service Mesh是微服务的下一代架构，但不需要立即实现，只需要预留设计"
+> - my-xhs对照：当前Spring Cloud全家桶 → 预留Sidecar演进路径
+
+### 24.1 架构演进路径
+
+```
+Phase 1（当前）：Spring Cloud 全家桶
+  ┌─────────┐     ┌─────────┐
+  │ Service │────→│ Service │
+  │    A    │     │    B    │
+  │ (Feign) │     │         │
+  └─────────┘     └─────────┘
+  
+  特点：服务发现/负载均衡/限流熔断 都在应用代码中
+  优点：成熟稳定，Java生态完善
+  缺点：基础设施逻辑侵入业务代码
+
+Phase 2（演进）：Sidecar 模式
+  ┌─────────┐     ┌─────────┐
+  │ Service │     │ Service │
+  │    A    │     │    B    │
+  └────┬────┘     └────┬────┘
+       │               │
+  ┌────▼────┐     ┌────▼────┐
+  │  Envoy  │────→│  Envoy  │
+  │ Sidecar │     │ Sidecar │
+  └─────────┘     └─────────┘
+  
+  特点：服务发现/负载均衡/限流熔断 下沉到Sidecar
+  优点：多语言支持、基础设施与业务解耦
+  缺点：运维复杂度增加、多一跳延迟
+```
+
+### 24.2 预留设计（当前就要做的）
+
+| 预留点 | 当前实现 | 演进后 | 预留方式 |
+|--------|---------|--------|----------|
+| 服务间通信 | Feign Client | Envoy代理 | 通信抽象为接口，不直接依赖Feign |
+| 限流规则 | Sentinel注解 | Istio限流策略 | 限流规则外部化到Nacos配置 |
+| 健康检查 | /actuator/health | K8s Probe | 标准化健康检查端点 |
+| 链路追踪 | SkyWalking Agent | Envoy + Jaeger | 标准化TraceId Header |
+| 负载均衡 | Ribbon/LoadBalancer | Envoy | 不在代码中硬编码负载均衡策略 |
+
+### 24.3 生产考量
+
+> "当前用Spring Cloud全家桶，但预留了Service Mesh演进路径。服务间通信抽象为接口（不直接依赖Feign）、限流规则外部化到Nacos（不硬编码在代码中）、健康检查标准化（/actuator/health）。未来切换到Istio+Envoy时，业务代码改动最小。"
+
+---
+
+## 25. 事件溯源（Event Sourcing）在订单系统中的应用
+
+> 📖 **知识来源**：《领域驱动设计》第10章 + Martin Fowler — Event Sourcing
+> - 核心观点："传统方式只存最终状态，事件溯源存储所有状态变更事件。任何时间点的状态都可以通过重放事件得到"
+> - my-xhs对照：t_order_snapshot表已有快照基础 → 增强为事件溯源
+
+### 25.1 传统方式 vs 事件溯源
+
+```
+传统方式（华仔的做法）：
+  t_order.status = 3（已支付）
+  → 只知道当前状态，不知道"什么时候从什么状态变过来的"
+
+事件溯源（my-xhs的做法）：
+  t_order_event:
+    | event_id | order_id | event_type     | event_data          | operator | created_at |
+    | 1        | 1001     | ORDER_CREATED  | {amount:100,...}    | user     | 10:00:00   |
+    | 2        | 1001     | ORDER_PAID     | {payNo:xxx,...}     | system   | 10:05:00   |
+    | 3        | 1001     | ORDER_SHIPPED  | {trackNo:yyy,...}   | seller   | 11:00:00   |
+    | 4        | 1001     | ORDER_RECEIVED | {receiveTime:...}   | user     | 3天后      |
+  
+  → 完整审计轨迹，任意时间点状态可回溯
+```
+
+### 25.2 事件表设计
+
+```sql
+-- 订单事件表（事件溯源）
+CREATE TABLE t_order_event (
+    id BIGINT PRIMARY KEY,
+    order_id BIGINT NOT NULL COMMENT '订单ID',
+    order_no VARCHAR(32) NOT NULL COMMENT '订单号',
+    event_type VARCHAR(32) NOT NULL COMMENT '事件类型:ORDER_CREATED/ORDER_PAID/ORDER_SHIPPED/...',
+    event_data JSON NOT NULL COMMENT '事件数据（变更前后的差异）',
+    before_status TINYINT COMMENT '变更前状态',
+    after_status TINYINT NOT NULL COMMENT '变更后状态',
+    operator_type TINYINT NOT NULL COMMENT '操作者类型:1用户2系统3卖家4客服',
+    operator_id BIGINT COMMENT '操作者ID',
+    event_version INT NOT NULL COMMENT '事件版本号（乐观锁）',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_order_id (order_id),
+    KEY idx_order_no (order_no),
+    KEY idx_event_type (event_type),
+    UNIQUE KEY uk_order_version (order_id, event_version)
+) ENGINE=InnoDB COMMENT='订单事件表（事件溯源）';
+```
+
+### 25.3 事件溯源的价值
+
+| 价值 | 说明 | 场景 |
+|------|------|------|
+| 完整审计轨迹 | 每次状态变更都有记录 | 金融合规、客诉排查 |
+| 任意时间点回溯 | "这个订单10:03的状态是什么？" | 客服查询、问题排查 |
+| 事件重放 | 重放所有事件可重建当前状态 | 数据修复、系统迁移 |
+| CQRS基础 | 写入事件 → 异步投影到读模型 | 读写分离、ES同步 |
+| 业务分析 | 分析状态流转路径 | "多少订单是创建后直接取消的？" |
+
+### 25.4 与现有t_order_snapshot的关系
+
+```
+现有设计：
+  t_order_snapshot — 存储订单在关键节点的完整快照
+  → 快照是"某个时间点的完整状态"
+
+增强设计：
+  t_order_event — 存储每次状态变更的事件
+  → 事件是"从A状态到B状态的变更记录"
+
+两者互补：
+  - 事件表：记录"发生了什么"（增量）
+  - 快照表：记录"当时是什么样"（全量）
+  - 事件重放 = 初始状态 + 所有事件 = 当前状态
+  - 快照 = 某个时间点的状态（加速查询，不用从头重放）
+```
+
+### 25.5 生产考量
+
+> "订单系统增加事件溯源——每次状态变更都记录到t_order_event表，包含事件类型、变更前后状态、操作者、事件数据。配合现有的t_order_snapshot快照表，实现完整的审计轨迹和任意时间点回溯。事件版本号用乐观锁保证并发安全。"
+>
+> **故障兜底**：事件写入失败 → 不影响主流程（事件记录是异步的）；事件与快照不一致 → 以快照为准（快照是同步写入的）；事件表数据量大 → 按月分表+定期归档。

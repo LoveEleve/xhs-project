@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.myxhs.payment.mapper.PaymentMapper">
+
+    <insert id="insert" parameterType="com.myxhs.payment.entity.Payment">
+        INSERT INTO t_payment (
+            id, order_id, user_id, payment_no, amount, pay_type, status,
+            paid_at, deleted, created_at, updated_at
+        ) VALUES (
+            #{id}, #{orderId}, #{userId}, #{paymentNo}, #{amount}, #{payType}, #{status},
+            #{paidAt}, #{deleted}, #{createdAt}, #{updatedAt}
+        )
+    </insert>
+
+</mapper>

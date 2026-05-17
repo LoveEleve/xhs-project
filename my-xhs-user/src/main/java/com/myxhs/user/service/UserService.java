@@ -13,13 +13,14 @@ import com.myxhs.user.dto.request.RegisterRequest;
 import com.myxhs.user.dto.request.UpdateUserRequest;
 import com.myxhs.user.dto.response.TokenResponse;
 import com.myxhs.user.dto.response.UserInfoResponse;
+import com.myxhs.user.dto.response.UserPublicInfoResponse;
 import com.myxhs.user.entity.User;
 import com.myxhs.user.mapper.UserMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.concurrent.TimeUnit;
@@ -43,7 +44,7 @@ public class UserService {
     private final RedissonClient redissonClient;
     private final CacheHelper cacheHelper;
 
-    private static final BCryptPasswordEncoder PASSWORD_ENCODER = new BCryptPasswordEncoder();
+    private final PasswordEncoder passwordEncoder;
 
     /** 登录失败最大次数 */
     private static final int MAX_LOGIN_FAIL = 5;
@@ -95,7 +96,7 @@ public class UserService {
             // 5. 创建用户
             User user = new User();
             user.setUsername(request.getUsername());
-            user.setPassword(PASSWORD_ENCODER.encode(request.getPassword()));
+            user.setPassword(passwordEncoder.encode(request.getPassword()));
             user.setNickname(request.getUsername()); // 默认昵称 = 用户名
             user.setPhone(request.getPhone());
             user.setGender(0);
@@ -157,7 +158,7 @@ public class UserService {
         }
 
         // 5. 校验密码
-        if (!PASSWORD_ENCODER.matches(request.getPassword(), user.getPassword())) {
+        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             log.info("[登录] 密码错误, userId={}, username={}", user.getId(), username);
             incrementLoginFail(username);
             throw new BizException(ResultCode.PASSWORD_ERROR, "用户名或密码错误");
@@ -193,21 +194,21 @@ public class UserService {
     // ==================== 用户信息 ====================
 
     /**
+     * 获取用户公开信息（精简版，不含敏感字段）
+     * <p>
+     * 用于公开接口（如查看他人主页），只返回昵称、头像、性别、签名等非敏感字段。
+     * </p>
+     */
+    public UserPublicInfoResponse getUserPublicInfo(Long userId) {
+        User user = getUserFromCache(userId);
+        return toUserPublicInfoResponse(user);
+    }
+
+    /**
      * 获取用户信息（带缓存）
      */
     public UserInfoResponse getUserInfo(Long userId) {
-        // @TableLogic 会自动追加 deleted = 0 条件，无需手动指定
-        User user = cacheHelper.getWithCacheAside(
-                RedisKeyConstants.USER_INFO + userId,
-                () -> userMapper.selectById(userId),
-                30, TimeUnit.MINUTES
-        );
-
-        if (user == null) {
-            log.info("[用户] 用户不存在, userId={}", userId);
-            throw new BizException(ResultCode.USER_NOT_FOUND);
-        }
-
+        User user = getUserFromCache(userId);
         log.info("[用户] 获取用户信息成功, userId={}, username={}", userId, user.getUsername());
         return toUserInfoResponse(user);
     }
@@ -245,14 +246,11 @@ public class UserService {
         if (request.getEmail() != null) updateWrapper.set(User::getEmail, request.getEmail());
         if (request.getSignature() != null) updateWrapper.set(User::getSignature, request.getSignature());
 
-        // 先删缓存
-        String cacheKey = RedisKeyConstants.USER_INFO + userId;
-        redisOperator.delete(cacheKey);
-
-        // 更新 DB
+        // 4. 先更新 DB
         userMapper.update(null, updateWrapper);
 
-        // 延迟再删缓存（标准延迟双删：删缓存 → 更新DB → 延迟再删）
+        // 5. 再延迟双删（正确顺序：先更新DB → 再删缓存）
+        String cacheKey = RedisKeyConstants.USER_INFO + userId;
         cacheHelper.delayDoubleDelete(cacheKey);
 
         log.info("[用户] 更新用户信息, userId={}", userId);
@@ -269,7 +267,7 @@ public class UserService {
         }
 
         // 校验旧密码
-        if (!PASSWORD_ENCODER.matches(request.getOldPassword(), user.getPassword())) {
+        if (!passwordEncoder.matches(request.getOldPassword(), user.getPassword())) {
             log.info("[用户] 修改密码失败(旧密码错误), userId={}", userId);
             throw new BizException(ResultCode.PASSWORD_ERROR, "旧密码错误");
         }
@@ -277,7 +275,7 @@ public class UserService {
         // 更新密码
         User updateUser = new User();
         updateUser.setId(userId);
-        updateUser.setPassword(PASSWORD_ENCODER.encode(request.getNewPassword()));
+        updateUser.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userMapper.updateById(updateUser);
 
         log.info("[用户] 修改密码成功, userId={}", userId);
@@ -316,6 +314,35 @@ public class UserService {
     }
 
     /**
+     * 从缓存获取用户信息（统一入口，消除重复代码）
+     * <p>
+     * Cache Aside 模式：先查缓存 → 未命中查 DB → 回填缓存。
+     * 缓存查询排除 password 字段，避免敏感信息存入 Redis。
+     * getUserInfo 和 getUserPublicInfo 共享同一份缓存数据，各自提取不同字段返回。
+     * </p>
+     */
+    private User getUserFromCache(Long userId) {
+        User user = cacheHelper.getWithCacheAside(
+                RedisKeyConstants.USER_INFO + userId,
+                () -> userMapper.selectOne(
+                        new LambdaQueryWrapper<User>()
+                                .eq(User::getId, userId)
+                                .select(User::getId, User::getUsername, User::getNickname,
+                                        User::getAvatar, User::getGender, User::getBirthday,
+                                        User::getPhone, User::getEmail, User::getSignature,
+                                        User::getStatus, User::getCreatedAt)
+                ),
+                30, TimeUnit.MINUTES
+        );
+
+        if (user == null) {
+            log.info("[用户] 用户不存在, userId={}", userId);
+            throw new BizException(ResultCode.USER_NOT_FOUND);
+        }
+        return user;
+    }
+
+    /**
      * 直接查 DB 获取用户信息（不走缓存，用于更新后返回最新数据）
      */
     private UserInfoResponse getUserInfoDirect(Long userId) {
@@ -341,6 +368,21 @@ public class UserService {
                 .email(user.getEmail())
                 .signature(user.getSignature())
                 .status(user.getStatus())
+                .createdAt(user.getCreatedAt())
+                .build();
+    }
+
+    /**
+     * User → UserPublicInfoResponse（只含非敏感字段）
+     */
+    private UserPublicInfoResponse toUserPublicInfoResponse(User user) {
+        return UserPublicInfoResponse.builder()
+                .id(user.getId())
+                .username(user.getUsername())
+                .nickname(user.getNickname())
+                .avatar(user.getAvatar())
+                .gender(user.getGender())
+                .signature(user.getSignature())
                 .createdAt(user.getCreatedAt())
                 .build();
     }

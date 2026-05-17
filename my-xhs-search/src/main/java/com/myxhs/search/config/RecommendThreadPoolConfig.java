@@ -1,0 +1,45 @@
+package com.myxhs.search.config;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * 推荐系统线程池配置
+ * <p>
+ * 召回层 5 路并行执行，需要独立线程池隔离，
+ * 避免与 Tomcat 线程池竞争导致搜索接口受影响。
+ * </p>
+ */
+@Configuration
+public class RecommendThreadPoolConfig {
+
+    /**
+     * 召回专用线程池
+     * <p>
+     * 核心线程 10，最大 20，队列 100。
+     * 召回任务是 IO 密集型（Redis 查询），线程数可以适当多一些。
+     * 拒绝策略：CallerRunsPolicy，降级为调用线程执行（不丢弃）。
+     * </p>
+     */
+    @Bean("recallExecutor")
+    public ExecutorService recallExecutor() {
+        return new ThreadPoolExecutor(
+                10, 20,
+                60, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(100),
+                new ThreadFactory() {
+                    private final AtomicInteger count = new AtomicInteger(0);
+                    @Override
+                    public Thread newThread(Runnable r) {
+                        Thread t = new Thread(r, "recall-pool-" + count.incrementAndGet());
+                        t.setDaemon(true);
+                        return t;
+                    }
+                },
+                new ThreadPoolExecutor.CallerRunsPolicy()
+        );
+    }
+}

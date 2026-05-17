@@ -10,6 +10,8 @@ import com.myxhs.user.dto.response.TokenResponse;
 import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Service;
 
 import java.util.Date;
@@ -30,9 +32,17 @@ public class TokenService {
 
     private final JwtProperties jwtProperties;
     private final RedisOperator redisOperator;
+    private final RedissonClient redissonClient;
 
     /**
      * 生成 Token 对（Access + Refresh）
+     * <p>
+     * 【设计决策：单设备登录】
+     * Redis 中以 userId 为 Key 存储 Token，后登录会覆盖前一个 Token。
+     * 这意味着同一用户同时只能有一个有效的 Token 对（即单设备登录）。
+     * 如果后续需要支持多端登录，需要将 Key 改为 {userId}:{deviceId} 格式，
+     * 并在登录时传入设备标识。
+     * </p>
      *
      * @param userId 用户 ID
      * @return Token 对
@@ -101,13 +111,46 @@ public class TokenService {
             throw new BizException(ResultCode.TOKEN_REVOKED);
         }
 
-        // 3. 将旧 Refresh Token 加入黑名单（直接用已解析的 claims）
-        blacklistByClaims(claims);
+        // 3. 分布式锁防止并发刷新（多个请求同时发现 AccessToken 过期，都来刷新）
+        //    锁粒度：按 jti（每个 RefreshToken 唯一），不影响其他用户
+        String lockKey = "myxhs:token:refresh:lock:" + jti;
+        RLock lock = redissonClient.getLock(lockKey);
+        try {
+            if (!lock.tryLock(3, 10, TimeUnit.SECONDS)) {
+                // 获取锁失败，说明其他线程正在刷新，返回友好提示
+                throw new BizException(ResultCode.LOCK_ACQUIRE_FAIL, "Token 正在刷新中，请稍后重试");
+            }
 
-        // 4. 生成新的 Token 对
-        String userId = claims.getSubject();
-        log.info("[Token] 刷新成功, userId={}, 旧jti={}", userId, jti);
-        return generateTokenPair(Long.parseLong(userId));
+            // 4. 二次检查黑名单（可能其他线程已经刷新并将旧 Token 加入黑名单）
+            if (isBlacklisted(jti)) {
+                log.info("[Token] 刷新失败(二次检查), Token 已被其他线程刷新, jti={}, userId={}", jti, claims.getSubject());
+                throw new BizException(ResultCode.TOKEN_REVOKED, "Token 已被刷新，请使用新 Token");
+            }
+
+            // 5. 校验 Redis 中存储的 Refresh Token 是否与传入的一致（单设备登录保障）
+            //    如果用户在其他设备登录，Redis 中的 Token 会被覆盖，旧设备的 Token 应失效
+            String userId = claims.getSubject();
+            Object storedRefreshToken = redisOperator.get(RedisKeyConstants.USER_TOKEN_REFRESH + userId);
+            if (storedRefreshToken == null || !refreshToken.equals(storedRefreshToken.toString())) {
+                log.info("[Token] 刷新失败, Token 已被其他设备覆盖, userId={}, jti={}", userId, jti);
+                throw new BizException(ResultCode.TOKEN_REVOKED, "Token 已被其他设备覆盖，请重新登录");
+            }
+
+            // 6. 将旧 Refresh Token 加入黑名单（直接用已解析的 claims）
+            blacklistByClaims(claims);
+
+            // 7. 生成新的 Token 对
+            log.info("[Token] 刷新成功, userId={}, 旧jti={}", userId, jti);
+            return generateTokenPair(Long.parseLong(userId));
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BizException(ResultCode.LOCK_ACQUIRE_FAIL, "Token 刷新被中断");
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
     }
 
     /**

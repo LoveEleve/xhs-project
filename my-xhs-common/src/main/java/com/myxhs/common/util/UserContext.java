@@ -1,9 +1,15 @@
 package com.myxhs.common.util;
 
+import com.alibaba.ttl.TransmittableThreadLocal;
+
 /**
  * 用户上下文工具
  * <p>
- * 基于 ThreadLocal 存储当前请求的用户信息。
+ * 基于 TransmittableThreadLocal 存储当前请求的用户信息。
+ * 相比原生 ThreadLocal，TransmittableThreadLocal 能在线程池（@Async）、
+ * CompletableFuture 等场景下自动传递上下文，避免用户信息丢失。
+ * </p>
+ * <p>
  * Gateway 在鉴权通过后将 userId 注入到 X-User-Id Header 中，
  * 下游服务通过拦截器提取 Header 并存入 ThreadLocal，业务代码通过此工具获取。
  * </p>
@@ -14,7 +20,7 @@ package com.myxhs.common.util;
  */
 public final class UserContext {
 
-    private static final ThreadLocal<Long> USER_ID_HOLDER = new ThreadLocal<>();
+    private static final TransmittableThreadLocal<Long> USER_ID_HOLDER = new TransmittableThreadLocal<>();
 
     private UserContext() {
         // 工具类禁止实例化

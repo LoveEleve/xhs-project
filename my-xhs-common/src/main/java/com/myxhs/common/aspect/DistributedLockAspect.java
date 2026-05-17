@@ -23,6 +23,10 @@ import java.util.concurrent.TimeUnit;
  * Watchdog 原理：leaseTime=-1 时启用，默认锁 30 秒，每 10 秒（leaseTime/3）自动续期。
  * </p>
  * <p>
+ * Redis 降级策略：Redis 不可用时降级放行（保证核心业务可用），同时记录告警日志。
+ * 注意：降级放行意味着失去分布式锁保护，可能出现并发问题，但比全站不可用好。
+ * </p>
+ * <p>
  * 执行顺序：@Order(50)，在幂等之前执行（先获取锁再判断幂等）
  * </p>
  */
@@ -42,7 +46,14 @@ public class DistributedLockAspect {
         String lockKey = distributedLock.prefix() + ":" + key;
 
         // 2. 获取 Redisson RLock
-        RLock lock = redissonClient.getLock(lockKey);
+        RLock lock;
+        try {
+            lock = redissonClient.getLock(lockKey);
+        } catch (Exception e) {
+            // Redisson 连接失败，降级放行
+            log.error("[分布式锁] Redisson不可用，降级放行, key={}", lockKey, e);
+            return joinPoint.proceed();
+        }
 
         boolean acquired;
         try {
@@ -56,6 +67,10 @@ public class DistributedLockAspect {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new BizException(ResultCode.LOCK_ACQUIRE_FAIL, "获取锁被中断");
+        } catch (Exception e) {
+            // Redis 连接异常，降级放行
+            log.error("[分布式锁] Redis不可用，降级放行, key={}", lockKey, e);
+            return joinPoint.proceed();
         }
 
         if (!acquired) {
@@ -68,9 +83,14 @@ public class DistributedLockAspect {
             log.debug("[分布式锁] 获取锁成功, key={}", lockKey);
             return joinPoint.proceed();
         } finally {
-            if (lock.isHeldByCurrentThread()) {
-                lock.unlock();
-                log.debug("[分布式锁] 释放锁成功, key={}", lockKey);
+            try {
+                if (lock.isHeldByCurrentThread()) {
+                    lock.unlock();
+                    log.debug("[分布式锁] 释放锁成功, key={}", lockKey);
+                }
+            } catch (Exception e) {
+                // 释放锁失败（Redis 连接断开等），Redisson Watchdog 会在 leaseTime 后自动过期
+                log.error("[分布式锁] 释放锁失败(将由Watchdog自动过期), key={}", lockKey, e);
             }
         }
     }

@@ -1,38 +1,14 @@
+…or create a new repository on the command line
+echo "# my-xhs" >> README.md
+git init
+git add README.md
+git commit -m "first commit"
+git branch -M main
+git remote add origin git@github.com:LoveEleve/my-xhs.git
+git push -u origin main
+…or push an existing repository from the command line
+git remote add origin git@github.com:LoveEleve/my-xhs.git
+git branch -M main
+git push -u origin main
 
-
-
-
-下一步计划应该是什么呢？
-
-开始吧，注意，一定要对标生产环境以及P8左右的项目质量
-
-
-本地的docker没看到你启动了mysql啊（如果要启动，需要使用非标准端口 + 复杂密码，并且需要记录密码）
-
-
-
-
-
-
-为什么要等后面才开始优化呢？
-
-今天就到这里吧，把docker中的服务停掉吧(注意是停掉，不是删除！)
-
-
-review下整体的代码，以及下一步计划应该是什么呢？
-
-
-等下，我看还是有些问题是吗？
-
-肯定要修复啊
-
-开始吧，但是登陆注册不好做啊，没有想象的那么简单吧，你确定能够对标生产环境吗？
-
-
-review下刚才写的代码
-
-需要的
-
-测试下吧
-
-还有你的日志我感觉打的太少了，用log.info()多大一些吧！用log.debug()正常请求不是不会显示吗？
+--- 先帮我推送到github上去吧

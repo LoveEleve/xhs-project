@@ -1,14 +1,37 @@
 server:
-  port: 9000
+  port: 19000
+  shutdown: graceful
 
 spring:
   application:
     name: my-xhs-gateway
   cloud:
     nacos:
+      # Nacos 服务发现（Gateway 需要通过 Nacos 发现下游微服务实例）
       discovery:
-        server-addr: localhost:18848
-      namespace: public
+        enabled: true
+        server-addr: 127.0.0.1:18848
+        namespace: my-xhs
+        group: DEFAULT_GROUP
+    sentinel:
+      # Sentinel 控制台配置（当前未部署控制台，仅使用限流规则）
+      transport:
+        dashboard: localhost:8080
+        client-ip: localhost
+        port: 8719
+      # 取消懒加载，启动时立即初始化 Sentinel
+      eager: true
+      # Nacos 数据源持久化限流规则
+      # 启动时从 Nacos 加载规则，运行时规则变更通过 Nacos 推送实时同步
+      # 多网关实例共享同一份规则，运维可通过 Nacos Console 动态调整
+      datasource:
+        flow:
+          nacos:
+            server-addr: 127.0.0.1:18848
+            namespace: my-xhs
+            group-id: SENTINEL_GROUP
+            data-id: my-xhs-gateway-flow-rules
+            rule-type: gw-flow
     gateway:
       routes:
         # Phase 1
@@ -71,3 +94,113 @@ spring:
           uri: lb://my-xhs-im
           predicates:
             - Path=/api/im/**
+  data:
+    redis:
+      host: localhost
+      port: 16379
+      password: "Xhs@2026#Redis"
+      database: 0
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 4
+          max-wait: 3000ms
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+# Gateway 鉴权配置
+# 【安全注意】当前密钥明文存储在配置文件中，代码仓库中可见。
+# 生产环境必须使用以下方案之一加密密钥：
+# 1. Nacos 加密配置：在 Nacos Console 中使用加密存储，配合 jasypt-spring-boot-starter
+# 2. Spring Cloud Vault：从 HashiCorp Vault 动态获取密钥
+# 3. K8s Secrets：部署时通过环境变量注入，不写入配置文件
+gateway:
+  auth:
+    # JWT 签名密钥（必须与 my-xhs-user 的 jwt.secret 保持一致）
+    secret: "MyXhs@2026#JwtSecretKey!ForTokenSign"
+    # HMAC-SHA256 签名密钥（用于防篡改+防重放校验，与 JWT 密钥分离）
+    hmac-secret: "MyXhs@2026#HmacSecretKey!ForSign"
+    # 白名单路径（不需要鉴权，支持 Ant 风格匹配）
+    white-list:
+      # ===== 认证相关（注册/登录/验证码/Token刷新/注销） =====
+      - /api/user/auth/captcha
+      - /api/user/auth/register
+      - /api/user/auth/login
+      - /api/user/auth/refresh
+      - /api/user/auth/logout
+      # ===== 公开接口（查看他人主页等） =====
+      - /api/user/*/info
+      # ===== 笔记公开接口（笔记详情、用户笔记列表） =====
+      - /api/note/detail/**
+      - /api/note/user/**
+      # ===== 评论公开接口（评论列表、子评论列表、评论计数） =====
+      - /api/comment/list/**
+      - /api/comment/children/**
+      - /api/comment/count/**
+      - /api/comment/page/**
+      # ===== 社交公开接口（关注列表、粉丝列表） =====
+      - /api/social/following/**
+      - /api/social/follower/**
+      # ===== 点赞公开接口（点赞计数） =====
+      - /api/social/like/count
+      # ===== 计数公开接口（单个查询、批量查询） =====
+      - /api/counter/get
+      - /api/counter/batch-get
+      # ===== 后续模块的公开接口（待扩展） =====
+      # - /api/search/**
+    # HMAC 签名校验白名单（不需要签名校验的路径，支持 Ant 风格匹配）
+    # 安全原则：JWT 鉴权和 HMAC 签名是两个独立安全维度，白名单应独立配置
+    # - 登录/注册等认证接口：不需要签名（客户端可能未实现签名逻辑）
+    # - 公开读接口：不需要签名（无敏感数据，允许自由访问）
+    # - 写接口（下单/支付/发布笔记等）：必须签名，防止参数篡改
+    hmac-white-list:
+      # ===== 认证相关（客户端登录时可能未初始化签名逻辑） =====
+      - /api/user/auth/captcha
+      - /api/user/auth/register
+      - /api/user/auth/login
+      - /api/user/auth/refresh
+      - /api/user/auth/logout
+      # ===== 公开读接口（无敏感数据，不需要防篡改） =====
+      - /api/user/*/info
+      - /api/note/detail/**
+      - /api/note/user/**
+      - /api/comment/list/**
+      - /api/comment/children/**
+      - /api/comment/count/**
+      - /api/comment/page/**
+      - /api/social/following/**
+      - /api/social/follower/**
+      - /api/social/like/count
+      # ===== 计数公开接口（单个查询、批量查询） =====
+      - /api/counter/get
+      - /api/counter/batch-get
+      - /api/home/feed
+      - /api/home/note/**
+      - /api/home/product/**
+      - /api/home/user/**
+      - /api/search/**
+
+# Actuator 健康检查 + 指标暴露
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+
+# 日志配置
+logging:
+  level:
+    com.myxhs: info
+    org.springframework.cloud.gateway: info

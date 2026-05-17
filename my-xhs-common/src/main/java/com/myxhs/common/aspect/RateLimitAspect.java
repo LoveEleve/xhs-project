@@ -28,6 +28,10 @@ import java.util.UUID;
  * Lua 脚本保证原子性：移除过期记录 → 判断窗口内数量 → 记录本次请求。
  * </p>
  * <p>
+ * Redis 降级策略：Redis 不可用时降级放行（保证核心业务可用），同时记录告警日志。
+ * 降级放行意味着失去限流保护，但比全站不可用好。
+ * </p>
+ * <p>
  * 执行顺序：@Order(10)，最先执行（先限流再获取锁再判断幂等）
  * </p>
  */
@@ -72,15 +76,22 @@ public class RateLimitAspect {
         String uniqueId = now + ":" + UUID.randomUUID().toString().replace("-", "");
 
         // 执行 Lua 脚本
-        Long result = stringRedisTemplate.execute(
-                REDIS_SCRIPT,
-                Collections.singletonList(key),
-                String.valueOf(windowStart),
-                String.valueOf(rateLimit.maxRequests()),
-                String.valueOf(now),
-                String.valueOf(rateLimit.windowSeconds()),
-                uniqueId
-        );
+        Long result;
+        try {
+            result = stringRedisTemplate.execute(
+                    REDIS_SCRIPT,
+                    Collections.singletonList(key),
+                    String.valueOf(windowStart),
+                    String.valueOf(rateLimit.maxRequests()),
+                    String.valueOf(now),
+                    String.valueOf(rateLimit.windowSeconds()),
+                    uniqueId
+            );
+        } catch (Exception e) {
+            // Redis 不可用时降级放行（保证核心业务可用）
+            log.error("[限流] Redis不可用，降级放行, key={}", key, e);
+            return joinPoint.proceed();
+        }
 
         if (result == null || result == 0) {
             log.warn("[限流拦截] key={}, maxRequests={}/{}s", key, rateLimit.maxRequests(), rateLimit.windowSeconds());

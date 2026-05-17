@@ -1,7 +1,9 @@
 package com.myxhs.common.id;
 
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -44,6 +46,30 @@ public class SegmentIdGenerator {
     });
 
     /**
+     * 优雅关闭预加载线程池
+     * <p>
+     * Spring 容器关闭时调用，等待正在执行的预加载任务完成（最多 5 秒），
+     * 避免号段预加载任务被强制中断导致数据不一致。
+     * </p>
+     */
+    @PreDestroy
+    public void shutdown() {
+        log.info("[号段] 关闭预加载线程池...");
+        preloadExecutor.shutdown();
+        try {
+            if (!preloadExecutor.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)) {
+                preloadExecutor.shutdownNow();
+                log.warn("[号段] 预加载线程池强制关闭");
+            } else {
+                log.info("[号段] 预加载线程池已优雅关闭");
+            }
+        } catch (InterruptedException e) {
+            preloadExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
      * 获取下一个号段 ID
      *
      * @param bizTag 业务标签（如 "user"、"order"）
@@ -51,7 +77,7 @@ public class SegmentIdGenerator {
      */
     public long nextId(String bizTag) {
         DoubleBuffer doubleBuffer = bufferMap.computeIfAbsent(bizTag, k -> {
-            DoubleBuffer db = new DoubleBuffer();
+            DoubleBuffer db = new DoubleBuffer(this::loadSegmentFromDb, preloadExecutor);
             loadSegmentFromDb(k, db.current);
             return db;
         });
@@ -72,10 +98,17 @@ public class SegmentIdGenerator {
 
         // 最多重试 3 次（乐观锁冲突时）
         for (int retry = 0; retry < 3; retry++) {
-            Map<String, Object> row = jdbcTemplate.queryForMap(
-                    "SELECT max_id, step, version FROM t_id_segment WHERE biz_tag = ?",
-                    bizTag
-            );
+            Map<String, Object> row;
+            try {
+                row = jdbcTemplate.queryForMap(
+                        "SELECT max_id, step, version FROM t_id_segment WHERE biz_tag = ?",
+                        bizTag
+                );
+            } catch (EmptyResultDataAccessException e) {
+                throw new RuntimeException(
+                        "号段配置不存在，请先在 t_id_segment 表中初始化 bizTag=" + bizTag +
+                        "（INSERT INTO t_id_segment (biz_tag, max_id, step, description) VALUES ('" + bizTag + "', 0, 1000, ''))");
+            }
             maxId = ((Number) row.get("max_id")).longValue();
             step = ((Number) row.get("step")).intValue();
             int version = ((Number) row.get("version")).intValue();
@@ -103,6 +136,14 @@ public class SegmentIdGenerator {
         segment.loaded = true;
 
         log.info("[号段] 加载成功, bizTag={}, range=({}, {}], step={}", bizTag, maxId, maxId + step, step);
+    }
+
+    /**
+     * 号段加载器函数式接口（用于 static 内部类显式传入加载方法）
+     */
+    @FunctionalInterface
+    private interface SegmentLoader {
+        void load(String bizTag, Segment segment);
     }
 
     /**
@@ -134,8 +175,12 @@ public class SegmentIdGenerator {
      * 当 current 使用量达到 70% 时，异步预加载 next。
      * 当 current 用完时，切换 current ↔ next。
      * </p>
+     * <p>
+     * 【设计决策】使用 static 内部类，避免隐式持有外部类引用导致 GC 延迟回收。
+     * 通过 SegmentLoader 函数式接口显式传入 loadSegmentFromDb 方法引用。
+     * </p>
      */
-    private class DoubleBuffer {
+    private static class DoubleBuffer {
         /** 当前使用的号段 */
         volatile Segment current = new Segment();
         /** 预加载的下一个号段 */
@@ -144,6 +189,15 @@ public class SegmentIdGenerator {
         volatile boolean preloading = false;
         /** 锁（用于号段切换） */
         final ReentrantLock lock = new ReentrantLock();
+        /** 号段加载器（显式传入，避免持有外部类引用） */
+        final SegmentLoader loader;
+        /** 异步预加载线程池引用 */
+        final ExecutorService preloadExecutor;
+
+        DoubleBuffer(SegmentLoader loader, ExecutorService preloadExecutor) {
+            this.loader = loader;
+            this.preloadExecutor = preloadExecutor;
+        }
 
         long nextId(String bizTag) {
             while (true) {
@@ -174,7 +228,7 @@ public class SegmentIdGenerator {
                         } else {
                             // next 未就绪（预加载太慢或未触发），同步加载
                             log.warn("[号段] next未就绪，降级为同步加载, bizTag={}", bizTag);
-                            loadSegmentFromDb(bizTag, current);
+                            loader.load(bizTag, current);
                             preloading = false;
                         }
                     }
@@ -202,7 +256,7 @@ public class SegmentIdGenerator {
 
             preloadExecutor.submit(() -> {
                 try {
-                    loadSegmentFromDb(bizTag, next);
+                    loader.load(bizTag, next);
                     log.info("[号段] 异步预加载完成, bizTag={}", bizTag);
                 } catch (Exception e) {
                     log.error("[号段] 异步预加载失败, bizTag={}", bizTag, e);

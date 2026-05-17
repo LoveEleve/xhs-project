@@ -88,8 +88,108 @@ services:
       - rocketmq-namesrv
     restart: unless-stopped
 
+  # ==========================================
+  # Elasticsearch 8.12.2 — 非标准端口 19200(HTTP) / 19300(Transport)
+  # ==========================================
+  elasticsearch:
+    image: elasticsearch:8.12.2
+    container_name: my-xhs-elasticsearch
+    network_mode: host
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - xpack.security.http.ssl.enabled=false
+      - http.port=19200
+      - transport.port=19300
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - cluster.name=my-xhs-es
+      - node.name=es-node-1
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+      - es-plugins:/usr/share/elasticsearch/plugins
+    restart: unless-stopped
+
+  # ==========================================
+  # Prometheus 2.48 — 非标准端口 19090
+  # ==========================================
+  prometheus:
+    image: prom/prometheus:v2.48.1
+    container_name: my-xhs-prometheus
+    network_mode: host
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--web.listen-address=:19090'
+      - '--storage.tsdb.retention.time=15d'
+      - '--storage.tsdb.path=/prometheus'
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./config/prometheus/alert_rules:/etc/prometheus/alert_rules
+      - prometheus-data:/prometheus
+    restart: unless-stopped
+
+  # ==========================================
+  # Grafana 10 — 非标准端口 13000
+  # ==========================================
+  grafana:
+    image: grafana/grafana:10.2.3
+    container_name: my-xhs-grafana
+    network_mode: host
+    environment:
+      - GF_SERVER_HTTP_PORT=13000
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=Xhs@2026#Grafana
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning
+    restart: unless-stopped
+
+  # ==========================================
+  # Canal 1.1.7 — 非标准端口 11111(管理) / 11112(指标)
+  # MySQL Binlog → Canal → RocketMQ → ES 增量同步
+  # ==========================================
+  canal:
+    image: canal/canal-server:v1.1.7
+    container_name: my-xhs-canal
+    network_mode: host
+    volumes:
+      - ./config/canal/conf/canal.properties:/home/admin/canal-server/conf/canal.properties
+      - ./config/canal/conf/note_instance/instance.properties:/home/admin/canal-server/conf/note_instance/instance.properties
+      - ./config/canal/conf/product_instance/instance.properties:/home/admin/canal-server/conf/product_instance/instance.properties
+      - ./config/canal/conf/inventory_instance/instance.properties:/home/admin/canal-server/conf/inventory_instance/instance.properties
+      - canal-data:/home/admin/canal-server/logs
+    depends_on:
+      - mysql
+      - rocketmq-broker
+    restart: unless-stopped
+
+  # ==========================================
+  # XXL-Job Admin 2.4.2 — 非标准端口 18080
+  # 分布式任务调度中心，替代 Spring @Scheduled
+  # ==========================================
+  xxl-job-admin:
+    image: xuxueli/xxl-job-admin:2.4.2
+    container_name: my-xhs-xxl-job-admin
+    network_mode: host
+    environment:
+      PARAMS: >-
+        --spring.datasource.url=jdbc:mysql://127.0.0.1:13306/xxl_job?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai
+        --spring.datasource.username=root
+        --spring.datasource.password=Xhs@2026#MySQL
+        --server.port=18080
+        --xxl.job.accessToken=my-xhs-xxl-job-token-2026
+        --xxl.job.i18n=zh_CN
+    depends_on:
+      - mysql
+    restart: unless-stopped
+
 volumes:
   mysql-data:
   redis-data:
   mq-logs:
   mq-store:
+  es-data:
+  es-plugins:
+  prometheus-data:
+  grafana-data:
+  canal-data:

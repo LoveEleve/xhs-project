@@ -36,13 +36,14 @@ public class RedissonConfig {
         var serverConfig = config.useSingleServer()
                 .setAddress(address)
                 .setDatabase(redisDatabase)
-                .setConnectionMinimumIdleSize(4)
-                .setConnectionPoolSize(16)
+                .setConnectionMinimumIdleSize(1)
+                .setConnectionPoolSize(8)
                 .setIdleConnectionTimeout(10000)
                 .setConnectTimeout(10000)
-                .setTimeout(3000)
-                .setRetryAttempts(3)
-                .setRetryInterval(1500);
+                .setTimeout(10000)
+                .setRetryAttempts(5)
+                .setRetryInterval(1000)
+                .setPingConnectionInterval(0);
 
         // 设置密码（非空时）
         if (redisPassword != null && !redisPassword.isEmpty()) {

@@ -46,12 +46,6 @@
             <artifactId>redisson</artifactId>
         </dependency>
         
-        <!-- Caffeine -->
-        <dependency>
-            <groupId>com.github.ben-manes.caffeine</groupId>
-            <artifactId>caffeine</artifactId>
-        </dependency>
-        
         <!-- RocketMQ -->
         <dependency>
             <groupId>org.apache.rocketmq</groupId>

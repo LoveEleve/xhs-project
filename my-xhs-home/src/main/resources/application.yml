@@ -1,23 +1,65 @@
 server:
-  port: 9005
+  port: 19015
+  shutdown: graceful
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 20
+    max-connections: 8192
+    accept-count: 100
 
 spring:
   application:
     name: my-xhs-home
+  # BFF 层无数据库，排除需要 DataSource 的自动配置
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+      - com.myxhs.common.config.MybatisPlusConfig
+      - com.myxhs.common.id.SegmentIdGenerator
+      - com.myxhs.common.id.IdGeneratorUtil
   data:
     redis:
       host: localhost
       port: 16379
       password: "Xhs@2026#Redis"
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 4
+          max-wait: 3000ms
   cloud:
     nacos:
       discovery:
-        server-addr: localhost:18848
+        enabled: true
+        server-addr: 127.0.0.1:18848
+        namespace: my-xhs
+        group: DEFAULT_GROUP
       config:
-        server-addr: localhost:18848
+        enabled: false
+        server-addr: 127.0.0.1:18848
         file-extension: yaml
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
 
-# BFF聚合线程池
+# RocketMQ 配置（消费笔记发布事件，推送到粉丝收件箱）
+rocketmq:
+  name-server: localhost:9876
+  consumer:
+    group: home-consumer-group
+
+# Feign 客户端配置（通过 Nacos 服务发现调用）
+feign:
+  client:
+    config:
+      default:
+        connect-timeout: 3000
+        read-timeout: 5000
+        logger-level: BASIC
+
+# BFF 聚合线程池
 home:
   aggregator:
     core-pool-size: 20
@@ -25,6 +67,48 @@ home:
     queue-capacity: 200
     keep-alive-seconds: 60
     thread-name-prefix: "home-aggregator-"
+  feed:
+    # 大V粉丝数阈值（超过此值走拉模式）
+    big-v-threshold: 100000
+    # 收件箱最大保留天数
+    inbox-max-days: 7
+    # 收件箱单次拉取最大条数
+    inbox-max-size: 500
+    # 默认每页大小
+    default-page-size: 20
 
-# Caffeine本地缓存
-spring.cache.type: caffeine
+# Actuator 健康检查 + 指标暴露
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+
+# 日志配置
+logging:
+  level:
+    com.myxhs: info
+    org.springframework.web: info
+
+# XXL-Job 分布式调度配置
+xxl:
+  job:
+    enabled: true
+    admin:
+      addresses: http://127.0.0.1:18080/xxl-job-admin
+    accessToken: my-xhs-xxl-job-token-2026
+    executor:
+      appname: my-xhs-home
+      port: 9994
+      logpath: /data/applogs/xxl-job/jobhandler
+      logretentiondays: 30

@@ -1,7 +1,9 @@
 package com.myxhs.common.cache;
 
-import lombok.RequiredArgsConstructor;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.Executors;
@@ -11,59 +13,92 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 /**
- * 缓存助手 — Cache Aside 模式封装
+ * 缓存助手 — Cache Aside 模式封装 + 缓存一致性三重保障
  * <p>
- * 封装"先查缓存 → 缓存未命中查DB → 回填缓存"的标准流程。
- * 内置防缓存穿透（缓存空值）、防缓存雪崩（TTL 随机偏移）。
+ * 读操作：
+ * - {@link #getWithCacheAside} — 标准 Cache Aside（先缓存→Miss→查DB→回填）
+ * - {@link #getWithCacheAsideLock} — 分布式锁防缓存击穿（高并发热点 Key 场景）
+ * </p>
+ * <p>
+ * 写操作（缓存一致性三重保障）：
+ * - L1 {@link #deleteAfterUpdate} — 先更新 DB → 再删缓存（重试 3 次）
+ * - L2 {@link #delayDoubleDelete} — 延迟双删（覆盖并发读回填的旧值）
+ * - L3 MQ 兜底 — 删缓存失败时发 MQ 消息，消费者异步重试（由调用方集成）
+ * </p>
+ * <p>
+ * 内置防缓存穿透（缓存空值）、防缓存雪崩（TTL 随机偏移）、防缓存击穿（分布式锁）。
  * </p>
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class CacheHelper {
 
     private final RedisOperator redisOperator;
+    private final RedissonClient redissonClient;
 
-    /** 延迟双删专用调度线程池（单线程守护线程，不阻塞 JVM 关闭） */
-    private static final ScheduledExecutorService DELAY_SCHEDULER =
+    /** 空值占位符常量（使用不可能出现在业务数据中的特殊前缀） */
+    private static final String NULL_PLACEHOLDER = "\u0000__CACHE_NULL__\u0000";
+
+    /** 延迟双删专用调度线程池（实例字段，与 Spring Bean 生命周期一致） */
+    private final ScheduledExecutorService delayScheduler =
             Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "cache-delay-delete");
                 t.setDaemon(true);
                 return t;
             });
 
+    public CacheHelper(RedisOperator redisOperator, RedissonClient redissonClient) {
+        this.redisOperator = redisOperator;
+        this.redissonClient = redissonClient;
+    }
+
     /**
-     * Cache Aside 读取
+     * 优雅关闭延迟双删线程池
+     */
+    @PreDestroy
+    public void shutdown() {
+        log.info("[缓存] 关闭延迟双删线程池...");
+        delayScheduler.shutdown();
+        try {
+            if (!delayScheduler.awaitTermination(2, TimeUnit.SECONDS)) {
+                delayScheduler.shutdownNow();
+                log.warn("[缓存] 延迟双删线程池强制关闭");
+            } else {
+                log.info("[缓存] 延迟双删线程池已优雅关闭");
+            }
+        } catch (InterruptedException e) {
+            delayScheduler.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    // ==================== 读操作 ====================
+
+    /**
+     * Cache Aside 读取（标准版）
      * <p>
      * 1. 查 Redis 缓存
-     * 2. 缓存命中 → 直接返回（如果是空值标记则返回 null）
+     * 2. 缓存命中 → 直接返回（空值标记返回 null）
      * 3. 缓存未命中 → 执行 dbFallback 查 DB
      * 4. DB 查到 → 回填缓存（TTL + 随机偏移防雪崩）
      * 5. DB 未查到 → 缓存空值（短 TTL 防穿透）
      * </p>
-     *
-     * @param key          缓存 Key
-     * @param dbFallback   DB 查询回调
-     * @param timeout      缓存过期时间
-     * @param unit         时间单位
-     * @param <T>          返回类型
-     * @return 缓存或 DB 中的数据，不存在返回 null
+     * <p>
+     * 适用场景：普通读多写少（用户信息、笔记详情等），QPS < 1000 的场景。
+     * 高并发热点 Key 场景请使用 {@link #getWithCacheAsideLock}。
+     * </p>
      */
     public <T> T getWithCacheAside(String key, Supplier<T> dbFallback, long timeout, TimeUnit unit) {
         // 1. 查缓存
         T cached = redisOperator.get(key);
         if (cached != null) {
-            // 空值标记（防穿透）
             if (isNullPlaceholder(cached)) {
-                log.info("[缓存] 命中空值标记(防穿透), key={}", key);
                 return null;
             }
-            log.info("[缓存] 命中, key={}", key);
             return cached;
         }
 
         // 2. 缓存未命中，查 DB
-        log.info("[缓存] 未命中, 查询DB, key={}", key);
         T dbResult = dbFallback.get();
 
         if (dbResult != null) {
@@ -71,11 +106,9 @@ public class CacheHelper {
             long timeoutSeconds = unit.toSeconds(timeout);
             long randomOffset = ThreadLocalRandom.current().nextLong(0, timeoutSeconds / 6 + 1);
             redisOperator.set(key, dbResult, timeoutSeconds + randomOffset, TimeUnit.SECONDS);
-            log.info("[缓存] 回填成功, key={}, TTL={}秒", key, timeoutSeconds + randomOffset);
         } else {
             // 4. 缓存空值（短 TTL 防穿透，2 分钟）
-            redisOperator.set(key, "NULL_PLACEHOLDER", 2, TimeUnit.MINUTES);
-            log.info("[缓存] DB未查到, 缓存空值(防穿透), key={}", key);
+            redisOperator.set(key, NULL_PLACEHOLDER, 2, TimeUnit.MINUTES);
         }
 
         return dbResult;
@@ -89,12 +122,136 @@ public class CacheHelper {
     }
 
     /**
+     * Cache Aside 读取 + 分布式锁防缓存击穿（Singleflight 模式）
+     * <p>
+     * 适用场景：高并发热点 Key（如秒杀商品详情），缓存失效瞬间大量请求同时穿透到 DB。
+     * </p>
+     * <p>
+     * 原理：缓存未命中时，只有一个线程获取分布式锁去查 DB 并回填缓存，
+     * 其他线程等待锁释放后直接读缓存。避免 DB 被瞬间打爆。
+     * </p>
+     * <p>
+     * 锁粒度：按 Key 加锁（lock:cache:{key}），不同 Key 互不影响。
+     * 锁超时：等待 3 秒，持有 10 秒（足够完成一次 DB 查询 + 缓存回填）。
+     * </p>
+     */
+    public <T> T getWithCacheAsideLock(String key, Supplier<T> dbFallback, long timeout, TimeUnit unit) {
+        // 1. 查缓存
+        T cached = redisOperator.get(key);
+        if (cached != null) {
+            if (isNullPlaceholder(cached)) {
+                return null;
+            }
+            return cached;
+        }
+
+        // 2. 缓存未命中，获取分布式锁
+        String lockKey = "lock:cache:" + key;
+        RLock lock = redissonClient.getLock(lockKey);
+        try {
+            boolean acquired = lock.tryLock(3, 10, TimeUnit.SECONDS);
+            if (acquired) {
+                try {
+                    // 双重检查：获取锁后再查一次缓存（可能其他线程已回填）
+                    T doubleCheck = redisOperator.get(key);
+                    if (doubleCheck != null) {
+                        return isNullPlaceholder(doubleCheck) ? null : doubleCheck;
+                    }
+
+                    // 查 DB 并回填
+                    T dbResult = dbFallback.get();
+                    if (dbResult != null) {
+                        long timeoutSeconds = unit.toSeconds(timeout);
+                        long randomOffset = ThreadLocalRandom.current().nextLong(0, timeoutSeconds / 6 + 1);
+                        redisOperator.set(key, dbResult, timeoutSeconds + randomOffset, TimeUnit.SECONDS);
+                    } else {
+                        redisOperator.set(key, NULL_PLACEHOLDER, 2, TimeUnit.MINUTES);
+                    }
+                    return dbResult;
+                } finally {
+                    if (lock.isHeldByCurrentThread()) {
+                        lock.unlock();
+                    }
+                }
+            } else {
+                // 获取锁失败（其他线程正在查 DB），等待后重试读缓存
+                Thread.sleep(100);
+                T retryCache = redisOperator.get(key);
+                if (retryCache != null) {
+                    return isNullPlaceholder(retryCache) ? null : retryCache;
+                }
+                // 仍然未命中，降级为直接查 DB（不回填缓存，避免并发写入）
+                log.warn("[缓存] 获取锁失败且缓存仍未命中，降级查DB, key={}", key);
+                return dbFallback.get();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("[缓存] 获取锁被中断，降级查DB, key={}", key);
+            return dbFallback.get();
+        } catch (Exception e) {
+            // Redisson 连接异常，降级为无锁模式
+            log.error("[缓存] 分布式锁异常，降级为无锁模式, key={}", key, e);
+            return getWithCacheAside(key, dbFallback, timeout, unit);
+        }
+    }
+
+    // ==================== 写操作（缓存一致性） ====================
+
+    /**
+     * 写操作后删缓存（重试 3 次）
+     * <p>
+     * 适用场景：标准 Cache Aside 写操作。
+     * 调用方先更新 DB，再调用此方法删缓存。
+     * </p>
+     * <p>
+     * 重试策略：最多重试 3 次，每次间隔 50ms。
+     * 3 次都失败时记录 ERROR 日志，等待 MQ 兜底消费者异步重试。
+     * </p>
+     *
+     * @param keys 需要删除的缓存 Key（支持多个）
+     * @return true=全部删除成功，false=至少一个删除失败
+     */
+    public boolean deleteAfterUpdate(String... keys) {
+        boolean allSuccess = true;
+        for (String key : keys) {
+            boolean deleted = false;
+            for (int i = 0; i < 3; i++) {
+                // RedisOperator.delete() 内部吞异常返回 false，所以基于返回值判断
+                boolean success = redisOperator.delete(key);
+                if (success) {
+                    deleted = true;
+                    break;
+                }
+                log.warn("[缓存] 删缓存重试 {}/3, key={}", i + 1, key);
+                if (i < 2) {
+                    try { Thread.sleep(50); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+                }
+            }
+            if (!deleted) {
+                log.error("[缓存] 删缓存失败(3次重试均失败)，等待MQ兜底, key={}", key);
+                allSuccess = false;
+            }
+        }
+        return allSuccess;
+    }
+
+    /**
      * 延迟双删
      * <p>
-     * 写操作时的缓存一致性策略：
-     * 1. 先删缓存
-     * 2. 更新 DB（由调用方执行）
-     * 3. 延迟 500ms 再删缓存（异步）
+     * 强一致场景的缓存一致性策略（商品上下架、笔记审核等）。
+     * 调用方应在 DB 更新之后调用此方法。
+     * </p>
+     * <p>
+     * 执行流程：
+     * 1. 立即删缓存（第一次删）
+     * 2. 延迟 500ms 再删缓存（第二次删，覆盖并发读回填的旧值）
+     * </p>
+     * <p>
+     * 为什么需要两次删？
+     * - 第一次删：清除当前缓存，让后续读请求查 DB 获取最新值
+     * - 第二次删（延迟 500ms）：覆盖在"DB 更新 → 第一次删"之间，
+     *   并发读请求从从库读到旧值并回填缓存的情况
+     * - 500ms = 主从同步延迟(~200ms) + 业务读耗时(~100ms) + 安全余量(~200ms)
      * </p>
      *
      * @param key 缓存 Key
@@ -103,21 +260,42 @@ public class CacheHelper {
         // 第一次删除
         redisOperator.delete(key);
 
-        // 延迟 500ms 第二次删除（使用调度线程池，不占用 ForkJoinPool 线程）
-        DELAY_SCHEDULER.schedule(() -> {
+        // 延迟 500ms 第二次删除
+        delayScheduler.schedule(() -> {
             try {
                 redisOperator.delete(key);
-                log.info("[延迟双删] 第二次删除完成, key={}", key);
+                log.debug("[延迟双删] 第二次删除完成, key={}", key);
             } catch (Exception e) {
-                log.warn("[延迟双删] 第二次删除失败, key={}", key, e);
+                log.warn("[延迟双删] 第二次删除失败，等待MQ兜底, key={}", key, e);
             }
         }, 500, TimeUnit.MILLISECONDS);
     }
 
     /**
+     * 延迟双删（支持多个 Key）
+     */
+    public void delayDoubleDelete(String... keys) {
+        for (String key : keys) {
+            delayDoubleDelete(key);
+        }
+    }
+
+    // ==================== 工具方法 ====================
+
+    /**
      * 判断是否为空值占位符
+     * <p>
+     * 使用 Unicode NUL 字符包裹，确保不会与任何业务数据冲突。
+     * </p>
      */
     private boolean isNullPlaceholder(Object value) {
-        return "NULL_PLACEHOLDER".equals(value);
+        return NULL_PLACEHOLDER.equals(value);
+    }
+
+    /**
+     * 获取底层 RedisOperator（供特殊场景直接操作 Redis）
+     */
+    public RedisOperator getRedisOperator() {
+        return redisOperator;
     }
 }

@@ -15,10 +15,14 @@
     <description>即时通讯服务 - WebSocket私信、消息存储、会话管理、已读回执</description>
 
     <dependencies>
-        <!-- WebFlux（WebSocket基于Reactive栈） -->
+        <!-- Web（Tomcat NIO + WebSocket） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webflux</artifactId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
         
         <!-- Mybatis Plus -->

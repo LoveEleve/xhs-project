@@ -1,23 +1,135 @@
 server:
-  port: 9007
+  port: 19016
+  shutdown: graceful
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 20
+    max-connections: 8192
+    accept-count: 100
 
 spring:
   application:
     name: my-xhs-search
   datasource:
-    url: jdbc:mysql://localhost:13306/my_xhs_search?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai
+    url: jdbc:mysql://localhost:13306/my_xhs_search?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: root
     password: "Xhs@2026#MySQL"
     driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      idle-timeout: 30000
+      max-lifetime: 1800000
+      connection-timeout: 10000
   data:
     redis:
       host: localhost
       port: 16379
       password: "Xhs@2026#Redis"
+      lettuce:
+        pool:
+          max-active: 16
+          max-idle: 8
+          min-idle: 4
+          max-wait: 3000ms
   cloud:
     nacos:
       discovery:
-        server-addr: localhost:18848
+        enabled: true
+        server-addr: 127.0.0.1:18848
+        namespace: my-xhs
+        group: DEFAULT_GROUP
       config:
-        server-addr: localhost:18848
+        enabled: false
+        server-addr: 127.0.0.1:18848
         file-extension: yaml
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+# Elasticsearch 配置
+elasticsearch:
+  uris: http://localhost:19200
+  connect-timeout: 5000
+  socket-timeout: 30000
+
+# RocketMQ 配置
+rocketmq:
+  name-server: localhost:9876
+  consumer:
+    group: search-consumer-group
+  producer:
+    group: search-producer-group
+
+# 搜索业务配置
+search:
+  note:
+    index-name: note_index
+    default-page-size: 20
+    max-page-size: 50
+  product:
+    index-name: product_index
+    default-page-size: 20
+    max-page-size: 50
+  suggest:
+    index-name: suggest_index
+    max-suggestions: 10
+    cache-ttl-seconds: 3600
+  history:
+    max-size: 20
+    ttl-days: 30
+  rebuild:
+    batch-size: 500
+    cron: "0 0 4 * * ?"
+  hot:
+    decay-lambda: 0.1
+    window-minutes: 60
+    top-size: 50
+    antispam:
+      user-ttl-seconds: 300
+      ip-max-per-minute: 10
+
+# 推荐系统配置
+recommend:
+  recall:
+    size-per-strategy: 100
+    timeout-ms: 2000
+  feed:
+    size: 20
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+
+# 日志配置
+logging:
+  level:
+    com.myxhs: info
+    org.springframework.web: info
+    co.elastic.clients: warn
+
+# XXL-Job 分布式调度配置
+xxl:
+  job:
+    enabled: true
+    admin:
+      addresses: http://127.0.0.1:18080/xxl-job-admin
+    accessToken: my-xhs-xxl-job-token-2026
+    executor:
+      appname: my-xhs-search
+      port: 9997
+      logpath: /data/applogs/xxl-job/jobhandler
+      logretentiondays: 30

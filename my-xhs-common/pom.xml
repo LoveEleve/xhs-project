@@ -23,6 +23,18 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- Actuator（健康检查 + Prometheus 指标暴露 + 优雅停机支持） -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Micrometer Prometheus Registry（暴露 /actuator/prometheus 端点，供 Prometheus 采集） -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
         <!-- AOP -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -76,6 +88,20 @@
             <optional>true</optional>
         </dependency>
 
+        <!-- XXL-Job Core（分布式调度执行器） -->
+        <dependency>
+            <groupId>com.xuxueli</groupId>
+            <artifactId>xxl-job-core</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- OpenFeign（optional：仅需要 Feign 调用的服务引入，提供 TraceId 透传拦截器） -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-openfeign</artifactId>
+            <optional>true</optional>
+        </dependency>
+
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>
@@ -112,17 +138,17 @@
             <artifactId>commons-codec</artifactId>
         </dependency>
 
+        <!-- TransmittableThreadLocal（解决 @Async / CompletableFuture 场景下 ThreadLocal 上下文丢失） -->
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>transmittable-thread-local</artifactId>
+            <version>2.14.5</version>
+        </dependency>
+
         <!-- MapStruct -->
         <dependency>
             <groupId>org.mapstruct</groupId>
             <artifactId>mapstruct</artifactId>
-        </dependency>
-
-        <!-- Caffeine（optional：仅需要本地缓存的服务引入） -->
-        <dependency>
-            <groupId>com.github.ben-manes.caffeine</groupId>
-            <artifactId>caffeine</artifactId>
-            <optional>true</optional>
         </dependency>
 
         <!-- CosId 雪花ID生成器（optional：仅需要雪花算法的服务引入，号段模式不依赖它） -->

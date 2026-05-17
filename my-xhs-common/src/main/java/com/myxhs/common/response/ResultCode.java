@@ -68,7 +68,8 @@ public enum ResultCode {
     NOTE_AUDIT_PENDING(20003, "笔记审核中，暂不可操作"),
     COMMENT_NOT_FOUND(20004, "评论不存在"),
     COMMENT_CONTENT_ILLEGAL(20005, "评论内容包含敏感词"),
-    TOPIC_NOT_FOUND(20006, "话题不存在"),
+    NOTE_CONTENT_ILLEGAL(20006, "笔记内容包含敏感词"),
+    TOPIC_NOT_FOUND(20007, "话题不存在"),
 
     // ==================== 电商模块 30001~39999 ====================
     PRODUCT_NOT_FOUND(30001, "商品不存在"),

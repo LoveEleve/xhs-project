@@ -1,5 +1,12 @@
 server:
-  port: 9001
+  port: 19001
+  shutdown: graceful  # 优雅停机
+  tomcat:
+    threads:
+      max: 200          # 最大工作线程数（默认200，显式声明便于调优）
+      min-spare: 20     # 最小空闲线程数（默认10，提高冷启动响应速度）
+    max-connections: 8192  # 最大连接数（默认8192）
+    accept-count: 100     # 等待队列长度（默认100）
 
 spring:
   application:
@@ -8,12 +15,15 @@ spring:
     import: "optional:nacos:"
   cloud:
     nacos:
+      discovery:
+        enabled: true
+        server-addr: 127.0.0.1:18848
+        namespace: my-xhs
+        group: DEFAULT_GROUP
       config:
         enabled: false
-      discovery:
-        enabled: false
   datasource:
-    url: jdbc:mysql://localhost:13306/my_xhs_user?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://localhost:13306/my_xhs_user?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
     username: root
     password: "Xhs@2026#MySQL"
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -23,19 +33,30 @@ spring:
       idle-timeout: 30000
       max-lifetime: 1800000
       connection-timeout: 10000
+      leak-detection-threshold: 60000  # 连接泄漏检测阈值（60秒）
   data:
     redis:
       host: localhost
       port: 16379
       password: "Xhs@2026#Redis"
       database: 0
+      lettuce:
+        pool:
+          max-active: 16    # 最大活跃连接数（默认8，按并发量调整）
+          max-idle: 8       # 最大空闲连接数
+          min-idle: 4       # 最小空闲连接数（保持预热连接）
+          max-wait: 3000ms  # 获取连接最大等待时间（超时快速失败）
+  lifecycle:
+    timeout-per-shutdown-phase: 30s  # 优雅停机等待时间
 
 # MyBatis-Plus 配置
 mybatis-plus:
   mapper-locations: classpath*:/mapper/**/*.xml
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # 生产环境不使用 StdOutImpl（同步输出、性能差、可能泄露敏感数据）
+    # 开发调试时可临时改为 org.apache.ibatis.logging.stdout.StdOutImpl
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
   global-config:
     db-config:
       logic-delete-field: deleted
@@ -48,8 +69,34 @@ jwt:
   access-token-expire: 1800000
   refresh-token-expire: 604800000
 
+# Actuator 健康检查 + 指标暴露
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: always
+      probes:
+        enabled: true  # K8s liveness/readiness 探针支持
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+
+# RocketMQ 配置（缓存兜底消费者）
+rocketmq:
+  name-server: localhost:9876
+  producer:
+    group: user-producer-group
+    send-message-timeout: 3000
+  consumer:
+    group: user-consumer-group
+
 # 日志配置
 logging:
   level:
-    com.myxhs: debug
+    com.myxhs: info
     org.springframework.web: info

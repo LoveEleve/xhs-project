@@ -129,6 +129,62 @@ sudo gor --input-file /tmp/gor/request-*.log \
 
 ---
 
+## 六点五、全链路压测实施流程（参考华仔第98/100篇）
+
+> 单接口压测只能发现单点瓶颈，全链路压测才能发现接口间连锁反应。
+
+### 6.5.1 实施步骤
+
+```
+Phase 1: 数据准备
+  ├── 生成亿级测试数据（参考 massive-data-generation.md）
+  ├── 全量同步 ES（关闭副本+调大刷新间隔）
+  └── 预热缓存（Redis + Caffeine）
+
+Phase 2: 环境准备
+  ├── 部署影子库/影子表（压测数据隔离）
+  ├── 部署 GoReplay 到生产环境
+  └── 配置 SkyWalking + Prometheus 监控
+
+Phase 3: 流量录制
+  ├── 录制 1 小时高峰期真实流量（.gor 文件）
+  └── 过滤无关请求（/actuator/、/health）
+
+Phase 4: 压测执行
+  ├── 1倍速回放 → 观察各服务 QPS/RT/错误率/资源水位
+  ├── 1.5倍速回放 → 观察系统表现
+  ├── 2倍速回放 → 找到系统容量上限
+  └── 记录各阶段的性能数据
+
+Phase 5: 瓶颈分析
+  ├── SkyWalking 找慢链路
+  ├── Arthas trace 定位到具体方法
+  ├── Grafana 看资源水位
+  └── 输出瓶颈分析报告
+
+Phase 6: 优化验证
+  ├── 针对瓶颈优化
+  ├── 重新压测对比基线
+  └── 更新性能基线文档
+```
+
+### 6.5.2 压测数据隔离方案
+
+> 参考华仔第98篇：压测脏数据隔离。压测数据绝不能污染生产数据。
+
+| 隔离层 | 方案 | 识别方式 |
+|--------|------|---------|
+| 请求层 | Header 携带 `X-Traffic-Tag: shadow` | Gateway 注入 |
+| 数据库 | 影子表（`t_order` → `t_order_shadow`） | ShardingSphere 路由 |
+| Redis | Key 前缀（`shadow:order:xxx`） | 自定义 RedisTemplate |
+| MQ | Topic 后缀（`ORDER_TOPIC_SHADOW`） | Producer 自动路由 |
+| ES | 索引后缀（`order_index_shadow`） | 自定义 IndexNameProvider |
+| 日志 | TraceId 含 `shadow` 标记 | SkyWalking Tag |
+
+> 详细方案参考 `23-全链路流量染色/README.md`
+
+---
+
 ## 🐛 七、踩坑记录
 
 ### 7.1 {待开发时填写}
