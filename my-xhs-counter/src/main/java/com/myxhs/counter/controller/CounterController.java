@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.validation.Valid;
 import java.util.Map;
 
 /**
@@ -29,7 +30,7 @@ public class CounterController {
      * 计数 +1（内部调用）
      */
     @PostMapping("/increment")
-    public R<Void> increment(@RequestBody CounterRequest request) {
+    public R<Void> increment(@RequestBody @Valid CounterRequest request) {
         counterService.increment(request.getTargetType(), request.getTargetId(), request.getCountType());
         return R.ok();
     }
@@ -38,7 +39,7 @@ public class CounterController {
      * 计数 -1（内部调用）
      */
     @PostMapping("/decrement")
-    public R<Void> decrement(@RequestBody CounterRequest request) {
+    public R<Void> decrement(@RequestBody @Valid CounterRequest request) {
         boolean success = counterService.decrement(request.getTargetType(), request.getTargetId(), request.getCountType());
         if (!success) {
             return R.fail("计数已为 0，无法继续减少");
@@ -65,7 +66,7 @@ public class CounterController {
      * </p>
      */
     @PostMapping("/batch-get")
-    public R<Map<String, Map<String, Long>>> batchGetCounts(@RequestBody CounterBatchRequest request) {
+    public R<Map<String, Map<String, Long>>> batchGetCounts(@RequestBody @Valid CounterBatchRequest request) {
         Map<String, Map<String, Long>> result = counterService.batchGetCounts(request);
         return R.ok(result);
     }
