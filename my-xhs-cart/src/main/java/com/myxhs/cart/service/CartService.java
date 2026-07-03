@@ -37,13 +37,13 @@ import java.util.stream.Collectors;
  * 原子性保证（Lua 脚本）：
  * - 加入购物车：检查上限 + HINCRBY + 截断 + SADD + ZADD 一次网络往返
  * - 删除商品：HDEL + SREM + ZREM 三结构原子删除
- * - 对比社交服务的 follow_and_count.lua，购物车同样需要多命令原子执行
+ * - 对比社交服务的 follow_self.lua / follow_target.lua，购物车同样需要多命令原子执行
  * </p>
  * <p>
- * Redis Key 设计：
- * - 商品数量：myxhs:cart:items:{userId}（Hash，field=skuId，value=quantity）
- * - 选中状态：myxhs:cart:checked:{userId}（Set，member=skuId）
- * - 加购排序：myxhs:cart:sort:{userId}（ZSet，member=skuId，score=timestamp）
+ * Redis Key 设计（使用 {userId} 作为 hash tag，保证三 Key 在 Cluster 下同 slot）：
+ * - 商品数量：myxhs:cart:{userId}:items（Hash，field=skuId，value=quantity）
+ * - 选中状态：myxhs:cart:{userId}:checked（Set，member=skuId）
+ * - 加购排序：myxhs:cart:{userId}:sort（ZSet，member=skuId，score=timestamp）
  * </p>
  */
 @Slf4j
@@ -57,6 +57,7 @@ public class CartService {
     private final ObjectMapper objectMapper;
     private final DefaultRedisScript<Long> cartAddScript;
     private final DefaultRedisScript<Long> cartRemoveScript;
+    private final DefaultRedisScript<Long> cartCheckAllScript;
 
     /** 购物车商品数量上限（品种数） */
     private static final int MAX_CART_SIZE = 50;
@@ -64,10 +65,22 @@ public class CartService {
     /** 单品数量上限 */
     private static final int MAX_ITEM_QUANTITY = 99;
 
-    /** Redis Key 前缀 */
-    private static final String ITEMS_KEY_PREFIX = "myxhs:cart:items:";
-    private static final String CHECKED_KEY_PREFIX = "myxhs:cart:checked:";
-    private static final String SORT_KEY_PREFIX = "myxhs:cart:sort:";
+    /**
+     * Redis Key 前缀
+     * <p>
+     * 【修复M1】使用 {userId} 作为 hash tag，保证同一用户的三个 Key（items/checked/sort）
+     * 在 Redis Cluster 模式下落到同一个 slot，避免 Lua 脚本报 CROSSSLOT 错误。
+     * Key 格式: myxhs:cart:{userId}:items / myxhs:cart:{userId}:checked / myxhs:cart:{userId}:sort
+     * </p>
+     */
+    private static final String KEY_PREFIX = "myxhs:cart:{";
+    private static final String ITEMS_KEY_SUFFIX = "}:items";
+    private static final String CHECKED_KEY_SUFFIX = "}:checked";
+    private static final String SORT_KEY_SUFFIX = "}:sort";
+
+    private static String itemsKey(Long userId) { return KEY_PREFIX + userId + ITEMS_KEY_SUFFIX; }
+    private static String checkedKey(Long userId) { return KEY_PREFIX + userId + CHECKED_KEY_SUFFIX; }
+    private static String sortKey(Long userId) { return KEY_PREFIX + userId + SORT_KEY_SUFFIX; }
 
     /** MQ Topic */
     private static final String CART_TOPIC = "CART_TOPIC";
@@ -82,16 +95,16 @@ public class CartService {
      * 对比之前的非原子方案（先 HLEN 检查再 HINCRBY），Lua 脚本彻底解决并发超限问题。
      * </p>
      * <p>
-     * 为什么购物车也要用 Lua？（对标社交服务 follow_and_count.lua）
-     * - 社交服务：ZADD 关注 + ZADD 粉丝 + INCR 关注数 + INCR 粉丝数 → 4 命令原子
+     * 为什么购物车也要用 Lua？（对标社交服务 follow_self.lua / follow_target.lua）
+     * - 社交服务：ZADD 关注 + INCR 关注数  → 2+2 命令（拆分为 self/target）
      * - 购物车：HEXISTS + HLEN + HINCRBY + SADD + ZADD → 5 命令原子
      * - 核心诉求相同：多个 Redis 命令必须原子执行，防止中间状态
      * </p>
      */
     public void addToCart(Long userId, CartAddRequest request) {
-        String itemsKey = ITEMS_KEY_PREFIX + userId;
-        String checkedKey = CHECKED_KEY_PREFIX + userId;
-        String sortKey = SORT_KEY_PREFIX + userId;
+        String itemsKey = itemsKey(userId);
+        String checkedKey = checkedKey(userId);
+        String sortKey = sortKey(userId);
 
         // Lua 脚本原子执行：检查上限 + 累加 + 截断 + 选中 + 排序
         Long result = stringRedisTemplate.execute(
@@ -131,7 +144,7 @@ public class CartService {
      * </p>
      */
     public void updateQuantity(Long userId, CartUpdateQuantityRequest request) {
-        String itemsKey = ITEMS_KEY_PREFIX + userId;
+        String itemsKey = itemsKey(userId);
         String skuIdStr = String.valueOf(request.getSkuId());
 
         // 校验商品是否在购物车中
@@ -163,9 +176,9 @@ public class CartService {
      * </p>
      */
     public void removeFromCart(Long userId, Long skuId) {
-        String itemsKey = ITEMS_KEY_PREFIX + userId;
-        String checkedKey = CHECKED_KEY_PREFIX + userId;
-        String sortKey = SORT_KEY_PREFIX + userId;
+        String itemsKey = itemsKey(userId);
+        String checkedKey = checkedKey(userId);
+        String sortKey = sortKey(userId);
 
         // Lua 脚本原子删除三结构
         Long result = stringRedisTemplate.execute(
@@ -192,11 +205,11 @@ public class CartService {
      * </p>
      */
     public void checkItem(Long userId, CartCheckRequest request) {
-        String checkedKey = CHECKED_KEY_PREFIX + userId;
+        String checkedKey = checkedKey(userId);
         String skuIdStr = String.valueOf(request.getSkuId());
 
         // 校验商品是否在购物车中
-        String itemsKey = ITEMS_KEY_PREFIX + userId;
+        String itemsKey = itemsKey(userId);
         Boolean exists = stringRedisTemplate.opsForHash().hasKey(itemsKey, skuIdStr);
         if (Boolean.FALSE.equals(exists)) {
             throw new BizException(ResultCode.CART_ITEM_NOT_FOUND);
@@ -219,40 +232,27 @@ public class CartService {
     // ==================== 全选/取消全选 ====================
 
     /**
-     * 全选/取消全选
+     * 全选/取消全选（Lua 脚本原子操作）
      * <p>
-     * 全选：将购物车中所有 skuId 加入 checked Set
-     * 取消全选：直接 DEL 整个 checked Set（O(1) 操作，比逐个 SREM 高效）
+     * 修复前：非原子的 KEYS → DEL → SADD 三步操作，并发 addToCart 可能丢失新商品的选中状态。
+     * 修复后：Lua 脚本在 Redis 单线程中原子执行 HKEYS + DEL + SADD，彻底消除竞态窗口。
      * </p>
      * <p>
-     * 为什么取消全选用 DEL 而不是逐个 SREM？
-     * - 购物车最多 50 个商品，逐个 SREM 需要 50 次命令
-     * - DEL 整个 Set 是 O(1)，一次命令搞定
-     * - 全选时重新 SADD 所有 skuId，保证 Set 内容与 Hash 一致
+     * 取消全选：直接 DEL 整个 checked Set（O(1) 操作，比逐个 SREM 高效）
      * </p>
      */
     public void checkAll(Long userId, boolean checked) {
-        String itemsKey = ITEMS_KEY_PREFIX + userId;
-        String checkedKey = CHECKED_KEY_PREFIX + userId;
+        String itemsKey = itemsKey(userId);
+        String checkedKey = checkedKey(userId);
 
-        if (checked) {
-            // 全选：先删除旧 Set（清除可能的脏数据），再将所有 skuId 加入
-            // 为什么要先删？如果之前有商品被删除但 checked Set 中残留了该 skuId，
-            // 直接 SADD 不会清除残留，导致 checked Set 比 items Hash 多出幽灵成员。
-            Set<Object> allSkuIds = stringRedisTemplate.opsForHash().keys(itemsKey);
-            if (allSkuIds != null && !allSkuIds.isEmpty()) {
-                String[] skuIdArray = allSkuIds.stream()
-                        .map(Object::toString)
-                        .toArray(String[]::new);
-                stringRedisTemplate.delete(checkedKey);
-                stringRedisTemplate.opsForSet().add(checkedKey, skuIdArray);
-            }
-        } else {
-            // 取消全选：直接删除整个 Set（O(1)）
-            stringRedisTemplate.delete(checkedKey);
-        }
+        Long result = stringRedisTemplate.execute(
+                cartCheckAllScript,
+                List.of(itemsKey, checkedKey),
+                checked ? "1" : "0"
+        );
 
-        log.info("[购物车] 全选变更: userId={}, checked={}", userId, checked);
+        log.info("[购物车] 全选变更: userId={}, checked={}, selectedCount={}",
+                userId, checked, result != null ? result : 0);
     }
 
     // ==================== 购物车列表 ====================
@@ -273,9 +273,9 @@ public class CartService {
      * </p>
      */
     public CartListVO getCartList(Long userId) {
-        String itemsKey = ITEMS_KEY_PREFIX + userId;
-        String checkedKey = CHECKED_KEY_PREFIX + userId;
-        String sortKey = SORT_KEY_PREFIX + userId;
+        String itemsKey = itemsKey(userId);
+        String checkedKey = checkedKey(userId);
+        String sortKey = sortKey(userId);
 
         // 1. Pipeline 一次获取三结构数据（减少 3 次 RTT 为 1 次）
         List<Object> pipelineResults = stringRedisTemplate.executePipelined(
@@ -427,9 +427,9 @@ public class CartService {
             return;
         }
 
-        String itemsKey = ITEMS_KEY_PREFIX + userId;
-        String checkedKey = CHECKED_KEY_PREFIX + userId;
-        String sortKey = SORT_KEY_PREFIX + userId;
+        String itemsKey = itemsKey(userId);
+        String checkedKey = checkedKey(userId);
+        String sortKey = sortKey(userId);
 
         Long currentSize = stringRedisTemplate.opsForHash().size(itemsKey);
         int currentSizeInt = currentSize != null ? currentSize.intValue() : 0;
@@ -473,7 +473,7 @@ public class CartService {
      * 获取购物车商品品种数（用于角标显示）
      */
     public int getCartCount(Long userId) {
-        String itemsKey = ITEMS_KEY_PREFIX + userId;
+        String itemsKey = itemsKey(userId);
         Long size = stringRedisTemplate.opsForHash().size(itemsKey);
         return size != null ? size.intValue() : 0;
     }
@@ -494,20 +494,27 @@ public class CartService {
      * </p>
      */
     private Map<Long, ProductFeignClient.SkuDTO> batchGetSkuInfo(List<Long> skuIds) {
-        Map<Long, ProductFeignClient.SkuDTO> result = new HashMap<>();
-
-        for (Long skuId : skuIds) {
-            try {
-                R<ProductFeignClient.SkuDTO> response = productFeignClient.getSkuDetail(skuId);
-                if (response != null && response.isSuccess() && response.getData() != null) {
-                    result.put(skuId, response.getData());
-                }
-            } catch (Exception e) {
-                log.warn("[购物车] 获取SKU信息失败(降级跳过): skuId={}, error={}", skuId, e.getMessage());
-            }
+        if (skuIds == null || skuIds.isEmpty()) {
+            return new HashMap<>();
         }
 
-        return result;
+        // 一次批量调用替代 N 次循环单查
+        try {
+            R<List<ProductFeignClient.SkuDTO>> response = productFeignClient.batchGetSkuDetails(skuIds);
+            if (response != null && response.isSuccess() && response.getData() != null) {
+                Map<Long, ProductFeignClient.SkuDTO> result = new HashMap<>();
+                for (ProductFeignClient.SkuDTO sku : response.getData()) {
+                    if (sku.getId() != null) {
+                        result.put(sku.getId(), sku);
+                    }
+                }
+                return result;
+            }
+        } catch (Exception e) {
+            log.warn("[购物车] 批量获取SKU信息失败, 降级跳过, skuIds={}, error={}", skuIds, e.getMessage());
+        }
+
+        return new HashMap<>();
     }
 
     /**

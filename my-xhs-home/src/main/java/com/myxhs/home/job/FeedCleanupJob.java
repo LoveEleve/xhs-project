@@ -14,11 +14,14 @@ import org.springframework.stereotype.Component;
 /**
  * Feed 收件箱清理定时任务（XXL-Job 分布式调度）
  * <p>
- * 每天凌晨 3 点清理过期的收件箱数据（超过 7 天的笔记 ID）。
- * 防止收件箱 ZSet 无限膨胀导致 Redis 内存暴涨。
+ * 每天凌晨 3 点执行两阶段清理：
+ * 1. 过期数据清理：ZREMRANGEBYSCORE 删除超期笔记
+ * 2.【M2新增】收件箱裁剪：ZCARD > maxSize 时 ZREMRANGEBYRANK 裁剪到上限
  * </p>
  * <p>
- * XXL-Job 调度保证：Admin 只调度一个 Executor 实例执行，无需 Redisson 分布式锁。
+ * 裁剪逻辑从 FeedPushConsumer 的 Lua 脚本中分离至此，原因：
+ * - 大部分收件箱远未达到上限，实时裁剪浪费 Redis 资源
+ * - 裁剪不要求实时性，定时执行即可
  * </p>
  */
 @Slf4j
@@ -31,11 +34,9 @@ public class FeedCleanupJob {
     @Value("${home.feed.inbox-max-days:7}")
     private int inboxMaxDays;
 
-    /**
-     * Feed 清理（XXL-Job Handler）
-     * <p>
-     * Admin 配置：Cron = 0 0 3 * * ?（每天凌晨 3 点）
-     */
+    @Value("${home.feed.inbox-max-size:500}")
+    private int inboxMaxSize;
+
     @XxlJob("feedCleanupJob")
     public void cleanup() {
         try {
@@ -51,19 +52,27 @@ public class FeedCleanupJob {
         long cutoffTime = System.currentTimeMillis() - (long) inboxMaxDays * 24 * 3600 * 1000;
         int cleaned = 0;
 
-        // SCAN 遍历所有收件箱 Key（避免 KEYS * 阻塞 Redis）
-        // 限速：每批处理后休眠 50ms，避免 SCAN + ZREMRANGEBYSCORE 持续占用 Redis CPU
         String pattern = RedisKeyConstants.FEED_INBOX + "*";
         try (Cursor<String> cursor = stringRedisTemplate.scan(ScanOptions.scanOptions()
                 .match(pattern).count(100).build())) {
             while (cursor.hasNext()) {
                 String key = cursor.next();
+
+                // 1. 删除过期数据
                 Long removed = stringRedisTemplate.opsForZSet()
                         .removeRangeByScore(key, 0, cutoffTime);
                 if (removed != null && removed > 0) {
                     cleaned += removed.intValue();
                 }
-                // 限速：每处理一个 Key 后休眠 50ms，防止 Redis CPU 飙高
+
+                // 2.【M2】裁剪超量数据：ZCARD > maxSize 时裁剪到 maxSize
+                Long card = stringRedisTemplate.opsForZSet().zCard(key);
+                if (card != null && card > inboxMaxSize) {
+                    stringRedisTemplate.opsForZSet()
+                            .removeRange(key, 0, card - inboxMaxSize - 1);
+                    cleaned += (int) (card - inboxMaxSize);
+                }
+
                 Thread.sleep(50);
             }
         } catch (InterruptedException e) {
@@ -90,7 +99,7 @@ public class FeedCleanupJob {
         }
 
         if (cleaned > 0) {
-            log.info("[Feed清理] 完成: 清理{}条过期数据, 截止时间={}", cleaned, cutoffTime);
+            log.info("[Feed清理] 完成: 清理{}条数据, 截止时间={}", cleaned, cutoffTime);
         }
 
         return cleaned;

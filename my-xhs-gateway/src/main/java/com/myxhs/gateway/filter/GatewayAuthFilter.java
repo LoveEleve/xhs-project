@@ -193,6 +193,12 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
      * 用户注销登录时，Token 的 jti 会被写入 Redis 黑名单，
      * TTL 等于 Token 的剩余有效期，过期后自动清除。
      * </p>
+     * <p>
+     * Redis 异常处理策略：
+     * - 降级为拒绝请求（Fail-Closed），防止已注销 Token 复活
+     * - 相比 Fail-Open（漏放安全风险大），Fail-Closed 影响面更可控
+     *   仅在 Redis ≠ 健康 + Token = 已注销 的极小概率场景下误拒
+     * </p>
      */
     private boolean isBlacklisted(String jti) {
         try {
@@ -200,9 +206,11 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
             String val = stringRedisTemplate.opsForValue().get(key);
             return val != null;
         } catch (Exception e) {
-            // Redis 异常降级：放行请求（宁可漏放，不可误拒）
-            log.error("[Gateway] Redis 黑名单查询异常, jti={}", jti, e);
-            return false;
+            // Redis 异常：拒绝请求（Fail-Closed），记录告警
+            // 仅在短暂的 Redis 故障窗口内影响，且仅影响已注销 Token 的请求
+            // 被误拒的请求前端通常会静默重试或引导重新登录，影响面可控
+            log.error("[Gateway] ⚠️ Redis 黑名单查询异常，拒绝请求(安全优先), jti={}", jti, e);
+            return true; // 保守策略：视为在黑名单中，拒绝
         }
     }
 

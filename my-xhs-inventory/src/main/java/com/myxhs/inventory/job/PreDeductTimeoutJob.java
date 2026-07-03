@@ -43,7 +43,11 @@ public class PreDeductTimeoutJob {
     private final RedissonClient redissonClient;
 
     private static final String PREDEDUCT_KEY_PATTERN = "inventory:prededuct:*";
-    private static final String TOTAL_KEY_PREFIX = "inventory:total:";
+    private static final String TOTAL_KEY_TPL = "inventory:{%d}:total";
+    private static final String BUCKET_KEY_TPL = "inventory:{%d}:bucket:";
+
+    private static String totalKey(Long skuId) { return String.format(TOTAL_KEY_TPL, skuId); }
+    private static String bucketKey(Long skuId, int bucketNo) { return String.format(BUCKET_KEY_TPL, skuId) + bucketNo; }
     private static final String LOCK_KEY = "lock:job:inventory:prededuct-timeout";
 
     /**
@@ -131,24 +135,33 @@ public class PreDeductTimeoutJob {
         }
 
         int count = 0;
-        String orderId = predeductKey.replace("inventory:prededuct:", "");
 
         for (Map.Entry<Object, Object> entry : entries.entrySet()) {
-            String skuIdStr = entry.getKey().toString();
-            String totalKey = TOTAL_KEY_PREFIX + skuIdStr;
+            String fieldName = entry.getKey().toString();
+            // 过滤 :bucket 辅助字段（只处理 skuId 字段）
+            if (fieldName.contains(":bucket")) {
+                continue;
+            }
 
-            // 使用 release.lua 原子回退（HGET + INCRBY + HDEL 原子执行）
-            // 如果预扣记录已被其他线程释放，Lua 返回 0，不会双重回退
+            Long skuId = Long.parseLong(fieldName);
+
+            // 获取来源桶号（release.lua 需要桶 Key 作为 KEYS[3]）
+            Object bucketNoObj = stringRedisTemplate.opsForHash().get(predeductKey, fieldName + ":bucket");
+            int bucketNo = bucketNoObj != null ? Integer.parseInt(bucketNoObj.toString()) : 0;
+
+            String totalKeyStr = totalKey(skuId);
+            String bucketKeyStr = bucketKey(skuId, bucketNo);
+
+            // 使用 release.lua 原子回退（传入 totalKey + predeductKey + bucketKey）
             Long result = stringRedisTemplate.execute(
                     releaseScript,
-                    List.of(totalKey, predeductKey),
-                    skuIdStr,
-                    orderId
+                    List.of(totalKeyStr, predeductKey, bucketKeyStr),
+                    fieldName
             );
 
             if (result != null && result > 0) {
-                log.info("[预扣超时] 回退库存: orderId={}, skuId={}, qty={}",
-                        orderId, skuIdStr, result);
+                log.info("[预扣超时] 回退库存: predeductKey={}, skuId={}, qty={}, bucket={}",
+                        predeductKey, skuId, result, bucketNo);
                 count++;
             }
         }

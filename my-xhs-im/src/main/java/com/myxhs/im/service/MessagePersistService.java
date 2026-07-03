@@ -42,7 +42,7 @@ public class MessagePersistService {
     @Transactional(rollbackFor = Exception.class)
     public void saveMessageWithTransaction(long msgId, long conversationId,
                                            Long senderId, Long receiverId,
-                                           String content, int msgType, LocalDateTime now) {
+                                           String content, int msgType, long seqNo, LocalDateTime now) {
         // 1. 插入消息（按 conversation_id 分片，同一会话的消息在同一分片）
         ChatMessage message = ChatMessage.builder()
                 .id(msgId)
@@ -51,6 +51,7 @@ public class MessagePersistService {
                 .receiverId(receiverId)
                 .content(content)
                 .msgType(msgType)
+                .seqNo(seqNo)
                 .createdAt(now)
                 .build();
         chatMessageMapper.insert(message);

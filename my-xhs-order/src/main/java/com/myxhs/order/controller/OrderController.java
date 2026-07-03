@@ -1,5 +1,6 @@
 package com.myxhs.order.controller;
 
+import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
 import com.myxhs.order.dto.request.OrderCreateRequest;
 import com.myxhs.order.dto.request.PayRequest;
@@ -38,6 +39,8 @@ public class OrderController {
      * 创建订单
      */
     @PostMapping("/create")
+    @RateLimit(prefix = "order:create", maxRequests = 5, windowSeconds = 60, perUser = true,
+               message = "下单频率过高，请稍后再试")
     public R<OrderVO> createOrder(@RequestHeader("X-User-Id") Long userId,
                                   @Valid @RequestBody OrderCreateRequest request) {
         return R.ok(orderService.createOrder(userId, request));
@@ -73,6 +76,7 @@ public class OrderController {
      * 取消订单
      */
     @PostMapping("/cancel")
+    @RateLimit(prefix = "order:cancel", maxRequests = 10, windowSeconds = 60, perUser = true)
     public R<Void> cancelOrder(@RequestHeader("X-User-Id") Long userId,
                                @RequestParam Long orderId) {
         orderService.cancelOrder(userId, orderId);

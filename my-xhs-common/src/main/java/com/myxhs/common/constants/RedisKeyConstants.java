@@ -107,7 +107,8 @@ public final class RedisKeyConstants {
     /** 库存缓存 myxhs:inventory:stock:{skuId} */
     public static final String INVENTORY_STOCK = PROJECT_PREFIX + "inventory:stock:";
 
-    /** 优惠券库存 myxhs:coupon:stock:{couponId} */
+    /** 优惠券库存（已废弃：CouponService 自行管理 Key，使用 coupon:{%s}:stock 格式） */
+    @Deprecated
     public static final String COUPON_STOCK = PROJECT_PREFIX + "coupon:stock:";
 
     /** 用户领券记录 myxhs:coupon:user:{userId}:{couponId} */

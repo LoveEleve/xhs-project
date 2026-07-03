@@ -17,7 +17,8 @@ public class NotePublishRequest {
     @Size(max = 128, message = "标题不能超过128字")
     private String title;
 
-    /** 正文 */
+    /** 正文（最长20000字） */
+    @Size(max = 20000, message = "正文不能超过20000字")
     private String content;
 
     /** 图片URL列表（最多9张） */

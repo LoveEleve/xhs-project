@@ -145,16 +145,20 @@ public class ProductSearchService extends AbstractSearchService {
         switch (sort) {
             case "price_asc" -> builder
                     .sort(s -> s.field(f -> f.field("price").order(SortOrder.Asc)))
-                    .sort(s -> s.field(f -> f.field("spuId").order(SortOrder.Asc)));
+                    .sort(s -> s.field(f -> f.field("spuId").order(SortOrder.Asc)))
+                    .sort(s -> s.field(f -> f.field("_id").order(SortOrder.Asc)));
             case "price_desc" -> builder
                     .sort(s -> s.field(f -> f.field("price").order(SortOrder.Desc)))
-                    .sort(s -> s.field(f -> f.field("spuId").order(SortOrder.Desc)));
+                    .sort(s -> s.field(f -> f.field("spuId").order(SortOrder.Desc)))
+                    .sort(s -> s.field(f -> f.field("_id").order(SortOrder.Asc)));
             case "sales" -> builder
                     .sort(s -> s.field(f -> f.field("sales").order(SortOrder.Desc)))
-                    .sort(s -> s.field(f -> f.field("spuId").order(SortOrder.Desc)));
+                    .sort(s -> s.field(f -> f.field("spuId").order(SortOrder.Desc)))
+                    .sort(s -> s.field(f -> f.field("_id").order(SortOrder.Asc)));
             default -> builder
                     .sort(s -> s.score(sc -> sc.order(SortOrder.Desc)))
-                    .sort(s -> s.field(f -> f.field("spuId").order(SortOrder.Desc)));
+                    .sort(s -> s.field(f -> f.field("spuId").order(SortOrder.Desc)))
+                    .sort(s -> s.field(f -> f.field("_id").order(SortOrder.Asc)));
         }
     }
 

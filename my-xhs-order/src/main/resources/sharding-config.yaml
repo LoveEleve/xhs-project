@@ -14,7 +14,7 @@ dataSources:
   ds0:
     dataSourceClassName: com.zaxxer.hikari.HikariDataSource
     driverClassName: com.mysql.cj.jdbc.Driver
-    jdbcUrl: jdbc:mysql://localhost:13306/my_xhs_order_0?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    jdbcUrl: jdbc:mysql://21.91.124.110:13308/my_xhs_order_0?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
     username: root
     password: "Xhs@2026#MySQL"
     connectionTimeoutMilliseconds: 10000
@@ -25,7 +25,7 @@ dataSources:
   ds1:
     dataSourceClassName: com.zaxxer.hikari.HikariDataSource
     driverClassName: com.mysql.cj.jdbc.Driver
-    jdbcUrl: jdbc:mysql://localhost:13306/my_xhs_order_1?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    jdbcUrl: jdbc:mysql://21.91.124.110:13308/my_xhs_order_1?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
     username: root
     password: "Xhs@2026#MySQL"
     connectionTimeoutMilliseconds: 10000
@@ -36,7 +36,7 @@ dataSources:
   ds2:
     dataSourceClassName: com.zaxxer.hikari.HikariDataSource
     driverClassName: com.mysql.cj.jdbc.Driver
-    jdbcUrl: jdbc:mysql://localhost:13306/my_xhs_order_2?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    jdbcUrl: jdbc:mysql://21.91.124.110:13308/my_xhs_order_2?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
     username: root
     password: "Xhs@2026#MySQL"
     connectionTimeoutMilliseconds: 10000
@@ -47,7 +47,7 @@ dataSources:
   ds3:
     dataSourceClassName: com.zaxxer.hikari.HikariDataSource
     driverClassName: com.mysql.cj.jdbc.Driver
-    jdbcUrl: jdbc:mysql://localhost:13306/my_xhs_order_3?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    jdbcUrl: jdbc:mysql://21.91.124.110:13308/my_xhs_order_3?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
     username: root
     password: "Xhs@2026#MySQL"
     connectionTimeoutMilliseconds: 10000

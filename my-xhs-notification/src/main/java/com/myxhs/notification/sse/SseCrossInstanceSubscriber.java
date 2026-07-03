@@ -11,6 +11,7 @@ import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import java.util.Map;
 
 /**
@@ -39,16 +40,31 @@ public class SseCrossInstanceSubscriber implements MessageListener {
 
     private static final String NOTIFY_SSE_CHANNEL = "notify:sse:channel";
 
+    private RedisMessageListenerContainer container;
+
     /**
      * 应用启动后注册 Redis Pub/Sub 订阅
+     * <p>
+     * 【修复M17】afterPropertiesSet() 仅验证配置，不启动监听线程。
+     * 必须同时调用 start() 才能真正订阅 Redis Channel。
+     * </p>
      */
     @PostConstruct
     public void init() {
-        RedisMessageListenerContainer container = new RedisMessageListenerContainer();
+        container = new RedisMessageListenerContainer();
         container.setConnectionFactory(stringRedisTemplate.getConnectionFactory());
         container.addMessageListener(this, new ChannelTopic(NOTIFY_SSE_CHANNEL));
         container.afterPropertiesSet();
+        container.start();
         log.info("[SSE] 跨实例推送订阅已启动: channel={}", NOTIFY_SSE_CHANNEL);
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        if (container != null) {
+            container.stop();
+            log.info("[SSE] 跨实例推送订阅已停止");
+        }
     }
 
     @Override

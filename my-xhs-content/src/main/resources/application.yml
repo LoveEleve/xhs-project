@@ -16,7 +16,7 @@ spring:
   application:
     name: my-xhs-content
   datasource:
-    url: jdbc:mysql://localhost:13306/my_xhs_content?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://21.91.124.110:13307/my_xhs_content?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: root
     password: "Xhs@2026#MySQL"
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -29,9 +29,13 @@ spring:
       leak-detection-threshold: 60000
   data:
     redis:
-      host: localhost
+      host: 21.91.124.110
       port: 16379
       password: "Xhs@2026#Redis"
+      cache:
+        port: 16380  # Cache Redis (allkeys-lru)
+      business:
+        port: 16381  # Business Redis (noeviction)
       lettuce:
         pool:
           max-active: 16
@@ -42,13 +46,41 @@ spring:
     nacos:
       discovery:
         enabled: true
-        server-addr: 127.0.0.1:18848
+        server-addr: 21.91.124.110:18848
         namespace: my-xhs
         group: DEFAULT_GROUP
       config:
-        enabled: false
-        server-addr: 127.0.0.1:18848
+        enabled: true
+        server-addr: 21.91.124.110:18848
+        import-check:
+          enabled: false
         file-extension: yaml
+    sentinel:
+      transport:
+        dashboard: 21.91.124.110:18082
+        port: 8722
+      eager: true
+      feign:
+        sentinel:
+          enabled: true
+    openfeign:
+      client:
+        config:
+          default:
+            connect-timeout: 500
+            read-timeout: 2000
+            logger-level: BASIC
+      compression:
+        request:
+          enabled: true
+          mime-types: application/json
+        response:
+          enabled: true
+      httpclient:
+        hc5:
+          enabled: true
+          max-connections: 200
+          max-connections-per-route: 50
   lifecycle:
     timeout-per-shutdown-phase: 30s
 
@@ -65,7 +97,7 @@ mybatis-plus:
 
 # RocketMQ 配置
 rocketmq:
-  name-server: localhost:9876
+  name-server: 21.91.124.110:9876
   producer:
     group: content-producer-group
     send-message-timeout: 3000
@@ -75,7 +107,7 @@ storage:
   type: local
   local:
     path: /data/uploads
-    url-prefix: http://localhost:19002/uploads
+    url-prefix: http://21.214.97.212:19002/uploads
 
 # Actuator 健康检查 + 指标暴露
 management:

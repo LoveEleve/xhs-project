@@ -2,8 +2,10 @@ package com.myxhs.common.cache;
 
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.Executors;
@@ -35,6 +37,9 @@ public class CacheHelper {
 
     private final RedisOperator redisOperator;
     private final RedissonClient redissonClient;
+
+    @Autowired(required = false)
+    private RocketMQTemplate rocketMQTemplate;
 
     /** 空值占位符常量（使用不可能出现在业务数据中的特殊前缀） */
     private static final String NULL_PLACEHOLDER = "\u0000__CACHE_NULL__\u0000";
@@ -89,8 +94,15 @@ public class CacheHelper {
      * </p>
      */
     public <T> T getWithCacheAside(String key, Supplier<T> dbFallback, long timeout, TimeUnit unit) {
-        // 1. 查缓存
-        T cached = redisOperator.get(key);
+        // 1. 查缓存（Redis 不可用 → 降级查 DB，不回填缓存避免加重 Redis 压力）
+        T cached;
+        try {
+            cached = redisOperator.get(key);
+        } catch (com.myxhs.common.exception.RedisUnavailableException e) {
+            log.warn("[缓存] Redis不可用，降级查DB(不回填), key={}", key, e);
+            return dbFallback.get();
+        }
+
         if (cached != null) {
             if (isNullPlaceholder(cached)) {
                 return null;
@@ -101,14 +113,17 @@ public class CacheHelper {
         // 2. 缓存未命中，查 DB
         T dbResult = dbFallback.get();
 
-        if (dbResult != null) {
-            // 3. 回填缓存（TTL + 随机偏移防雪崩）
-            long timeoutSeconds = unit.toSeconds(timeout);
-            long randomOffset = ThreadLocalRandom.current().nextLong(0, timeoutSeconds / 6 + 1);
-            redisOperator.set(key, dbResult, timeoutSeconds + randomOffset, TimeUnit.SECONDS);
-        } else {
-            // 4. 缓存空值（短 TTL 防穿透，2 分钟）
-            redisOperator.set(key, NULL_PLACEHOLDER, 2, TimeUnit.MINUTES);
+        // 3. 回填缓存（Redis 不可用时跳过回填，不中断业务）
+        try {
+            if (dbResult != null) {
+                long timeoutSeconds = unit.toSeconds(timeout);
+                long randomOffset = ThreadLocalRandom.current().nextLong(0, timeoutSeconds / 6 + 1);
+                redisOperator.set(key, dbResult, timeoutSeconds + randomOffset, TimeUnit.SECONDS);
+            } else {
+                redisOperator.set(key, NULL_PLACEHOLDER, 2, TimeUnit.MINUTES);
+            }
+        } catch (com.myxhs.common.exception.RedisUnavailableException e) {
+            log.warn("[缓存] 回填缓存失败-Redis不可用, key={}", key, e);
         }
 
         return dbResult;
@@ -136,8 +151,15 @@ public class CacheHelper {
      * </p>
      */
     public <T> T getWithCacheAsideLock(String key, Supplier<T> dbFallback, long timeout, TimeUnit unit) {
-        // 1. 查缓存
-        T cached = redisOperator.get(key);
+        // 1. 查缓存（Redis 不可用 → 降级查 DB，不获取锁）
+        T cached;
+        try {
+            cached = redisOperator.get(key);
+        } catch (com.myxhs.common.exception.RedisUnavailableException e) {
+            log.warn("[缓存] Redis不可用，降级查DB(不获取锁), key={}", key, e);
+            return dbFallback.get();
+        }
+
         if (cached != null) {
             if (isNullPlaceholder(cached)) {
                 return null;
@@ -160,12 +182,16 @@ public class CacheHelper {
 
                     // 查 DB 并回填
                     T dbResult = dbFallback.get();
-                    if (dbResult != null) {
-                        long timeoutSeconds = unit.toSeconds(timeout);
-                        long randomOffset = ThreadLocalRandom.current().nextLong(0, timeoutSeconds / 6 + 1);
-                        redisOperator.set(key, dbResult, timeoutSeconds + randomOffset, TimeUnit.SECONDS);
-                    } else {
-                        redisOperator.set(key, NULL_PLACEHOLDER, 2, TimeUnit.MINUTES);
+                    try {
+                        if (dbResult != null) {
+                            long timeoutSeconds = unit.toSeconds(timeout);
+                            long randomOffset = ThreadLocalRandom.current().nextLong(0, timeoutSeconds / 6 + 1);
+                            redisOperator.set(key, dbResult, timeoutSeconds + randomOffset, TimeUnit.SECONDS);
+                        } else {
+                            redisOperator.set(key, NULL_PLACEHOLDER, 2, TimeUnit.MINUTES);
+                        }
+                    } catch (com.myxhs.common.exception.RedisUnavailableException e) {
+                        log.warn("[缓存] 回填缓存失败-Redis不可用, key={}", key, e);
                     }
                     return dbResult;
                 } finally {
@@ -176,7 +202,13 @@ public class CacheHelper {
             } else {
                 // 获取锁失败（其他线程正在查 DB），等待后重试读缓存
                 Thread.sleep(100);
-                T retryCache = redisOperator.get(key);
+                T retryCache;
+                try {
+                    retryCache = redisOperator.get(key);
+                } catch (com.myxhs.common.exception.RedisUnavailableException e) {
+                    log.warn("[缓存] Redis不可用，降级查DB, key={}", key, e);
+                    return dbFallback.get();
+                }
                 if (retryCache != null) {
                     return isNullPlaceholder(retryCache) ? null : retryCache;
                 }
@@ -184,6 +216,9 @@ public class CacheHelper {
                 log.warn("[缓存] 获取锁失败且缓存仍未命中，降级查DB, key={}", key);
                 return dbFallback.get();
             }
+        } catch (com.myxhs.common.exception.RedisUnavailableException e) {
+            log.error("[缓存] 分布式锁操作-Redis不可用, 降级为无锁模式, key={}", key, e);
+            return getWithCacheAside(key, dbFallback, timeout, unit);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("[缓存] 获取锁被中断，降级查DB, key={}", key);
@@ -216,10 +251,22 @@ public class CacheHelper {
         for (String key : keys) {
             boolean deleted = false;
             for (int i = 0; i < 3; i++) {
-                // RedisOperator.delete() 内部吞异常返回 false，所以基于返回值判断
-                boolean success = redisOperator.delete(key);
-                if (success) {
-                    deleted = true;
+                try {
+                    boolean success = redisOperator.delete(key);
+                    if (success) {
+                        deleted = true;
+                        break;
+                    }
+                    // Key 不存在（Redis 返回 0），视为成功
+                    if (i == 0) {
+                        log.debug("[缓存] 删缓存-Key不存在(视为成功), key={}", key);
+                        deleted = true;
+                        break;
+                    }
+                } catch (com.myxhs.common.exception.RedisUnavailableException e) {
+                    // Redis 不可用，重试无意义，直接失败
+                    log.error("[缓存] 删缓存失败-Redis不可用, key={}", key, e);
+                    allSuccess = false;
                     break;
                 }
                 log.warn("[缓存] 删缓存重试 {}/3, key={}", i + 1, key);
@@ -257,16 +304,35 @@ public class CacheHelper {
      * @param key 缓存 Key
      */
     public void delayDoubleDelete(String key) {
-        // 第一次删除
-        redisOperator.delete(key);
+        // 第一次删除（带重试，Redis 不可用时立即失败）
+        try {
+            boolean firstDeleted = redisOperator.delete(key);
+            if (!firstDeleted) {
+                log.debug("[延迟双删] 第一次删除-Key不存在, key={}", key);
+            }
+        } catch (com.myxhs.common.exception.RedisUnavailableException e) {
+            log.error("[延迟双删] 第一次删除失败-Redis不可用, key={}", key, e);
+            // Redis 不可用，不调度第二次（第二次也会失败）
+            return;
+        }
 
         // 延迟 500ms 第二次删除
         delayScheduler.schedule(() -> {
             try {
-                redisOperator.delete(key);
-                log.debug("[延迟双删] 第二次删除完成, key={}", key);
+                boolean secondDeleted = redisOperator.delete(key);
+                log.debug("[延迟双删] 第二次删除完成, key={}, deleted={}", key, secondDeleted);
+            } catch (com.myxhs.common.exception.RedisUnavailableException e) {
+                log.error("[延迟双删] 第二次删除失败-Redis不可用, key={}", key, e);
             } catch (Exception e) {
-                log.warn("[延迟双删] 第二次删除失败，等待MQ兜底, key={}", key, e);
+                log.warn("[延迟双删] 第二次删除失败，发送MQ兜底, key={}", key, e);
+                // MQ 兜底：发到 CACHE_EVICT_TOPIC，由缓存驱逐消费者异步重试
+                if (rocketMQTemplate != null) {
+                    try {
+                        rocketMQTemplate.syncSend("CACHE_EVICT_TOPIC", key, 3000);
+                    } catch (Exception mqEx) {
+                        log.error("[延迟双删] MQ兜底发送失败, key={}", key, mqEx);
+                    }
+                }
             }
         }, 500, TimeUnit.MILLISECONDS);
     }

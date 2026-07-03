@@ -43,8 +43,10 @@ import java.util.stream.Collectors;
 public class FollowService {
 
     private final StringRedisTemplate stringRedisTemplate;
-    private final DefaultRedisScript<Long> followScript;
-    private final DefaultRedisScript<Long> unfollowScript;
+    private final DefaultRedisScript<Long> followSelfScript;
+    private final DefaultRedisScript<Long> followTargetScript;
+    private final DefaultRedisScript<Long> unfollowSelfScript;
+    private final DefaultRedisScript<Long> unfollowTargetScript;
     private final FollowMapper followMapper;
     private final IdGeneratorUtil idGeneratorUtil;
 
@@ -71,24 +73,38 @@ public class FollowService {
             throw new BizException(ResultCode.CANNOT_FOLLOW_SELF);
         }
 
-        // 2. 执行 Lua 脚本（原子操作：ZADD 关注列表 + ZADD 粉丝列表 + INCR 关注数 + INCR 粉丝数）
+        // 2.【修复M6】拆分为两个 Lua 脚本，每个仅操作同一用户的 Key（Cluster 兼容）
+        //   Step A: 当前用户侧（关注列表 + 关注数）
         String followingKey = RedisKeyConstants.FOLLOW_LIST + userId;
-        String followerKey = RedisKeyConstants.FOLLOW_FANS + targetUserId;
         String followingCountKey = RedisKeyConstants.COUNTER + "user_following:" + userId;
-        String followerCountKey = RedisKeyConstants.COUNTER + "user_follower:" + targetUserId;
 
         long currentTime = System.currentTimeMillis();
 
-        Long result = stringRedisTemplate.execute(
-                followScript,
-                List.of(followingKey, followerKey, followingCountKey, followerCountKey),
+        Long selfResult = stringRedisTemplate.execute(
+                followSelfScript,
+                List.of(followingKey, followingCountKey),
                 String.valueOf(targetUserId),
-                String.valueOf(userId),
                 String.valueOf(currentTime)
         );
 
-        if (result == null || result == 0) {
+        if (selfResult == null || selfResult == 0) {
             throw new BizException(ResultCode.ALREADY_FOLLOWED);
+        }
+
+        //   Step B: 目标用户侧（粉丝列表 + 粉丝数）
+        String followerKey = RedisKeyConstants.FOLLOW_FANS + targetUserId;
+        String followerCountKey = RedisKeyConstants.COUNTER + "user_follower:" + targetUserId;
+
+        try {
+            stringRedisTemplate.execute(
+                    followTargetScript,
+                    List.of(followerKey, followerCountKey),
+                    String.valueOf(userId),
+                    String.valueOf(currentTime)
+            );
+        } catch (Exception e) {
+            // 目标用户侧写入失败不影响关注结果（对账任务修复粉丝侧）
+            log.error("[关注] 目标用户粉丝列表写入失败（对账修复）: userId={}, targetUserId={}", userId, targetUserId, e);
         }
 
         log.info("[关注] 关注成功: userId={}, targetUserId={}", userId, targetUserId);
@@ -122,21 +138,33 @@ public class FollowService {
             throw new BizException(ResultCode.CANNOT_FOLLOW_SELF);
         }
 
-        // 2. 执行 Lua 脚本（原子操作）
+        // 2.【修复M6】拆分为两个 Lua 脚本（Cluster 兼容）
+        //   Step A: 当前用户侧（移除关注列表 + 关注数 -1）
         String followingKey = RedisKeyConstants.FOLLOW_LIST + userId;
-        String followerKey = RedisKeyConstants.FOLLOW_FANS + targetUserId;
         String followingCountKey = RedisKeyConstants.COUNTER + "user_following:" + userId;
-        String followerCountKey = RedisKeyConstants.COUNTER + "user_follower:" + targetUserId;
 
-        Long result = stringRedisTemplate.execute(
-                unfollowScript,
-                List.of(followingKey, followerKey, followingCountKey, followerCountKey),
-                String.valueOf(targetUserId),
-                String.valueOf(userId)
+        Long selfResult = stringRedisTemplate.execute(
+                unfollowSelfScript,
+                List.of(followingKey, followingCountKey),
+                String.valueOf(targetUserId)
         );
 
-        if (result == null || result == 0) {
+        if (selfResult == null || selfResult == 0) {
             throw new BizException(ResultCode.NOT_FOLLOWED);
+        }
+
+        //   Step B: 目标用户侧（移除粉丝列表 + 粉丝数 -1）
+        String followerKey = RedisKeyConstants.FOLLOW_FANS + targetUserId;
+        String followerCountKey = RedisKeyConstants.COUNTER + "user_follower:" + targetUserId;
+
+        try {
+            stringRedisTemplate.execute(
+                    unfollowTargetScript,
+                    List.of(followerKey, followerCountKey),
+                    String.valueOf(userId)
+            );
+        } catch (Exception e) {
+            log.error("[关注] 目标用户粉丝列表移除失败（对账修复）: userId={}, targetUserId={}", userId, targetUserId, e);
         }
 
         log.info("[关注] 取关成功: userId={}, targetUserId={}", userId, targetUserId);
@@ -289,23 +317,16 @@ public class FollowService {
         String myKey = RedisKeyConstants.FOLLOW_LIST + userId;
         String targetKey = RedisKeyConstants.FOLLOW_LIST + targetUserId;
 
-        // 取出两个用户的关注列表（限制数量）
-        Set<String> myFollowing = stringRedisTemplate.opsForZSet()
-                .reverseRange(myKey, 0, MAX_COMMON_FOLLOW_FETCH - 1);
-        Set<String> targetFollowing = stringRedisTemplate.opsForZSet()
-                .reverseRange(targetKey, 0, MAX_COMMON_FOLLOW_FETCH - 1);
-
-        if (myFollowing == null || myFollowing.isEmpty()
-                || targetFollowing == null || targetFollowing.isEmpty()) {
+        // 【m19】使用 ZINTER 服务端求交集，避免 5000×2 数据拉回内存
+        Set<String> common = stringRedisTemplate.opsForZSet()
+                .intersect(myKey, targetKey);
+        if (common == null || common.isEmpty()) {
             return Collections.emptyList();
         }
 
-        // 内存求交集
-        Set<String> common = new HashSet<>(myFollowing);
-        common.retainAll(targetFollowing);
-
         return common.stream()
                 .map(Long::valueOf)
+                .limit(MAX_COMMON_FOLLOW_FETCH)
                 .collect(Collectors.toList());
     }
 

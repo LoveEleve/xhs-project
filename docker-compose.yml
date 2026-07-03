@@ -2,41 +2,173 @@ version: '3.8'
 
 services:
   # ==========================================
-  # MySQL 8.0 — 非标准端口 13306
+  # MySQL-User — 端口 13306
+  # 用户 + 社交 + 基础设施(nacos_config/xxl_job)
   # ==========================================
-  mysql:
+  mysql-user:
     image: mysql:8.0
-    container_name: my-xhs-mysql
+    container_name: my-xhs-mysql-user
     network_mode: host
     environment:
       MYSQL_ROOT_PASSWORD: Xhs@2026#MySQL
-      MYSQL_CHARSET: utf8mb4
       TZ: Asia/Shanghai
     command: >
       --port=13306
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_unicode_ci
       --default-authentication-plugin=mysql_native_password
-      --max-connections=500
+      --max-connections=300
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13306", "-u", "root", "-pXhs@2026#MySQL"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     volumes:
-      - mysql-data:/var/lib/mysql
-      - ./sql/init-databases.sql:/docker-entrypoint-initdb.d/01-init-databases.sql
+      - mysql-user-data:/var/lib/mysql
+      - ./sql/mysql-user-init.sql:/docker-entrypoint-initdb.d/01-init.sql
     restart: unless-stopped
 
   # ==========================================
-  # Redis 7 — 非标准端口 16379
+  # MySQL-Content — 端口 13307
+  # 内容 + 商品 + 购物车 + 优惠券
+  # ==========================================
+  mysql-content:
+    image: mysql:8.0
+    container_name: my-xhs-mysql-content
+    network_mode: host
+    environment:
+      MYSQL_ROOT_PASSWORD: Xhs@2026#MySQL
+      TZ: Asia/Shanghai
+    command: >
+      --port=13307
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+      --max-connections=300
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13307", "-u", "root", "-pXhs@2026#MySQL"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - mysql-content-data:/var/lib/mysql
+      - ./sql/mysql-content-init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    restart: unless-stopped
+
+  # ==========================================
+  # MySQL-Order — 端口 13308
+  # 订单(4分片库) + 支付，读高写更高，完全隔离
+  # ==========================================
+  mysql-order:
+    image: mysql:8.0
+    container_name: my-xhs-mysql-order
+    network_mode: host
+    environment:
+      MYSQL_ROOT_PASSWORD: Xhs@2026#MySQL
+      TZ: Asia/Shanghai
+    command: >
+      --port=13308
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+      --max-connections=500
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13308", "-u", "root", "-pXhs@2026#MySQL"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - mysql-order-data:/var/lib/mysql
+      - ./sql/mysql-order-init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    restart: unless-stopped
+
+  # ==========================================
+  # MySQL-Inventory — 端口 13309
+  # 库存独立：最高写争用（行锁），单独部署防止拖垮其他库
+  # ==========================================
+  mysql-inventory:
+    image: mysql:8.0
+    container_name: my-xhs-mysql-inventory
+    network_mode: host
+    environment:
+      MYSQL_ROOT_PASSWORD: Xhs@2026#MySQL
+      TZ: Asia/Shanghai
+    command: >
+      --port=13309
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+      --max-connections=200
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13309", "-u", "root", "-pXhs@2026#MySQL"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - mysql-inventory-data:/var/lib/mysql
+      - ./sql/mysql-inventory-init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    restart: unless-stopped
+
+  # ==========================================
+  # Redis 7 — 端口 16379
   # ==========================================
   redis:
     image: redis:7-alpine
     container_name: my-xhs-redis
     network_mode: host
-    command: redis-server --port 16379 --requirepass Xhs@2026#Redis --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: redis-server --port 16379 --bind 0.0.0.0 --requirepass Xhs@2026#Redis --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "16379", "-a", "Xhs@2026#Redis", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     volumes:
       - redis-data:/data
     restart: unless-stopped
 
   # ==========================================
-  # Nacos 2.3 — 非标准端口 18848 (主端口) / 18849(gRPC) / 18850(gRPC)
+  # Sentinel Dashboard 1.8.8 — 端口 18082
+  # ==========================================
+  sentinel-dashboard:
+    image: bladex/sentinel-dashboard:1.8.8
+    container_name: my-xhs-sentinel-dashboard
+    network_mode: host
+    environment:
+      SERVER_PORT: 18082
+    restart: unless-stopped
+
+
+  # ==========================================
+  # Nacos 2.3 — 端口 18848/18849/18850
   # ==========================================
   nacos:
     image: nacos/nacos-server:v2.3.2
@@ -45,7 +177,7 @@ services:
     environment:
       MODE: standalone
       NACOS_SERVER_PORT: 18848
-      NACOS_SERVER_IP: 127.0.0.1
+      NACOS_SERVER_IP: 21.91.124.110
       SPRING_DATASOURCE_PLATFORM: mysql
       MYSQL_SERVICE_HOST: 127.0.0.1
       MYSQL_SERVICE_PORT: 13306
@@ -55,19 +187,24 @@ services:
       JVM_XMS: 256m
       JVM_XMX: 512m
     depends_on:
-      - mysql
+      - mysql-user
     restart: unless-stopped
 
   # ==========================================
-  # RocketMQ NameServer — 非标准端口 19876
+  # RocketMQ NameServer — 端口 9876
   # ==========================================
   rocketmq-namesrv:
     image: apache/rocketmq:5.1.4
     container_name: my-xhs-mq-namesrv
     network_mode: host
-    command: sh mqnamesrv -n 127.0.0.1:19876
+    command: sh mqnamesrv
     environment:
       JAVA_OPT_EXT: "-server -Xms256m -Xmx256m"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
 
   # ==========================================
@@ -77,9 +214,20 @@ services:
     image: apache/rocketmq:5.1.4
     container_name: my-xhs-mq-broker
     network_mode: host
-    command: sh mqbroker -n 127.0.0.1:19876 -c /home/rocketmq/rocketmq-5.1.4/conf/broker.conf
+    command: sh mqbroker -n 127.0.0.1:9876 -c /home/rocketmq/rocketmq-5.1.4/conf/broker.conf
     environment:
       JAVA_OPT_EXT: "-server -Xms512m -Xmx512m"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://127.0.0.1:11911 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     volumes:
       - ./config/rocketmq/broker.conf:/home/rocketmq/rocketmq-5.1.4/conf/broker.conf
       - mq-logs:/home/rocketmq/logs
@@ -89,7 +237,7 @@ services:
     restart: unless-stopped
 
   # ==========================================
-  # Elasticsearch 8.12.2 — 非标准端口 19200(HTTP) / 19300(Transport)
+  # Elasticsearch 8.12 — 端口 19200/19300
   # ==========================================
   elasticsearch:
     image: elasticsearch:8.12.2
@@ -97,20 +245,84 @@ services:
     network_mode: host
     environment:
       - discovery.type=single-node
-      - xpack.security.enabled=false
+      - xpack.security.enabled=true
       - xpack.security.http.ssl.enabled=false
+      - ELASTIC_PASSWORD=Xhs@2026#Elastic
       - http.port=19200
       - transport.port=19300
       - ES_JAVA_OPTS=-Xms512m -Xmx512m
       - cluster.name=my-xhs-es
       - node.name=es-node-1
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -u elastic:Xhs@2026#Elastic http://127.0.0.1:19200/_cluster/health?local=true | grep -q 'green\\|yellow'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     volumes:
       - es-data:/usr/share/elasticsearch/data
       - es-plugins:/usr/share/elasticsearch/plugins
     restart: unless-stopped
 
   # ==========================================
-  # Prometheus 2.48 — 非标准端口 19090
+  # Canal 1.1.7 — MySQL Binlog → RocketMQ → ES
+  # note_instance 读 mysql-content:13307
+  # product_instance 读 mysql-content:13307
+  # inventory_instance 读 mysql-inventory:13309
+  # ==========================================
+  canal:
+    image: canal/canal-server:v1.1.7
+    container_name: my-xhs-canal
+    network_mode: host
+    volumes:
+      - ./config/canal/conf/canal.properties:/home/admin/canal-server/conf/canal.properties
+      - ./config/canal/conf/note_instance/instance.properties:/home/admin/canal-server/conf/note_instance/instance.properties
+      - ./config/canal/conf/product_instance/instance.properties:/home/admin/canal-server/conf/product_instance/instance.properties
+      - ./config/canal/conf/inventory_instance/instance.properties:/home/admin/canal-server/conf/inventory_instance/instance.properties
+      - canal-data:/home/admin/canal-server/logs
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://127.0.0.1:11111 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      - mysql-content
+      - mysql-inventory
+      - rocketmq-broker
+    restart: unless-stopped
+
+  # ==========================================
+  # XXL-Job Admin 2.4.2 — 端口 18080
+  # ==========================================
+  xxl-job-admin:
+    image: xuxueli/xxl-job-admin:2.4.2
+    container_name: my-xhs-xxl-job-admin
+    network_mode: host
+    environment:
+      PARAMS: >-
+        --spring.datasource.url=jdbc:mysql://127.0.0.1:13306/xxl_job?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai
+        --spring.datasource.username=root
+        --spring.datasource.password=Xhs@2026#MySQL
+        --server.port=18080
+        --xxl.job.accessToken=my-xhs-xxl-job-token-2026
+        --xxl.job.i18n=zh_CN
+    depends_on:
+      - mysql-user
+    restart: unless-stopped
+
+  # ==========================================
+  # Prometheus 2.48 — 端口 19090
   # ==========================================
   prometheus:
     image: prom/prometheus:v2.48.1
@@ -128,7 +340,7 @@ services:
     restart: unless-stopped
 
   # ==========================================
-  # Grafana 10 — 非标准端口 13000
+  # Grafana 10 — 端口 13000
   # ==========================================
   grafana:
     image: grafana/grafana:10.2.3
@@ -145,46 +357,36 @@ services:
     restart: unless-stopped
 
   # ==========================================
-  # Canal 1.1.7 — 非标准端口 11111(管理) / 11112(指标)
-  # MySQL Binlog → Canal → RocketMQ → ES 增量同步
+  # SkyWalking OAP 9.7.0 — 链路追踪后端
   # ==========================================
-  canal:
-    image: canal/canal-server:v1.1.7
-    container_name: my-xhs-canal
+  skywalking-oap:
+    image: apache/skywalking-oap-server:9.7.0
+    container_name: my-xhs-skywalking-oap
     network_mode: host
-    volumes:
-      - ./config/canal/conf/canal.properties:/home/admin/canal-server/conf/canal.properties
-      - ./config/canal/conf/note_instance/instance.properties:/home/admin/canal-server/conf/note_instance/instance.properties
-      - ./config/canal/conf/product_instance/instance.properties:/home/admin/canal-server/conf/product_instance/instance.properties
-      - ./config/canal/conf/inventory_instance/instance.properties:/home/admin/canal-server/conf/inventory_instance/instance.properties
-      - canal-data:/home/admin/canal-server/logs
-    depends_on:
-      - mysql
-      - rocketmq-broker
+    environment:
+      SW_STORAGE: elasticsearch
+      SW_STORAGE_ES_CLUSTER_NODES: 127.0.0.1:19200
     restart: unless-stopped
 
   # ==========================================
-  # XXL-Job Admin 2.4.2 — 非标准端口 18080
-  # 分布式任务调度中心，替代 Spring @Scheduled
+  # SkyWalking UI 9.7.0 — 链路追踪控制台
   # ==========================================
-  xxl-job-admin:
-    image: xuxueli/xxl-job-admin:2.4.2
-    container_name: my-xhs-xxl-job-admin
+  skywalking-ui:
+    image: apache/skywalking-ui:9.7.0
+    container_name: my-xhs-skywalking-ui
     network_mode: host
     environment:
-      PARAMS: >-
-        --spring.datasource.url=jdbc:mysql://127.0.0.1:13306/xxl_job?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai
-        --spring.datasource.username=root
-        --spring.datasource.password=Xhs@2026#MySQL
-        --server.port=18080
-        --xxl.job.accessToken=my-xhs-xxl-job-token-2026
-        --xxl.job.i18n=zh_CN
+      SW_OAP_ADDRESS: http://127.0.0.1:12800
+      SW_SERVER_PORT: 18081
     depends_on:
-      - mysql
+      - skywalking-oap
     restart: unless-stopped
 
 volumes:
-  mysql-data:
+  mysql-user-data:
+  mysql-content-data:
+  mysql-order-data:
+  mysql-inventory-data:
   redis-data:
   mq-logs:
   mq-store:

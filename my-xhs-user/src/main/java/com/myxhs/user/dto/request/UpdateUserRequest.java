@@ -1,5 +1,8 @@
 package com.myxhs.user.dto.request;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Past;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -19,9 +22,12 @@ public class UpdateUserRequest {
     private String avatar;
 
     /** 性别：0-未知 1-男 2-女 */
+    @Min(value = 0, message = "性别值范围：0-未知 1-男 2-女")
+    @Max(value = 2, message = "性别值范围：0-未知 1-男 2-女")
     private Integer gender;
 
-    /** 生日 */
+    /** 生日（不能是未来日期） */
+    @Past(message = "生日不能是未来日期")
     private LocalDate birthday;
 
     @Pattern(regexp = "^1[3-9]\\d{9}$", message = "手机号格式不正确")

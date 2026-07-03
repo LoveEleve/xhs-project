@@ -81,21 +81,26 @@ public class SseEmitterManager {
             }
         }
 
+        // 【修复C7】使用 remove(key, value) 双参数版本，仅当 map 中存的仍是当前 emitter 时才删除
+        // 避免旧连接 complete 触发回调时误删已替换的新连接
         emitter.onCompletion(() -> {
-            emitters.remove(userId);
-            stringRedisTemplate.delete(SSE_KEY_PREFIX + userId);
+            if (emitters.remove(userId, emitter)) {
+                stringRedisTemplate.delete(SSE_KEY_PREFIX + userId);
+            }
             log.debug("[SSE] 连接完成: userId={}", userId);
         });
 
         emitter.onTimeout(() -> {
-            emitters.remove(userId);
-            stringRedisTemplate.delete(SSE_KEY_PREFIX + userId);
+            if (emitters.remove(userId, emitter)) {
+                stringRedisTemplate.delete(SSE_KEY_PREFIX + userId);
+            }
             log.info("[SSE] 连接超时: userId={}", userId);
         });
 
         emitter.onError(e -> {
-            emitters.remove(userId);
-            stringRedisTemplate.delete(SSE_KEY_PREFIX + userId);
+            if (emitters.remove(userId, emitter)) {
+                stringRedisTemplate.delete(SSE_KEY_PREFIX + userId);
+            }
             log.warn("[SSE] 连接异常: userId={}", userId);
         });
 
@@ -189,9 +194,10 @@ public class SseEmitterManager {
                     .data(json, MediaType.APPLICATION_JSON));
             return true;
         } catch (Exception e) {
-            // 推送失败，清理连接
-            emitters.remove(userId);
-            stringRedisTemplate.delete(SSE_KEY_PREFIX + userId);
+            // 推送失败，清理连接（双参数 remove 防止误删新连接）
+            if (emitters.remove(userId, emitter)) {
+                stringRedisTemplate.delete(SSE_KEY_PREFIX + userId);
+            }
             log.warn("[SSE] 推送失败(清理连接): userId={}, event={}", userId, eventName);
             return false;
         }
@@ -254,9 +260,10 @@ public class SseEmitterManager {
                         .name("heartbeat")
                         .data("{\"ts\":" + ts + "}", MediaType.APPLICATION_JSON));
             } catch (Exception e) {
-                // 心跳发送失败 → 连接已断开，清理
-                emitters.remove(entry.getKey());
-                stringRedisTemplate.delete(SSE_KEY_PREFIX + entry.getKey());
+                // 心跳发送失败 → 连接已断开，清理（双参数 remove 防误删）
+                if (emitters.remove(entry.getKey(), entry.getValue())) {
+                    stringRedisTemplate.delete(SSE_KEY_PREFIX + entry.getKey());
+                }
                 log.info("[SSE] 心跳失败(清理): userId={}", entry.getKey());
             }
         }

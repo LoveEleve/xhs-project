@@ -177,6 +177,35 @@ public class TokenService {
     }
 
     /**
+     * 注销指定用户的所有活跃 Token（修改密码/账号冻结等场景）
+     * <p>
+     * 从 Redis 中取出当前活跃的 access/refresh token，加入黑名单后删除映射。
+     * </p>
+     */
+    public void revokeAllTokens(Long userId) {
+        String accessTokenKey = RedisKeyConstants.USER_TOKEN_ACCESS + userId;
+        String refreshTokenKey = RedisKeyConstants.USER_TOKEN_REFRESH + userId;
+
+        // 获取当前活跃的 Token
+        Object accessToken = redisOperator.get(accessTokenKey);
+        Object refreshToken = redisOperator.get(refreshTokenKey);
+
+        // 将活跃的 Token 加入黑名单
+        if (accessToken != null) {
+            blacklistToken(accessToken.toString());
+        }
+        if (refreshToken != null) {
+            blacklistToken(refreshToken.toString());
+        }
+
+        // 清除 Redis 映射
+        redisOperator.delete(accessTokenKey);
+        redisOperator.delete(refreshTokenKey);
+
+        log.info("[Token] 已注销用户所有活跃Token, userId={}", userId);
+    }
+
+    /**
      * 将 Token 加入黑名单（解析 Token 获取 jti 和过期时间）
      */
     private void blacklistToken(String token) {

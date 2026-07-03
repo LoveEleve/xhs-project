@@ -21,9 +21,13 @@ spring:
       - com.myxhs.common.id.IdGeneratorUtil
   data:
     redis:
-      host: localhost
+      host: 21.91.124.110
       port: 16379
       password: "Xhs@2026#Redis"
+      cache:
+        port: 16380  # Cache Redis (allkeys-lru)
+      business:
+        port: 16381  # Business Redis (noeviction)
       lettuce:
         pool:
           max-active: 16
@@ -34,19 +38,35 @@ spring:
     nacos:
       discovery:
         enabled: true
-        server-addr: 127.0.0.1:18848
+        server-addr: 21.91.124.110:18848
         namespace: my-xhs
         group: DEFAULT_GROUP
       config:
-        enabled: false
-        server-addr: 127.0.0.1:18848
+        enabled: true
+        server-addr: 21.91.124.110:18848
+        import-check:
+          enabled: false
         file-extension: yaml
+    sentinel:
+      transport:
+        dashboard: 21.91.124.110:18082
+        port: 8725
+      eager: true
+      feign:
+        sentinel:
+          enabled: true
+    openfeign:
+      httpclient:
+        hc5:
+          enabled: true
+          max-connections: 200
+          max-connections-per-route: 50
   lifecycle:
     timeout-per-shutdown-phase: 30s
 
 # RocketMQ 配置（消费笔记发布事件，推送到粉丝收件箱）
 rocketmq:
-  name-server: localhost:9876
+  name-server: 21.91.124.110:9876
   consumer:
     group: home-consumer-group
 
@@ -56,7 +76,7 @@ feign:
     config:
       default:
         connect-timeout: 3000
-        read-timeout: 5000
+        read-timeout: 3000
         logger-level: BASIC
 
 # BFF 聚合线程池
@@ -105,10 +125,9 @@ xxl:
   job:
     enabled: true
     admin:
-      addresses: http://127.0.0.1:18080/xxl-job-admin
+      addresses: http://21.91.124.110:18080/xxl-job-admin
     accessToken: my-xhs-xxl-job-token-2026
     executor:
-      appname: my-xhs-home
       port: 9994
       logpath: /data/applogs/xxl-job/jobhandler
       logretentiondays: 30

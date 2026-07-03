@@ -1,6 +1,7 @@
 package com.myxhs.counter.buffer;
 
 import com.myxhs.common.id.IdGeneratorUtil;
+import com.myxhs.common.shutdown.GracefulShutdownHook;
 import com.myxhs.counter.dto.CounterFlushDTO;
 import com.myxhs.counter.mapper.CounterMapper;
 import jakarta.annotation.PreDestroy;
@@ -37,7 +38,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class CounterBuffer {
+public class CounterBuffer implements GracefulShutdownHook {
 
     private final CounterMapper counterMapper;
     private final IdGeneratorUtil idGeneratorUtil;
@@ -231,5 +232,11 @@ public class CounterBuffer {
             flushLock.unlock();
         }
         log.info("[Buffer-Trigger] 优雅停机刷盘完成");
+    }
+
+    @Override
+    public void onShutdown() {
+        // 由 GracefulShutdownListener 在 Nacos 注销后主动调用，确保执行顺序
+        shutdown();
     }
 }

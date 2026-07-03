@@ -6,6 +6,7 @@ import com.myxhs.counter.buffer.CounterBuffer;
 import com.myxhs.counter.dto.CounterBatchRequest;
 import com.myxhs.counter.entity.Counter;
 import com.myxhs.counter.enums.CountType;
+import com.myxhs.counter.mapper.CounterBatchQuery;
 import com.myxhs.counter.mapper.CounterMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +40,17 @@ public class CounterService {
     private final CounterBuffer counterBuffer;
     private final CounterMapper counterMapper;
 
+    /** 【修复m11】归零保护 Lua 脚本（静态常量，复用 SHA1 缓存） */
+    private static final org.springframework.data.redis.core.script.DefaultRedisScript<Long> DECREMENT_SCRIPT;
+    static {
+        DECREMENT_SCRIPT = new org.springframework.data.redis.core.script.DefaultRedisScript<>(
+                "local current = tonumber(redis.call('GET', KEYS[1]) or '0') " +
+                "if current <= 0 then return 0 end " +
+                "redis.call('DECR', KEYS[1]) " +
+                "return 1",
+                Long.class);
+    }
+
     // ==================== 写操作 ====================
 
     /**
@@ -70,16 +82,8 @@ public class CounterService {
     public boolean decrement(int targetType, long targetId, int countType) {
         String redisKey = buildRedisKey(targetType, targetId, countType);
 
-        // Lua 脚本：归零保护（检查 + 扣减原子操作）
-        String luaScript =
-                "local current = tonumber(redis.call('GET', KEYS[1]) or '0') " +
-                "if current <= 0 then return 0 end " +
-                "redis.call('DECR', KEYS[1]) " +
-                "return 1";
-
-        Long result = stringRedisTemplate.execute(
-                new org.springframework.data.redis.core.script.DefaultRedisScript<>(luaScript, Long.class),
-                List.of(redisKey));
+        // 【修复m11】Lua 脚本提为静态常量，避免每次创建对象（复用 SHA1 缓存 → EVALSHA 优化）
+        Long result = stringRedisTemplate.execute(DECREMENT_SCRIPT, List.of(redisKey));
 
         if (result == null || result == 0) {
             log.warn("[计数] 归零保护触发，拒绝 -1: targetType={}, targetId={}, countType={}",
@@ -156,19 +160,46 @@ public class CounterService {
                     return null;
                 });
 
-        // 3. 组装结果
+        // 3. 收集 Pipeline 未命中的项，批量查询 MySQL（避免 N+1）
+        List<CounterBatchQuery> missedQueries = new ArrayList<>();
+        List<Integer> missedIndices = new ArrayList<>();
+        Map<Integer, Long> redisHitCounts = new LinkedHashMap<>();
+
+        for (int i = 0; i < flatItems.size(); i++) {
+            Object val = redisValues.get(i);
+            if (val != null) {
+                redisHitCounts.put(i, Long.parseLong(val.toString()));
+            } else {
+                CounterBatchRequest.QueryItem item = flatItems.get(i);
+                missedQueries.add(new CounterBatchQuery(
+                        item.getTargetType(), item.getTargetId(), item.getCountTypes().get(0)));
+                missedIndices.add(i);
+            }
+        }
+
+        // 批量 MySQL 兜底（一次查询替代 N 次循环单查）
+        Map<String, Counter> missedMap = new LinkedHashMap<>();
+        if (!missedQueries.isEmpty()) {
+            List<Counter> dbResults = counterMapper.selectByTargets(missedQueries);
+            for (Counter c : dbResults) {
+                String key = c.getTargetType() + ":" + c.getTargetId() + ":" + c.getCountType();
+                missedMap.put(key, c);
+            }
+        }
+
+        // 4. 组装结果
         for (int i = 0; i < flatItems.size(); i++) {
             CounterBatchRequest.QueryItem item = flatItems.get(i);
             String targetKey = item.getTargetType() + ":" + item.getTargetId();
             int countType = item.getCountTypes().get(0);
 
-            long count = 0;
-            Object val = redisValues.get(i);
-            if (val != null) {
-                count = Long.parseLong(val.toString());
+            long count;
+            if (redisHitCounts.containsKey(i)) {
+                count = redisHitCounts.get(i);
             } else {
-                // Redis 未命中，查 MySQL 兜底
-                Counter counter = counterMapper.selectByTarget(item.getTargetType(), item.getTargetId(), countType);
+                // MySQL 兜底
+                String lookupKey = item.getTargetType() + ":" + item.getTargetId() + ":" + countType;
+                Counter counter = missedMap.get(lookupKey);
                 count = counter != null ? counter.getCountValue() : 0;
                 // 回填 Redis
                 stringRedisTemplate.opsForValue().set(redisKeys.get(i), String.valueOf(count));
@@ -208,23 +239,27 @@ public class CounterService {
             if (batch.isEmpty()) break;
             lastId = batch.get(batch.size() - 1).getId();
 
+            // 【m20】Pipeline 批量 GET Redis，N次往返 → 1次
+            List<String> redisKeys = new ArrayList<>(batch.size());
             for (Counter dbCounter : batch) {
-                String redisKey = buildRedisKey(
-                        dbCounter.getTargetType(), dbCounter.getTargetId(), dbCounter.getCountType());
+                redisKeys.add(buildRedisKey(
+                        dbCounter.getTargetType(), dbCounter.getTargetId(), dbCounter.getCountType()));
+            }
+            List<String> redisValues = stringRedisTemplate.opsForValue().multiGet(redisKeys);
+            if (redisValues == null) redisValues = Collections.emptyList();
 
-                // 查 Redis 值
-                String redisValue = stringRedisTemplate.opsForValue().get(redisKey);
+            for (int i = 0; i < batch.size(); i++) {
+                Counter dbCounter = batch.get(i);
+                String redisKey = redisKeys.get(i);
+                String redisValue = i < redisValues.size() ? redisValues.get(i) : null;
                 long redisCount = redisValue != null ? Long.parseLong(redisValue) : 0;
                 long dbCount = dbCounter.getCountValue();
 
-                // 差异检查
                 if (redisCount != dbCount) {
                     if (redisCount == 0 && dbCount > 0) {
-                        // Redis 数据丢失（重启/故障），以 DB 为准恢复 Redis
                         stringRedisTemplate.opsForValue().set(redisKey, String.valueOf(dbCount));
                         log.warn("[对账修复] Redis恢复: key={}, redis=0, db={}", redisKey, dbCount);
                     } else {
-                        // 以 Redis 为准修正 DB（Redis 是实时更新的权威源）
                         counterMapper.updateCountValue(dbCounter.getId(), redisCount);
                         log.warn("[对账修复] DB修正: key={}, redis={}, db={}", redisKey, redisCount, dbCount);
                     }

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.common.exception.BizException;
 import com.myxhs.common.response.ResultCode;
 import com.myxhs.common.trace.MqTraceHelper;
+import com.myxhs.common.entity.CompensationMessage;
 import com.myxhs.common.response.R;
 import com.myxhs.order.dto.request.OrderCreateRequest;
 import com.myxhs.order.dto.response.OrderVO;
@@ -28,8 +29,8 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 /**
@@ -65,9 +66,6 @@ public class OrderService {
     /** 事务消息 Topic：下单成功后通知下游服务（库存预扣、优惠券核销等） */
     public static final String ORDER_TRANSACTION_TOPIC = "ORDER_TRANSACTION_TOPIC";
     private static final DateTimeFormatter ORDER_NO_FORMAT = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
-
-    /** 订单号序列（进程内自增，保证同一毫秒内不重复） */
-    private static final AtomicLong ORDER_SEQ = new AtomicLong(0);
 
     /**
      * Lua 脚本：安全释放分布式锁（只释放自己持有的锁）
@@ -194,6 +192,8 @@ public class OrderService {
             return buildOrderVO(order);
 
         } catch (BizException e) {
+            // 业务异常：事务未提交，释放幂等键允许重试
+            stringRedisTemplate.delete(idempotentKey);
             throw e;
         } catch (Exception e) {
             stringRedisTemplate.delete(idempotentKey);
@@ -310,11 +310,10 @@ public class OrderService {
             throw new BizException(ResultCode.ORDER_STATUS_ERROR, "订单状态已变更");
         }
 
-        // 联动释放库存
-        releaseInventory(orderId);
-
-        // 联动退还优惠券
-        returnCouponIfUsed(order);
+        // 联动释放库存 + 退还优惠券（并行执行，互不依赖）
+        CompletableFuture<Void> releaseFuture = CompletableFuture.runAsync(() -> releaseInventory(orderId, userId));
+        CompletableFuture<Void> returnFuture = CompletableFuture.runAsync(() -> returnCouponIfUsed(order));
+        CompletableFuture.allOf(releaseFuture, returnFuture).join();
 
         takeSnapshot(orderId, userId, "CANCELLED");
         stringRedisTemplate.delete("order:info:" + orderId);
@@ -329,20 +328,21 @@ public class OrderService {
      * 幂等保证：库存服务内部通过 orderId 做幂等（同一订单重复释放不会多加库存）。
      * </p>
      */
-    private void releaseInventory(Long orderId) {
+    private void releaseInventory(Long orderId, Long userId) {
         try {
             Map<String, Object> request = Map.of("orderId", orderId);
             R<Void> result = inventoryFeignClient.releaseStock(request);
             if (result == null || !result.isSuccess()) {
                 log.error("[订单] 释放库存失败，需补偿: orderId={}, result={}", orderId, result);
-                // 发送补偿消息到 MQ，由定时任务重试
-                sendCompensationMessage("RELEASE_STOCK", orderId);
+                // 发送补偿消息到 MQ，由补偿消费者重试
+                sendCompensationMessage("RELEASE_STOCK", orderId, userId,
+                        "Feign返回失败: " + (result != null ? result.getMessage() : "null"));
             } else {
                 log.info("[订单] 释放库存成功: orderId={}", orderId);
             }
         } catch (Exception e) {
             log.error("[订单] 释放库存异常，需补偿: orderId={}", orderId, e);
-            sendCompensationMessage("RELEASE_STOCK", orderId);
+            sendCompensationMessage("RELEASE_STOCK", orderId, userId, e.getMessage());
         }
     }
 
@@ -367,13 +367,14 @@ public class OrderService {
             if (result == null || !result.isSuccess()) {
                 log.error("[订单] 退还优惠券失败，需补偿: orderId={}, couponId={}, result={}",
                         order.getId(), order.getCouponId(), result);
-                sendCompensationMessage("RETURN_COUPON", order.getId());
+                sendCompensationMessage("RETURN_COUPON", order.getId(), order.getUserId(),
+                        "Feign返回失败: " + (result != null ? result.getMessage() : "null"));
             } else {
                 log.info("[订单] 退还优惠券成功: orderId={}, couponId={}", order.getId(), order.getCouponId());
             }
         } catch (Exception e) {
             log.error("[订单] 退还优惠券异常，需补偿: orderId={}, couponId={}", order.getId(), order.getCouponId(), e);
-            sendCompensationMessage("RETURN_COUPON", order.getId());
+            sendCompensationMessage("RETURN_COUPON", order.getId(), order.getUserId(), e.getMessage());
         }
     }
 
@@ -381,17 +382,22 @@ public class OrderService {
      * 发送补偿消息到 MQ
      * <p>
      * 当 Feign 调用失败时，发送补偿消息到专用 Topic，
-     * 由定时任务消费并重试。保证最终一致性。
+     * 由 OrderCompensationConsumer 消费并重试。保证最终一致性。
      * </p>
      */
-    private void sendCompensationMessage(String action, Long orderId) {
+    private void sendCompensationMessage(String action, Long orderId, Long userId, String failReason) {
         try {
-            String payload = objectMapper.writeValueAsString(Map.of(
-                    "action", action,
-                    "orderId", orderId,
-                    "timestamp", System.currentTimeMillis()
-            ));
-            rocketMQTemplate.convertAndSend("ORDER_COMPENSATION_TOPIC", payload);
+            CompensationMessage cm = new CompensationMessage();
+            cm.setAction(action);
+            cm.setOrderId(orderId);
+            cm.setFailReason(failReason);
+            cm.setTimestamp(System.currentTimeMillis());
+            String payload = objectMapper.writeValueAsString(cm);
+            rocketMQTemplate.syncSend("ORDER_COMPENSATION_TOPIC",
+                    org.springframework.messaging.support.MessageBuilder.withPayload(payload)
+                            .setHeader("userId", userId.toString())
+                            .build(),
+                    3000);
             log.info("[订单] 补偿消息已发送: action={}, orderId={}", action, orderId);
         } catch (Exception e) {
             // MQ 也发送失败，只能依赖定时任务扫描订单状态来补偿
@@ -423,6 +429,7 @@ public class OrderService {
 
         takeSnapshot(orderId, userId, "COMPLETED");
         stringRedisTemplate.delete("order:info:" + orderId);
+        log.info("[订单] 确认收货: userId={}, orderId={}", userId, orderId);
         log.info("[订单] 确认收货: userId={}, orderId={}", userId, orderId);
     }
 
@@ -475,28 +482,34 @@ public class OrderService {
      * </p>
      */
     public void closeTimeoutOrder(Long orderId, Long userId) {
-        Order order = orderMapper.selectOne(
-                new LambdaQueryWrapper<Order>()
-                        .eq(Order::getUserId, userId)
-                        .eq(Order::getId, orderId));
-        if (order == null || order.getStatus() != 0) {
-            return; // 幂等
+        try {
+            Order order = orderMapper.selectOne(
+                    new LambdaQueryWrapper<Order>()
+                            .eq(Order::getUserId, userId)
+                            .eq(Order::getId, orderId));
+            if (order == null || order.getStatus() != 0) {
+                return; // 幂等
+            }
+
+            int affected = orderMapper.cancelOrder(orderId, userId, 4, LocalDateTime.now());
+            if (affected == 0) {
+                return; // 并发：已被支付或取消
+            }
+
+            // 联动释放库存（与 cancelOrder 复用同一逻辑）
+            releaseInventory(orderId, userId);
+
+            // 联动退还优惠券（与 cancelOrder 复用同一逻辑）
+            returnCouponIfUsed(order);
+
+            takeSnapshot(orderId, userId, "TIMEOUT_CANCELLED");
+            stringRedisTemplate.delete("order:info:" + orderId);
+            log.info("[订单] 超时关单: orderId={}, orderNo={}", orderId, order.getOrderNo());
+
+        } catch (Exception e) {
+            log.error("[订单] 超时关单异常, 发送补偿消息: orderId={}, userId={}", orderId, userId, e);
+            sendCompensationMessage("CLOSE_ORDER", orderId, userId, e.getMessage());
         }
-
-        int affected = orderMapper.cancelOrder(orderId, userId, 4, LocalDateTime.now());
-        if (affected == 0) {
-            return; // 并发：已被支付或取消
-        }
-
-        // 联动释放库存（与 cancelOrder 复用同一逻辑）
-        releaseInventory(orderId);
-
-        // 联动退还优惠券（与 cancelOrder 复用同一逻辑）
-        returnCouponIfUsed(order);
-
-        takeSnapshot(orderId, userId, "TIMEOUT_CANCELLED");
-        stringRedisTemplate.delete("order:info:" + orderId);
-        log.info("[订单] 超时关单: orderId={}, orderNo={}", orderId, order.getOrderNo());
     }
 
     // ==================== 私有方法 ====================
@@ -571,15 +584,30 @@ public class OrderService {
     /**
      * 生成订单号：ORD + 时间戳(17位) + userId后4位 + 序列号(4位)
      * <p>
-     * 使用 AtomicLong 自增序列替代随机数，保证同一毫秒内不重复。
-     * 序列号取模 10000，保证 4 位数字。
+     * 使用 Redis INCR 获取全局唯一序列号，替代进程内 AtomicLong。
+     * 多实例部署时，AtomicLong 各自自增会导致同一毫秒内序列号碰撞。
+     * Redis INCR 是单线程原子操作，保证跨实例全局唯一。
+     * Key 设计：order:seq:{date} —— 按天分 Key，自动过期防止 Key 堆积。
      * </p>
      */
     private String generateOrderNo(Long userId) {
         String timestamp = LocalDateTime.now().format(ORDER_NO_FORMAT);
         String userSuffix = String.format("%04d", userId % 10000);
-        String seq = String.format("%04d", ORDER_SEQ.incrementAndGet() % 10000);
-        return "ORD" + timestamp + userSuffix + seq;
+        String dateKey = "order:seq:" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        Long seq;
+        try {
+            seq = stringRedisTemplate.opsForValue().increment(dateKey);
+            // 按天分 Key，第二天自动切换到新 Key，设置 48h 过期防止 Key 堆积
+            if (seq != null && seq == 1L) {
+                stringRedisTemplate.expire(dateKey, 48, TimeUnit.HOURS);
+            }
+        } catch (Exception e) {
+            // Redis 不可用时降级为时间戳 + 随机数（概率碰撞，但保业务可用）
+            log.error("[订单] Redis INCR 失败，降级使用随机序列号, userId={}", userId, e);
+            seq = (long) (Math.random() * 10000);
+        }
+        String seqStr = String.format("%04d", (seq != null ? seq : 0L) % 10000);
+        return "ORD" + timestamp + userSuffix + seqStr;
     }
 
     /**
@@ -702,7 +730,7 @@ public class OrderService {
         }
 
         // 4. 释放库存
-        releaseInventory(orderId);
+        releaseInventory(orderId, userId);
 
         // 5. 退还优惠券
         returnCouponIfUsed(order);

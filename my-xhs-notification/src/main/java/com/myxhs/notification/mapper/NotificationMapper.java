@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.myxhs.notification.entity.Notification;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 @Mapper
@@ -47,6 +48,10 @@ public interface NotificationMapper extends BaseMapper<Notification> {
     @Update("UPDATE t_notification SET aggregate_count = aggregate_count + 1, updated_at = NOW() " +
             "WHERE id = #{id} AND deleted = 0")
     int incrementAggregateCount(@Param("id") Long id);
+
+    /** 查询聚合计数（修复 incrementAggregateCount 返回值误用问题） */
+    @Select("SELECT aggregate_count FROM t_notification WHERE id = #{id}")
+    Integer getAggregateCount(@Param("id") Long id);
 
     /**
      * 仅更新聚合标题（与 incrementAggregateCount 配合使用）

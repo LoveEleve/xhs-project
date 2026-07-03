@@ -41,6 +41,8 @@ public class LikeService {
     private final StringRedisTemplate stringRedisTemplate;
     private final RocketMQTemplate rocketMQTemplate;
     private final ObjectMapper objectMapper;
+    private final org.springframework.data.redis.core.script.DefaultRedisScript<Long> likeAtomicScript;
+    private final org.springframework.data.redis.core.script.DefaultRedisScript<Long> unlikeAtomicScript;
 
     /** 业务类型：笔记 */
     private static final int BIZ_TYPE_NOTE = 1;
@@ -54,8 +56,9 @@ public class LikeService {
     /**
      * 点赞（笔记/评论）
      * <p>
-     * 流程：SADD 添加点赞 → 维护反向索引 → MQ 异步落库 + 通知计数
+     * 流程：SADD 添加点赞 → 维护反向索引 → MQ 同步落库 + 通知计数
      * SADD 天然幂等：返回 1=新增，返回 0=已存在（直接返回成功）
+     * MQ 同步发送失败 → 回滚 Redis 操作，保证一致性
      * </p>
      *
      * @param userId  当前用户ID
@@ -63,24 +66,51 @@ public class LikeService {
      */
     public void like(Long userId, LikeRequest request) {
         String likeKey = buildLikeKey(request.getBizType(), request.getBizId());
+        boolean isNoteType = request.getBizType() == BIZ_TYPE_NOTE;
+        String userLikeKey = isNoteType ? RedisKeyConstants.LIKE_SET + "user:" + userId + ":note" : "noop";
 
-        // 1. SADD 添加点赞（返回 1=新增，0=已存在）
-        Long added = stringRedisTemplate.opsForSet().add(likeKey, String.valueOf(userId));
+        // Lua 原子操作：SADD 正向索引 + SADD 反向索引（一次原子完成）
+        Long added = stringRedisTemplate.execute(
+                likeAtomicScript,
+                java.util.List.of(likeKey, userLikeKey),
+                String.valueOf(userId),
+                String.valueOf(request.getBizId()),
+                isNoteType ? "1" : "0"
+        );
+
         if (added == null || added == 0) {
             // 已点赞，幂等返回（不抛异常，对用户友好）
             return;
         }
 
-        // 2. 反向索引：用户点赞了哪些笔记（仅笔记类型维护反向索引）
-        if (request.getBizType() == BIZ_TYPE_NOTE) {
-            String userLikeKey = RedisKeyConstants.LIKE_SET + "user:" + userId + ":note";
-            stringRedisTemplate.opsForSet().add(userLikeKey, String.valueOf(request.getBizId()));
-        }
-
         log.info("[点赞] 点赞成功: userId={}, bizType={}, bizId={}", userId, request.getBizType(), request.getBizId());
 
-        // 3. MQ 异步落库 + 通知计数服务
-        sendLikeEvent(userId, request.getBizType(), request.getBizId(), "LIKE");
+        // MQ 同步落库（失败则回滚 Redis）
+        if (!sendLikeEventSync(userId, request.getBizType(), request.getBizId(), "LIKE")) {
+            // MQ 发送失败，回滚 Redis 操作（Lua 脚本保证原子回滚）
+            rollbackLikeLua(likeKey, userLikeKey, String.valueOf(userId),
+                    String.valueOf(request.getBizId()), isNoteType);
+            log.error("[点赞] MQ发送失败已回滚Redis: userId={}, bizType={}, bizId={}",
+                    userId, request.getBizType(), request.getBizId());
+            throw new com.myxhs.common.exception.BizException(
+                    com.myxhs.common.response.ResultCode.INTERNAL_ERROR, "点赞失败，请重试");
+        }
+    }
+
+    /**
+     * 回滚点赞 Redis 操作（MQ 发送失败时调用）
+     */
+    private void rollbackLikeLua(String likeKey, String userLikeKey, String member, String reverseMember, boolean isNoteType) {
+        try {
+            stringRedisTemplate.execute(
+                    unlikeAtomicScript,
+                    java.util.List.of(likeKey, userLikeKey),
+                    member, reverseMember,
+                    isNoteType ? "1" : "0"
+            );
+        } catch (Exception e) {
+            log.error("[点赞] 回滚Redis失败: likeKey={}, userLikeKey={}", likeKey, userLikeKey, e);
+        }
     }
 
     // ==================== 取消点赞 ====================
@@ -97,24 +127,38 @@ public class LikeService {
      */
     public void unlike(Long userId, LikeRequest request) {
         String likeKey = buildLikeKey(request.getBizType(), request.getBizId());
+        boolean isNoteType = request.getBizType() == BIZ_TYPE_NOTE;
+        String userLikeKey = isNoteType ? RedisKeyConstants.LIKE_SET + "user:" + userId + ":note" : "noop";
 
-        // 1. SREM 移除点赞（返回 1=移除成功，0=不存在）
-        Long removed = stringRedisTemplate.opsForSet().remove(likeKey, String.valueOf(userId));
+        // Lua 原子操作：SREM 正向索引 + SREM 反向索引
+        Long removed = stringRedisTemplate.execute(
+                unlikeAtomicScript,
+                java.util.List.of(likeKey, userLikeKey),
+                String.valueOf(userId),
+                String.valueOf(request.getBizId()),
+                isNoteType ? "1" : "0"
+        );
+
         if (removed == null || removed == 0) {
             // 未点赞，幂等返回
             return;
         }
 
-        // 2. 移除反向索引
-        if (request.getBizType() == BIZ_TYPE_NOTE) {
-            String userLikeKey = RedisKeyConstants.LIKE_SET + "user:" + userId + ":note";
-            stringRedisTemplate.opsForSet().remove(userLikeKey, String.valueOf(request.getBizId()));
-        }
-
         log.info("[点赞] 取消点赞成功: userId={}, bizType={}, bizId={}", userId, request.getBizType(), request.getBizId());
 
-        // 3. MQ 异步删除 + 通知计数服务
-        sendLikeEvent(userId, request.getBizType(), request.getBizId(), "UNLIKE");
+        // MQ 同步删除（失败则回滚 Redis）
+        if (!sendLikeEventSync(userId, request.getBizType(), request.getBizId(), "UNLIKE")) {
+            // MQ 发送失败，回滚 Redis 操作（Lua 脚本保证原子回滚）
+            stringRedisTemplate.execute(likeAtomicScript,
+                    java.util.List.of(likeKey, userLikeKey),
+                    String.valueOf(userId),
+                    String.valueOf(request.getBizId()),
+                    isNoteType ? "1" : "0");
+            log.error("[点赞] MQ发送失败已回滚Redis: userId={}, bizType={}, bizId={}",
+                    userId, request.getBizType(), request.getBizId());
+            throw new com.myxhs.common.exception.BizException(
+                    com.myxhs.common.response.ResultCode.INTERNAL_ERROR, "取消点赞失败，请重试");
+        }
     }
 
     // ==================== 查询点赞状态 ====================
@@ -206,38 +250,37 @@ public class LikeService {
     }
 
     /**
-     * 发送点赞/取消点赞事件到 MQ
+     * 同步发送点赞/取消点赞事件到 MQ
      * <p>
-     * Topic: SOCIAL_TOPIC
-     * Tag: LIKE / UNLIKE
+     * Topic: SOCIAL_TOPIC, Tag: LIKE / UNLIKE
      * 消息体: JSON 格式的 LikeEvent
      * </p>
+     *
+     * @return true=发送成功, false=发送失败
      */
-    private void sendLikeEvent(Long userId, int bizType, Long bizId, String action) {
+    private boolean sendLikeEventSync(Long userId, int bizType, Long bizId, String action) {
         try {
             LikeEvent event = LikeEvent.builder()
                     .userId(userId).bizType(bizType).bizId(bizId).action(action)
                     .build();
             String payload = objectMapper.writeValueAsString(event);
-            rocketMQTemplate.asyncSend(
+            org.apache.rocketmq.client.producer.SendResult sendResult = rocketMQTemplate.syncSend(
                     "SOCIAL_TOPIC:" + action,
                     MqTraceHelper.wrapWithTraceId(MessageBuilder.withPayload(payload).build()),
-                    new org.apache.rocketmq.client.producer.SendCallback() {
-                        @Override
-                        public void onSuccess(org.apache.rocketmq.client.producer.SendResult sendResult) {
-                            log.debug("[点赞] MQ发送成功: {}, msgId={}", payload, sendResult.getMsgId());
-                        }
-
-                        @Override
-                        public void onException(Throwable e) {
-                            log.error("[点赞] MQ发送失败: {}", payload, e);
-                            // MQ 发送失败不影响点赞结果（Redis 为权威数据源）
-                            // 后续通过对账任务修复 MySQL 数据
-                        }
-                    }
+                    3000 // 超时 3 秒
             );
+
+            if (sendResult.getSendStatus() == org.apache.rocketmq.client.producer.SendStatus.SEND_OK) {
+                log.debug("[点赞] MQ发送成功: action={}, userId={}, bizId={}", action, userId, bizId);
+                return true;
+            } else {
+                log.error("[点赞] MQ发送状态异常: action={}, userId={}, bizId={}, status={}",
+                        action, userId, bizId, sendResult.getSendStatus());
+                return false;
+            }
         } catch (Exception e) {
             log.error("[点赞] MQ发送异常: userId={}, bizType={}, bizId={}, action={}", userId, bizType, bizId, action, e);
+            return false;
         }
     }
 }

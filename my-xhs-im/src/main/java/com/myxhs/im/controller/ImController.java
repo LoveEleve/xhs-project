@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.myxhs.common.response.R;
 import com.myxhs.common.util.JwtUtil;
 import com.myxhs.im.dto.ConversationVO;
+import com.myxhs.im.dto.ImMessageVO;
 import com.myxhs.im.entity.ChatMessage;
 import com.myxhs.im.entity.ChatUserRelation;
 import com.myxhs.im.handler.ImWebSocketHandler;
@@ -100,17 +101,15 @@ public class ImController {
 
         Page<ChatMessage> pageResult = chatService.getMessageHistory(userId, peerId, page, size);
 
-        List<Map<String, Object>> records = pageResult.getRecords().stream()
-                .map(m -> {
-                    Map<String, Object> map = new HashMap<>();
-                    map.put("id", m.getId());
-                    map.put("senderId", m.getSenderId());
-                    map.put("receiverId", m.getReceiverId());
-                    map.put("content", m.getContent());
-                    map.put("msgType", m.getMsgType());
-                    map.put("createdAt", m.getCreatedAt() != null ? m.getCreatedAt().format(DT_FMT) : null);
-                    return map;
-                })
+        List<ImMessageVO> records = pageResult.getRecords().stream()
+                .map(m -> ImMessageVO.builder()
+                        .id(m.getId())
+                        .senderId(m.getSenderId())
+                        .receiverId(m.getReceiverId())
+                        .content(m.getContent())
+                        .msgType(m.getMsgType())
+                        .createdAt(m.getCreatedAt() != null ? m.getCreatedAt().format(DT_FMT) : null)
+                        .build())
                 .collect(Collectors.toList());
 
         Map<String, Object> result = new HashMap<>();

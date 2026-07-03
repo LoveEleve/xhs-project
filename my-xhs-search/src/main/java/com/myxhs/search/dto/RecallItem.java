@@ -31,9 +31,21 @@ public class RecallItem {
     /** 内容分类（重排阶段用于品类打散） */
     private String category;
 
+    /** 发布时间（毫秒时间戳，用于时效衰减计算） */
+    private long publishTime;
+
     public RecallItem(Long noteId, double recallScore, String source) {
         this.noteId = noteId;
         this.recallScore = recallScore;
         this.source = source;
+    }
+
+    /**
+     * 获取发布至今的小时数（用于时效衰减）
+     */
+    public double getHoursSincePublish() {
+        if (publishTime <= 0) return 24.0; // 默认 24 小时
+        long ageMs = System.currentTimeMillis() - publishTime;
+        return Math.max(ageMs / (1000.0 * 3600.0), 1.0);
     }
 }

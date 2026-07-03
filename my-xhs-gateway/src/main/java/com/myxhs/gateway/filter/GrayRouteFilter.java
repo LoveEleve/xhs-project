@@ -3,18 +3,11 @@ package com.myxhs.gateway.filter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
-import org.springframework.cloud.gateway.route.Route;
 import org.springframework.core.Ordered;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
-
-import java.net.URI;
-import java.util.ArrayList;
-import java.util.List;
-
-import static org.springframework.cloud.gateway.support.ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR;
 
 /**
  * 灰度路由过滤器
@@ -60,33 +53,37 @@ public class GrayRouteFilter implements GlobalFilter, Ordered {
 
     private static final String GRAY_TAG_HEADER = "X-Gray-Tag";
 
+    private static final int GRAY_PERCENT = 10; // 默认 10% 流量进入灰度
+
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         ServerHttpRequest request = exchange.getRequest();
         String grayTag = request.getHeaders().getFirst(GRAY_TAG_HEADER);
 
-        // 没有 gray-tag 或 stable 时，直接放行（走正常负载均衡）
-        if (grayTag == null || grayTag.isEmpty() || "stable".equals(grayTag)) {
+        // 没有显式 gray-tag 时，基于 userId Hash 自动分配灰度比例
+        if (grayTag == null || grayTag.isEmpty()) {
+            String userId = request.getHeaders().getFirst("X-User-Id");
+            if (userId != null && !userId.isEmpty()) {
+                // 【修复M11】使用位运算去符号位，避免 Math.abs(Integer.MIN_VALUE) 仍为负数的溢出问题
+                int hash = (userId.hashCode() & 0x7FFFFFFF) % 100;
+                if (hash < GRAY_PERCENT) {
+                    grayTag = "gray";
+                    log.debug("[Gateway-灰度] userId Hash 命中灰度比例: userId={}, hashMod={}",
+                            userId, hash);
+                }
+            }
+        }
+
+        // stable 或未命中灰度 → 正常路由
+        if (grayTag == null || "stable".equals(grayTag)) {
             return chain.filter(exchange);
         }
 
-        // 记录灰度路由日志
+        // 灰度流量 —— 记录日志并注入属性
         String path = request.getURI().getPath();
-        String traceId = request.getHeaders().getFirst("X-Trace-Id");
+        log.info("[Gateway-灰度] 灰度流量路由, grayTag={}, path={}", grayTag, path);
 
-        if ("gray".equals(grayTag)) {
-            log.info("[Gateway-灰度] 灰度流量路由, grayTag={}, path={}, traceId={}",
-                    grayTag, path, traceId);
-        } else {
-            // 支持自定义灰度标记（如 canary/beta 等）
-            log.info("[Gateway-灰度] 自定义标记路由, grayTag={}, path={}, traceId={}",
-                    grayTag, path, traceId);
-        }
-
-        // 将 gray-tag 注入到 Gateway 的属性中，供自定义 LoadBalancer 读取
-        // 后续实现 GrayLoadBalancer 时，会从 exchange.getAttribute("grayTag") 读取
         exchange.getAttributes().put("grayTag", grayTag);
-
         return chain.filter(exchange);
     }
 

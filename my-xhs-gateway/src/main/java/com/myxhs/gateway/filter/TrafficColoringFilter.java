@@ -74,23 +74,21 @@ public class TrafficColoringFilter implements GlobalFilter, Ordered {
         }
 
         // 5. 压测标记（只有显式传 true 才标记为压测流量）
-        // 【安全修复】限制只有压测平台来源IP才能设置 X-Pressure-Test=true
+        // 【修复C3】使用 X-Forwarded-For / X-Real-IP 获取真实客户端 IP，防止经反代后拿到代理 IP
         // 防止攻击者伪造压测标记绕过限流规则
         String pressureTest = request.getHeaders().getFirst(PRESSURE_TEST_HEADER);
         boolean isPressure = false;
         if ("true".equals(pressureTest)) {
-            String remoteAddr = request.getRemoteAddress() != null
-                    ? request.getRemoteAddress().getAddress().getHostAddress()
-                    : null;
+            String clientIp = getClientIp(request);
             // 仅允许压测平台 IP 设置压测标记（10.0.0.0/8 内网段）
             // 生产环境应改为具体压测平台 IP 白名单，如 "10.0.1.100"
-            if (remoteAddr != null && remoteAddr.startsWith("10.")) {
+            if (clientIp != null && clientIp.startsWith("10.")) {
                 isPressure = true;
-                log.info("[Gateway-染色] 压测流量标记, traceId={}, path={}, remoteAddr={}",
-                        traceId, request.getURI().getPath(), remoteAddr);
+                log.info("[Gateway-染色] 压测流量标记, traceId={}, path={}, clientIp={}",
+                        traceId, request.getURI().getPath(), clientIp);
             } else {
-                log.warn("[Gateway-染色] 拒绝外部IP伪造压测标记, traceId={}, remoteAddr={}",
-                        traceId, remoteAddr);
+                log.warn("[Gateway-染色] 拒绝外部IP伪造压测标记, traceId={}, clientIp={}",
+                        traceId, clientIp);
             }
         }
 
@@ -139,5 +137,38 @@ public class TrafficColoringFilter implements GlobalFilter, Ordered {
             case 1 -> "B";
             default -> "C";
         };
+    }
+
+    /**
+     * 获取客户端真实 IP
+     * <p>
+     * 【修复C3】优先级：X-Forwarded-For（取第一个） > X-Real-IP > remoteAddress
+     * 经过 Nginx/ALB 等反向代理后，remoteAddress 是代理 IP，
+     * 真实客户端 IP 在 X-Forwarded-For 的第一段。
+     * </p>
+     */
+    private String getClientIp(ServerHttpRequest request) {
+        // 1. X-Forwarded-For（标准多级代理头，格式：client, proxy1, proxy2）
+        String xff = request.getHeaders().getFirst("X-Forwarded-For");
+        if (StringUtils.hasText(xff)) {
+            // 取第一个 IP（即最原始的客户端 IP）
+            String clientIp = xff.split(",")[0].trim();
+            if (!clientIp.isEmpty()) {
+                return clientIp;
+            }
+        }
+
+        // 2. X-Real-IP（Nginx 常用）
+        String realIp = request.getHeaders().getFirst("X-Real-IP");
+        if (StringUtils.hasText(realIp)) {
+            return realIp.trim();
+        }
+
+        // 3. 兜底：TCP 连接的对端地址
+        if (request.getRemoteAddress() != null) {
+            return request.getRemoteAddress().getAddress().getHostAddress();
+        }
+
+        return null;
     }
 }

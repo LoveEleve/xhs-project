@@ -14,6 +14,7 @@ import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 本地消息表补发定时任务（XXL-Job 分布式调度）
@@ -39,6 +40,14 @@ public class LocalMessageRetryJob {
     private final RocketMQTemplate rocketMQTemplate;
 
     private static final int BATCH_SIZE = 50;
+
+    /** 死信累计数（Prometheus 可通过 JMX/Micrometer 暴露） */
+    private final AtomicLong deadLetterCount = new AtomicLong(0);
+
+    /** 获取死信累计数（供健康检查/告警使用） */
+    public long getDeadLetterCount() {
+        return deadLetterCount.get();
+    }
 
     /**
      * 本地消息补发（XXL-Job Handler）
@@ -105,12 +114,20 @@ public class LocalMessageRetryJob {
 
     /**
      * 处理重试失败：增加重试次数，超过 3 次标记为死信
+     * <p>
+     * 死信指标（deadLetterCount）供 Prometheus 采集，触发告警规则：
+     * 当 deadLetterCount > 0 时，需人工排查补偿。
+     * </p>
      */
     private void handleRetryFailure(LocalMessage msg) {
         if (msg.getRetryCount() >= 2) {
             localMessageMapper.markDead(msg.getId());
-            log.error("[本地消息] 标记死信(3次重试均失败): id={}, transactionId={}",
-                    msg.getId(), msg.getTransactionId());
+            long currentDeadCount = deadLetterCount.incrementAndGet();
+            // 死信告警：包含完整上下文信息，方便运维排查
+            log.error("[本地消息] ⚠️ 死信标记(3次重试均失败) ⚠️ " +
+                            "id={}, transactionId={}, operationType={}, deadCount={}, " +
+                            "需人工介入！请检查下游服务是否正常",
+                    msg.getId(), msg.getTransactionId(), msg.getOperationType(), currentDeadCount);
         } else {
             localMessageMapper.markFailed(msg.getId());
         }

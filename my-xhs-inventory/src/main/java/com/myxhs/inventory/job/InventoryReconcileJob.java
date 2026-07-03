@@ -42,7 +42,9 @@ public class InventoryReconcileJob {
     private final StringRedisTemplate stringRedisTemplate;
     private final InventoryMapper inventoryMapper;
 
-    private static final String TOTAL_KEY_PREFIX = "inventory:total:";
+    private static final String TOTAL_KEY_TPL = "inventory:{%d}:total";
+
+    private static String totalKey(Long skuId) { return String.format(TOTAL_KEY_TPL, skuId); }
 
     /**
      * 库存对账修复（XXL-Job Handler）
@@ -75,7 +77,7 @@ public class InventoryReconcileJob {
         log.info("[库存对账] 待对账SKU数: {}", inventories.size());
 
         for (Inventory inventory : inventories) {
-            String totalKey = TOTAL_KEY_PREFIX + inventory.getSkuId();
+            String totalKey = totalKey(inventory.getSkuId());
             String redisTotalStr = stringRedisTemplate.opsForValue().get(totalKey);
 
             if (redisTotalStr == null) {
@@ -94,6 +96,9 @@ public class InventoryReconcileJob {
                 log.info("[库存对账] 修复: skuId={}, mysql: {}→{} (以Redis为准)",
                         inventory.getSkuId(), oldAvailable, redisTotal);
             }
+
+            // 【M9】分桶完整性检查：各桶之和 == 总库存
+            reconcileBuckets(inventory.getSkuId());
         }
 
         long elapsed = System.currentTimeMillis() - startTime;
@@ -101,5 +106,35 @@ public class InventoryReconcileJob {
                 inventories.size(), repairCount, elapsed);
 
         return repairCount;
+    }
+
+    /**
+     * 【M9】分桶完整性对账：各桶库存之和 == 总库存
+     * 不一致时以分桶之和为准修正总库存。
+     */
+    private void reconcileBuckets(Long skuId) {
+        String countStr = stringRedisTemplate.opsForValue()
+                .get("inventory:bucket:count:" + skuId);
+        if (countStr == null) return;
+        int bucketCount = Integer.parseInt(countStr);
+
+        int bucketTotal = 0;
+        for (int i = 0; i < bucketCount; i++) {
+            String val = stringRedisTemplate.opsForValue()
+                    .get(String.format("inventory:{%d}:bucket:", skuId) + i);
+            bucketTotal += (val != null ? Integer.parseInt(val) : 0);
+        }
+
+        String totalVal = stringRedisTemplate.opsForValue()
+                .get(String.format("inventory:{%d}:total", skuId));
+        int total = totalVal != null ? Integer.parseInt(totalVal) : 0;
+
+        if (bucketTotal != total) {
+            log.warn("[库存对账] 分桶总量不一致: skuId={}, bucketSum={}, total={}",
+                    skuId, bucketTotal, total);
+            stringRedisTemplate.opsForValue().set(
+                    String.format("inventory:{%d}:total", skuId),
+                    String.valueOf(bucketTotal));
+        }
     }
 }

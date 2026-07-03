@@ -8,6 +8,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.common.cache.CacheHelper;
 import com.myxhs.common.constants.RedisKeyConstants;
+import com.myxhs.common.entity.NotePublishEvent;
 import com.myxhs.common.exception.BizException;
 import com.myxhs.common.id.IdGeneratorUtil;
 import com.myxhs.common.response.PageResult;
@@ -17,12 +18,15 @@ import com.myxhs.content.dto.request.NoteUpdateRequest;
 import com.myxhs.content.dto.response.NoteDetailVO;
 import com.myxhs.content.dto.response.NoteItemVO;
 import com.myxhs.content.entity.Note;
+import com.myxhs.content.entity.LocalMessage;
 import com.myxhs.content.enums.AuditStatus;
 import com.myxhs.content.enums.NoteStatus;
 import com.myxhs.content.filter.DFAFilter;
+import com.myxhs.content.mapper.LocalMessageMapper;
 import com.myxhs.content.mapper.NoteMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -47,10 +51,12 @@ import java.util.stream.Collectors;
 public class NoteService {
 
     private final NoteMapper noteMapper;
+    private final LocalMessageMapper localMessageMapper;
     private final DFAFilter dfaFilter;
     private final IdGeneratorUtil idGeneratorUtil;
     private final CacheHelper cacheHelper;
     private final ObjectMapper objectMapper;
+    private final RocketMQTemplate rocketMQTemplate;
 
     /** 每页最大条数限制 */
     private static final int MAX_PAGE_SIZE = 50;
@@ -82,16 +88,52 @@ public class NoteService {
         noteMapper.insert(note);
         log.info("[笔记] 发布成功: noteId={}, userId={}", note.getId(), userId);
 
-        // 4. 事务提交后清除用户笔记列表缓存（防止事务回滚导致缓存不一致）
+        // 4.【M2】写入本地消息表（与笔记入库同一事务，保证不丢消息）
+        NotePublishEvent event = new NotePublishEvent();
+        event.setNoteId(note.getId());
+        event.setAuthorId(userId);
+        event.setPublishTime(System.currentTimeMillis());
+        event.setNoteType(note.getNoteType() != null ? note.getNoteType().toString() : "0");
+
+        LocalMessage localMsg = new LocalMessage();
+        localMsg.setTopic("FEED_TOPIC");
+        localMsg.setBody(toJson(event));
+        localMsg.setStatus(0); // 待发送
+        localMsg.setRetryCount(0);
+        localMsg.setCreatedAt(java.time.LocalDateTime.now());
+        localMessageMapper.insert(localMsg);
+
+        final Long localMsgId = localMsg.getId();
+
+        // 5. 事务提交后：清除缓存 + 异步推送 Feed
         final Long finalUserId = userId;
+        final Long finalNoteId = note.getId();
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
+                // 清除用户笔记列表缓存
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.NOTE_LIST_USER + finalUserId);
+
+                // 异步通知 Feed 服务
+                try {
+                    rocketMQTemplate.asyncSend("FEED_TOPIC", event, new org.apache.rocketmq.client.producer.SendCallback() {
+                        @Override
+                        public void onSuccess(org.apache.rocketmq.client.producer.SendResult sendResult) {
+                            log.info("[NoteService] Feed推送成功, noteId={}", finalNoteId);
+                            // 【M2】发送成功 → 标记本地消息已发送
+                            localMessageMapper.markSent(localMsgId);
+                        }
+
+                        @Override
+                        public void onException(Throwable e) {
+                            log.error("[NoteService] Feed推送失败(补偿任务重试), noteId={}", finalNoteId, e);
+                        }
+                    });
+                } catch (Exception e) {
+                    log.error("[NoteService] Feed推送发送异常, noteId={}", finalNoteId, e);
+                }
             }
         });
-
-        // 5. TODO: 异步通知 Feed 服务（推送到粉丝收件箱），等 Feed 服务开发后接入 RocketMQ
 
         return note.getId();
     }
@@ -311,12 +353,46 @@ public class NoteService {
 
         log.info("[笔记] 草稿发布成功: noteId={}, userId={}", noteId, userId);
 
-        // 事务提交后清除缓存
+        // 【M2修复】草稿发布后通知 Feed 服务
+        NotePublishEvent draftEvent = new NotePublishEvent();
+        draftEvent.setNoteId(noteId);
+        draftEvent.setAuthorId(userId);
+        draftEvent.setPublishTime(System.currentTimeMillis());
+        draftEvent.setNoteType(note.getNoteType() != null ? note.getNoteType().toString() : "0");
+
+        LocalMessage localMsg = new LocalMessage();
+        localMsg.setTopic("FEED_TOPIC");
+        localMsg.setBody(toJson(draftEvent));
+        localMsg.setStatus(0);
+        localMsg.setRetryCount(0);
+        localMsg.setCreatedAt(java.time.LocalDateTime.now());
+        localMessageMapper.insert(localMsg);
+
+        final Long draftLocalMsgId = localMsg.getId();
+
+        // 事务提交后：清除缓存 + 推送 Feed
         final Long finalUserId = userId;
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.NOTE_LIST_USER + finalUserId);
+
+                try {
+                    rocketMQTemplate.asyncSend("FEED_TOPIC", draftEvent, new org.apache.rocketmq.client.producer.SendCallback() {
+                        @Override
+                        public void onSuccess(org.apache.rocketmq.client.producer.SendResult sendResult) {
+                            log.info("[NoteService] 草稿发布Feed推送成功, noteId={}", noteId);
+                            localMessageMapper.markSent(draftLocalMsgId);
+                        }
+
+                        @Override
+                        public void onException(Throwable e) {
+                            log.error("[NoteService] 草稿发布Feed推送失败(补偿任务重试), noteId={}", noteId, e);
+                        }
+                    });
+                } catch (Exception e) {
+                    log.error("[NoteService] 草稿发布Feed推送异常, noteId={}", noteId, e);
+                }
             }
         });
     }

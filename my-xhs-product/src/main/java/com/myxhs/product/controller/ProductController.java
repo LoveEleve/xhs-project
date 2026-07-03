@@ -1,5 +1,6 @@
 package com.myxhs.product.controller;
 
+import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.PageResult;
 import com.myxhs.common.response.R;
 import com.myxhs.product.dto.request.SkuCreateRequest;
@@ -39,6 +40,7 @@ public class ProductController {
      * 创建 SPU
      */
     @PostMapping("/spu")
+    @RateLimit(prefix = "product:create", maxRequests = 10, windowSeconds = 60)
     public R<Map<String, Long>> createSpu(
             @RequestHeader("X-User-Id") Long userId,
             @Valid @RequestBody SpuCreateRequest request) {
@@ -53,7 +55,7 @@ public class ProductController {
     public R<Void> updateSpu(
             @RequestHeader("X-User-Id") Long userId,
             @PathVariable Long spuId,
-            @RequestBody SpuUpdateRequest request) {
+            @RequestBody @Valid SpuUpdateRequest request) {
         spuService.updateSpu(spuId, request);
         return R.ok();
     }
@@ -112,6 +114,14 @@ public class ProductController {
     @GetMapping("/sku/{skuId}")
     public R<SkuVO> getSkuDetail(@PathVariable Long skuId) {
         return R.ok(skuService.getSkuDetail(skuId));
+    }
+
+    /**
+     * 批量获取 SKU 详情（内部接口，供购物车等服务调用）
+     */
+    @GetMapping("/sku/batch")
+    public R<List<SkuVO>> batchGetSkuDetails(@RequestParam("skuIds") List<Long> skuIds) {
+        return R.ok(skuService.batchGetSkuDetails(skuIds));
     }
 
     /**

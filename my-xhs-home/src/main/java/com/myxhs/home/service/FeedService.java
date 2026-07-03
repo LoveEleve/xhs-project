@@ -362,7 +362,6 @@ public class FeedService {
     private Map<Long, Map<String, Object>> batchGetNoteDetails(List<Long> noteIds) {
         Map<Long, CompletableFuture<Map.Entry<Long, Map<String, Object>>>> futures = new LinkedHashMap<>();
         for (Long noteId : noteIds) {
-            // 使用独立的 batchFeignPool，避免与外层 aggregatorPool 竞争导致线程池饥饿
             CompletableFuture<Map.Entry<Long, Map<String, Object>>> future = CompletableFuture
                     .supplyAsync(() -> {
                         try {
@@ -378,30 +377,34 @@ public class FeedService {
             futures.put(noteId, future);
         }
 
+        // 使用 allOf 并行等待所有 future，总超时 3 秒（而非 N × 2 秒）
+        try {
+            CompletableFuture.allOf(futures.values().toArray(new CompletableFuture[0]))
+                    .get(3, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.warn("[Feed] 批量获取笔记详情超时(部分降级)");
+        }
+
         Map<Long, Map<String, Object>> result = new LinkedHashMap<>();
         for (Map.Entry<Long, CompletableFuture<Map.Entry<Long, Map<String, Object>>>> entry : futures.entrySet()) {
             try {
-                Map.Entry<Long, Map<String, Object>> pair = entry.getValue().get(2, TimeUnit.SECONDS);
+                Map.Entry<Long, Map<String, Object>> pair = entry.getValue().getNow(null);
                 if (pair != null) {
                     result.put(pair.getKey(), pair.getValue());
                 }
             } catch (Exception e) {
-                log.warn("[Feed] 获取笔记详情超时: noteId={}", entry.getKey());
+                log.warn("[Feed] 获取笔记详情异常: noteId={}", entry.getKey());
             }
         }
         return result;
     }
 
     /**
-     * 批量获取用户信息（并行 Feign 调用）
-     * <p>
-     * 同 batchGetNoteDetails，并行调用避免串行 N+1。
-     * </p>
+     * 批量获取用户信息（并行 Feign 调用，allOf 并行等待）
      */
     private Map<Long, Map<String, Object>> batchGetUserInfos(Set<Long> userIds) {
         Map<Long, CompletableFuture<Map.Entry<Long, Map<String, Object>>>> futures = new HashMap<>();
         for (Long uid : userIds) {
-            // 使用独立的 batchFeignPool，避免与外层 aggregatorPool 竞争导致线程池饥饿
             CompletableFuture<Map.Entry<Long, Map<String, Object>>> future = CompletableFuture
                     .supplyAsync(() -> {
                         try {
@@ -417,15 +420,22 @@ public class FeedService {
             futures.put(uid, future);
         }
 
+        try {
+            CompletableFuture.allOf(futures.values().toArray(new CompletableFuture[0]))
+                    .get(3, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.warn("[Feed] 批量获取用户信息超时(部分降级)");
+        }
+
         Map<Long, Map<String, Object>> result = new HashMap<>();
         for (Map.Entry<Long, CompletableFuture<Map.Entry<Long, Map<String, Object>>>> entry : futures.entrySet()) {
             try {
-                Map.Entry<Long, Map<String, Object>> pair = entry.getValue().get(2, TimeUnit.SECONDS);
+                Map.Entry<Long, Map<String, Object>> pair = entry.getValue().getNow(null);
                 if (pair != null) {
                     result.put(pair.getKey(), pair.getValue());
                 }
             } catch (Exception e) {
-                log.warn("[Feed] 获取用户信息超时: userId={}", entry.getKey());
+                log.warn("[Feed] 获取用户信息异常: userId={}", entry.getKey());
             }
         }
         return result;

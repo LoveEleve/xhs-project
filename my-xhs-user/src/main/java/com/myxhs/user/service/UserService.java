@@ -259,6 +259,10 @@ public class UserService {
 
     /**
      * 修改密码
+     * <p>
+     * 【修复M13】密码修改成功后，注销该用户当前所有活跃 Token，
+     * 防止旧 Token（access 30min + refresh 7d）继续有效。
+     * </p>
      */
     public void changePassword(Long userId, ChangePasswordRequest request) {
         User user = userMapper.selectById(userId);
@@ -278,7 +282,10 @@ public class UserService {
         updateUser.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userMapper.updateById(updateUser);
 
-        log.info("[用户] 修改密码成功, userId={}", userId);
+        // 注销当前用户所有活跃 Token（加入黑名单 + 清除 Redis 映射）
+        tokenService.revokeAllTokens(userId);
+
+        log.info("[用户] 修改密码成功(已注销旧Token), userId={}", userId);
     }
 
     // ==================== 私有方法 ====================
@@ -364,8 +371,8 @@ public class UserService {
                 .avatar(user.getAvatar())
                 .gender(user.getGender())
                 .birthday(user.getBirthday())
-                .phone(user.getPhone())
-                .email(user.getEmail())
+                .phone(UserInfoResponse.maskPhone(user.getPhone()))
+                .email(UserInfoResponse.maskEmail(user.getEmail()))
                 .signature(user.getSignature())
                 .status(user.getStatus())
                 .createdAt(user.getCreatedAt())

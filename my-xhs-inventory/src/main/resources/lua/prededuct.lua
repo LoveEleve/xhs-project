@@ -3,11 +3,15 @@
 -- 核心逻辑：
 -- 1. 按 userId 路由到固定桶，检查库存是否充足
 -- 2. 路由桶不足时，遍历其他桶尝试扣减（桶间均衡）
--- 3. 扣减成功后写预扣记录（Hash，30分钟过期）
+-- 3. 扣减成功后写预扣记录（Hash: {skuId}=quantity, {skuId}:bucket=sourceBucket, 过期）
 -- 4. 同步更新总库存
 --
--- KEYS[1] = inventory:total:{skuId}          (String: 总可用库存)
--- KEYS[2] = inventory:prededuct:{orderId}    (Hash: 预扣记录)
+-- 【修复M14】所有被操作的 Key 均通过 KEYS 参数传入（Cluster 兼容）
+-- 建议使用 {skuId} 作为 hash tag：inventory:{skuId}:total / inventory:{skuId}:bucket:N / inventory:{skuId}:prededuct:{orderId}
+--
+-- KEYS[1] = inventory:{skuId}:total             (String: 总可用库存)
+-- KEYS[2] = inventory:{skuId}:prededuct:{orderId}  (Hash: 预扣记录)
+-- KEYS[3..N+2] = inventory:{skuId}:bucket:0 ~ inventory:{skuId}:bucket:(N-1) (String: 各桶库存)
 --
 -- ARGV[1] = skuId
 -- ARGV[2] = orderId
@@ -21,7 +25,6 @@
 --   0  : 库存不足
 --   -1 : 重复预扣（orderId 已存在预扣记录）
 --   -2 : 库存未初始化
---
 
 local totalKey = KEYS[1]
 local predeductKey = KEYS[2]
@@ -50,31 +53,31 @@ if tonumber(totalStock) < quantity then
     return 0  -- 库存不足
 end
 
--- 3. 计算路由桶号
+-- 3. 计算路由桶号（桶 Key 从 KEYS[3] 开始）
 local routeBucket = userId % bucketCount
-local bucketKeyPrefix = 'inventory:bucket:' .. skuId .. ':'
+local routeKeyIdx = 3 + routeBucket  -- KEYS 数组下标（Lua 从 1 开始）
 
 -- 4. 尝试从路由桶扣减
-local routeKey = bucketKeyPrefix .. routeBucket
-local routeStock = tonumber(redis.call('GET', routeKey) or '0')
+local routeStock = tonumber(redis.call('GET', KEYS[routeKeyIdx]) or '0')
 if routeStock >= quantity then
-    redis.call('DECRBY', routeKey, quantity)
+    redis.call('DECRBY', KEYS[routeKeyIdx], quantity)
     redis.call('DECRBY', totalKey, quantity)
     redis.call('HSET', predeductKey, skuId, quantity)
+    redis.call('HSET', predeductKey, skuId .. ':bucket', routeBucket)
     redis.call('EXPIRE', predeductKey, expireSeconds)
     return 1  -- 成功（路由桶扣减）
 end
 
--- 5. 路由桶不足，遍历其他桶（桶间均衡）
--- 遍历顺序：从 (routeBucket+1) 开始，避免所有请求都涌向桶0
+-- 5. 路由桶不足，遍历其他桶
 for offset = 1, bucketCount - 1 do
     local i = (routeBucket + offset) % bucketCount
-    local otherKey = bucketKeyPrefix .. i
-    local otherStock = tonumber(redis.call('GET', otherKey) or '0')
+    local otherKeyIdx = 3 + i
+    local otherStock = tonumber(redis.call('GET', KEYS[otherKeyIdx]) or '0')
     if otherStock >= quantity then
-        redis.call('DECRBY', otherKey, quantity)
+        redis.call('DECRBY', KEYS[otherKeyIdx], quantity)
         redis.call('DECRBY', totalKey, quantity)
         redis.call('HSET', predeductKey, skuId, quantity)
+        redis.call('HSET', predeductKey, skuId .. ':bucket', i)
         redis.call('EXPIRE', predeductKey, expireSeconds)
         return 1  -- 成功（从其他桶扣减）
     end

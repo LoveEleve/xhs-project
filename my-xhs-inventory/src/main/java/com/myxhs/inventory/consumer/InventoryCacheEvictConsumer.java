@@ -74,14 +74,16 @@ public class InventoryCacheEvictConsumer implements RocketMQListener<MessageExt>
 
     private final StringRedisTemplate stringRedisTemplate;
 
-    /** Redis Key 前缀（与 InventoryService 保持一致） */
-    private static final String BUCKET_KEY_PREFIX = "inventory:bucket:";
-    private static final String TOTAL_KEY_PREFIX = "inventory:total:";
+    /** Redis Key 前缀（与 InventoryService 保持一致，使用 {skuId} hash tag） */
+    private static final String BUCKET_KEY_PREFIX = "inventory:{%d}:bucket:";
+    private static final String TOTAL_KEY_PREFIX = "inventory:{%d}:total";
     private static final String BUCKET_COUNT_KEY_PREFIX = "inventory:bucket:count:";
     /** Canal 版本号 Key 前缀（用于防乱序） */
     private static final String CANAL_VERSION_PREFIX = "inventory:canal:version:";
     /** Canal 版本号 Key 的过期时间（7天，防止无限增长） */
     private static final long CANAL_VERSION_TTL_SECONDS = 7 * 24 * 3600;
+
+    private static String totalKey(Long skuId) { return String.format(TOTAL_KEY_PREFIX, skuId); }
 
     @Override
     public void onMessage(MessageExt msg) {
@@ -160,8 +162,8 @@ public class InventoryCacheEvictConsumer implements RocketMQListener<MessageExt>
      * 删除 SKU 的 Redis 缓存（INSERT/UPDATE 事件）
      * <p>
      * 删除范围：
-     * 1. 总库存 Key：inventory:total:{skuId}
-     * 2. 所有分桶 Key：inventory:bucket:{skuId}:*
+     * 1. 总库存 Key：inventory:{skuId}:total
+     * 2. 所有分桶 Key：inventory:{skuId}:bucket:*
      * 3. 分桶数量 Key：inventory:bucket:count:{skuId}
      * </p>
      * <p>
@@ -258,7 +260,7 @@ public class InventoryCacheEvictConsumer implements RocketMQListener<MessageExt>
         int deletedCount = 0;
 
         // 1. 删除总库存 Key
-        String totalKey = TOTAL_KEY_PREFIX + skuId;
+        String totalKey = totalKey(skuId);
         Boolean totalDeleted = stringRedisTemplate.delete(totalKey);
         if (Boolean.TRUE.equals(totalDeleted)) {
             deletedCount++;
@@ -272,7 +274,7 @@ public class InventoryCacheEvictConsumer implements RocketMQListener<MessageExt>
         }
 
         // 3. 删除所有分桶 Key（SCAN 增量遍历，不阻塞 Redis）
-        String bucketPattern = BUCKET_KEY_PREFIX + skuId + ":*";
+        String bucketPattern = String.format("inventory:{%d}:bucket:*", skuId);
         org.springframework.data.redis.core.Cursor<String> cursor = null;
         try {
             cursor = stringRedisTemplate.scan(

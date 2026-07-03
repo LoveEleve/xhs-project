@@ -37,9 +37,9 @@ import java.util.stream.Collectors;
  * 3. MQ 同步写 DB：领券后同步发送 MQ，失败则回滚 Redis 库存
  * </p>
  * <p>
- * Redis Key 设计：
- * - 券库存：coupon:stock:{templateId}（String，值=剩余数量）
- * - 用户领取次数：coupon:claimed:{templateId}:{userId}（String，值=已领次数）
+ * Redis Key 设计（使用 {templateId} 作为 hash tag，保证 Lua 脚本跨 Key 原子操作在 Cluster 下同 slot）：
+ * - 券库存：coupon:{templateId}:stock（String，值=剩余数量）
+ * - 用户领取次数：coupon:{templateId}:claimed:userId（String，值=已领次数）
  * - 模板缓存：coupon:template:{templateId}（Hash，缓存模板信息，避免高并发查 MySQL）
  * </p>
  */
@@ -57,11 +57,15 @@ public class CouponService {
     private final DefaultRedisScript<Long> returnCouponScript;
     private final List<CouponValidator> validators; // Spring 自动注入所有校验器（按 @Order 排序）
 
-    private static final String STOCK_KEY_PREFIX = "coupon:stock:";
-    private static final String CLAIMED_KEY_PREFIX = "coupon:claimed:";
+    /** 【修复M15】Key 使用 {templateId} 作为 hash tag，保证 stock 和 claimed 落同 slot */
+    private static final String STOCK_KEY_TPL = "coupon:{%d}:stock";
+    private static final String CLAIMED_KEY_TPL = "coupon:{%d}:claimed:%d";
     private static final String TEMPLATE_KEY_PREFIX = "coupon:template:";
     private static final String COUPON_CLAIM_TOPIC = "COUPON_CLAIM_TOPIC";
     private static final long TEMPLATE_CACHE_SECONDS = 1800L; // 模板缓存 30 分钟
+
+    private static String stockKey(Long templateId) { return String.format(STOCK_KEY_TPL, templateId); }
+    private static String claimedKey(Long templateId, Long userId) { return String.format(CLAIMED_KEY_TPL, templateId, userId); }
 
     // ==================== 券模板管理 ====================
 
@@ -99,7 +103,7 @@ public class CouponService {
         templateMapper.insert(template);
 
         // 初始化 Redis 库存（SETNX 保证幂等）
-        String stockKey = STOCK_KEY_PREFIX + template.getId();
+        String stockKey = stockKey(template.getId());
         stringRedisTemplate.opsForValue().setIfAbsent(stockKey, String.valueOf(template.getTotalCount()));
 
         // 缓存模板信息到 Redis
@@ -174,8 +178,8 @@ public class CouponService {
         }
 
         // 2. Lua 原子领券
-        String stockKey = STOCK_KEY_PREFIX + templateId;
-        String claimedKey = CLAIMED_KEY_PREFIX + templateId + ":" + userId;
+        String stockKey = stockKey(templateId);
+        String claimedKey = claimedKey(templateId, userId);
 
         Long result = stringRedisTemplate.execute(
                 claimCouponScript,
@@ -298,8 +302,8 @@ public class CouponService {
         templateMapper.incrementRemainCount(userCoupon.getCouponId());
 
         // 4. Redis 回退库存 + 减少领取次数（Lua 原子操作）
-        String stockKey = STOCK_KEY_PREFIX + userCoupon.getCouponId();
-        String claimedKey = CLAIMED_KEY_PREFIX + userCoupon.getCouponId() + ":" + userId;
+        String stockKey = stockKey(userCoupon.getCouponId());
+        String claimedKey = claimedKey(userCoupon.getCouponId(), userId);
 
         Long result = stringRedisTemplate.execute(
                 returnCouponScript,
@@ -414,7 +418,7 @@ public class CouponService {
      * 从 MySQL 初始化 Redis 库存（券库存未初始化时的兜底）
      */
     private void initStockFromDb(CouponTemplate template) {
-        String stockKey = STOCK_KEY_PREFIX + template.getId();
+        String stockKey = stockKey(template.getId());
         stringRedisTemplate.opsForValue().setIfAbsent(stockKey, String.valueOf(template.getRemainCount()));
         log.info("[优惠券] 从DB初始化Redis库存: templateId={}, stock={}",
                 template.getId(), template.getRemainCount());

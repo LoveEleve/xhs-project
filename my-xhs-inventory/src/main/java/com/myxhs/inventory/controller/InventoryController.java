@@ -1,5 +1,6 @@
 package com.myxhs.inventory.controller;
 
+import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
 import com.myxhs.inventory.dto.request.ConfirmDeductRequest;
 import com.myxhs.inventory.dto.request.InventoryInitRequest;
@@ -9,6 +10,7 @@ import com.myxhs.inventory.dto.response.StockVO;
 import com.myxhs.inventory.service.InventoryService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -26,6 +28,9 @@ public class InventoryController {
 
     private final InventoryService inventoryService;
 
+    @Value("${inventory.bucket.default-count:2}")
+    private int defaultBucketCount;
+
     /**
      * 库存初始化（DB → Redis 分桶）
      * <p>
@@ -33,6 +38,7 @@ public class InventoryController {
      * </p>
      */
     @PostMapping("/init")
+    @RateLimit(prefix = "inventory:init", maxRequests = 5, windowSeconds = 60)
     public R<Void> initStock(@Valid @RequestBody InventoryInitRequest request) {
         inventoryService.initStock(request);
         return R.ok();
@@ -65,6 +71,21 @@ public class InventoryController {
     @PostMapping("/release")
     public R<Void> releaseStock(@Valid @RequestBody ReleaseStockRequest request) {
         inventoryService.releaseStock(request);
+        return R.ok();
+    }
+
+    /**
+     * 【M9】重新初始化库存（管理后台调用）
+     * <p>
+     * 清除 Redis Key → 从 MySQL 恢复真实库存 → 按新桶数重新分桶。
+     * 用于分桶数调整或 Redis 数据异常修复。
+     * </p>
+     */
+    @PostMapping("/reinit")
+    @RateLimit(prefix = "inventory:reinit", maxRequests = 2, windowSeconds = 60)
+    public R<Void> reinitStock(@Valid @RequestBody InventoryInitRequest request) {
+        int bucketCount = request.getBucketCount() != null ? request.getBucketCount() : defaultBucketCount;
+        inventoryService.reinitStock(request.getSkuId(), bucketCount);
         return R.ok();
     }
 

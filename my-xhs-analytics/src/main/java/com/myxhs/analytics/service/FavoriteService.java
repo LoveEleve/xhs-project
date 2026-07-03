@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Service;
 
@@ -35,6 +36,7 @@ public class FavoriteService {
     private final StringRedisTemplate stringRedisTemplate;
     private final RocketMQTemplate rocketMQTemplate;
     private final ObjectMapper objectMapper;
+    private final DefaultRedisScript<Long> favoriteAtomicScript;
 
     /** 收藏列表最大返回条数 */
     private static final int MAX_PAGE_SIZE = 50;
@@ -52,21 +54,20 @@ public class FavoriteService {
      */
     public void favorite(Long userId, Long noteId) {
         String key = RedisKeyConstants.FAVORITE_SET + userId;
-
-        // 1. 检查是否已收藏（ZSCORE O(1)）
-        Double score = stringRedisTemplate.opsForZSet().score(key, String.valueOf(noteId));
-        if (score != null) {
-            // 已收藏，幂等返回
-            return;
-        }
-
-        // 2. ZADD 添加收藏（score=当前时间戳，用于按时间排序）
         long currentTime = System.currentTimeMillis();
-        stringRedisTemplate.opsForZSet().add(key, String.valueOf(noteId), currentTime);
+
+        // 【M16】Lua 脚本原子操作：ZSCORE 检查 + ZADD 写入
+        Long result = stringRedisTemplate.execute(favoriteAtomicScript,
+                Collections.singletonList(key),
+                String.valueOf(noteId), String.valueOf(currentTime));
+
+        if (result == null || result == 0) {
+            return; // 已收藏，幂等
+        }
 
         log.info("[收藏] 收藏成功: userId={}, noteId={}", userId, noteId);
 
-        // 3. MQ 异步落库 + 通知计数服务
+        // MQ 异步落库 + 通知计数服务
         sendFavoriteEvent(userId, noteId, "FAVORITE", currentTime);
     }
 

@@ -1,0 +1,56 @@
+# my-xhs 微服务通用 Dockerfile 模板
+# 使用方式：在模块根目录执行
+#   docker build --build-arg MODULE=my-xhs-gateway -f ../Dockerfile.template -t myxhs/gateway:latest .
+#   docker build --build-arg MODULE=my-xhs-user    -f ../Dockerfile.template -t myxhs/user:latest    .
+#   ...
+
+# ---- Stage 1: 编译 ----
+FROM maven:3.9-eclipse-temurin-17 AS builder
+
+ARG MODULE
+WORKDIR /build
+
+# 先复制 pom.xml 和父 pom，利用 Docker 层缓存加速
+COPY pom.xml ./
+COPY my-xhs-common/pom.xml my-xhs-common/
+COPY ${MODULE}/pom.xml ${MODULE}/
+
+# 下载依赖（缓存层）
+RUN mvn dependency:go-offline -pl ${MODULE} -am -q -DskipTests
+
+# 复制源码并构建
+COPY . .
+RUN mvn package -pl ${MODULE} -am -q -DskipTests
+
+# ---- Stage 2: 运行 ----
+FROM eclipse-temurin:17-jre-alpine AS runtime
+
+# 安装调试工具
+RUN apk add --no-cache curl tzdata && \
+    ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+    echo "Asia/Shanghai" > /etc/timezone
+
+ARG MODULE
+WORKDIR /app
+
+# 创建非 root 用户
+RUN addgroup -S myxhs && adduser -S myxhs -G myxhs
+
+# SkyWalking Agent（可选，挂载到 /app/skywalking-agent）
+# 运行时通过 JAVA_TOOL_OPTIONS 启用：
+#   -e JAVA_TOOL_OPTIONS="-javaagent:/app/skywalking-agent/skywalking-agent.jar -Dskywalking.agent.service_name=${MODULE}"
+
+# 复制 JAR
+COPY --from=builder /build/${MODULE}/target/*.jar app.jar
+
+# 健康检查（使用 Spring Boot Actuator）
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD curl -sf http://localhost:8080/actuator/health/liveness || exit 1
+
+# JVM 参数（可被 JAVA_OPTS 覆盖）
+ENV JAVA_OPTS="-Xms256m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+HeapDumpOnOutOfMemoryError"
+
+EXPOSE 8080
+
+USER myxhs
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]

@@ -6,6 +6,7 @@ import com.myxhs.cart.dto.request.CartMergeRequest;
 import com.myxhs.cart.dto.request.CartUpdateQuantityRequest;
 import com.myxhs.cart.dto.response.CartListVO;
 import com.myxhs.cart.service.CartService;
+import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,7 @@ public class CartController {
      * 加入购物车
      */
     @PostMapping("/add")
+    @RateLimit(prefix = "cart:add", maxRequests = 20, windowSeconds = 60, perUser = true)
     public R<Void> addToCart(
             @RequestHeader("X-User-Id") Long userId,
             @Valid @RequestBody CartAddRequest request) {

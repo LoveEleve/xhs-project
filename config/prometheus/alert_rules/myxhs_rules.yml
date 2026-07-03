@@ -155,3 +155,178 @@ groups:
         annotations:
           summary: "登录失败率超过 10%，可能存在暴力破解攻击"
           description: "当前失败率: {{ $value | humanizePercentage }}"
+
+  # ==================== 中件间级告警 ====================
+  - name: myxhs_middleware_alerts
+    rules:
+      # Redis 内存使用率 > 80% → P1
+      - alert: RedisHighMemoryUsage
+        expr: (redis_memory_used_bytes / redis_memory_max_bytes) > 0.8
+        for: 3m
+        labels:
+          severity: critical
+          level: P1
+        annotations:
+          summary: "Redis 内存使用率超过 80%"
+          description: "实例: {{ $labels.instance }}, 使用率: {{ $value | humanizePercentage }}"
+
+      # Redis 连接数 > 80% → P2
+      - alert: RedisHighConnections
+        expr: (redis_connected_clients / redis_config_maxclients) > 0.8
+        for: 3m
+        labels:
+          severity: warning
+          level: P2
+        annotations:
+          summary: "Redis 连接数超过 80%"
+          description: "实例: {{ $labels.instance }}"
+
+      # ES 集群状态非 green → P1
+      - alert: EsClusterNotGreen
+        expr: elasticsearch_cluster_health_status{color!="green"} == 1
+        for: 2m
+        labels:
+          severity: critical
+          level: P1
+        annotations:
+          summary: "Elasticsearch 集群状态不是 green"
+          description: "当前状态: {{ $labels.color }}, 集群: {{ $labels.cluster }}"
+
+      # ES 节点 JVM 堆使用率 > 85% → P2
+      - alert: EsNodeHighJvmHeap
+        expr: (elasticsearch_jvm_memory_used_bytes{area="heap"} / elasticsearch_jvm_memory_max_bytes{area="heap"}) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          level: P2
+        annotations:
+          summary: "ES 节点 JVM 堆使用率超过 85%"
+          description: "节点: {{ $labels.node }}"
+
+      # Canal 同步延迟 > 60s → P1
+      - alert: CanalHighDelay
+        expr: canal_instance_subscribe_delay > 60000
+        for: 3m
+        labels:
+          severity: critical
+          level: P1
+        annotations:
+          summary: "Canal 同步延迟超过 60 秒"
+          description: "Instance: {{ $labels.destination }}, 延迟: {{ $value }}ms"
+
+      # RocketMQ Broker 磁盘使用率 > 80% → P2
+      - alert: RocketmqHighDiskUsage
+        expr: rocketmq_broker_disk_ratio > 80
+        for: 5m
+        labels:
+          severity: warning
+          level: P2
+        annotations:
+          summary: "RocketMQ Broker 磁盘使用率超过 80%"
+          description: "Broker: {{ $labels.broker }}, 使用率: {{ $value }}%"
+
+  # ==================== 核心链路按 4 黄金信号告警 ====================
+  - name: myxhs_core_golden_signals
+    rules:
+      # 订单服务 P99 延迟 > 2s → P1
+      - alert: OrderHighLatency
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(myxhs_http_request_duration_seconds_bucket{application="my-xhs-order"}[5m])) by (le)
+          ) > 2
+        for: 3m
+        labels:
+          severity: critical
+          level: P1
+        annotations:
+          summary: "订单服务 P99 延迟超过 2 秒"
+          description: "当前 P99: {{ $value | humanizeDuration }}"
+
+      # 支付服务 5xx 错误率 > 2% → P0
+      - alert: PaymentHighErrorRate
+        expr: |
+          (
+            sum(rate(myxhs_http_request_duration_seconds_count{application="my-xhs-payment",status_group="5xx"}[5m]))
+            /
+            sum(rate(myxhs_http_request_duration_seconds_count{application="my-xhs-payment"}[5m]))
+          ) > 0.02
+        for: 2m
+        labels:
+          severity: critical
+          level: P0
+        annotations:
+          summary: "支付服务 5xx 错误率超过 2%"
+          description: "当前错误率: {{ $value | humanizePercentage }}"
+
+      # 库存服务 QPS 过载预警 > 500/s → P2
+      - alert: InventoryHighTraffic
+        expr: |
+          sum(rate(myxhs_http_request_duration_seconds_count{application="my-xhs-inventory"}[1m])) > 500
+        for: 3m
+        labels:
+          severity: warning
+          level: P2
+        annotations:
+          summary: "库存服务 QPS 超过 500/s"
+          description: "当前 QPS: {{ $value }}"
+
+      # 搜索服务 P99 延迟 > 5s → P2
+      - alert: SearchHighLatency
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(myxhs_http_request_duration_seconds_bucket{application="my-xhs-search"}[5m])) by (le)
+          ) > 5
+        for: 5m
+        labels:
+          severity: warning
+          level: P2
+        annotations:
+          summary: "搜索服务 P99 延迟超过 5 秒"
+          description: "当前 P99: {{ $value | humanizeDuration }}"
+
+      # 用户服务 5xx 错误率 > 3% → P2
+      - alert: UserHighErrorRate
+        expr: |
+          (
+            sum(rate(myxhs_http_request_duration_seconds_count{application="my-xhs-user",status_group="5xx"}[5m]))
+            /
+            sum(rate(myxhs_http_request_duration_seconds_count{application="my-xhs-user"}[5m]))
+          ) > 0.03
+        for: 3m
+        labels:
+          severity: warning
+          level: P2
+        annotations:
+          summary: "用户服务 5xx 错误率超过 3%"
+          description: "当前错误率: {{ $value | humanizePercentage }}"
+
+      # 网关 5xx 错误率 > 1% → P1
+      - alert: GatewayHighErrorRate
+        expr: |
+          (
+            sum(rate(myxhs_http_request_duration_seconds_count{application="my-xhs-gateway",status_group="5xx"}[5m]))
+            /
+            sum(rate(myxhs_http_request_duration_seconds_count{application="my-xhs-gateway"}[5m]))
+          ) > 0.01
+        for: 2m
+        labels:
+          severity: critical
+          level: P1
+        annotations:
+          summary: "网关 5xx 错误率超过 1%"
+          description: "当前错误率: {{ $value | humanizePercentage }}"
+
+      # 负载均衡器 QPS 突增 > 正常值 3x → P2
+      - alert: TrafficSurge
+        expr: |
+          sum(rate(myxhs_http_request_duration_seconds_count[5m]))
+          /
+          avg_over_time(sum(rate(myxhs_http_request_duration_seconds_count[5m] offset 30m))[30m:])
+          > 3
+        for: 5m
+        labels:
+          severity: warning
+          level: P2
+        annotations:
+          summary: "总 QPS 比半小时前突增 3 倍以上"
+          description: "当前 QPS 比值: {{ $value }}"

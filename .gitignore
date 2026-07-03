@@ -38,3 +38,6 @@ logs/
 # Env files
 .env
 .env.local
+
+# sverklo per-project state (memory journal, etc.)
+.sverklo/

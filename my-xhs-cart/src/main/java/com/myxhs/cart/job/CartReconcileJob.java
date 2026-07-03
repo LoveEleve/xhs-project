@@ -45,8 +45,12 @@ public class CartReconcileJob {
     private final CartItemMapper cartItemMapper;
     private final IdGeneratorUtil idGeneratorUtil;
 
-    private static final String ITEMS_KEY_PREFIX = "myxhs:cart:items:";
-    private static final String CHECKED_KEY_PREFIX = "myxhs:cart:checked:";
+    private static final String KEY_PREFIX = "myxhs:cart:{";
+    private static final String ITEMS_KEY_SUFFIX = "}:items";
+    private static final String CHECKED_KEY_SUFFIX = "}:checked";
+
+    private static String itemsKey(Long userId) { return KEY_PREFIX + userId + ITEMS_KEY_SUFFIX; }
+    private static String checkedKey(Long userId) { return KEY_PREFIX + userId + CHECKED_KEY_SUFFIX; }
 
     /**
      * 购物车对账修复（XXL-Job Handler）
@@ -84,12 +88,12 @@ public class CartReconcileJob {
      * @return 修复的记录数
      */
     private int reconcileUser(Long userId) {
-        String itemsKey = ITEMS_KEY_PREFIX + userId;
+        String itemsKey = itemsKey(userId);
         int repairCount = 0;
 
         // 获取 Redis 中的购物车数据
         Map<Object, Object> redisItems = stringRedisTemplate.opsForHash().entries(itemsKey);
-        Set<String> redisChecked = stringRedisTemplate.opsForSet().members(CHECKED_KEY_PREFIX + userId);
+        Set<String> redisChecked = stringRedisTemplate.opsForSet().members(checkedKey(userId));
 
         // 获取 MySQL 中的购物车数据
         List<CartItem> mysqlItems = cartItemMapper.selectList(

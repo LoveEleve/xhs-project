@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__sverklo__*"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sverklo wakeup . 2>/dev/null &",
+            "timeout": 3
+          }
+        ]
+      }
+    ]
+  }
+}

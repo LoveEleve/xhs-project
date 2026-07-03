@@ -13,9 +13,13 @@ spring:
     name: my-xhs-payment
   data:
     redis:
-      host: localhost
+      host: 21.91.124.110
       port: 16379
       password: "Xhs@2026#Redis"
+      cache:
+        port: 16380  # Cache Redis (allkeys-lru)
+      business:
+        port: 16381  # Business Redis (noeviction)
       lettuce:
         pool:
           max-active: 16
@@ -23,7 +27,7 @@ spring:
           min-idle: 4
           max-wait: 3000ms
   datasource:
-    url: jdbc:mysql://localhost:13306/my_xhs_payment?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://21.91.124.110:13308/my_xhs_payment?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: root
     password: "Xhs@2026#MySQL"
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -39,7 +43,7 @@ spring:
   # 注意：HikariCP 通过 @ConfigurationProperties 绑定时需要 jdbc-url 而不是 url
   # 原因：Spring Boot 自动配置会做 url → jdbcUrl 的映射，但直接绑定 HikariDataSource 不会
   pay-datasource:
-    jdbc-url: jdbc:mysql://localhost:13306/my_xhs_payment?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    jdbc-url: jdbc:mysql://21.91.124.110:13308/my_xhs_payment?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
     username: root
     password: "Xhs@2026#MySQL"
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -53,35 +57,43 @@ spring:
     nacos:
       discovery:
         enabled: true
-        server-addr: 127.0.0.1:18848
+        server-addr: 21.91.124.110:18848
         namespace: my-xhs
         group: DEFAULT_GROUP
       config:
-        enabled: false
-        server-addr: 127.0.0.1:18848
+        enabled: true
+        server-addr: 21.91.124.110:18848
+        import-check:
+          enabled: false
         file-extension: yaml
     # Sentinel 配置（轻量模式，暂不连接 Dashboard）
     sentinel:
       transport:
-        dashboard: localhost:8080
+        dashboard: 21.91.124.110:18082
       # 取消懒加载，应用启动时即初始化 Sentinel
       eager: true
       # Nacos 数据源持久化限流规则（Feign 熔断降级规则）
       datasource:
         flow:
           nacos:
-            server-addr: 127.0.0.1:18848
+            server-addr: 21.91.124.110:18848
             namespace: my-xhs
             group-id: SENTINEL_GROUP
             data-id: my-xhs-payment-flow-rules
             rule-type: flow
         degrade:
           nacos:
-            server-addr: 127.0.0.1:18848
+            server-addr: 21.91.124.110:18848
             namespace: my-xhs
             group-id: SENTINEL_GROUP
             data-id: my-xhs-payment-degrade-rules
             rule-type: degrade
+    openfeign:
+      httpclient:
+        hc5:
+          enabled: true
+          max-connections: 200
+          max-connections-per-route: 50
   lifecycle:
     timeout-per-shutdown-phase: 30s
 
@@ -115,7 +127,7 @@ management:
 
 # RocketMQ 配置
 rocketmq:
-  name-server: localhost:9876
+  name-server: 21.91.124.110:9876
   producer:
     group: payment-producer-group
     send-message-timeout: 3000
@@ -147,10 +159,9 @@ xxl:
   job:
     enabled: true
     admin:
-      addresses: http://127.0.0.1:18080/xxl-job-admin
+      addresses: http://21.91.124.110:18080/xxl-job-admin
     accessToken: my-xhs-xxl-job-token-2026
     executor:
-      appname: my-xhs-payment
       port: 9999
       logpath: /data/applogs/xxl-job/jobhandler
       logretentiondays: 30

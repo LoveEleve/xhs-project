@@ -10,14 +10,14 @@ spring:
       # Nacos 服务发现（Gateway 需要通过 Nacos 发现下游微服务实例）
       discovery:
         enabled: true
-        server-addr: 127.0.0.1:18848
+        server-addr: 21.91.124.110:18848
         namespace: my-xhs
         group: DEFAULT_GROUP
     sentinel:
       # Sentinel 控制台配置（当前未部署控制台，仅使用限流规则）
       transport:
-        dashboard: localhost:8080
-        client-ip: localhost
+        dashboard: 21.91.124.110:18082
+        client-ip: 21.214.97.212
         port: 8719
       # 取消懒加载，启动时立即初始化 Sentinel
       eager: true
@@ -27,7 +27,7 @@ spring:
       datasource:
         flow:
           nacos:
-            server-addr: 127.0.0.1:18848
+            server-addr: 21.91.124.110:18848
             namespace: my-xhs
             group-id: SENTINEL_GROUP
             data-id: my-xhs-gateway-flow-rules
@@ -96,9 +96,13 @@ spring:
             - Path=/api/im/**
   data:
     redis:
-      host: localhost
+      host: 21.91.124.110
       port: 16379
       password: "Xhs@2026#Redis"
+      cache:
+        port: 16380  # Cache Redis (allkeys-lru)
+      business:
+        port: 16381  # Business Redis (noeviction)
       database: 0
       timeout: 3000ms
       lettuce:

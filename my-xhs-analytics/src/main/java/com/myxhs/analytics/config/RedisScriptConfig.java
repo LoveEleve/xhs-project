@@ -17,25 +17,81 @@ import org.springframework.scripting.support.ResourceScriptSource;
 public class RedisScriptConfig {
 
     /**
-     * 关注 Lua 脚本
-     * 原子操作：ZADD 关注列表 + ZADD 粉丝列表 + INCR 关注数 + INCR 粉丝数
+     * 关注-当前用户侧 Lua 脚本（写入关注列表 + 关注数 +1）
+     * 【修复M6】拆分为 self/target，每个脚本 KEYS 属于同一用户，Cluster 兼容
      */
     @Bean
-    public DefaultRedisScript<Long> followScript() {
+    public DefaultRedisScript<Long> followSelfScript() {
         DefaultRedisScript<Long> script = new DefaultRedisScript<>();
-        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/follow_and_count.lua")));
+        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/follow_self.lua")));
         script.setResultType(Long.class);
         return script;
     }
 
     /**
-     * 取关 Lua 脚本
-     * 原子操作：ZREM 关注列表 + ZREM 粉丝列表 + DECR 关注数 + DECR 粉丝数
+     * 关注-目标用户侧 Lua 脚本（写入粉丝列表 + 粉丝数 +1）
      */
     @Bean
-    public DefaultRedisScript<Long> unfollowScript() {
+    public DefaultRedisScript<Long> followTargetScript() {
         DefaultRedisScript<Long> script = new DefaultRedisScript<>();
-        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/unfollow_and_count.lua")));
+        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/follow_target.lua")));
+        script.setResultType(Long.class);
+        return script;
+    }
+
+    /**
+     * 取关-当前用户侧 Lua 脚本（移除关注列表 + 关注数 -1，含防负数保护）
+     */
+    @Bean
+    public DefaultRedisScript<Long> unfollowSelfScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/unfollow_self.lua")));
+        script.setResultType(Long.class);
+        return script;
+    }
+
+    /**
+     * 取关-目标用户侧 Lua 脚本（移除粉丝列表 + 粉丝数 -1，含防负数保护）
+     */
+    @Bean
+    public DefaultRedisScript<Long> unfollowTargetScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/unfollow_target.lua")));
+        script.setResultType(Long.class);
+        return script;
+    }
+
+    /**
+     * 【M16】收藏原子 Lua 脚本：ZSCORE 检查 + ZADD 写入
+     */
+    @Bean
+    public DefaultRedisScript<Long> favoriteAtomicScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/favorite_atomic.lua")));
+        script.setResultType(Long.class);
+        return script;
+    }
+
+    /**
+     * 点赞原子 Lua 脚本
+     * 原子操作：SADD 正向索引 + SADD 反向索引，防止中间状态不一致
+     */
+    @Bean
+    public DefaultRedisScript<Long> likeAtomicScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/like_atomic.lua")));
+        script.setResultType(Long.class);
+        return script;
+    }
+
+    /**
+     * 取消点赞原子 Lua 脚本
+     * 原子操作：SREM 正向索引 + SREM 反向索引，防止中间状态不一致
+     */
+    @Bean
+    public DefaultRedisScript<Long> unlikeAtomicScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/unlike_atomic.lua")));
         script.setResultType(Long.class);
         return script;
     }

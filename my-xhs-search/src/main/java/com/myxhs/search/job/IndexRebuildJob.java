@@ -95,38 +95,30 @@ public class IndexRebuildJob {
      * </p>
      */
     public void manualRebuild() {
-        RLock lock = redissonClient.getLock(LOCK_KEY);
-        boolean acquired = false;
-        try {
-            acquired = lock.tryLock(5, 7200, TimeUnit.SECONDS);
-            if (!acquired) {
-                throw new RuntimeException("索引重建任务正在执行中，请稍后重试");
-            }
-            // 手动重建时清除断点，从头开始
-            stringRedisTemplate.delete(REBUILD_STATUS_KEY);
-            // 异步执行，释放 HTTP 线程
-            final RLock asyncLock = lock;
-            CompletableFuture.runAsync(() -> {
-                try {
-                    doRebuild();
-                } catch (Exception e) {
-                    log.error("[索引重建] 异步执行异常", e);
-                } finally {
-                    if (asyncLock.isHeldByCurrentThread()) {
-                        asyncLock.unlock();
-                    }
+        // 【修复M18】锁的获取和释放必须在同一线程中完成。
+        // 将整个加锁→重建→解锁流程移入异步线程，避免 isHeldByCurrentThread() 跨线程失效。
+        CompletableFuture.runAsync(() -> {
+            RLock lock = redissonClient.getLock(LOCK_KEY);
+            boolean acquired = false;
+            try {
+                acquired = lock.tryLock(5, 7200, TimeUnit.SECONDS);
+                if (!acquired) {
+                    log.warn("[索引重建] 任务正在执行中，跳过本次手动触发");
+                    return;
                 }
-            });
-            // 标记已提交，不在 finally 中释放锁（由异步线程释放）
-            acquired = false;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RuntimeException("索引重建被中断");
-        } finally {
-            if (acquired && lock.isHeldByCurrentThread()) {
-                lock.unlock();
+                stringRedisTemplate.delete(REBUILD_STATUS_KEY);
+                doRebuild();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.error("[索引重建] 被中断", e);
+            } catch (Exception e) {
+                log.error("[索引重建] 异步执行异常", e);
+            } finally {
+                if (acquired && lock.isHeldByCurrentThread()) {
+                    lock.unlock();
+                }
             }
-        }
+        });
     }
 
     /**

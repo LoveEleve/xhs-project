@@ -73,6 +73,15 @@ public class SpuService {
     private final Cache<Long, SpuDetailVO> spuLocalCache;
     private final Cache<Long, String> categoryNameLocalCache;
 
+    /** 【修复m12】自定义有界线程池，替代 ForkJoinPool.commonPool()，避免阻塞公共线程池 */
+    private static final java.util.concurrent.ExecutorService SPU_ASYNC_EXECUTOR =
+            new java.util.concurrent.ThreadPoolExecutor(
+                    2, 8, 60, java.util.concurrent.TimeUnit.SECONDS,
+                    new java.util.concurrent.LinkedBlockingQueue<>(100),
+                    r -> { Thread t = new Thread(r, "spu-async"); t.setDaemon(true); return t; },
+                    new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy()
+            );
+
     /** SPU 布隆过滤器（防穿透） */
     private RBloomFilter<Long> spuBloomFilter;
 
@@ -204,7 +213,7 @@ public class SpuService {
                     lock.unlock();
                 }
             }
-        });
+        }, SPU_ASYNC_EXECUTOR);
     }
 
     // ==================== 写操作 ====================
@@ -501,7 +510,7 @@ public class SpuService {
                     lock.unlock();
                 }
             }
-        });
+        }, SPU_ASYNC_EXECUTOR);
     }
 
     /**

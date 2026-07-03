@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.validation.Valid;
 import java.util.List;
 
 /**
@@ -34,7 +35,7 @@ public class SearchController {
      */
     @GetMapping("/note")
     public R<SearchResultVO<NoteSearchVO>> searchNotes(
-            NoteSearchRequest request,
+            @Valid NoteSearchRequest request,
             @RequestHeader(value = "X-User-Id", required = false) Long userId,
             @RequestHeader(value = "X-Forwarded-For", required = false) String ip) {
         // 记录搜索词到热搜窗口
@@ -53,7 +54,7 @@ public class SearchController {
      */
     @GetMapping("/product")
     public R<SearchResultVO<ProductSearchVO>> searchProducts(
-            ProductSearchRequest request,
+            @Valid ProductSearchRequest request,
             @RequestHeader(value = "X-User-Id", required = false) Long userId,
             @RequestHeader(value = "X-Forwarded-For", required = false) String ip) {
         if (request.getKeyword() != null && !request.getKeyword().isBlank()) {

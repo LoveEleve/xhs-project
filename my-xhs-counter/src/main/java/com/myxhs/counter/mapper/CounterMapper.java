@@ -41,6 +41,21 @@ public interface CounterMapper extends BaseMapper<Counter> {
     Counter selectByTarget(@Param("targetType") int targetType, @Param("targetId") long targetId, @Param("countType") int countType);
 
     /**
+     * 批量查询计数（Redis 未命中时的一次性 MySQL 回退，避免 N+1）
+     * <p>
+     * 使用 WHERE (target_type, target_id, count_type) IN (...) 一次查询替代 N 次循环单查。
+     * </p>
+     */
+    @Select("<script>" +
+            "SELECT * FROM t_counter WHERE deleted = 0 AND " +
+            "(target_type, target_id, count_type) IN " +
+            "<foreach collection='queries' item='q' open='(' close=')' separator=','>" +
+            "(#{q.targetType}, #{q.targetId}, #{q.countType})" +
+            "</foreach>" +
+            "</script>")
+    List<Counter> selectByTargets(@Param("queries") List<CounterBatchQuery> queries);
+
+    /**
      * 游标分页查询（对账修复用）
      * <p>
      * 按 id 升序分批扫描，避免 OFFSET 深分页性能问题。

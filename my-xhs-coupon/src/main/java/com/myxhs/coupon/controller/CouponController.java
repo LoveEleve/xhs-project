@@ -1,7 +1,9 @@
 package com.myxhs.coupon.controller;
 
+import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
 import com.myxhs.coupon.dto.request.*;
+import com.myxhs.coupon.dto.response.CouponTemplateVO;
 import com.myxhs.coupon.dto.response.UserCouponVO;
 import com.myxhs.coupon.entity.CouponTemplate;
 import com.myxhs.coupon.service.CouponService;
@@ -31,8 +33,8 @@ public class CouponController {
      * 创建优惠券模板
      */
     @PostMapping("/template")
-    public R<CouponTemplate> createTemplate(@Valid @RequestBody CreateTemplateRequest request) {
-        return R.ok(couponService.createTemplate(request));
+    public R<CouponTemplateVO> createTemplate(@Valid @RequestBody CreateTemplateRequest request) {
+        return R.ok(toTemplateVO(couponService.createTemplate(request)));
     }
 
     /**
@@ -48,8 +50,8 @@ public class CouponController {
      * 查询券模板详情
      */
     @GetMapping("/template/{id}")
-    public R<CouponTemplate> getTemplate(@PathVariable Long id) {
-        return R.ok(couponService.getTemplate(id));
+    public R<CouponTemplateVO> getTemplate(@PathVariable Long id) {
+        return R.ok(toTemplateVO(couponService.getTemplate(id)));
     }
 
     // ==================== 用户端 ====================
@@ -61,6 +63,8 @@ public class CouponController {
      * </p>
      */
     @PostMapping("/claim")
+    @RateLimit(prefix = "coupon:claim", maxRequests = 5, windowSeconds = 60, perUser = true,
+               message = "领券频率过高，请稍后再试")
     public R<Void> claimCoupon(@RequestHeader("X-User-Id") Long userId,
                                @Valid @RequestBody ClaimCouponRequest request) {
         couponService.claimCoupon(userId, request);
@@ -104,5 +108,23 @@ public class CouponController {
                                 @Valid @RequestBody ReturnCouponRequest request) {
         couponService.returnCoupon(userId, request);
         return R.ok();
+    }
+
+    // ==================== VO 转换 ====================
+
+    private CouponTemplateVO toTemplateVO(CouponTemplate template) {
+        return CouponTemplateVO.builder()
+                .id(template.getId())
+                .name(template.getName())
+                .type(template.getType())
+                .discountValue(template.getDiscountValue())
+                .minAmount(template.getMinAmount())
+                .totalCount(template.getTotalCount())
+                .remainCount(template.getRemainCount())
+                .perUserLimit(template.getPerUserLimit())
+                .validStart(template.getValidStart())
+                .validEnd(template.getValidEnd())
+                .status(template.getStatus())
+                .build();
     }
 }

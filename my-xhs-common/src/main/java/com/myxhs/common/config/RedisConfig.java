@@ -6,11 +6,16 @@ import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.databind.jsontype.impl.LaissezFaireSubTypeValidator;
+import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
+import com.fasterxml.jackson.databind.jsontype.PolymorphicTypeValidator;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
@@ -30,7 +35,23 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 @Configuration
 public class RedisConfig {
 
+    /**
+     * 默认 Redis 连接指向 Business Redis (16381, noeviction)
+     * 业务数据走此连接，保护数据不丢失
+     */
     @Bean
+    @Primary
+    public LettuceConnectionFactory defaultRedisConnectionFactory(
+            @Value("${spring.data.redis.host:21.91.124.110}") String host,
+            @Value("${spring.data.redis.business.port:16381}") int port,
+            @Value("${spring.data.redis.password:Xhs@2026#Redis}") String password) {
+        RedisStandaloneConfiguration config = new RedisStandaloneConfiguration(host, port);
+        config.setPassword(password);
+        return new LettuceConnectionFactory(config);
+    }
+
+    @Bean
+    @Primary
     public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connectionFactory) {
         RedisTemplate<String, Object> template = new RedisTemplate<>();
         template.setConnectionFactory(connectionFactory);
@@ -75,8 +96,15 @@ public class RedisConfig {
         // 忽略未知属性（向前兼容：字段增减不影响反序列化）
         objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         // 启用类型信息（反序列化时能还原具体类型，而非 LinkedHashMap）
+        // 安全策略：仅允许 com.myxhs. / java.util. / java.lang. / java.time. 包下的类型
+        PolymorphicTypeValidator ptv = BasicPolymorphicTypeValidator.builder()
+                .allowIfBaseType("com.myxhs.")
+                .allowIfBaseType("java.util.")
+                .allowIfBaseType("java.lang.")
+                .allowIfBaseType("java.time.")
+                .build();
         objectMapper.activateDefaultTyping(
-                LaissezFaireSubTypeValidator.instance,
+                ptv,
                 ObjectMapper.DefaultTyping.NON_FINAL,
                 JsonTypeInfo.As.PROPERTY
         );

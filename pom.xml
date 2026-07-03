@@ -28,6 +28,7 @@
         <module>my-xhs-im</module>
         <module>my-xhs-notification</module>
         <module>my-xhs-payment</module>
+        <module>my-xhs-test</module>
     </modules>
 
     <properties>
@@ -80,13 +81,10 @@
         <shardingsphere.version>5.5.1</shardingsphere.version>
         <cosid.version>2.6.8</cosid.version>
         
-        <!-- 热点数据检测 -->
-        <hotkey.version>1.0.0</hotkey.version>
-        
         <!-- XXL-Job 分布式调度 -->
         <xxl.job.version>2.4.2</xxl.job.version>
         
-        <!-- 测试 -->
+        <!-- 测试（保留供后续测试阶段使用） -->
         <testcontainers.version>1.19.8</testcontainers.version>
         
         <!-- 其他 -->
@@ -175,6 +173,20 @@
                 <groupId>com.github.ben-manes.caffeine</groupId>
                 <artifactId>caffeine</artifactId>
                 <version>${caffeine.version}</version>
+            </dependency>
+            
+            <!-- Feign HttpClient 5（连接池） -->
+            <dependency>
+                <groupId>io.github.openfeign</groupId>
+                <artifactId>feign-hc5</artifactId>
+                <version>13.1</version>
+            </dependency>
+            
+            <!-- Logstash Logback Encoder（JSON 结构化日志） -->
+            <dependency>
+                <groupId>net.logstash.logback</groupId>
+                <artifactId>logstash-logback-encoder</artifactId>
+                <version>7.4</version>
             </dependency>
             
             <!-- RocketMQ -->

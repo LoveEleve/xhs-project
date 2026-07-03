@@ -1,5 +1,6 @@
 package com.myxhs.payment.controller;
 
+import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
 import com.myxhs.common.response.ResultCode;
 import com.myxhs.payment.dto.request.PayCreateRequest;
@@ -34,6 +35,8 @@ public class PaymentController {
      * 发起支付
      */
     @PostMapping("/pay")
+    @RateLimit(prefix = "payment:pay", maxRequests = 10, windowSeconds = 60, perUser = true,
+               message = "支付频率过高，请稍后再试")
     public R<PaymentVO> pay(@Valid @RequestBody PayCreateRequest request,
                             @RequestHeader("X-User-Id") Long userId) {
         request.setUserId(userId);

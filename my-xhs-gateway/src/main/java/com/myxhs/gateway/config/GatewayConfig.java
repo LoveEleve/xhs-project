@@ -52,17 +52,19 @@ public class GatewayConfig {
     /**
      * 跨域配置（WebFlux 环境必须使用 reactive 包下的 CorsConfigurationSource）
      * <p>
-     * 【安全注意】allowCredentials=true 时不能使用 addAllowedOrigin("*")，
-     * 必须使用 addAllowedOriginPattern 指定具体的域名。
-     * 当前开发阶段允许所有来源，生产环境应改为具体域名：
-     * - config.addAllowedOriginPattern("https://www.myxhs.com");
-     * - config.addAllowedOriginPattern("https://m.myxhs.com");
+     * 【安全】生产环境使用具体域名白名单替代通配符。
+     * allowCredentials=true 时不能使用 addAllowedOrigin("*")。
+     * </p>
      */
     @Bean
     public org.springframework.web.cors.reactive.CorsConfigurationSource corsConfigurationSource() {
         org.springframework.web.cors.CorsConfiguration config = new org.springframework.web.cors.CorsConfiguration();
-        // TODO: 生产环境替换为具体域名
-        config.addAllowedOriginPattern("*");
+        // 生产环境域名白名单（不再使用 * 通配符）
+        config.addAllowedOriginPattern("https://myxhs.com");
+        config.addAllowedOriginPattern("https://www.myxhs.com");
+        config.addAllowedOriginPattern("https://m.myxhs.com");
+        // 压测平台特定 IP（精简为单 IP）
+        config.addAllowedOriginPattern("http://10.0.0.100:*");
         config.addAllowedHeader("*");
         config.addAllowedMethod("*");
         config.setAllowCredentials(true);

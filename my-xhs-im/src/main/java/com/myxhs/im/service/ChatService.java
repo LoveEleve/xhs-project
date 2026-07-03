@@ -14,7 +14,6 @@ import com.myxhs.im.mapper.ChatMessageMapper;
 import com.myxhs.im.mapper.ChatUserRelationMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -53,7 +52,6 @@ public class ChatService {
     private final ChatMessageMapper chatMessageMapper;
     private final ChatUserRelationMapper chatUserRelationMapper;
     private final StringRedisTemplate stringRedisTemplate;
-    private final RocketMQTemplate rocketMQTemplate;
     private final OnlineRouteService onlineRouteService;
     private final MessagePersistService messagePersistService;
 
@@ -68,6 +66,20 @@ public class ChatService {
     private static final String UNREAD_KEY_PREFIX = "im:unread:";
     private static final String OFFLINE_KEY_PREFIX = "im:offline:";
     private static final int MAX_OFFLINE_MESSAGES = 1000;
+
+    /** 【M25】离线消息原子存储 Lua 脚本 */
+    private static final org.springframework.data.redis.core.script.DefaultRedisScript<Long> STORE_OFFLINE_SCRIPT =
+            new org.springframework.data.redis.core.script.DefaultRedisScript<>(
+                    "redis.call('ZADD', KEYS[1], ARGV[2], ARGV[1]) " +
+                    "local size = redis.call('ZCARD', KEYS[1]) " +
+                    "local maxSize = tonumber(ARGV[3]) " +
+                    "if size > maxSize then " +
+                    "  redis.call('ZREMRANGEBYRANK', KEYS[1], 0, size - maxSize - 1) " +
+                    "  size = maxSize " +
+                    "end " +
+                    "redis.call('EXPIRE', KEYS[1], ARGV[4]) " +
+                    "return size",
+                    Long.class);
 
     // ==================== WebSocket 消息处理 ====================
 
@@ -98,14 +110,16 @@ public class ChatService {
         }
         int msgType = imMsg.getMsgType() != null ? imMsg.getMsgType() : 0;
 
-        // 生成消息 ID 和会话 ID
+        // 生成消息 ID、会话 ID 和会话内序列号
         long msgId = IdWorker.getId();
         long conversationId = generateConversationId(senderId, receiverId);
+        // 【M8】会话级序列号（Redis INCR 原子递增，保证同会话消息严格有序）
+        long seqNo = stringRedisTemplate.opsForValue().increment("im:seq:" + conversationId);
         LocalDateTime now = LocalDateTime.now();
 
         // 1. 持久化消息 + 更新会话（通过独立 Bean 调用，确保 @Transactional 生效）
         try {
-            messagePersistService.saveMessageWithTransaction(msgId, conversationId, senderId, receiverId, content, msgType, now);
+            messagePersistService.saveMessageWithTransaction(msgId, conversationId, senderId, receiverId, content, msgType, seqNo, now);
         } catch (Exception e) {
             log.error("[IM] 写扩散双写失败: senderId={}, receiverId={}", senderId, receiverId, e);
             sendJson(senderSession, Map.of("ver", 1, "type", "NACK", "msgId", msgId, "reason", "发送失败，请重试"));
@@ -115,7 +129,7 @@ public class ChatService {
         // 2. 路由投递
         long timestamp = System.currentTimeMillis();
         String chatJson = JSON.toJSONString(Map.of(
-                "ver", 1, "type", "CHAT", "msgId", msgId,
+                "ver", 1, "type", "CHAT", "msgId", msgId, "seqNo", seqNo,
                 "from", senderId, "content", content,
                 "msgType", msgType, "timestamp", timestamp));
 
@@ -128,20 +142,22 @@ public class ChatService {
                 storeOfflineMessage(receiverId, msgId);
             }
         } else if (targetServerId != null) {
-            // 跨实例通过 MQ 路由
+            // 【M4】跨实例通过 Redis Pub/Sub 定向投递，取代 RocketMQ 广播模式
             RouteMessage routeMsg = RouteMessage.builder()
                     .receiverId(receiverId)
                     .targetServerId(targetServerId)
                     .msgId(msgId)
+                    .seqNo(seqNo)
                     .senderId(senderId)
                     .content(content)
                     .msgType(msgType)
                     .timestamp(timestamp)
                     .build();
             try {
-                rocketMQTemplate.convertAndSend("IM_ROUTE_TOPIC", routeMsg);
+                stringRedisTemplate.convertAndSend("im:route:" + targetServerId,
+                        JSON.toJSONString(routeMsg));
             } catch (Exception e) {
-                log.error("[IM] MQ 路由失败，降级存离线: receiverId={}", receiverId, e);
+                log.error("[IM] Pub/Sub 路由失败，降级存离线: receiverId={}", receiverId, e);
                 storeOfflineMessage(receiverId, msgId);
             }
         } else {
@@ -212,20 +228,21 @@ public class ChatService {
             // 同实例直推
             webSocketHandler.pushToUser(peerId, readNotify);
         } else if (targetServerId != null) {
-            // 跨实例通过 MQ 路由（复用 IM_ROUTE_TOPIC）
+            // 【M4】跨实例已读回执通过 Redis Pub/Sub 路由
             RouteMessage routeMsg = RouteMessage.builder()
                     .receiverId(peerId)
                     .targetServerId(targetServerId)
                     .msgId(imMsg.getMsgId() != null ? imMsg.getMsgId() : 0L)
                     .senderId(userId)
                     .content(readNotify)
-                    .msgType(99) // 99=已读回执，ImRouteConsumer特殊处理
+                    .msgType(99) // 99=已读回执，ImRouteSubscriber特殊处理
                     .timestamp(System.currentTimeMillis())
                     .build();
             try {
-                rocketMQTemplate.convertAndSend("IM_ROUTE_TOPIC", routeMsg);
+                stringRedisTemplate.convertAndSend("im:route:" + targetServerId,
+                        JSON.toJSONString(routeMsg));
             } catch (Exception e) {
-                log.warn("[IM] 已读回执MQ路由失败: peerId={}", peerId, e);
+                log.warn("[IM] 已读回执Pub/Sub路由失败: peerId={}", peerId, e);
             }
         }
         // 对方不在线时不需要推送已读回执（下次上线拉取会话列表时会看到最新状态）
@@ -240,7 +257,33 @@ public class ChatService {
 
         String typingJson = JSON.toJSONString(Map.of(
                 "ver", 1, "type", "TYPING", "peerId", senderId, "isTyping", true));
-        webSocketHandler.pushToUser(peerId, typingJson);
+
+        String targetServerId = onlineRouteService.getRoute(peerId);
+        if (targetServerId == null) {
+            return; // 用户不在线，无需发送
+        }
+
+        if (targetServerId.equals(onlineRouteService.getServerId())) {
+            // 同实例直推
+            webSocketHandler.pushToUser(peerId, typingJson);
+        } else {
+            // 【M4】跨实例 TYPING 通知通过 Redis Pub/Sub 路由
+            // msgType=98 表示 TYPING，content 为完整 JSON
+            RouteMessage routeMsg = RouteMessage.builder()
+                    .receiverId(peerId)
+                    .targetServerId(targetServerId)
+                    .senderId(senderId)
+                    .content(typingJson)
+                    .msgType(98) // 98=TYPING 通知
+                    .timestamp(System.currentTimeMillis())
+                    .build();
+            try {
+                stringRedisTemplate.convertAndSend("im:route:" + targetServerId,
+                        JSON.toJSONString(routeMsg));
+            } catch (Exception e) {
+                log.warn("[IM] TYPING Pub/Sub路由失败: peerId={}", peerId, e);
+            }
+        }
     }
 
     // ==================== 离线消息 ====================
@@ -253,18 +296,19 @@ public class ChatService {
      * - 客户端 ACK 时用 ZREM 删除，比 LREM 快数倍
      * - 天然按时间排序，推送时无需额外排序
      * </p>
+     * <p>
+     * 【M4】改为 public，供 ImRouteSubscriber（Pub/Sub 回调）推送失败时降级存离线。
+     * </p>
      */
-    private void storeOfflineMessage(Long userId, long msgId) {
+    public void storeOfflineMessage(Long userId, long msgId) {
         String key = OFFLINE_KEY_PREFIX + userId;
         double score = System.currentTimeMillis();
-        stringRedisTemplate.opsForZSet().add(key, String.valueOf(msgId), score);
-        // 限制最大数量（保留最新的 N 条），防止 Redis 内存溢出
-        long size = stringRedisTemplate.opsForZSet().size(key);
-        if (size > MAX_OFFLINE_MESSAGES) {
-            stringRedisTemplate.opsForZSet().removeRange(key, 0, size - MAX_OFFLINE_MESSAGES - 1);
-        }
-        // 设置 7 天过期
-        stringRedisTemplate.expire(key, Duration.ofDays(7));
+        // 【M25】Lua 原子：ZADD + ZCARD + 条件裁剪 + EXPIRE
+        stringRedisTemplate.execute(STORE_OFFLINE_SCRIPT,
+                Collections.singletonList(key),
+                String.valueOf(msgId), String.valueOf(score),
+                String.valueOf(MAX_OFFLINE_MESSAGES),
+                String.valueOf(Duration.ofDays(7).getSeconds()));
     }
 
     /**
@@ -281,24 +325,28 @@ public class ChatService {
 
         List<Long> msgIds = msgIdStrs.stream().map(Long::valueOf).collect(Collectors.toList());
 
-        // 从 DB 批量查询消息详情
+        // 从 DB 批量查询消息详情，按 seqNo 排序（修复 selectBatchIds 无排序的乱序 Bug）
         List<ChatMessage> messages = chatMessageMapper.selectBatchIds(msgIds);
         if (messages.isEmpty()) return;
 
+        // 【M8】按 seqNo 升序排列（保证离线消息的顺序一致性）
+        messages.sort(java.util.Comparator.comparing(ChatMessage::getSeqNo,
+                java.util.Comparator.nullsLast(Long::compareTo)));
+
         // 构建离线消息推送
-        List<Map<String, Object>> msgList = messages.stream()
-                .map(m -> {
-                    Map<String, Object> map = new LinkedHashMap<>();
-                    map.put("msgId", m.getId());
-                    map.put("from", m.getSenderId());
-                    map.put("content", m.getContent());
-                    map.put("msgType", m.getMsgType());
-                    map.put("timestamp", m.getCreatedAt() != null
-                            ? m.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
-                            : 0);
-                    return map;
-                })
-                .collect(Collectors.toList());
+        List<Map<String, Object>> msgList = new ArrayList<>(messages.size());
+        for (ChatMessage m : messages) {
+            Map<String, Object> map = new LinkedHashMap<>();
+            map.put("msgId", m.getId());
+            map.put("seqNo", m.getSeqNo());
+            map.put("from", m.getSenderId());
+            map.put("content", m.getContent());
+            map.put("msgType", m.getMsgType());
+            map.put("timestamp", m.getCreatedAt() != null
+                    ? m.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+                    : 0);
+            msgList.add(map);
+        }
 
         String batchJson = JSON.toJSONString(Map.of(
                 "ver", 1, "type", "OFFLINE", "msgs", msgList, "total", msgList.size()));
@@ -337,7 +385,7 @@ public class ChatService {
                 new Page<>(page, size),
                 new LambdaQueryWrapper<ChatMessage>()
                         .eq(ChatMessage::getConversationId, conversationId)
-                        .orderByDesc(ChatMessage::getCreatedAt));
+                        .orderByDesc(ChatMessage::getSeqNo));
     }
 
     /**
@@ -389,16 +437,16 @@ public class ChatService {
     // ==================== 工具方法 ====================
 
     /**
-     * 生成会话 ID：min(A,B) << 32 | max(A,B)
+     * 生成会话 ID：min * 31 + max（确定性哈希，防止位运算溢出）
      * <p>
-     * 保证确定性：无论 A 发消息还是 B 发消息，conversation_id 相同。
-     * 用于分片键，保证同一会话的消息落在同一分片。
+     * 【修复M19】旧公式 (min<<32)|max 当 userId > 2^32 时高位被覆盖导致碰撞。
+     * 新公式使用乘加哈希，64 位确定性映射，碰撞概率极低。
      * </p>
      */
     public static long generateConversationId(Long userIdA, Long userIdB) {
         long min = Math.min(userIdA, userIdB);
         long max = Math.max(userIdA, userIdB);
-        return (min << 32) | max;
+        return min * 31 + max;
     }
 
     private void sendJson(WebSocketSession session, Map<String, Object> data) {

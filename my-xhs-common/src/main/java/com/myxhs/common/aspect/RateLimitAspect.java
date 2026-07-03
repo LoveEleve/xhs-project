@@ -151,6 +151,11 @@ public class RateLimitAspect {
 
     /**
      * 获取客户端 IP
+     * <p>
+     * 安全策略：X-Forwarded-For 仅 Gateway 注入信任（内网来源），
+     * 下游服务使用 Gateway 注入的 X-Real-IP Header。
+     * 外部请求携带的 X-Forwarded-For 不可信（可被伪造绕过 IP 限流）。
+     * </p>
      */
     private String getClientIp() {
         try {
@@ -158,16 +163,11 @@ public class RateLimitAspect {
                     (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
             if (attributes != null) {
                 HttpServletRequest request = attributes.getRequest();
-                String ip = request.getHeader("X-Forwarded-For");
+                // 优先使用 Gateway 注入的 X-Real-IP（Gateway 从直连 IP 提取，不可伪造）
+                String ip = request.getHeader("X-Real-IP");
                 if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-                    ip = request.getHeader("X-Real-IP");
-                }
-                if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
+                    // 开发/测试环境降级：直接获取连接 IP
                     ip = request.getRemoteAddr();
-                }
-                // 多级代理取第一个
-                if (ip != null && ip.contains(",")) {
-                    ip = ip.split(",")[0].trim();
                 }
                 return ip;
             }

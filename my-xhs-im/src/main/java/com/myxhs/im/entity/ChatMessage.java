@@ -36,5 +36,8 @@ public class ChatMessage {
     /** 消息类型：0-文本 1-图片 2-系统消息 */
     private Integer msgType;
 
+    /** 会话内消息序列号（Redis INCR 生成，保证同会话消息严格有序） */
+    private Long seqNo;
+
     private LocalDateTime createdAt;
 }

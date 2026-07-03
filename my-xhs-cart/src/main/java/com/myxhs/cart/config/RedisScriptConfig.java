@@ -46,4 +46,17 @@ public class RedisScriptConfig {
         script.setResultType(Long.class);
         return script;
     }
+
+    /**
+     * 全选/取消全选 Lua 脚本
+     * 原子操作：HKEYS 获取所有 SKU → DEL 旧 Set → SADD 重建（取消全选时直接 DEL）
+     * 解决竞态条件：并发 addToCart 在查 Keys 和重建 Set 之间插入的数据不会丢失
+     */
+    @Bean
+    public DefaultRedisScript<Long> cartCheckAllScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/cart_check_all.lua")));
+        script.setResultType(Long.class);
+        return script;
+    }
 }

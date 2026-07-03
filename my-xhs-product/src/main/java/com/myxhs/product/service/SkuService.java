@@ -74,6 +74,22 @@ public class SkuService {
     }
 
     /**
+     * 批量获取 SKU 详情（内部接口，供购物车等服务调用）
+     * <p>
+     * 使用 WHERE id IN (...) 一次查询替代 N 次循环单查。
+     * </p>
+     */
+    public List<SkuVO> batchGetSkuDetails(List<Long> skuIds) {
+        if (skuIds == null || skuIds.isEmpty()) {
+            return List.of();
+        }
+        List<Sku> skuList = skuMapper.selectBatchIds(skuIds);
+        return skuList.stream()
+                .map(this::toSkuVO)
+                .collect(Collectors.toList());
+    }
+
+    /**
      * 按 SPU 查询 SKU 列表
      */
     public List<SkuVO> listSkusBySpuId(Long spuId) {

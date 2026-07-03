@@ -130,9 +130,9 @@ public class NotificationAggregator {
 
             Long mainId = Long.parseLong(result);
 
-            // 原子递增聚合计数（解决并发竞态：两个线程同时聚合不会丢失计数）
-            int newCount = notificationMapper.incrementAggregateCount(mainId);
-            if (newCount <= 0) {
+            // 原子递增聚合计数 + 查询新值（修复 incrementAggregateCount 返回值误用）
+            int affected = notificationMapper.incrementAggregateCount(mainId);
+            if (affected <= 0) {
                 // 主通知不存在（异常），取消逻辑删除恢复当前通知
                 notification.setDeleted(0);
                 notification.setAggregateCount(1);
@@ -140,6 +140,8 @@ public class NotificationAggregator {
                 notificationMapper.updateById(notification);
                 return notification;
             }
+            Integer newCount = notificationMapper.getAggregateCount(mainId);
+            if (newCount == null) newCount = 1;
 
             // 更新聚合标题
             String aggregateTitle = buildAggregateTitle(

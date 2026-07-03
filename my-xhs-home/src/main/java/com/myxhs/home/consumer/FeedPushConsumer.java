@@ -11,12 +11,10 @@ import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
 
@@ -52,25 +50,6 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
     @Value("${home.feed.inbox-max-size:500}")
     private int inboxMaxSize;
 
-    /**
-     * 收件箱条件裁剪 Lua 脚本：ZADD + 仅在 ZCARD > maxSize 时裁剪
-     * <p>
-     * 优化：只在 ZADD 后 ZCARD 超过 maxSize 时才执行 ZREMRANGEBYRANK 裁剪。
-     * 避免每次添加1条记录都执行裁剪命令（大多数收件箱远未达到 500 条上限）。
-     * Lua 脚本保证 ZADD + ZCARD + 条件裁剪的原子性。
-     * </p>
-     */
-    private static final DefaultRedisScript<Long> ADD_AND_TRIM_SCRIPT = new DefaultRedisScript<>(
-            "redis.call('ZADD', KEYS[1], ARGV[1], ARGV[2]) " +
-            "local card = redis.call('ZCARD', KEYS[1]) " +
-            "if card > tonumber(ARGV[3]) then " +
-            "  redis.call('ZREMRANGEBYRANK', KEYS[1], 0, card - tonumber(ARGV[3]) - 1) " +
-            "end " +
-            "redis.call('EXPIRE', KEYS[1], ARGV[4]) " +
-            "return card",
-            Long.class
-    );
-
     @Override
     public void onMessage(MessageExt msg) {
         MqTraceHelper.restoreTraceId(msg);
@@ -105,17 +84,14 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
     }
 
     /**
-     * 推模式：遍历粉丝列表，ZADD 到每个粉丝的收件箱
+     * 推模式：遍历粉丝列表，Pipeline 批量 ZADD 到每个粉丝的收件箱
      * <p>
-     * 分页遍历粉丝列表，避免一次性加载大量粉丝 ID 导致 OOM。
-     * ZADD 天然幂等，重复推送不会产生重复数据。
+     * 【M2 改造】Pipeline 批量写入替代逐个 EVALSHA：
+     * 500 个粉丝从 500 次 Redis 往返 → 1 次（Pipeline），性能提升 ~100x。
+     * </p>
      * <p>
-     * 性能优化：
-     * - 使用 Lua 脚本实现 ZADD + 条件裁剪 + EXPIRE，一次网络往返完成3个操作
-     * - 只在 ZADD 后 ZCARD > maxSize 时才裁剪，避免大多数收件箱的无条件裁剪
-     * - 不使用 Pipeline（Pipeline 中无法执行 Lua 脚本），
-     *   但 Lua 脚本本身已将 ZADD + ZCARD + 条件裁剪 + EXPIRE 合并为一次网络往返，
-     *   等效于 Pipeline 的 4 个命令
+     * 裁剪逻辑移至 FeedCleanupJob 异步执行（大部分收件箱未达到上限，实时裁剪不必要）。
+     * ZADD 天然幂等，重复推送不产生重复数据。
      * </p>
      */
     private void pushToFollowers(Long authorId, Long noteId, Long publishTime) {
@@ -126,6 +102,8 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
         int pushed = 0;
         int expireSeconds = inboxMaxDays * 24 * 3600;
 
+        byte[] noteIdBytes = String.valueOf(noteId).getBytes();
+
         while (true) {
             Set<String> followerIds = stringRedisTemplate.opsForZSet()
                     .range(followerKey, cursor, cursor + batchSize - 1);
@@ -134,19 +112,17 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
                 break;
             }
 
-            // 逐个粉丝执行 Lua 脚本：ZADD + 条件裁剪 + EXPIRE（一次网络往返）
-            // 每个 Lua 脚本内部已将 3-4 个 Redis 命令合并为 1 次网络往返
-            for (String followerId : followerIds) {
-                String inboxKey = RedisKeyConstants.FEED_INBOX + followerId;
-                stringRedisTemplate.execute(
-                        ADD_AND_TRIM_SCRIPT,
-                        Collections.singletonList(inboxKey),
-                        String.valueOf(publishTime),
-                        String.valueOf(noteId),
-                        String.valueOf(inboxMaxSize),
-                        String.valueOf(expireSeconds)
-                );
-            }
+            // Pipeline 批量 ZADD + EXPIRE（1 次网络往返）
+            stringRedisTemplate.executePipelined(
+                    (org.springframework.data.redis.core.RedisCallback<Object>) connection -> {
+                        for (String followerId : followerIds) {
+                            byte[] inboxKey = (RedisKeyConstants.FEED_INBOX + followerId).getBytes();
+                            connection.zSetCommands().zAdd(inboxKey, publishTime, noteIdBytes);
+                            connection.keyCommands().expire(inboxKey, expireSeconds);
+                        }
+                        return null;
+                    }
+            );
 
             pushed += followerIds.size();
             cursor += batchSize;

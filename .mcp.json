@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "sverklo": {
+      "command": "/usr/local/bin/sverklo",
+      "args": ["."],
+      "env": {
+        "SVERKLO_PROFILE": "core"
+      }
+    },
+    "codegraph": {
+      "command": "/usr/local/bin/codegraph",
+      "args": ["serve", "--mcp"]
+    }
+  }
+}

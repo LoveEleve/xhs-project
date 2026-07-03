@@ -68,20 +68,34 @@ public class InventoryDeductConsumer implements RocketMQListener<MessageExt> {
      * 预扣减：available_stock 减少，locked_stock 增加
      * <p>
      * 使用乐观锁 WHERE available_stock >= quantity 防止扣成负数。
-     * 如果 MySQL 扣减失败（库存不足），说明 Redis 和 MySQL 不一致，
-     * L3 对账任务会修复。
+     * 【修复M7】乐观锁失败后退避重试最多 3 次，避免等 24h 对账才修复。
+     * 重试失败后仍不抛异常，L3 对账兜底。
      * </p>
      */
     private void handlePreDeduct(InventoryDeductEvent event) {
-        int affected = inventoryMapper.deductStock(event.getSkuId(), event.getQuantity());
-        if (affected > 0) {
-            log.info("[库存L2] 预扣减MySQL成功: skuId={}, qty={}", event.getSkuId(), event.getQuantity());
-        } else {
-            // MySQL 库存不足，可能是 Redis 和 MySQL 不一致
-            // 不抛异常（避免无限重试），等 L3 对账修复
-            log.warn("[库存L2] 预扣减MySQL失败(库存不足): skuId={}, qty={}（等待L3对账修复）",
-                    event.getSkuId(), event.getQuantity());
+        int maxRetry = 3;
+        for (int i = 0; i < maxRetry; i++) {
+            int affected = inventoryMapper.deductStock(event.getSkuId(), event.getQuantity());
+            if (affected > 0) {
+                log.info("[库存L2] 预扣减MySQL成功: skuId={}, qty={}, attempt={}",
+                        event.getSkuId(), event.getQuantity(), i + 1);
+                return;
+            }
+            // 乐观锁竞争失败，退避后重试
+            if (i < maxRetry - 1) {
+                try {
+                    Thread.sleep(50L * (i + 1)); // 50ms, 100ms 退避
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+                log.info("[库存L2] 预扣减MySQL重试: skuId={}, qty={}, attempt={}",
+                        event.getSkuId(), event.getQuantity(), i + 2);
+            }
         }
+        // 重试耗尽仍失败，等 L3 对账修复
+        log.warn("[库存L2] 预扣减MySQL失败({}次重试后仍库存不足): skuId={}, qty={}（等待L3对账修复）",
+                maxRetry, event.getSkuId(), event.getQuantity());
     }
 
     /**

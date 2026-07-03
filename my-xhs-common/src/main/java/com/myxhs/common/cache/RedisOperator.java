@@ -1,7 +1,9 @@
 package com.myxhs.common.cache;
 
+import com.myxhs.common.exception.RedisUnavailableException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
@@ -13,7 +15,12 @@ import java.util.concurrent.TimeUnit;
  * Redis 操作封装
  * <p>
  * 对 RedisTemplate 的常用操作进行封装，提供类型安全的泛型方法。
- * 所有方法都做了异常处理，Redis 异常不会导致业务中断（降级为 null/false）。
+ * </p>
+ * <p>
+ * 异常处理策略：
+ * - Redis 连接不可用（RedisConnectionFailureException）→ 抛出 RedisUnavailableException，供上层降级
+ * - 其他异常（序列化等）→ 记录日志，降级返回默认值
+ * - Key 不存在 → 返回 null/false/0（正常业务语义，非异常）
  * </p>
  */
 @Slf4j
@@ -24,6 +31,16 @@ public class RedisOperator {
     private final RedisTemplate<String, Object> redisTemplate;
     private final StringRedisTemplate stringRedisTemplate;
 
+    /**
+     * 判断是否为 Redis 连接不可用异常
+     */
+    private boolean isConnectionFailure(Throwable e) {
+        return e instanceof RedisConnectionFailureException
+                || e instanceof org.springframework.data.redis.RedisSystemException
+                || e instanceof io.lettuce.core.RedisConnectionException
+                || (e.getCause() != null && isConnectionFailure(e.getCause()));
+    }
+
     // ==================== String 操作 ====================
 
     /**
@@ -33,6 +50,9 @@ public class RedisOperator {
         try {
             redisTemplate.opsForValue().set(key, value);
         } catch (Exception e) {
+            if (isConnectionFailure(e)) {
+                throw new RedisUnavailableException("Redis set 失败: key=" + key, e);
+            }
             log.error("[Redis] set 失败, key={}", key, e);
         }
     }
@@ -44,6 +64,9 @@ public class RedisOperator {
         try {
             redisTemplate.opsForValue().set(key, value, timeout, unit);
         } catch (Exception e) {
+            if (isConnectionFailure(e)) {
+                throw new RedisUnavailableException("Redis set 失败: key=" + key, e);
+            }
             log.error("[Redis] set 失败, key={}, timeout={}{}", key, timeout, unit, e);
         }
     }
@@ -52,12 +75,16 @@ public class RedisOperator {
      * SET NX（不存在则设置，原子操作）
      *
      * @return true=设置成功（Key不存在），false=设置失败（Key已存在）
+     * @throws RedisUnavailableException Redis 连接不可用
      */
     public boolean setIfAbsent(String key, Object value, long timeout, TimeUnit unit) {
         try {
             Boolean result = redisTemplate.opsForValue().setIfAbsent(key, value, timeout, unit);
             return Boolean.TRUE.equals(result);
         } catch (Exception e) {
+            if (isConnectionFailure(e)) {
+                throw new RedisUnavailableException("Redis setIfAbsent 失败: key=" + key, e);
+            }
             log.error("[Redis] setIfAbsent 失败, key={}", key, e);
             return false;
         }
@@ -65,12 +92,20 @@ public class RedisOperator {
 
     /**
      * 获取值
+     * <p>
+     * 返回值语义：
+     * - null = Key 不存在（缓存未命中，正常业务语义）
+     * - Redis 连接不可用 → 抛出 RedisUnavailableException（供上层降级）
+     * </p>
      */
     @SuppressWarnings("unchecked")
     public <T> T get(String key) {
         try {
             return (T) redisTemplate.opsForValue().get(key);
         } catch (Exception e) {
+            if (isConnectionFailure(e)) {
+                throw new RedisUnavailableException("Redis get 失败: key=" + key, e);
+            }
             log.error("[Redis] get 失败, key={}", key, e);
             return null;
         }
@@ -78,11 +113,15 @@ public class RedisOperator {
 
     /**
      * 获取 String 值
+     * @throws RedisUnavailableException Redis 连接不可用
      */
     public String getString(String key) {
         try {
             return stringRedisTemplate.opsForValue().get(key);
         } catch (Exception e) {
+            if (isConnectionFailure(e)) {
+                throw new RedisUnavailableException("Redis getString 失败: key=" + key, e);
+            }
             log.error("[Redis] getString 失败, key={}", key, e);
             return null;
         }
@@ -90,11 +129,15 @@ public class RedisOperator {
 
     /**
      * 自增
+     * @throws RedisUnavailableException Redis 连接不可用
      */
     public Long increment(String key) {
         try {
             return stringRedisTemplate.opsForValue().increment(key);
         } catch (Exception e) {
+            if (isConnectionFailure(e)) {
+                throw new RedisUnavailableException("Redis increment 失败: key=" + key, e);
+            }
             log.error("[Redis] increment 失败, key={}", key, e);
             return null;
         }
@@ -102,11 +145,15 @@ public class RedisOperator {
 
     /**
      * 自增指定步长
+     * @throws RedisUnavailableException Redis 连接不可用
      */
     public Long increment(String key, long delta) {
         try {
             return stringRedisTemplate.opsForValue().increment(key, delta);
         } catch (Exception e) {
+            if (isConnectionFailure(e)) {
+                throw new RedisUnavailableException("Redis increment 失败: key=" + key, e);
+            }
             log.error("[Redis] increment 失败, key={}, delta={}", key, delta, e);
             return null;
         }
@@ -116,12 +163,21 @@ public class RedisOperator {
 
     /**
      * 删除 Key
+     * <p>
+     * 返回值语义：
+     * - true = 删除成功（Key 存在并被删除）
+     * - false = Key 不存在（正常业务语义，非异常）
+     * - Redis 连接不可用 → 抛出 RedisUnavailableException
+     * </p>
      */
     public boolean delete(String key) {
         try {
             Boolean result = redisTemplate.delete(key);
             return Boolean.TRUE.equals(result);
         } catch (Exception e) {
+            if (isConnectionFailure(e)) {
+                throw new RedisUnavailableException("Redis delete 失败: key=" + key, e);
+            }
             log.error("[Redis] delete 失败, key={}", key, e);
             return false;
         }
@@ -134,6 +190,9 @@ public class RedisOperator {
         try {
             return redisTemplate.delete(keys);
         } catch (Exception e) {
+            if (isConnectionFailure(e)) {
+                throw new RedisUnavailableException("Redis batch delete 失败: keys=" + keys, e);
+            }
             log.error("[Redis] batch delete 失败, keys={}", keys, e);
             return 0L;
         }

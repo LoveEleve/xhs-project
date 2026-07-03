@@ -141,13 +141,16 @@ public class NoteSearchService extends AbstractSearchService {
         switch (sort) {
             case "time" -> builder
                     .sort(s -> s.field(f -> f.field("createdAt").order(SortOrder.Desc)))
-                    .sort(s -> s.field(f -> f.field("noteId").order(SortOrder.Desc)));
+                    .sort(s -> s.field(f -> f.field("noteId").order(SortOrder.Desc)))
+                    .sort(s -> s.field(f -> f.field("_id").order(SortOrder.Asc)));
             case "hot" -> builder
                     .sort(s -> s.field(f -> f.field("likeCount").order(SortOrder.Desc)))
-                    .sort(s -> s.field(f -> f.field("noteId").order(SortOrder.Desc)));
+                    .sort(s -> s.field(f -> f.field("noteId").order(SortOrder.Desc)))
+                    .sort(s -> s.field(f -> f.field("_id").order(SortOrder.Asc)));
             default -> builder // relevance: 按相关度排序
                     .sort(s -> s.score(sc -> sc.order(SortOrder.Desc)))
-                    .sort(s -> s.field(f -> f.field("noteId").order(SortOrder.Desc)));
+                    .sort(s -> s.field(f -> f.field("noteId").order(SortOrder.Desc)))
+                    .sort(s -> s.field(f -> f.field("_id").order(SortOrder.Asc)));
         }
     }
 

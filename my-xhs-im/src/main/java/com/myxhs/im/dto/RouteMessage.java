@@ -6,7 +6,12 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * 跨实例消息路由对象（通过 RocketMQ 传递）
+ * 跨实例消息路由对象（通过 Redis Pub/Sub 传递）
+ * <p>
+ * 【M4 改造】传输方式从 RocketMQ BROADCASTING 改为 Redis Pub/Sub 定向投递。
+ * msgType 约定：0=普通聊天 98=TYPING 99=已读回执
+ * msgType ∈ {98, 99} 时 content 字段为完整 JSON 字符串，直接透传。
+ * </p>
  */
 @Data
 @Builder
@@ -22,6 +27,9 @@ public class RouteMessage {
 
     /** 消息ID */
     private Long msgId;
+
+    /** 会话内序列号（M8新增，保证跨实例消息顺序一致性） */
+    private Long seqNo;
 
     /** 发送者ID */
     private Long senderId;

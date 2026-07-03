@@ -29,6 +29,9 @@ public class UserCoupon implements Serializable {
     /** 优惠券模板ID */
     private Long couponId;
 
+    /** 领券流水号（MQ msgId），用于幂等去重，支持 perUserLimit > 1 */
+    private String claimNo;
+
     /** 状态：0-未使用 1-已使用 2-已过期 */
     private Integer status;
 

@@ -19,12 +19,14 @@ import com.myxhs.content.mapper.CommentMapper;
 import com.myxhs.content.mapper.NoteMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -49,6 +51,7 @@ public class CommentService {
     private final DFAFilter dfaFilter;
     private final IdGeneratorUtil idGeneratorUtil;
     private final CacheHelper cacheHelper;
+    private final RocketMQTemplate rocketMQTemplate;
 
     /** 一级评论每页最大条数 */
     private static final int MAX_PAGE_SIZE = 20;
@@ -127,17 +130,54 @@ public class CommentService {
         log.info("[评论] 发表成功: commentId={}, noteId={}, userId={}, parentId={}",
                 comment.getId(), request.getNoteId(), userId, parentId);
 
-        // 6. 事务提交后清除评论列表缓存
+        // 6. 事务提交后：清除缓存 + 发送评论通知
+        // 【修复C2】MQ 发送必须在 afterCommit 内执行，避免事务回滚后通知已发出
         final Long noteId = request.getNoteId();
+        final Long noteAuthorUserId = note.getUserId();
+        final Long commentId = comment.getId();
+        final String contentPreview = request.getContent() != null
+                ? request.getContent().substring(0, Math.min(50, request.getContent().length()))
+                : "";
+        final String noteTitle = note.getTitle();
+        final Long senderId = userId;
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.COMMENT_LIST + noteId);
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.COMMENT_COUNT + noteId);
+
+                // 【修复m17】排除自己评论自己的通知
+                if (senderId.equals(noteAuthorUserId)) {
+                    return;
+                }
+
+                // 异步通知笔记作者
+                Map<String, Object> notification = new HashMap<>();
+                notification.put("type", 2); // 2=评论
+                notification.put("senderId", senderId);
+                notification.put("targetUserId", noteAuthorUserId);
+                notification.put("targetId", noteId);
+                notification.put("targetType", 1); // 1=笔记
+                notification.put("content", contentPreview);
+                notification.put("targetName", noteTitle);
+                try {
+                    rocketMQTemplate.asyncSend("NOTIFICATION_TOPIC", notification,
+                            new org.apache.rocketmq.client.producer.SendCallback() {
+                                @Override
+                                public void onSuccess(org.apache.rocketmq.client.producer.SendResult sendResult) {
+                                    log.info("[CommentService] 评论通知已发送: commentId={}, noteAuthorUserId={}",
+                                            commentId, noteAuthorUserId);
+                                }
+                                @Override
+                                public void onException(Throwable e) {
+                                    log.error("[CommentService] 评论通知发送失败: commentId={}", commentId, e);
+                                }
+                            });
+                } catch (Exception e) {
+                    log.error("[CommentService] 评论通知发送异常: commentId={}", commentId, e);
+                }
             }
         });
-
-        // 7. TODO: 异步通知笔记作者（等通知服务开发后接入 RocketMQ）
 
         return comment.getId();
     }

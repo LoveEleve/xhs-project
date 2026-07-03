@@ -27,6 +27,8 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Sentinel 限流熔断过滤器
@@ -116,9 +118,19 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
 
         if (nacosDatasourceConfigured) {
             // Nacos 数据源已配置，等待异步推送规则
-            // 即使当前 GatewayRuleManager 为空，也不加载本地规则（避免覆盖 Nacos 推送的规则）
             log.info("[Gateway-Sentinel] Nacos数据源已配置，等待规则异步推送（当前规则数: {}）",
                     GatewayRuleManager.getRules().size());
+
+            // 真空期兜底：30 秒后若 Nacos 规则仍未到达，加载本地兜底规则
+            CompletableFuture.delayedExecutor(30, TimeUnit.SECONDS).execute(() -> {
+                if (GatewayRuleManager.getRules().isEmpty()) {
+                    log.warn("[Gateway-Sentinel] Nacos规则30秒未到达，加载本地兜底规则");
+                    initFlowRules();
+                } else {
+                    log.info("[Gateway-Sentinel] Nacos规则已到达(规则数: {})，跳过本地兜底",
+                            GatewayRuleManager.getRules().size());
+                }
+            });
         } else {
             // 未配置 Nacos 数据源，使用本地兜底规则
             initFlowRules();

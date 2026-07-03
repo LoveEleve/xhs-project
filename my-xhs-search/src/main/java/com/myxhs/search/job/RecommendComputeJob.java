@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * 推荐系统离线计算任务（XXL-Job 分布式调度）
@@ -179,6 +180,7 @@ public class RecommendComputeJob {
         long start = System.currentTimeMillis();
 
         try {
+            // 从 t_user_behavior 中找到有新行为但无特征记录的笔记
             List<Long> missingNotes = jdbcTemplate.queryForList(
                     "SELECT DISTINCT b.note_id FROM t_user_behavior b " +
                             "LEFT JOIN t_item_feature f ON b.note_id = f.note_id " +
@@ -190,51 +192,184 @@ public class RecommendComputeJob {
                 return;
             }
 
-            String[] categories = {"美食", "旅行", "穿搭", "美妆", "数码", "运动", "宠物", "家居"};
-            String[][] tagPool = {
-                    {"美食", "探店", "菜谱", "甜品"},
-                    {"旅行", "攻略", "风景", "自驾"},
-                    {"穿搭", "OOTD", "时尚", "潮流"},
-                    {"美妆", "护肤", "化妆", "测评"},
-                    {"数码", "手机", "电脑", "评测"},
-                    {"运动", "健身", "跑步", "瑜伽"},
-                    {"宠物", "猫咪", "狗狗", "萌宠"},
-                    {"家居", "装修", "收纳", "好物"}
-            };
+            // 从 ES 或 MySQL note 表读取真实标签和分类
+            Map<Long, NoteFeatures> realFeatures = batchFetchRealFeatures(missingNotes);
 
-            Random random = new Random();
             String sql = "INSERT INTO t_item_feature (id, note_id, tags, category, quality_score) " +
                     "VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE tags=VALUES(tags), category=VALUES(category)";
 
             List<Object[]> batchArgs = new ArrayList<>();
             for (Long noteId : missingNotes) {
-                int catIdx = Math.abs(noteId.hashCode()) % categories.length;
-                String category = categories[catIdx];
-                String[] tags = tagPool[catIdx];
-                int tagCount = 2 + random.nextInt(2);
-                List<String> selectedTags = new ArrayList<>();
-                Set<Integer> usedIdx = new HashSet<>();
-                for (int i = 0; i < tagCount && i < tags.length; i++) {
-                    int idx;
-                    do { idx = random.nextInt(tags.length); } while (usedIdx.contains(idx));
-                    usedIdx.add(idx);
-                    selectedTags.add(tags[idx]);
-                }
-                String tagsJson = "[\"" + String.join("\",\"", selectedTags) + "\"]";
-                double qualityScore = 0.3 + random.nextDouble() * 0.7;
+                NoteFeatures nf = realFeatures.getOrDefault(noteId, NoteFeatures.UNKNOWN);
+
+                // 计算内容质量分：基于 like_count + comment_count 归一化
+                double qualityScore = computeQualityScore(nf.likeCount, nf.commentCount, nf.collectionCount);
 
                 batchArgs.add(new Object[]{
                         com.baomidou.mybatisplus.core.toolkit.IdWorker.getId(),
-                        noteId, tagsJson, category, qualityScore
+                        noteId,
+                        nf.toTagsJson(),
+                        nf.category,
+                        qualityScore
                 });
             }
 
             jdbcTemplate.batchUpdate(sql, batchArgs);
 
             long cost = System.currentTimeMillis() - start;
-            log.info("[推荐-特征] 特征提取完成: {} 条, cost={}ms", batchArgs.size(), cost);
+            log.info("[推荐-特征] 特征提取完成: {} 条 (含真实标签), cost={}ms", batchArgs.size(), cost);
         } catch (Exception e) {
             log.error("[推荐-特征] 特征提取失败", e);
+        }
+    }
+
+    /**
+     * 批量从 MySQL note 表读取真实标签和分类
+     * <p>
+     * 替代 Random 随机生成逻辑，读取笔记真实 tags 和 categoryId。
+     * </p>
+     */
+    private Map<Long, NoteFeatures> batchFetchRealFeatures(List<Long> noteIds) {
+        Map<Long, NoteFeatures> result = new HashMap<>();
+        if (noteIds.isEmpty()) return result;
+
+        try {
+            String placeholders = noteIds.stream().map(id -> "?").collect(java.util.stream.Collectors.joining(","));
+            // 尝试从 content 库的 t_note 表读取 tags + 互动数据
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                    "SELECT id, tags, content, status FROM t_note WHERE id IN (" + placeholders + ")",
+                    noteIds.toArray());
+
+            for (Map<String, Object> row : rows) {
+                Long noteId = ((Number) row.get("id")).longValue();
+                String tagsJson = (String) row.get("tags");
+                String content = (String) row.get("content");
+                Integer status = row.get("status") != null ? ((Number) row.get("status")).intValue() : 0;
+
+                String category = inferCategory(tagsJson, content);
+                List<String> tagList = parseTagList(tagsJson, content);
+                result.put(noteId, new NoteFeatures(category, tagList, 0, 0, 0));
+            }
+
+            // 补充互动数据
+            enrichEngagementCounts(result);
+        } catch (Exception e) {
+            log.warn("[推荐-特征] 批量读取笔记特征失败，降级使用默认值", e);
+        }
+
+        // 填充缺失的笔记为默认值
+        for (Long noteId : noteIds) {
+            result.putIfAbsent(noteId, NoteFeatures.UNKNOWN);
+        }
+
+        return result;
+    }
+
+    /**
+     * 从 tags JSON 解析标签列表
+     */
+    private List<String> parseTagList(String tagsJson, String content) {
+        List<String> tags = new ArrayList<>();
+        if (tagsJson != null && !tagsJson.isEmpty()) {
+            try {
+                String cleaned = tagsJson.replaceAll("[\\[\\]\"]", "");
+                for (String t : cleaned.split(",")) {
+                    String trimmed = t.trim();
+                    if (!trimmed.isEmpty()) tags.add(trimmed);
+                }
+            } catch (Exception e) {
+                // 解析失败用默认值
+            }
+        }
+        if (tags.isEmpty()) {
+            // 从内容中提取关键标签
+            tags.add("生活");
+        }
+        return tags;
+    }
+
+    /**
+     * 根据标签推测分类
+     */
+    private String inferCategory(String tagsJson, String content) {
+        if (tagsJson != null) {
+            String lower = tagsJson.toLowerCase();
+            if (lower.contains("美食") || lower.contains("菜")) return "美食";
+            if (lower.contains("旅行") || lower.contains("旅游")) return "旅行";
+            if (lower.contains("穿搭") || lower.contains("时尚")) return "穿搭";
+            if (lower.contains("美妆") || lower.contains("护肤")) return "美妆";
+            if (lower.contains("数码") || lower.contains("手机")) return "数码";
+            if (lower.contains("运动") || lower.contains("健身")) return "运动";
+            if (lower.contains("宠物") || lower.contains("猫") || lower.contains("狗")) return "宠物";
+            if (lower.contains("家居") || lower.contains("装修")) return "家居";
+        }
+        return "生活";
+    }
+
+    /**
+     * 补充互动数据（like_count, comment_count, collection_count）
+     */
+    private void enrichEngagementCounts(Map<Long, NoteFeatures> features) {
+        if (features.isEmpty()) return;
+        try {
+            String noteIdsStr = features.keySet().stream().map(String::valueOf)
+                    .collect(java.util.stream.Collectors.joining(","));
+            // 从 counter 表或直接查询互动表
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                    "SELECT target_id, count_type, count_value FROM t_counter " +
+                            "WHERE target_type = 1 AND target_id IN (" + noteIdsStr + ") AND deleted = 0");
+
+            for (Map<String, Object> row : rows) {
+                Long noteId = ((Number) row.get("target_id")).longValue();
+                int countType = ((Number) row.get("count_type")).intValue();
+                long countValue = ((Number) row.get("count_value")).longValue();
+                NoteFeatures nf = features.get(noteId);
+                if (nf != null) {
+                    switch (countType) {
+                        case 1 -> nf.likeCount = countValue;
+                        case 2 -> nf.collectionCount = countValue;
+                        case 3 -> nf.commentCount = countValue;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("[推荐-特征] 补充互动数据失败（降级跳过）", e);
+        }
+    }
+
+    /**
+     * 基于互动数据计算内容质量分（0~1 归一化）
+     */
+    private double computeQualityScore(long likeCount, long commentCount, long collectionCount) {
+        // 互动加权：点赞 1x + 评论 3x + 收藏 5x
+        double weightedScore = likeCount + commentCount * 3.0 + collectionCount * 5.0;
+        // Sigmoid 归一化：在 log(1+x)/log(101) 范围内
+        // 100 互动 → ~0.5, 1000 互动 → ~0.75, 10000 互动 → ~1.0
+        return Math.min(Math.max(Math.log1p(weightedScore) / Math.log1p(100), 0.3), 1.0);
+    }
+
+    /**
+     * 笔记特征值对象
+     */
+    private static class NoteFeatures {
+        static final NoteFeatures UNKNOWN = new NoteFeatures("生活", List.of("生活"), 0, 0, 0);
+
+        String category;
+        List<String> tags;
+        long likeCount;
+        long commentCount;
+        long collectionCount;
+
+        NoteFeatures(String category, List<String> tags, long likeCount, long commentCount, long collectionCount) {
+            this.category = category;
+            this.tags = tags != null ? tags : List.of("生活");
+            this.likeCount = likeCount;
+            this.commentCount = commentCount;
+            this.collectionCount = collectionCount;
+        }
+
+        String toTagsJson() {
+            return "[\"" + String.join("\",\"", tags) + "\"]";
         }
     }
 
