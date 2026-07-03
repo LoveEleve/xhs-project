@@ -310,10 +310,14 @@ public class OrderService {
             throw new BizException(ResultCode.ORDER_STATUS_ERROR, "订单状态已变更");
         }
 
-        // 联动释放库存 + 退还优惠券（并行执行，互不依赖）
+        // 联动释放库存 + 退还优惠券（并行执行，互不依赖，带超时控制）
         CompletableFuture<Void> releaseFuture = CompletableFuture.runAsync(() -> releaseInventory(orderId, userId));
         CompletableFuture<Void> returnFuture = CompletableFuture.runAsync(() -> returnCouponIfUsed(order));
-        CompletableFuture.allOf(releaseFuture, returnFuture).join();
+        try {
+            CompletableFuture.allOf(releaseFuture, returnFuture).get(3, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.warn("[订单] 取消订单Feign并行调用超时/异常，降级依赖补偿机制: orderId={}", orderId, e);
+        }
 
         takeSnapshot(orderId, userId, "CANCELLED");
         stringRedisTemplate.delete("order:info:" + orderId);
