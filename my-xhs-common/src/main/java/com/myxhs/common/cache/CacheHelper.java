@@ -323,6 +323,14 @@ public class CacheHelper {
                 log.debug("[延迟双删] 第二次删除完成, key={}, deleted={}", key, secondDeleted);
             } catch (com.myxhs.common.exception.RedisUnavailableException e) {
                 log.error("[延迟双删] 第二次删除失败-Redis不可用, key={}", key, e);
+                // MQ 兜底：Redis 不可用时也发 MQ，消费者在 Redis 恢复后重试
+                if (rocketMQTemplate != null) {
+                    try {
+                        rocketMQTemplate.syncSend("CACHE_EVICT_TOPIC", key, 3000);
+                    } catch (Exception mqEx) {
+                        log.error("[延迟双删] MQ兜底发送失败, key={}", key, mqEx);
+                    }
+                }
             } catch (Exception e) {
                 log.warn("[延迟双删] 第二次删除失败，发送MQ兜底, key={}", key, e);
                 // MQ 兜底：发到 CACHE_EVICT_TOPIC，由缓存驱逐消费者异步重试
