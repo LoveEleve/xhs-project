@@ -47,9 +47,9 @@ spring:
         keepalive-time: 30000
         connection-test-query: SELECT 1
         validation-timeout: 3000
-    # 读库（从库，当前指向同库，部署从库后修改端口）
+    # 读库（从库，指向 slave 实例）
     slave:
-      url: jdbc:mysql://21.91.124.110:13307/my_xhs_coupon?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
+      url: jdbc:mysql://21.91.124.110:13311/my_xhs_coupon?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
       username: root
       password: "Xhs@2026#MySQL"
       driver-class-name: com.mysql.cj.jdbc.Driver

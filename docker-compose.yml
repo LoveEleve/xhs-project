@@ -135,6 +135,12 @@ services:
       --slow-query-log=1
       --slow-query-log-file=/var/lib/mysql/slow-query.log
       --long-query-time=0.5
+      --server-id=3
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --binlog-row-image=FULL
     deploy:
       resources:
         limits:
@@ -157,6 +163,7 @@ services:
     volumes:
       - mysql-order-data:/var/lib/mysql
       - ./sql/mysql-order-init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./sql/init-replication-user-master.sql:/docker-entrypoint-initdb.d/02-replication-user.sql
     restart: unless-stopped
 
   # ==========================================
@@ -183,6 +190,12 @@ services:
       --slow-query-log=1
       --slow-query-log-file=/var/lib/mysql/slow-query.log
       --long-query-time=0.2
+      --server-id=4
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --binlog-row-image=FULL
     deploy:
       resources:
         limits:
@@ -205,6 +218,239 @@ services:
     volumes:
       - mysql-inventory-data:/var/lib/mysql
       - ./sql/mysql-inventory-init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./sql/init-replication-user-master.sql:/docker-entrypoint-initdb.d/02-replication-user.sql
+    restart: unless-stopped
+
+  # ==========================================
+  # MySQL-User-Slave — 端口 13310
+  # 主从复制：mysql-user:13306 (Master) → :13310 (Slave)
+  # ==========================================
+  mysql-user-slave:
+    image: mysql:8.0
+    container_name: my-xhs-mysql-user-slave
+    network_mode: host
+    environment:
+      MYSQL_ROOT_PASSWORD: Xhs@2026#MySQL
+      TZ: Asia/Shanghai
+    command: >
+      --port=13310
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+      --max-connections=300
+      --innodb-buffer-pool-size=512M
+      --innodb-log-file-size=256M
+      --innodb-flush-log-at-trx-commit=2
+      --sync-binlog=1
+      --slow-query-log=1
+      --slow-query-log-file=/var/lib/mysql/slow-query.log
+      --long-query-time=0.5
+      --server-id=101
+      --log-bin=mysql-bin
+      --log-slave-updates
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --read-only=ON
+      --skip-slave-start
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2g
+        reservations:
+          cpus: '1'
+          memory: 1g
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13310", "-u", "root", "-pXhs@2026#MySQL"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - mysql-user-slave-data:/var/lib/mysql
+      - ./sql/init-replication-user.sql:/docker-entrypoint-initdb.d/01-init-replication.sql
+    depends_on:
+      - mysql-user
+    restart: unless-stopped
+
+  # ==========================================
+  # MySQL-Content-Slave — 端口 13311
+  # 主从复制：mysql-content:13307 (Master) → :13311 (Slave)
+  # ==========================================
+  mysql-content-slave:
+    image: mysql:8.0
+    container_name: my-xhs-mysql-content-slave
+    network_mode: host
+    environment:
+      MYSQL_ROOT_PASSWORD: Xhs@2026#MySQL
+      TZ: Asia/Shanghai
+    command: >
+      --port=13311
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+      --max-connections=300
+      --innodb-buffer-pool-size=512M
+      --innodb-log-file-size=256M
+      --innodb-flush-log-at-trx-commit=2
+      --sync-binlog=1
+      --slow-query-log=1
+      --slow-query-log-file=/var/lib/mysql/slow-query.log
+      --long-query-time=0.5
+      --server-id=102
+      --log-bin=mysql-bin
+      --log-slave-updates
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --read-only=ON
+      --skip-slave-start
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2g
+        reservations:
+          cpus: '1'
+          memory: 1g
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13311", "-u", "root", "-pXhs@2026#MySQL"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - mysql-content-slave-data:/var/lib/mysql
+      - ./sql/init-replication-content.sql:/docker-entrypoint-initdb.d/01-init-replication.sql
+    depends_on:
+      - mysql-content
+    restart: unless-stopped
+
+  # ==========================================
+  # MySQL-Order-Slave — 端口 13312
+  # 主从复制：mysql-order:13308 (Master) → :13312 (Slave)
+  # ==========================================
+  mysql-order-slave:
+    image: mysql:8.0
+    container_name: my-xhs-mysql-order-slave
+    network_mode: host
+    environment:
+      MYSQL_ROOT_PASSWORD: Xhs@2026#MySQL
+      TZ: Asia/Shanghai
+    command: >
+      --port=13312
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+      --max-connections=500
+      --innodb-buffer-pool-size=1G
+      --innodb-log-file-size=512M
+      --innodb-flush-log-at-trx-commit=1
+      --sync-binlog=1
+      --slow-query-log=1
+      --slow-query-log-file=/var/lib/mysql/slow-query.log
+      --long-query-time=0.5
+      --server-id=103
+      --log-bin=mysql-bin
+      --log-slave-updates
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --read-only=ON
+      --skip-slave-start
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4g
+        reservations:
+          cpus: '2'
+          memory: 2g
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13312", "-u", "root", "-pXhs@2026#MySQL"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - mysql-order-slave-data:/var/lib/mysql
+      - ./sql/init-replication-order.sql:/docker-entrypoint-initdb.d/01-init-replication.sql
+    depends_on:
+      - mysql-order
+    restart: unless-stopped
+
+  # ==========================================
+  # MySQL-Inventory-Slave — 端口 13313
+  # 主从复制：mysql-inventory:13309 (Master) → :13313 (Slave)
+  # ==========================================
+  mysql-inventory-slave:
+    image: mysql:8.0
+    container_name: my-xhs-mysql-inventory-slave
+    network_mode: host
+    environment:
+      MYSQL_ROOT_PASSWORD: Xhs@2026#MySQL
+      TZ: Asia/Shanghai
+    command: >
+      --port=13313
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+      --max-connections=200
+      --innodb-buffer-pool-size=512M
+      --innodb-log-file-size=256M
+      --innodb-flush-log-at-trx-commit=1
+      --sync-binlog=1
+      --slow-query-log=1
+      --slow-query-log-file=/var/lib/mysql/slow-query.log
+      --long-query-time=0.2
+      --server-id=104
+      --log-bin=mysql-bin
+      --log-slave-updates
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --read-only=ON
+      --skip-slave-start
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2g
+        reservations:
+          cpus: '1'
+          memory: 1g
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13313", "-u", "root", "-pXhs@2026#MySQL"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - mysql-inventory-slave-data:/var/lib/mysql
+      - ./sql/init-replication-inventory.sql:/docker-entrypoint-initdb.d/01-init-replication.sql
+    depends_on:
+      - mysql-inventory
     restart: unless-stopped
 
   # ==========================================
@@ -652,9 +898,13 @@ services:
 
 volumes:
   mysql-user-data:
+  mysql-user-slave-data:
   mysql-content-data:
+  mysql-content-slave-data:
   mysql-order-data:
+  mysql-order-slave-data:
   mysql-inventory-data:
+  mysql-inventory-slave-data:
   redis-data:
   redis-cache-data:
   redis-business-data:
