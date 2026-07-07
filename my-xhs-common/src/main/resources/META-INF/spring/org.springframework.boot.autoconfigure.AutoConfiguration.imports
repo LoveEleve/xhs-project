@@ -6,10 +6,12 @@ com.myxhs.common.config.WebMvcConfig
 com.myxhs.common.config.TraceIdConfig
 com.myxhs.common.config.AccessLogConfig
 com.myxhs.common.config.FeignSafeConfig
+com.myxhs.common.config.FeignUnifiedConfig
 com.myxhs.common.trace.FeignTraceInterceptorConfig
 com.myxhs.common.cache.RedisOperator
 com.myxhs.common.cache.CacheHelper
 com.myxhs.common.exception.GlobalExceptionHandler
+com.myxhs.common.response.ResponseAutoWrapper
 com.myxhs.common.aspect.IdempotentAspect
 com.myxhs.common.aspect.DistributedLockAspect
 com.myxhs.common.aspect.RateLimitAspect
@@ -18,3 +20,11 @@ com.myxhs.common.id.SegmentIdGenerator
 com.myxhs.common.shutdown.GracefulShutdownListener
 com.myxhs.common.health.ApplicationReadinessIndicator
 com.myxhs.common.chaos.ChaosAutoConfiguration
+com.myxhs.common.config.SentinelBulkheadConfig
+com.myxhs.common.metrics.BusinessMetrics
+com.myxhs.common.version.ApiVersionAutoConfiguration
+com.myxhs.common.config.HttpCacheConfig
+com.myxhs.common.config.LettuceMetricsConfig
+com.myxhs.common.metrics.MyBatisMetricsAutoConfiguration
+com.myxhs.common.metrics.DlqMetrics
+com.myxhs.common.tcc.TccFenceService

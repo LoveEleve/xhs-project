@@ -34,6 +34,9 @@ public class Inventory implements Serializable {
     /** 锁定库存（预扣未确认） */
     private Integer lockedStock;
 
+    /** TCC 冻结库存 */
+    private Integer freezingStock;
+
     /** 逻辑删除 */
     @TableLogic
     private Integer deleted;
