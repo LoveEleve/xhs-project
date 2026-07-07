@@ -7,6 +7,15 @@ server:
       min-spare: 20
     max-connections: 8192
     accept-count: 100
+    connection-timeout: 30000          # 连接超时 30s
+    keep-alive-timeout: 60000          # Keep-Alive 超时 60s
+    max-keep-alive-requests: 200       # 单连接最大 200 次请求
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain,text/css,application/javascript
+    min-response-size: 1024
+  http2:
+    enabled: true
 
 spring:
   application:
@@ -19,18 +28,26 @@ spring:
       - com.myxhs.common.config.MybatisPlusConfig
       - com.myxhs.common.id.SegmentIdGenerator
       - com.myxhs.common.id.IdGeneratorUtil
+      - org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
+      - org.springframework.boot.autoconfigure.batch.BatchAutoConfiguration
+      - org.springframework.boot.autoconfigure.quartz.QuartzAutoConfiguration
+      - org.springframework.boot.autoconfigure.jmx.JmxAutoConfiguration
   data:
     redis:
       host: 21.91.124.110
       port: 16379
       password: "Xhs@2026#Redis"
+      # Sentinel 高可用配置（取消注释启用 Sentinel 模式，自动覆盖 host:port）
+      # sentinel:
+      #   master: myMaster
+      #   nodes: 21.91.124.110:26379,21.91.124.110:26380,21.91.124.110:26381
       cache:
         port: 16380  # Cache Redis (allkeys-lru)
       business:
         port: 16381  # Business Redis (noeviction)
       lettuce:
         pool:
-          max-active: 16
+          max-active: 30
           max-idle: 8
           min-idle: 4
           max-wait: 3000ms
@@ -47,14 +64,40 @@ spring:
         import-check:
           enabled: false
         file-extension: yaml
+        # Nacos 动态配置示例（myxhs-dynamic.yml）：
+        # myxhs:
+        #   dynamic:
+        #     degrade:
+        #       cache: false       # 缓存降级开关
+        #       mq: false          # MQ 降级开关
+        #       feign: false       # Feign 降级开关
+        #       db: false          # 数据库降级开关
+        #       search: false      # 搜索降级开关
+        #     threshold:
+        #       slow-sql-ms: 200   # 慢 SQL 阈值（毫秒）
+        #       lock-timeout-ms: 3000  # 分布式锁超时
     sentinel:
       transport:
         dashboard: 21.91.124.110:18082
         port: 8725
       eager: true
+      datasource:
+        degrade:
+          nacos:
+            server-addr: 21.91.124.110:18848
+            namespace: my-xhs
+            group-id: SENTINEL_GROUP
+            data-id: my-xhs-home-degrade-rules
+            rule-type: degrade
       feign:
         sentinel:
           enabled: true
+      # Sentinel 舱壁隔离规则（通过 Nacos 动态配置推送）：
+      # - resource: my-xhs-inventory → threadPoolMaxSize=10, maxQueueSize=20
+      # - resource: my-xhs-order → threadPoolMaxSize=15, maxQueueSize=30
+      # - resource: my-xhs-coupon → threadPoolMaxSize=8, maxQueueSize=15
+      # - resource: my-xhs-product → threadPoolMaxSize=10, maxQueueSize=20
+      # 其他 resource 使用默认值 threadPoolMaxSize=5, maxQueueSize=10
     openfeign:
       httpclient:
         hc5:
@@ -102,7 +145,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus
+        include: health,info,prometheus,metrics,loggers
   endpoint:
     health:
       show-details: always

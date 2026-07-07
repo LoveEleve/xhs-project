@@ -1,10 +1,35 @@
 server:
   port: 19000
   shutdown: graceful
+  tomcat:
+    # Tomcat 线程数按服务特性差异化：网关(入口,IO密集)=300, 库存(锁竞争)=100, 支付(等回调)=100, 其他=150
+    threads:
+      max: 300
+      min-spare: 30
+    max-connections: 8192
+    accept-count: 100
+    connection-timeout: 30000          # 连接超时 30s
+    keep-alive-timeout: 60000          # Keep-Alive 超时 60s
+    max-keep-alive-requests: 200       # 单连接最大 200 次请求
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain,text/css,application/javascript
+    min-response-size: 1024
+  http2:
+    enabled: true
 
 spring:
   application:
     name: my-xhs-gateway
+  # Gateway 是 WebFlux 网关，无数据库
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
+      - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+      - org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
+      - org.springframework.boot.autoconfigure.batch.BatchAutoConfiguration
+      - org.springframework.boot.autoconfigure.quartz.QuartzAutoConfiguration
+      - org.springframework.boot.autoconfigure.jmx.JmxAutoConfiguration
   cloud:
     nacos:
       # Nacos 服务发现（Gateway 需要通过 Nacos 发现下游微服务实例）
@@ -14,6 +39,18 @@ spring:
         namespace: my-xhs
         group: DEFAULT_GROUP
     sentinel:
+      # Nacos 动态配置示例（myxhs-dynamic.yml）：
+      # myxhs:
+      #   dynamic:
+      #     degrade:
+      #       cache: false       # 缓存降级开关
+      #       mq: false          # MQ 降级开关
+      #       feign: false       # Feign 降级开关
+      #       db: false          # 数据库降级开关
+      #       search: false      # 搜索降级开关
+      #     threshold:
+      #       slow-sql-ms: 200   # 慢 SQL 阈值（毫秒）
+      #       lock-timeout-ms: 3000  # 分布式锁超时
       # Sentinel 控制台配置（当前未部署控制台，仅使用限流规则）
       transport:
         dashboard: 21.91.124.110:18082
@@ -33,67 +70,145 @@ spring:
             data-id: my-xhs-gateway-flow-rules
             rule-type: gw-flow
     gateway:
+      httpclient:
+        connect-timeout: 2000       # 全局默认连接超时 2s
+        response-timeout: 10s       # 全局默认响应超时 10s
       routes:
-        # Phase 1
+        # ============================================================
+        # 注意：metadata 中的超时/限流值为架构文档中的设计规范，
+        # 实际生效需要配合自定义 GatewayFilter（见文档 40-gateway-differentiated-strategy.md）。
+        # 当前路由使用 spring.cloud.gateway.httpclient 的全局默认值。
+        # ============================================================
+
+        # 用户认证（严格限流防暴力破解）
         - id: user-service
           uri: lb://my-xhs-user
           predicates:
             - Path=/api/user/**
+          metadata:
+            response-timeout: 5000   # 5s
+            connect-timeout: 1000    # 1s
+            rate-limit-qps: 50       # 用户模块整体 50 QPS
+          filters:
+            - name: RequestRateLimiter
+              args:
+                redis-rate-limiter.replenishRate: 50
+                redis-rate-limiter.burstCapacity: 100
+                key-resolver: "#{@remoteAddrKeyResolver}"
+
+        # 内容服务（读多写少，高 QPS）
         - id: content-service
           uri: lb://my-xhs-content
           predicates:
             - Path=/api/content/**,/api/note/**,/api/comment/**,/api/topic/**
-        - id: analytics-service
-          uri: lb://my-xhs-analytics
-          predicates:
-            - Path=/api/analytics/**,/api/social/**
-        - id: counter-service
-          uri: lb://my-xhs-counter
-          predicates:
-            - Path=/api/counter/**
-        # Phase 2
-        - id: product-service
-          uri: lb://my-xhs-product
-          predicates:
-            - Path=/api/product/**
-        - id: cart-service
-          uri: lb://my-xhs-cart
-          predicates:
-            - Path=/api/cart/**
-        - id: inventory-service
-          uri: lb://my-xhs-inventory
-          predicates:
-            - Path=/api/inventory/**
-        - id: coupon-service
-          uri: lb://my-xhs-coupon
-          predicates:
-            - Path=/api/coupon/**
-        - id: order-service
-          uri: lb://my-xhs-order
-          predicates:
-            - Path=/api/order/**
-        - id: payment-service
-          uri: lb://my-xhs-payment
-          predicates:
-            - Path=/api/payment/**
-        # Phase 3
+          metadata:
+            response-timeout: 3000   # 3s
+            connect-timeout: 1000
+            rate-limit-qps: 200
+
+        # 搜索服务（最高 QPS）
         - id: search-service
           uri: lb://my-xhs-search
           predicates:
             - Path=/api/search/**
+          metadata:
+            response-timeout: 2000   # 2s（搜索要快）
+            connect-timeout: 500
+            rate-limit-qps: 300
+
+        # 下单服务（严格限流 + 较长超时）
+        - id: order-service
+          uri: lb://my-xhs-order
+          predicates:
+            - Path=/api/order/**
+          metadata:
+            response-timeout: 8000   # 8s（下单链路长）
+            connect-timeout: 1000
+            rate-limit-qps: 10       # 严格限流
+
+        # 支付服务（最严格）
+        - id: payment-service
+          uri: lb://my-xhs-payment
+          predicates:
+            - Path=/api/payment/**
+          metadata:
+            response-timeout: 10000  # 10s（等待第三方支付回调）
+            connect-timeout: 2000
+            rate-limit-qps: 5
+
+        # 库存服务（内部调用为主，但也暴露给前端查询库存）
+        - id: inventory-service
+          uri: lb://my-xhs-inventory
+          predicates:
+            - Path=/api/inventory/**
+          metadata:
+            response-timeout: 3000
+            connect-timeout: 500
+            rate-limit-qps: 30
+
+        # 其他路由使用全局默认值
+        - id: analytics-service
+          uri: lb://my-xhs-analytics
+          predicates:
+            - Path=/api/analytics/**,/api/social/**
+          metadata:
+            response-timeout: 3000
+            connect-timeout: 1000
+            rate-limit-qps: 100
+
+        - id: product-service
+          uri: lb://my-xhs-product
+          predicates:
+            - Path=/api/product/**
+          metadata:
+            response-timeout: 3000
+            connect-timeout: 1000
+            rate-limit-qps: 100
+
+        - id: cart-service
+          uri: lb://my-xhs-cart
+          predicates:
+            - Path=/api/cart/**
+          metadata:
+            response-timeout: 3000
+            connect-timeout: 1000
+            rate-limit-qps: 50
+
+        - id: coupon-service
+          uri: lb://my-xhs-coupon
+          predicates:
+            - Path=/api/coupon/**
+          metadata:
+            response-timeout: 3000
+            connect-timeout: 1000
+            rate-limit-qps: 30
+
         - id: home-service
           uri: lb://my-xhs-home
           predicates:
             - Path=/api/home/**
+          metadata:
+            response-timeout: 5000   # 5s（BFF 聚合）
+            connect-timeout: 1000
+            rate-limit-qps: 50
+
         - id: notification-service
           uri: lb://my-xhs-notification
           predicates:
             - Path=/api/notification/**
-        # Phase 4
+          metadata:
+            response-timeout: 3000
+            connect-timeout: 1000
+            rate-limit-qps: 50
+
         - id: im-service
           uri: lb://my-xhs-im
           predicates:
             - Path=/api/im/**
+          metadata:
+            response-timeout: 5000   # 5s（WebSocket 建立连接）
+            connect-timeout: 2000
+            rate-limit-qps: 100
   data:
     redis:
       host: 21.91.124.110
@@ -107,7 +222,7 @@ spring:
       timeout: 3000ms
       lettuce:
         pool:
-          max-active: 16
+          max-active: 20
           max-idle: 8
           min-idle: 4
           max-wait: 3000ms
@@ -191,7 +306,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus
+        include: health,info,prometheus,metrics,loggers
   endpoint:
     health:
       show-details: always

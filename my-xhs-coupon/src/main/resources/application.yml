@@ -2,39 +2,82 @@ server:
   port: 19010
   shutdown: graceful
   tomcat:
+    # Tomcat 线程数按服务特性差异化：网关(入口,IO密集)=300, 库存(锁竞争)=100, 支付(等回调)=100, 其他=150
     threads:
-      max: 200
-      min-spare: 20
+      max: 150
+      min-spare: 15
     max-connections: 8192
     accept-count: 100
+    connection-timeout: 30000          # 连接超时 30s
+    keep-alive-timeout: 60000          # Keep-Alive 超时 60s
+    max-keep-alive-requests: 200       # 单连接最大 200 次请求
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain,text/css,application/javascript
+    min-response-size: 1024
+  http2:
+    enabled: true
 
 spring:
   application:
     name: my-xhs-coupon
+  # 排除不需要的自动装配，减少内存占用和启动时间
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
+      - org.springframework.boot.autoconfigure.batch.BatchAutoConfiguration
+      - org.springframework.boot.autoconfigure.quartz.QuartzAutoConfiguration
+      - org.springframework.boot.autoconfigure.websocket.servlet.WebSocketServletAutoConfiguration
+      - org.springframework.boot.autoconfigure.jmx.JmxAutoConfiguration
   datasource:
-    url: jdbc:mysql://21.91.124.110:13307/my_xhs_coupon?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
-    username: root
-    password: "Xhs@2026#MySQL"
-    driver-class-name: com.mysql.cj.jdbc.Driver
-    hikari:
-      minimum-idle: 5
-      maximum-pool-size: 20
-      idle-timeout: 30000
-      max-lifetime: 1800000
-      connection-timeout: 10000
-      leak-detection-threshold: 60000
+    readwrite:
+      enabled: true  # 读写分离开关
+    # 写库（主库）
+    master:
+      url: jdbc:mysql://21.91.124.110:13307/my_xhs_coupon?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
+      username: root
+      password: "Xhs@2026#MySQL"
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      hikari:
+        minimum-idle: 5
+        maximum-pool-size: 20
+        idle-timeout: 30000
+        max-lifetime: 1800000
+        connection-timeout: 10000
+        keepalive-time: 30000
+        connection-test-query: SELECT 1
+        validation-timeout: 3000
+    # 读库（从库，当前指向同库，部署从库后修改端口）
+    slave:
+      url: jdbc:mysql://21.91.124.110:13307/my_xhs_coupon?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
+      username: root
+      password: "Xhs@2026#MySQL"
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      hikari:
+        minimum-idle: 5
+        maximum-pool-size: 10  # 读库连接池可以小一些
+        idle-timeout: 30000
+        max-lifetime: 1800000
+        connection-timeout: 10000
+        keepalive-time: 30000
+        connection-test-query: SELECT 1
+        validation-timeout: 3000
   data:
     redis:
       host: 21.91.124.110
       port: 16379
       password: "Xhs@2026#Redis"
+      # Sentinel 高可用配置（取消注释启用 Sentinel 模式，自动覆盖 host:port）
+      # sentinel:
+      #   master: myMaster
+      #   nodes: 21.91.124.110:26379,21.91.124.110:26380,21.91.124.110:26381
       cache:
         port: 16380  # Cache Redis (allkeys-lru)
       business:
         port: 16381  # Business Redis (noeviction)
       lettuce:
         pool:
-          max-active: 16
+          max-active: 15
           max-idle: 8
           min-idle: 4
           max-wait: 3000ms
@@ -56,6 +99,14 @@ spring:
         dashboard: 21.91.124.110:18082
         port: 8730
       eager: true
+      datasource:
+        degrade:
+          nacos:
+            server-addr: 21.91.124.110:18848
+            namespace: my-xhs
+            group-id: SENTINEL_GROUP
+            data-id: my-xhs-coupon-degrade-rules
+            rule-type: degrade
       feign:
         sentinel:
           enabled: true
@@ -105,7 +156,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus
+        include: health,info,prometheus,metrics,loggers
   endpoint:
     health:
       show-details: always
