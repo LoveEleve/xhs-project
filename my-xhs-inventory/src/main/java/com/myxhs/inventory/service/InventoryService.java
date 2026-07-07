@@ -3,6 +3,7 @@ package com.myxhs.inventory.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.common.exception.BizException;
+import com.myxhs.common.metrics.BusinessMetrics;
 import com.myxhs.common.response.ResultCode;
 import com.myxhs.common.trace.MqTraceHelper;
 import com.myxhs.inventory.dto.event.InventoryDeductEvent;
@@ -64,6 +65,7 @@ public class InventoryService {
     private final DefaultRedisScript<Long> preDeductScript;
     private final DefaultRedisScript<Long> releaseScript;
     private final DefaultRedisScript<Long> confirmScript;
+    private final BusinessMetrics businessMetrics;
 
     @Value("${inventory.bucket.default-count:2}")
     private int defaultBucketCount;
@@ -202,6 +204,7 @@ public class InventoryService {
     public void preDeduct(PreDeductRequest request) {
         Long skuId = request.getSkuId();
         Long orderId = request.getOrderId();
+        long startTime = System.currentTimeMillis();
 
         // 【M9】检查是否正在扩容（暂停标记存在时延迟重试）
         String pauseKey = "inventory:paused:" + skuId;
@@ -260,13 +263,18 @@ public class InventoryService {
             case 1 -> {
                 log.info("[库存] 预扣减成功: orderId={}, skuId={}, qty={}, userId={}",
                         orderId, skuId, request.getQuantity(), request.getUserId());
+                businessMetrics.recordPreDeduct("success");
+                businessMetrics.recordPreDeductLatency(System.currentTimeMillis() - startTime);
                 // L2: MQ 同步发 MySQL（失败则回滚 Redis 预扣）
                 if (!sendInventoryEvent(orderId, skuId, request.getQuantity(), "PRE_DEDUCT")) {
                     rollbackPreDeduct(orderId, skuId, request.getQuantity());
                     throw new BizException(ResultCode.INTERNAL_ERROR, "库存扣减失败，请重试");
                 }
             }
-            case 0 -> throw new BizException(ResultCode.STOCK_NOT_ENOUGH);
+            case 0 -> {
+                businessMetrics.recordPreDeduct("insufficient");
+                throw new BizException(ResultCode.STOCK_NOT_ENOUGH);
+            }
             case -1 -> {
                 log.warn("[库存] 重复预扣(幂等拦截): orderId={}, skuId={}", orderId, skuId);
                 // 幂等：重复预扣不报错，视为成功
