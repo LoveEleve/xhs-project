@@ -173,6 +173,18 @@ logging:
     com.myxhs: info
     org.springframework.web: info
 
+# Dubbo Triple 配置（Provider）
+dubbo:
+  application:
+    name: ${spring.application.name}
+  protocol:
+    name: tri
+    port: -1
+  registry:
+    address: nacos://21.91.124.110:18848?namespace=my-xhs
+  consumer:
+    check: false
+
 # XXL-Job 分布式调度配置
 xxl:
   job:

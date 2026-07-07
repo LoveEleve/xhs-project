@@ -87,6 +87,12 @@
             <artifactId>spring-cloud-starter-openfeign</artifactId>
         </dependency>
 
+        <!-- Dubbo Triple（Consumer：调用 RPC 服务） -->
+        <dependency>
+            <groupId>org.apache.dubbo</groupId>
+            <artifactId>dubbo-spring-boot-starter</artifactId>
+        </dependency>
+
         <!-- Sentinel（Feign 熔断降级 + 限流） -->
         <dependency>
             <groupId>com.alibaba.cloud</groupId>
@@ -116,6 +122,27 @@
             <version>${project.version}</version>
         </dependency>
 
+        <!-- Order API Module -->
+        <dependency>
+            <groupId>com.myxhs</groupId>
+            <artifactId>my-xhs-order-api</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Inventory API Module（Dubbo Consumer） -->
+        <dependency>
+            <groupId>com.myxhs</groupId>
+            <artifactId>my-xhs-inventory-api</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- Coupon Module（Dubbo Consumer） -->
+        <dependency>
+            <groupId>com.myxhs</groupId>
+            <artifactId>my-xhs-coupon</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
         <!-- XXL-Job 分布式调度 -->
         <dependency>
             <groupId>com.xuxueli</groupId>
@@ -132,6 +159,20 @@
         <dependency>
             <groupId>org.apache.skywalking</groupId>
             <artifactId>apm-toolkit-logback-1.x</artifactId>
+        </dependency>
+
+        <!-- Dubbo Triple（Provider：对外暴露 RPC 服务） -->
+        <dependency>
+            <groupId>org.apache.dubbo</groupId>
+            <artifactId>dubbo-spring-boot-starter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.dubbo</groupId>
+            <artifactId>dubbo-rpc-triple</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
         </dependency>
 
         <!-- Test -->
