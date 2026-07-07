@@ -6,13 +6,20 @@ import com.myxhs.search.job.IndexRebuildJob;
 import com.myxhs.search.service.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 
 /**
  * 搜索接口
+ * <p>
+ * 核心搜索接口（笔记搜索/商品搜索）使用 {@link CompletableFuture} 异步返回，
+ * 释放 Tomcat 线程等待 ES 查询结果。热搜记录在异步任务内部同步执行。
+ * </p>
  */
 @Slf4j
 @RestController
@@ -27,6 +34,9 @@ public class SearchController {
     private final HotSearchService hotSearchService;
     private final IndexRebuildJob indexRebuildJob;
 
+    @Qualifier("recallExecutor")
+    private final ExecutorService searchExecutor;
+
     /**
      * 笔记搜索（关键词 + 排序 + Search After 深分页 + 高亮）
      * <p>
@@ -34,16 +44,18 @@ public class SearchController {
      * </p>
      */
     @GetMapping("/note")
-    public R<SearchResultVO<NoteSearchVO>> searchNotes(
+    public CompletableFuture<R<SearchResultVO<NoteSearchVO>>> searchNotes(
             @Valid NoteSearchRequest request,
             @RequestHeader(value = "X-User-Id", required = false) Long userId,
             @RequestHeader(value = "X-Forwarded-For", required = false) String ip) {
-        // 记录搜索词到热搜窗口
-        if (request.getKeyword() != null && !request.getKeyword().isBlank()) {
-            hotSearchService.recordSearchKeyword(request.getKeyword(), userId,
-                    ip != null ? ip : "unknown");
-        }
-        return R.ok(noteSearchService.searchNotes(request, userId));
+        return CompletableFuture.supplyAsync(() -> {
+            // 记录搜索词到热搜窗口
+            if (request.getKeyword() != null && !request.getKeyword().isBlank()) {
+                hotSearchService.recordSearchKeyword(request.getKeyword(), userId,
+                        ip != null ? ip : "unknown");
+            }
+            return R.ok(noteSearchService.searchNotes(request, userId));
+        }, searchExecutor);
     }
 
     /**
@@ -53,15 +65,17 @@ public class SearchController {
      * </p>
      */
     @GetMapping("/product")
-    public R<SearchResultVO<ProductSearchVO>> searchProducts(
+    public CompletableFuture<R<SearchResultVO<ProductSearchVO>>> searchProducts(
             @Valid ProductSearchRequest request,
             @RequestHeader(value = "X-User-Id", required = false) Long userId,
             @RequestHeader(value = "X-Forwarded-For", required = false) String ip) {
-        if (request.getKeyword() != null && !request.getKeyword().isBlank()) {
-            hotSearchService.recordSearchKeyword(request.getKeyword(), userId,
-                    ip != null ? ip : "unknown");
-        }
-        return R.ok(productSearchService.searchProducts(request));
+        return CompletableFuture.supplyAsync(() -> {
+            if (request.getKeyword() != null && !request.getKeyword().isBlank()) {
+                hotSearchService.recordSearchKeyword(request.getKeyword(), userId,
+                        ip != null ? ip : "unknown");
+            }
+            return R.ok(productSearchService.searchProducts(request));
+        }, searchExecutor);
     }
 
     /**

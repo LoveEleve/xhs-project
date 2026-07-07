@@ -8,12 +8,20 @@ import com.myxhs.search.service.RecommendService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 
 /**
  * 推荐系统接口
+ * <p>
+ * 推荐 Feed 接口使用 {@link CompletableFuture} 异步返回，释放 Tomcat 线程。
+ * 推荐计算涉及多路召回 + 粗排 + 精排 + 重排，耗时较长（200~500ms），
+ * 异步化可避免阻塞 Tomcat 线程池。
+ * </p>
  */
 @Slf4j
 @RestController
@@ -24,6 +32,9 @@ public class RecommendController {
     private final RecommendService recommendService;
     private final RecommendComputeJob recommendComputeJob;
 
+    @Qualifier("recallExecutor")
+    private final ExecutorService recallExecutor;
+
     /**
      * 个性化推荐 Feed（发现页）
      * <p>
@@ -32,9 +43,10 @@ public class RecommendController {
      * </p>
      */
     @GetMapping("/feed")
-    public R<List<RecommendFeedVO>> getRecommendFeed(
+    public CompletableFuture<R<List<RecommendFeedVO>>> getRecommendFeed(
             @RequestHeader("X-User-Id") Long userId) {
-        return R.ok(recommendService.getRecommendFeed(userId));
+        return CompletableFuture
+                .supplyAsync(() -> R.ok(recommendService.getRecommendFeed(userId)), recallExecutor);
     }
 
     /**
