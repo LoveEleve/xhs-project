@@ -44,4 +44,30 @@ public interface InventoryMapper extends BaseMapper<Inventory> {
             "locked_stock = locked_stock - #{quantity} " +
             "WHERE sku_id = #{skuId} AND locked_stock >= #{quantity} AND deleted = 0")
     int releaseStock(@Param("skuId") Long skuId, @Param("quantity") int quantity);
+
+    /**
+     * TCC Try: 冻结库存（available_stock -= qty, freezing_stock += qty）
+     * @return affected rows (1=成功, 0=库存不足)
+     */
+    @Update("UPDATE t_inventory SET available_stock = available_stock - #{qty}, " +
+            "freezing_stock = freezing_stock + #{qty}, updated_at = NOW() " +
+            "WHERE sku_id = #{skuId} AND available_stock >= #{qty}")
+    int tryFreeze(@Param("skuId") Long skuId, @Param("qty") Integer qty);
+
+    /**
+     * TCC Confirm: 确认扣减（freezing_stock -= qty）
+     * @return affected rows
+     */
+    @Update("UPDATE t_inventory SET freezing_stock = freezing_stock - #{qty}, " +
+            "updated_at = NOW() WHERE sku_id = #{skuId} AND freezing_stock >= #{qty}")
+    int confirmFreeze(@Param("skuId") Long skuId, @Param("qty") Integer qty);
+
+    /**
+     * TCC Cancel: 解冻库存（freezing_stock -= qty, available_stock += qty）
+     * @return affected rows
+     */
+    @Update("UPDATE t_inventory SET available_stock = available_stock + #{qty}, " +
+            "freezing_stock = freezing_stock - #{qty}, updated_at = NOW() " +
+            "WHERE sku_id = #{skuId} AND freezing_stock >= #{qty}")
+    int cancelFreeze(@Param("skuId") Long skuId, @Param("qty") Integer qty);
 }

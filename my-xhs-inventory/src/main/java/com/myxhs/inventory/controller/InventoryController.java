@@ -6,8 +6,10 @@ import com.myxhs.inventory.dto.request.ConfirmDeductRequest;
 import com.myxhs.inventory.dto.request.InventoryInitRequest;
 import com.myxhs.inventory.dto.request.PreDeductRequest;
 import com.myxhs.inventory.dto.request.ReleaseStockRequest;
+import com.myxhs.inventory.dto.TccDeductRequest;
 import com.myxhs.inventory.dto.response.StockVO;
 import com.myxhs.inventory.service.InventoryService;
+import com.myxhs.inventory.service.InventoryTccService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,6 +29,7 @@ import org.springframework.web.bind.annotation.*;
 public class InventoryController {
 
     private final InventoryService inventoryService;
+    private final InventoryTccService inventoryTccService;
 
     @Value("${inventory.bucket.default-count:2}")
     private int defaultBucketCount;
@@ -95,5 +98,54 @@ public class InventoryController {
     @GetMapping("/stock/{skuId}")
     public R<StockVO> getStock(@PathVariable Long skuId) {
         return R.ok(inventoryService.getStock(skuId));
+    }
+
+    // ==================== TCC 接口 ====================
+
+    /**
+     * TCC Try: 预扣库存（冻结）
+     * <p>
+     * 订单服务调用，冻结可用库存到 freezing_stock。
+     * 使用 TCC Fence 表保证幂等 + 防悬挂。
+     * </p>
+     */
+    @PostMapping("/tcc/try")
+    public R<Boolean> tccTryDeduct(@RequestBody TccDeductRequest request) {
+        try {
+            boolean result = inventoryTccService.tryDeductStock(
+                request.getXid(), request.getBranchId(), request.getSkuItems()
+            );
+            return R.ok(result);
+        } catch (InventoryTccService.InsufficientStockException e) {
+            return R.fail(400, e.getMessage());
+        }
+    }
+
+    /**
+     * TCC Confirm: 确认扣减
+     * <p>
+     * 订单支付成功后调用，将 freezing_stock 转为实际扣减。
+     * </p>
+     */
+    @PostMapping("/tcc/confirm")
+    public R<Void> tccConfirmDeduct(@RequestBody TccDeductRequest request) {
+        inventoryTccService.confirmDeductStock(
+            request.getXid(), request.getBranchId(), request.getSkuItems()
+        );
+        return R.ok();
+    }
+
+    /**
+     * TCC Cancel: 取消预扣（解冻）
+     * <p>
+     * 订单取消/超时未支付时调用，将 freezing_stock 恢复到 available_stock。
+     * </p>
+     */
+    @PostMapping("/tcc/cancel")
+    public R<Void> tccCancelDeduct(@RequestBody TccDeductRequest request) {
+        inventoryTccService.cancelDeductStock(
+            request.getXid(), request.getBranchId(), request.getSkuItems()
+        );
+        return R.ok();
     }
 }
