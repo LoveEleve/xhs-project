@@ -22,6 +22,9 @@ dataSources:
     maxLifetimeMilliseconds: 1800000
     maxPoolSize: 10
     minPoolSize: 2
+    keepaliveTimeMilliseconds: 30000
+    connectionTestQuery: SELECT 1
+    validationTimeoutMilliseconds: 3000
   ds1:
     dataSourceClassName: com.zaxxer.hikari.HikariDataSource
     driverClassName: com.mysql.cj.jdbc.Driver
@@ -33,6 +36,9 @@ dataSources:
     maxLifetimeMilliseconds: 1800000
     maxPoolSize: 10
     minPoolSize: 2
+    keepaliveTimeMilliseconds: 30000
+    connectionTestQuery: SELECT 1
+    validationTimeoutMilliseconds: 3000
   ds2:
     dataSourceClassName: com.zaxxer.hikari.HikariDataSource
     driverClassName: com.mysql.cj.jdbc.Driver
@@ -44,6 +50,9 @@ dataSources:
     maxLifetimeMilliseconds: 1800000
     maxPoolSize: 10
     minPoolSize: 2
+    keepaliveTimeMilliseconds: 30000
+    connectionTestQuery: SELECT 1
+    validationTimeoutMilliseconds: 3000
   ds3:
     dataSourceClassName: com.zaxxer.hikari.HikariDataSource
     driverClassName: com.mysql.cj.jdbc.Driver
@@ -55,6 +64,9 @@ dataSources:
     maxLifetimeMilliseconds: 1800000
     maxPoolSize: 10
     minPoolSize: 2
+    keepaliveTimeMilliseconds: 30000
+    connectionTestQuery: SELECT 1
+    validationTimeoutMilliseconds: 3000
 
 rules:
   - !SHARDING

@@ -46,6 +46,9 @@ public class MappingDataSourceConfig {
         ds.setIdleTimeout(30000);
         ds.setMaxLifetime(1800000);
         ds.setConnectionTimeout(10000);
+        ds.setKeepaliveTime(30000);
+        ds.setConnectionTestQuery("SELECT 1");
+        ds.setValidationTimeout(3000);
         ds.setPoolName("HikariPool-Mapping");
         return ds;
     }

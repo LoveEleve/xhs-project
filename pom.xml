@@ -12,6 +12,7 @@
     <description>小红书克隆项目 - 社交+电商微服务系统</description>
 
     <modules>
+        <module>my-xhs-bom</module>
         <module>my-xhs-common</module>
         <module>my-xhs-gateway</module>
         <module>my-xhs-user</module>
@@ -29,6 +30,13 @@
         <module>my-xhs-notification</module>
         <module>my-xhs-payment</module>
         <module>my-xhs-test</module>
+
+        <!-- API 子模块 -->
+        <module>my-xhs-user/my-xhs-user-api</module>
+        <module>my-xhs-content/my-xhs-content-api</module>
+        <module>my-xhs-product/my-xhs-product-api</module>
+        <module>my-xhs-order/my-xhs-order-api</module>
+        <module>my-xhs-inventory/my-xhs-inventory-api</module>
     </modules>
 
     <properties>
@@ -95,6 +103,13 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- 内部模块版本管理 -->
+            <dependency>
+                <groupId>com.myxhs</groupId>
+                <artifactId>my-xhs-common</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
             <!-- Jackson BOM - 必须在 Spring Boot BOM 之前声明，确保 Jackson 全家桶版本统一为 2.16.1 -->
             <!-- ES 8.12 依赖 jackson-databind:2.16.1，而 Spring Boot 3.2.5 管理的是 2.15.4 -->
             <!-- 2.15.4 缺少 JsonTypeInfo$Value 内部类，导致 activateDefaultTyping 报 ClassNotFoundException -->
@@ -274,7 +289,68 @@
                 <version>${cosid.version}</version>
             </dependency>
             
-            <!-- Sentinel -->
+            <!-- Sentinel（统一版本 ${sentinel.version}，覆盖 Spring Cloud Alibaba 传递的 1.8.6） -->
+            <dependency>
+                <groupId>com.alibaba.csp</groupId>
+                <artifactId>sentinel-core</artifactId>
+                <version>${sentinel.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.csp</groupId>
+                <artifactId>sentinel-reactor-adapter</artifactId>
+                <version>${sentinel.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.csp</groupId>
+                <artifactId>sentinel-api-gateway-adapter-common</artifactId>
+                <version>${sentinel.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.csp</groupId>
+                <artifactId>sentinel-transport-common</artifactId>
+                <version>${sentinel.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.csp</groupId>
+                <artifactId>sentinel-transport-simple-http</artifactId>
+                <version>${sentinel.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.csp</groupId>
+                <artifactId>sentinel-annotation-aspectj</artifactId>
+                <version>${sentinel.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.csp</groupId>
+                <artifactId>sentinel-parameter-flow-control</artifactId>
+                <version>${sentinel.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.csp</groupId>
+                <artifactId>sentinel-datasource-extension</artifactId>
+                <version>${sentinel.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.csp</groupId>
+                <artifactId>sentinel-spring-webflux-adapter</artifactId>
+                <version>${sentinel.version}</version>
+            </dependency>
+            <!-- sentinel-spring-webmvc-6x-adapter 最高只有 1.8.6，不强制升级 -->
+            <dependency>
+                <groupId>com.alibaba.csp</groupId>
+                <artifactId>sentinel-cluster-server-default</artifactId>
+                <version>${sentinel.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.csp</groupId>
+                <artifactId>sentinel-cluster-client-default</artifactId>
+                <version>${sentinel.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba.csp</groupId>
+                <artifactId>sentinel-cluster-common-default</artifactId>
+                <version>${sentinel.version}</version>
+            </dependency>
             <dependency>
                 <groupId>com.alibaba.csp</groupId>
                 <artifactId>sentinel-spring-cloud-gateway-adapter</artifactId>
@@ -293,18 +369,24 @@
                 <version>${sentinel.version}</version>
             </dependency>
             
-            <!-- Nacos -->
+            <!-- Nacos（排除 shaded Guava，避免与项目 Guava 冲突） -->
             <dependency>
                 <groupId>com.alibaba.nacos</groupId>
                 <artifactId>nacos-client</artifactId>
                 <version>${nacos.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>com.google.guava</groupId>
+                        <artifactId>guava</artifactId>
+                    </exclusion>
+                </exclusions>
             </dependency>
             
             <!-- SkyWalking -->
             <dependency>
                 <groupId>org.apache.skywalking</groupId>
                 <artifactId>apm-toolkit-logback-1.x</artifactId>
-                <version>${skywalking.version}</version>
+                <version>9.6.0</version>
             </dependency>
             
             <!-- Kaptcha -->

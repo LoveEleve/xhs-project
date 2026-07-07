@@ -24,6 +24,7 @@ import com.myxhs.product.mapper.CategoryMapper;
 import com.myxhs.product.mapper.SkuMapper;
 import com.myxhs.product.mapper.SpuMapper;
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
@@ -81,6 +82,26 @@ public class SpuService {
                     r -> { Thread t = new Thread(r, "spu-async"); t.setDaemon(true); return t; },
                     new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy()
             );
+
+    /**
+     * JVM 退出时关闭异步线程池，防止队列中未完成任务丢失
+     */
+    @PreDestroy
+    public void shutdownAsyncExecutor() {
+        log.info("[SPU] 关闭异步线程池...");
+        SPU_ASYNC_EXECUTOR.shutdown();
+        try {
+            if (!SPU_ASYNC_EXECUTOR.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS)) {
+                log.warn("[SPU] 线程池未能在10秒内终止，强制关闭");
+                SPU_ASYNC_EXECUTOR.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            log.warn("[SPU] 线程池关闭被中断，强制关闭");
+            SPU_ASYNC_EXECUTOR.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+        log.info("[SPU] 异步线程池已关闭");
+    }
 
     /** SPU 布隆过滤器（防穿透） */
     private RBloomFilter<Long> spuBloomFilter;

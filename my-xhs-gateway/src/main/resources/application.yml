@@ -230,16 +230,16 @@ spring:
     timeout-per-shutdown-phase: 30s
 
 # Gateway 鉴权配置
-# 【安全注意】当前密钥明文存储在配置文件中，代码仓库中可见。
-# 生产环境必须使用以下方案之一加密密钥：
-# 1. Nacos 加密配置：在 Nacos Console 中使用加密存储，配合 jasypt-spring-boot-starter
-# 2. Spring Cloud Vault：从 HashiCorp Vault 动态获取密钥
-# 3. K8s Secrets：部署时通过环境变量注入，不写入配置文件
+# 【Nacos 配置】secret 和 hmac-secret 已迁移至 Nacos Config（my-xhs-gateway.yaml）
+# 本地仅保留默认值作为 fallback，Nacos 配置优先
+# 生产环境密钥通过 Nacos Console 管理，不写入配置文件
 gateway:
   auth:
     # JWT 签名密钥（必须与 my-xhs-user 的 jwt.secret 保持一致）
+    # 优先从 Nacos 读取，本地值为 fallback
     secret: "MyXhs@2026#JwtSecretKey!ForTokenSign"
     # HMAC-SHA256 签名密钥（用于防篡改+防重放校验，与 JWT 密钥分离）
+    # 优先从 Nacos 读取，本地值为 fallback
     hmac-secret: "MyXhs@2026#HmacSecretKey!ForSign"
     # 白名单路径（不需要鉴权，支持 Ant 风格匹配）
     white-list:

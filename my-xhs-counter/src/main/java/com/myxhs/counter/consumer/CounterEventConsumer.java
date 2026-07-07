@@ -41,7 +41,8 @@ import java.util.Map;
 @RocketMQMessageListener(
         topic = "SOCIAL_TOPIC",
         selectorExpression = "LIKE||UNLIKE||FAVORITE||UNFAVORITE",
-        consumerGroup = "counter-consumer-group"
+        consumerGroup = "counter-consumer-group",
+        maxReconsumeTimes = 3
 )
 public class CounterEventConsumer implements RocketMQListener<MessageExt> {
 

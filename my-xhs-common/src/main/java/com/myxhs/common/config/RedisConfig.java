@@ -9,17 +9,25 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.jsontype.BasicPolymorphicTypeValidator;
 import com.fasterxml.jackson.databind.jsontype.PolymorphicTypeValidator;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
+import org.springframework.data.redis.connection.RedisConfiguration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.connection.RedisPassword;
+import org.springframework.data.redis.connection.RedisSentinelConfiguration;
 import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
+import org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+import org.springframework.data.redis.connection.lettuce.LettucePoolingClientConfiguration;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
+import org.springframework.util.StringUtils;
 
 /**
  * Redis 配置
@@ -35,19 +43,48 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 @Configuration
 public class RedisConfig {
 
+    private static final Logger log = LoggerFactory.getLogger(RedisConfig.class);
+
     /**
      * 默认 Redis 连接指向 Business Redis (16381, noeviction)
      * 业务数据走此连接，保护数据不丢失
+     * <p>
+     * 支持 Sentinel 模式和单节点模式自动切换：
+     * <ul>
+     *   <li>Sentinel 模式：配置 spring.data.redis.sentinel.nodes 后自动启用</li>
+     *   <li>单节点模式：未配置 sentinel.nodes 时使用 host:port 直连（兼容现有配置）</li>
+     * </ul>
      */
     @Bean
     @Primary
     public LettuceConnectionFactory defaultRedisConnectionFactory(
+            @Value("${spring.data.redis.sentinel.master:myMaster}") String master,
+            @Value("${spring.data.redis.sentinel.nodes:}") String sentinelNodes,
             @Value("${spring.data.redis.host:21.91.124.110}") String host,
             @Value("${spring.data.redis.business.port:16381}") int port,
             @Value("${spring.data.redis.password:Xhs@2026#Redis}") String password) {
-        RedisStandaloneConfiguration config = new RedisStandaloneConfiguration(host, port);
-        config.setPassword(password);
-        return new LettuceConnectionFactory(config);
+
+        LettuceClientConfiguration clientConfig = LettucePoolingClientConfiguration.builder()
+                .build();
+
+        if (StringUtils.hasText(sentinelNodes)) {
+            // Sentinel 哨兵模式
+            RedisSentinelConfiguration sentinelConfig = new RedisSentinelConfiguration()
+                    .master(master);
+            for (String node : sentinelNodes.split(",")) {
+                String[] parts = node.trim().split(":");
+                sentinelConfig.sentinel(parts[0], Integer.parseInt(parts[1]));
+            }
+            sentinelConfig.setPassword(RedisPassword.of(password));
+            log.info("[Redis] 使用 Sentinel 模式, master={}, nodes={}", master, sentinelNodes);
+            return new LettuceConnectionFactory(sentinelConfig, clientConfig);
+        } else {
+            // 单节点模式（兼容现有配置）
+            RedisStandaloneConfiguration standaloneConfig = new RedisStandaloneConfiguration(host, port);
+            standaloneConfig.setPassword(RedisPassword.of(password));
+            log.info("[Redis] 使用单节点模式, host={}:{}", host, port);
+            return new LettuceConnectionFactory(standaloneConfig, clientConfig);
+        }
     }
 
     @Bean

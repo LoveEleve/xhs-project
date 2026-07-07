@@ -2,6 +2,7 @@ package com.myxhs.inventory.consumer;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.myxhs.common.mq.MessageIdempotentHelper;
 import com.myxhs.common.trace.MqTraceHelper;
 import com.myxhs.inventory.dto.request.PreDeductRequest;
 import com.myxhs.inventory.service.InventoryService;
@@ -10,11 +11,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.TimeUnit;
 
 /**
  * 订单事务消息消费者 — 下单成功后预扣库存
@@ -24,7 +23,7 @@ import java.util.concurrent.TimeUnit;
  * </p>
  * <p>
  * 幂等保证（双重）：
- * 1. 消费者层面：orderNo + Redis SET NX（24h 过期），重复消费直接跳过
+ * 1. 消费者层面：MessageIdempotentHelper（orderNo, 24h），重复消费直接跳过
  * 2. InventoryService 层面：Lua 脚本内置幂等（PREDEDUCT_KEY 已存在则返回 -1）
  * </p>
  * <p>
@@ -39,15 +38,17 @@ import java.util.concurrent.TimeUnit;
 @RocketMQMessageListener(
         topic = "ORDER_TRANSACTION_TOPIC",
         consumerGroup = "inventory-order-transaction-consumer-group",
-        selectorExpression = "*"
+        selectorExpression = "*",
+        maxReconsumeTimes = 5
 )
 public class OrderTransactionConsumer implements RocketMQListener<MessageExt> {
 
     private final InventoryService inventoryService;
     private final ObjectMapper objectMapper;
-    private final StringRedisTemplate stringRedisTemplate;
+    private final MessageIdempotentHelper idempotentHelper;
 
-    private static final String IDEMPOTENT_PREFIX = "inventory:order:consumed:";
+    private static final String BIZ_TYPE = "inventory:order:consumed";
+    private static final long IDEMPOTENT_TTL_SECONDS = 86400; // 24 小时
 
     @Override
     public void onMessage(MessageExt msg) {
@@ -60,11 +61,7 @@ public class OrderTransactionConsumer implements RocketMQListener<MessageExt> {
             Long userId = payload.get("userId").asLong();
 
             // 消费者层面幂等校验：同一个 orderNo 只消费一次
-            String idempotentKey = IDEMPOTENT_PREFIX + orderNo;
-            Boolean firstTime = stringRedisTemplate.opsForValue()
-                    .setIfAbsent(idempotentKey, "1", 24, TimeUnit.HOURS);
-            if (Boolean.FALSE.equals(firstTime)) {
-                log.info("[库存-事务消费] 幂等跳过: orderNo={}", orderNo);
+            if (!idempotentHelper.isFirstProcess(BIZ_TYPE, orderNo, IDEMPOTENT_TTL_SECONDS)) {
                 return;
             }
 
@@ -92,7 +89,7 @@ public class OrderTransactionConsumer implements RocketMQListener<MessageExt> {
                                 orderNo, skuId, quantity);
                     } catch (Exception e) {
                         // 预扣减失败，删除消费者幂等键允许 MQ 重试
-                        stringRedisTemplate.delete(idempotentKey);
+                        idempotentHelper.removeMark(BIZ_TYPE, orderNo);
                         log.error("[库存-事务消费] 预扣减失败: orderNo={}, skuId={}, qty={}",
                                 orderNo, skuId, quantity, e);
                         throw new RuntimeException("库存预扣减失败: skuId=" + skuId, e);

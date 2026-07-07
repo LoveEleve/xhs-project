@@ -1,8 +1,8 @@
 package com.myxhs.payment.simulator;
 
 import com.myxhs.payment.service.PaymentService;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -24,11 +24,16 @@ import java.util.concurrent.ThreadLocalRandom;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class PayCallbackSimulator {
 
     private final StringRedisTemplate redisTemplate;
     private final PaymentService paymentService;
+
+    public PayCallbackSimulator(@Qualifier("stringRedisTemplate") StringRedisTemplate redisTemplate,
+                                PaymentService paymentService) {
+        this.redisTemplate = redisTemplate;
+        this.paymentService = paymentService;
+    }
 
     /** 待回调 Redis Key 前缀 */
     private static final String CALLBACK_PENDING_PREFIX = "payment:callback:pending:";

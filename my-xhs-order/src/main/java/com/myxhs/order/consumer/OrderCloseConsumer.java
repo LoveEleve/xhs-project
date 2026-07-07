@@ -27,7 +27,8 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 @RocketMQMessageListener(
         topic = "ORDER_CLOSE_TOPIC",
-        consumerGroup = "order-close-consumer-group"
+        consumerGroup = "order-close-consumer-group",
+        maxReconsumeTimes = 5
 )
 public class OrderCloseConsumer implements RocketMQListener<MessageExt> {
 

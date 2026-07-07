@@ -8,10 +8,10 @@ LOG_DIR="$BASE_DIR/logs"
 PIDS_DIR="$BASE_DIR/pids"
 mkdir -p "$LOG_DIR" "$PIDS_DIR"
 
-JAVA_OPTS_BASE="-Xms128m -Xmx256m -XX:+UseG1GC -XX:MaxGCPauseMillis=200"
-JAVA_OPTS_GW="-Xms128m -Xmx256m"
-JAVA_OPTS_ORDER="-Xms256m -Xmx512m"
-JAVA_OPTS_SEARCH="-Xms256m -Xmx512m"
+JAVA_OPTS_BASE="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0 -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
+JAVA_OPTS_GW="-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
+JAVA_OPTS_ORDER="-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
+JAVA_OPTS_SEARCH="-XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
 
 echo "=== 启动所有 my-xhs 微服务 ==="
 

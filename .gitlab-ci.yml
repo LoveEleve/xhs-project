@@ -1,0 +1,179 @@
+# ============================================================
+# MyXHS GitLab CI/CD Pipeline
+# 阶段：编译 → 测试 → 代码检查 → 构建镜像 → 部署
+# ============================================================
+
+stages:
+  - compile
+  - test
+  - check
+  - build
+  - deploy
+
+variables:
+  MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository -Dorg.slf4j.simpleLogger.log.org.apache.maven.cli.transfer.Slf4jMavenTransferListener=WARN"
+  MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end --show-version -DinstallAtEnd=true -DdeployAtEnd=true"
+  DOCKER_REGISTRY: "registry.cn-hangzhou.aliyuncs.com"
+  DOCKER_NAMESPACE: "myxhs"
+  TAG: "${CI_COMMIT_SHORT_SHA}"
+
+cache:
+  paths:
+    - .m2/repository/
+
+# ============================================================
+# Stage 1: 编译
+# ============================================================
+compile:
+  stage: compile
+  image: maven:3.9-eclipse-temurin-17
+  script:
+    - mvn $MAVEN_CLI_OPTS compile -DskipTests
+  only:
+    - merge_requests
+    - main
+    - develop
+
+# ============================================================
+# Stage 2: 测试 + 覆盖率
+# ============================================================
+test:
+  stage: test
+  image: maven:3.9-eclipse-temurin-17
+  script:
+    - mvn $MAVEN_CLI_OPTS test
+  artifacts:
+    reports:
+      junit:
+        - "*/target/surefire-reports/TEST-*.xml"
+    paths:
+      - "*/target/site/jacoco/"
+    expire_in: 7 days
+  coverage: '/Total.*?([0-9]{1,3})%./'
+  only:
+    - merge_requests
+    - main
+    - develop
+
+# ============================================================
+# Stage 3: 代码检查 (SpotBugs)
+# ============================================================
+spotbugs:
+  stage: check
+  image: maven:3.9-eclipse-temurin-17
+  script:
+    - mvn $MAVEN_CLI_OPTS spotbugs:check
+  allow_failure: true
+  only:
+    - merge_requests
+    - main
+    - develop
+
+# ============================================================
+# Stage 4: 构建 Docker 镜像
+# ============================================================
+# 以下为各模块镜像构建模板，通过 variables 指定模块名
+.build-docker-template: &build-docker
+  stage: build
+  image: docker:24
+  services:
+    - docker:24-dind
+  before_script:
+    - echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin $DOCKER_REGISTRY
+  script:
+    - cd ${MODULE}
+    - docker build -t ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/${MODULE}:${TAG} .
+    - docker tag ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/${MODULE}:${TAG} ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/${MODULE}:latest
+    - docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/${MODULE}:${TAG}
+    - docker push ${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/${MODULE}:latest
+  only:
+    - main
+  when: manual
+
+build-gateway:
+  <<: *build-docker
+  variables:
+    MODULE: my-xhs-gateway
+
+build-user:
+  <<: *build-docker
+  variables:
+    MODULE: my-xhs-user
+
+build-content:
+  <<: *build-docker
+  variables:
+    MODULE: my-xhs-content
+
+build-product:
+  <<: *build-docker
+  variables:
+    MODULE: my-xhs-product
+
+build-order:
+  <<: *build-docker
+  variables:
+    MODULE: my-xhs-order
+
+build-payment:
+  <<: *build-docker
+  variables:
+    MODULE: my-xhs-payment
+
+build-inventory:
+  <<: *build-docker
+  variables:
+    MODULE: my-xhs-inventory
+
+build-cart:
+  <<: *build-docker
+  variables:
+    MODULE: my-xhs-cart
+
+build-coupon:
+  <<: *build-docker
+  variables:
+    MODULE: my-xhs-coupon
+
+build-counter:
+  <<: *build-docker
+  variables:
+    MODULE: my-xhs-counter
+
+build-im:
+  <<: *build-docker
+  variables:
+    MODULE: my-xhs-im
+
+build-notification:
+  <<: *build-docker
+  variables:
+    MODULE: my-xhs-notification
+
+build-search:
+  <<: *build-docker
+  variables:
+    MODULE: my-xhs-search
+
+build-home:
+  <<: *build-docker
+  variables:
+    MODULE: my-xhs-home
+
+build-analytics:
+  <<: *build-docker
+  variables:
+    MODULE: my-xhs-analytics
+
+# ============================================================
+# Stage 5: 部署 (可选，需要 K8s 集群配置)
+# ============================================================
+deploy:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  script:
+    - echo "部署到 K8s 集群（需要配置 KUBECONFIG）"
+    - kubectl set image deployment/${SERVICE} ${SERVICE}=${DOCKER_REGISTRY}/${DOCKER_NAMESPACE}/${SERVICE}:${TAG} -n myxhs || echo "K8s 未配置，跳过部署"
+  only:
+    - main
+  when: manual

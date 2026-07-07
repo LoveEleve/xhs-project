@@ -21,7 +21,8 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 @RocketMQMessageListener(
         topic = "REFUND_RESULT_TOPIC",
-        consumerGroup = "payment-refund-result-consumer-group"
+        consumerGroup = "payment-refund-result-consumer-group",
+        maxReconsumeTimes = 5
 )
 public class RefundResultConsumer implements RocketMQListener<MessageExt> {
 

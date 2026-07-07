@@ -34,7 +34,8 @@ import java.util.Set;
 @RequiredArgsConstructor
 @RocketMQMessageListener(
         topic = "FEED_TOPIC",
-        consumerGroup = "feed-push-consumer-group"
+        consumerGroup = "feed-push-consumer-group",
+        maxReconsumeTimes = 3
 )
 public class FeedPushConsumer implements RocketMQListener<MessageExt> {
 

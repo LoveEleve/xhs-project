@@ -1,0 +1,113 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: myxhs-ingress
+  namespace: myxhs
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: api.myxhs.local
+      http:
+        paths:
+          - path: /api/user
+            pathType: Prefix
+            backend:
+              service:
+                name: my-xhs-user
+                port:
+                  number: 8080
+          - path: /api/content
+            pathType: Prefix
+            backend:
+              service:
+                name: my-xhs-content
+                port:
+                  number: 8080
+          - path: /api/product
+            pathType: Prefix
+            backend:
+              service:
+                name: my-xhs-product
+                port:
+                  number: 8080
+          - path: /api/order
+            pathType: Prefix
+            backend:
+              service:
+                name: my-xhs-order
+                port:
+                  number: 8080
+          - path: /api/payment
+            pathType: Prefix
+            backend:
+              service:
+                name: my-xhs-payment
+                port:
+                  number: 8080
+          - path: /api/inventory
+            pathType: Prefix
+            backend:
+              service:
+                name: my-xhs-inventory
+                port:
+                  number: 8080
+          - path: /api/cart
+            pathType: Prefix
+            backend:
+              service:
+                name: my-xhs-cart
+                port:
+                  number: 8080
+          - path: /api/coupon
+            pathType: Prefix
+            backend:
+              service:
+                name: my-xhs-coupon
+                port:
+                  number: 8080
+          - path: /api/counter
+            pathType: Prefix
+            backend:
+              service:
+                name: my-xhs-counter
+                port:
+                  number: 8080
+          - path: /api/im
+            pathType: Prefix
+            backend:
+              service:
+                name: my-xhs-im
+                port:
+                  number: 8080
+          - path: /api/notification
+            pathType: Prefix
+            backend:
+              service:
+                name: my-xhs-notification
+                port:
+                  number: 8080
+          - path: /api/search
+            pathType: Prefix
+            backend:
+              service:
+                name: my-xhs-search
+                port:
+                  number: 8080
+          - path: /api/home
+            pathType: Prefix
+            backend:
+              service:
+                name: my-xhs-home
+                port:
+                  number: 8080
+          - path: /api/analytics
+            pathType: Prefix
+            backend:
+              service:
+                name: my-xhs-analytics
+                port:
+                  number: 8080

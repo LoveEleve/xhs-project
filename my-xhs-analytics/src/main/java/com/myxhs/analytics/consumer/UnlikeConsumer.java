@@ -26,7 +26,8 @@ import java.nio.charset.StandardCharsets;
 @RocketMQMessageListener(
         topic = "SOCIAL_TOPIC",
         selectorExpression = "UNLIKE",
-        consumerGroup = "unlike-consumer-group"
+        consumerGroup = "unlike-consumer-group",
+        maxReconsumeTimes = 3
 )
 public class UnlikeConsumer implements RocketMQListener<MessageExt> {
 

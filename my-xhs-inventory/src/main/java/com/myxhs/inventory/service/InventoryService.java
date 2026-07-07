@@ -13,6 +13,7 @@ import com.myxhs.inventory.dto.request.ReleaseStockRequest;
 import com.myxhs.inventory.dto.response.StockVO;
 import com.myxhs.inventory.entity.Inventory;
 import com.myxhs.inventory.mapper.InventoryMapper;
+import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
@@ -81,6 +82,26 @@ public class InventoryService {
                     new java.util.concurrent.LinkedBlockingQueue<>(50),
                     r -> { Thread t = new Thread(r, "inventory-async"); t.setDaemon(true); return t; },
                     new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
+
+    /**
+     * JVM 退出时关闭异步线程池，防止队列中未完成任务丢失
+     */
+    @PreDestroy
+    public void shutdownAsyncExecutor() {
+        log.info("[库存] 关闭异步扩容线程池...");
+        inventoryAsyncExecutor.shutdown();
+        try {
+            if (!inventoryAsyncExecutor.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS)) {
+                log.warn("[库存] 线程池未能在10秒内终止，强制关闭");
+                inventoryAsyncExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            log.warn("[库存] 线程池关闭被中断，强制关闭");
+            inventoryAsyncExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+        log.info("[库存] 异步扩容线程池已关闭");
+    }
 
     /**
      * Redis Key 前缀

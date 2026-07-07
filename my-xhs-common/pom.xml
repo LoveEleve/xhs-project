@@ -16,6 +16,12 @@
 
 
     <dependencies>
+        <!-- Logstash Logback Encoder（JSON 结构化日志，logback-spring.xml 中使用 LogstashEncoder） -->
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+        </dependency>
+
         <!-- Spring Boot Starter（optional：Gateway基于WebFlux，不引入spring-boot-starter-web） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -99,6 +105,13 @@
         <dependency>
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-starter-openfeign</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- Spring Cloud LoadBalancer（optional：自定义负载均衡器需要） -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-loadbalancer</artifactId>
             <optional>true</optional>
         </dependency>
 

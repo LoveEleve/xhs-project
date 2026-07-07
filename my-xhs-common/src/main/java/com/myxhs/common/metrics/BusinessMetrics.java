@@ -3,200 +3,113 @@ package com.myxhs.common.metrics;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Supplier;
 
 /**
- * 业务指标定义
- * <p>
- * 统一管理所有业务级 Prometheus 指标。
- * 各服务通过注入此 Bean 来记录业务指标，Prometheus 自动采集。
- * </p>
- * <p>
- * 指标命名规范（Prometheus 最佳实践）：
- * - 前缀：myxhs_（项目标识）
- * - Counter 后缀：_total
- * - Histogram/Timer 后缀：_duration_seconds
- * - Gauge 无特殊后缀
- * </p>
- * <p>
- * 设计要点：
- * 1. Counter/Timer 使用 registry.counter()/registry.timer() 快捷方法（内部有缓存，避免重复构建 Meter.Id）
- * 2. Gauge 使用 AtomicLong 持有值引用，确保 Prometheus 采集时能读到最新值
- *    （Gauge.builder(() -> lag) 中 lag 是基本类型参数，lambda 捕获的是值副本，不会更新！）
- * </p>
- * <p>
- * 使用示例：
- * <pre>
- * businessMetrics.recordOrderCreate("success");
- * businessMetrics.recordMqConsumeLag("ORDER_CREATED", "order-consumer-group", 1234);
- * </pre>
- * </p>
+ * 业务指标收集器
+ * 
+ * 提供订单、库存、支付等核心业务指标。
+ * 指标通过 /actuator/prometheus 端点暴露，由 Prometheus 采集。
+ * 
+ * 指标类型：
+ * - Counter：只增不减，适合计数（订单创建数、支付成功数）
+ * - Timer：耗时分布，适合记录操作延迟（下单耗时 P50/P90/P99）
+ * - Gauge：可增可减，适合当前状态（热点 SKU 数、MQ 积压量）
  */
-@Slf4j
 @Component
 public class BusinessMetrics {
 
-    private final MeterRegistry registry;
+    private final MeterRegistry meterRegistry;
 
-    /**
-     * Gauge 值缓存：key = "metricName:tag1=val1,tag2=val2", value = AtomicLong
-     * <p>
-     * 为什么需要这个？
-     * Gauge 与 Counter/Timer 不同，它不是"累加"而是"当前值"。
-     * Micrometer 的 Gauge 通过 Supplier 读取值，如果 Supplier 捕获的是基本类型副本，
-     * 后续更新不会反映到 Gauge 上。必须用 AtomicLong 等引用类型持有值。
-     * </p>
-     */
-    private final ConcurrentHashMap<String, AtomicLong> gaugeValues = new ConcurrentHashMap<>();
-
-    public BusinessMetrics(MeterRegistry registry) {
-        this.registry = registry;
+    public BusinessMetrics(MeterRegistry meterRegistry) {
+        this.meterRegistry = meterRegistry;
     }
 
     // ==================== 订单指标 ====================
 
-    /**
-     * 记录订单创建
-     *
-     * @param status success / fail / timeout
-     */
-    public void recordOrderCreate(String status) {
-        registry.counter("myxhs_order_create_total", "status", status).increment();
+    /** 记录订单创建（成功/失败） */
+    public void recordOrderCreated(String status) {
+        counter("orders.created.total", "status", status).increment();
     }
 
-    /**
-     * 记录订单状态变更
-     *
-     * @param fromStatus 原状态
-     * @param toStatus   新状态
-     */
-    public void recordOrderStatusChange(String fromStatus, String toStatus) {
-        registry.counter("myxhs_order_status_change_total", "from", fromStatus, "to", toStatus).increment();
+    /** 记录订单创建耗时 */
+    public void recordOrderCreateLatency(long durationMs) {
+        timer("orders.create.latency").record(durationMs, TimeUnit.MILLISECONDS);
     }
 
-    // ==================== 支付指标 ====================
+    /** 记录订单支付结果 */
+    public void recordOrderPaid(String channel, boolean success) {
+        counter("orders.paid.total", "channel", channel, "result", success ? "success" : "fail").increment();
+    }
 
-    /**
-     * 记录支付结果
-     *
-     * @param payType 支付方式（alipay / wechat / mock）
-     * @param status  success / fail / timeout
-     */
-    public void recordPayment(String payType, String status) {
-        registry.counter("myxhs_payment_total", "pay_type", payType, "status", status).increment();
+    /** 记录订单超时关闭 */
+    public void recordOrderTimeoutClose() {
+        counter("orders.timeout.closed").increment();
     }
 
     // ==================== 库存指标 ====================
 
-    /**
-     * 记录库存扣减耗时
-     *
-     * @param durationMs 耗时（毫秒）
-     * @param success    是否成功
-     */
-    public void recordInventoryDeduct(long durationMs, boolean success) {
-        Timer.builder("myxhs_inventory_deduct_duration_seconds")
-                .description("库存扣减耗时")
-                .tag("status", success ? "success" : "fail")
-                .publishPercentiles(0.5, 0.9, 0.99)
-                .register(registry)
-                .record(durationMs, TimeUnit.MILLISECONDS);
+    /** 记录库存预扣结果 */
+    public void recordPreDeduct(String result) {
+        counter("inventory.prededuct.total", "result", result).increment();
     }
 
-    // ==================== 缓存指标 ====================
-
-    /**
-     * 记录缓存命中/未命中
-     *
-     * @param cacheName 缓存名称（如 user:info, note:detail）
-     * @param hit       是否命中
-     */
-    public void recordCacheAccess(String cacheName, boolean hit) {
-        registry.counter("myxhs_cache_access_total", "cache", cacheName, "result", hit ? "hit" : "miss").increment();
+    /** 记录库存预扣耗时 */
+    public void recordPreDeductLatency(long durationMs) {
+        timer("inventory.prededuct.latency").record(durationMs, TimeUnit.MILLISECONDS);
     }
 
-    // ==================== MQ 指标 ====================
-
-    /**
-     * 记录 MQ 消费结果
-     *
-     * @param topic  Topic 名称
-     * @param status success / fail / retry
-     */
-    public void recordMqConsume(String topic, String status) {
-        registry.counter("myxhs_mq_consume_total", "topic", topic, "status", status).increment();
+    /** 记录库存确认/释放 */
+    public void recordInventoryAction(String action) {
+        counter("inventory.action.total", "action", action).increment();
     }
 
-    /**
-     * 记录 MQ 消费积压量
-     * <p>
-     * 注意：Gauge 的值通过 AtomicLong 引用持有，确保 Prometheus 采集时能读到最新值。
-     * 首次调用时注册 Gauge（绑定 AtomicLong 的 Supplier），后续调用只更新 AtomicLong 的值。
-     * </p>
-     *
-     * @param topic         Topic 名称
-     * @param consumerGroup 消费者组
-     * @param lag           积压量
-     */
-    public void recordMqConsumeLag(String topic, String consumerGroup, long lag) {
-        String key = "myxhs_mq_consume_lag:topic=" + topic + ",consumer_group=" + consumerGroup;
-        AtomicLong gaugeValue = gaugeValues.computeIfAbsent(key, k -> {
-            AtomicLong value = new AtomicLong(lag);
-            // 首次注册 Gauge，绑定 AtomicLong 的 Supplier
-            io.micrometer.core.instrument.Gauge.builder("myxhs_mq_consume_lag", value, AtomicLong::doubleValue)
-                    .description("MQ 消费积压量")
-                    .tag("topic", topic)
-                    .tag("consumer_group", consumerGroup)
-                    .register(registry);
-            return value;
-        });
-        // 更新 Gauge 值（后续调用走这里）
-        gaugeValue.set(lag);
+    // ==================== 支付指标 ====================
+
+    /** 记录支付回调结果 */
+    public void recordPaymentCallback(String status) {
+        counter("payment.callback.total", "status", status).increment();
     }
 
-    // ==================== 登录/注册指标 ====================
+    // ==================== Feed 指标 ====================
 
-    /**
-     * 记录登录结果
-     *
-     * @param status success / fail / locked
-     */
-    public void recordLogin(String status) {
-        registry.counter("myxhs_login_total", "status", status).increment();
+    /** 记录 Feed 推送 */
+    public void recordFeedPush(String mode) {
+        counter("feed.push.total", "mode", mode).increment();
     }
 
-    // ==================== 通用计时器 ====================
+    /** 记录 Feed 推送延迟 */
+    public void recordFeedPushLatency(long durationMs) {
+        timer("feed.push.latency").record(durationMs, TimeUnit.MILLISECONDS);
+    }
 
-    /**
-     * 计时执行一段逻辑，自动记录耗时指标
-     *
-     * @param metricName 指标名称
-     * @param tags       标签（key1, value1, key2, value2, ...）
-     * @param action     要执行的逻辑
-     * @param <T>        返回类型
-     * @return 执行结果
-     */
-    public <T> T timeExecution(String metricName, String[] tags, Supplier<T> action) {
-        Timer.Sample sample = Timer.start(registry);
-        try {
-            T result = action.get();
-            sample.stop(Timer.builder(metricName)
-                    .tags(tags)
-                    .tag("status", "success")
-                    .register(registry));
-            return result;
-        } catch (Exception e) {
-            sample.stop(Timer.builder(metricName)
-                    .tags(tags)
-                    .tag("status", "error")
-                    .register(registry));
-            throw e;
+    // ==================== 优惠券指标 ====================
+
+    /** 记录优惠券领取/使用 */
+    public void recordCouponAction(String action, boolean success) {
+        counter("coupon.action.total", "action", action, "result", success ? "success" : "fail").increment();
+    }
+
+    // ==================== 内部方法 ====================
+
+    private Counter counter(String name, String... tags) {
+        io.micrometer.core.instrument.Tags micrometerTags = io.micrometer.core.instrument.Tags.empty();
+        for (int i = 0; i + 1 < tags.length; i += 2) {
+            micrometerTags = micrometerTags.and(tags[i], tags[i + 1]);
         }
+        return Counter.builder(name)
+                .description("业务指标: " + name)
+                .tags(micrometerTags)
+                .register(meterRegistry);
+    }
+
+    private Timer timer(String name) {
+        return Timer.builder(name)
+                .description("业务延迟: " + name)
+                .publishPercentiles(0.5, 0.9, 0.99)
+                .register(meterRegistry);
     }
 }

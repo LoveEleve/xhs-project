@@ -1,6 +1,7 @@
 package com.myxhs.coupon.consumer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.myxhs.common.mq.MessageIdempotentHelper;
 import com.myxhs.common.trace.MqTraceHelper;
 import com.myxhs.coupon.entity.UserCoupon;
 import com.myxhs.coupon.mapper.CouponTemplateMapper;
@@ -12,10 +13,7 @@ import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
-
-import java.time.Duration;
 
 /**
  * 领券事件消费者（MQ 异步写 MySQL）
@@ -24,7 +22,7 @@ import java.time.Duration;
  * </p>
  * <p>
  * 幂等保证（双重）：
- * 1. Redis SETNX（msgId, 24h）快速去重，避免重复消费
+ * 1. MessageIdempotentHelper（msgId, 24h）快速去重，避免重复消费
  * 2. t_user_coupon 表唯一索引 uk_claim_no(claim_no) 兜底去重
  * 支持 perUserLimit > 1：同一用户可多次领取同一模板，每次消息有唯一 msgId
  * </p>
@@ -34,17 +32,18 @@ import java.time.Duration;
 @RequiredArgsConstructor
 @RocketMQMessageListener(
         topic = "COUPON_CLAIM_TOPIC",
-        consumerGroup = "coupon-claim-consumer-group"
+        consumerGroup = "coupon-claim-consumer-group",
+        maxReconsumeTimes = 5
 )
 public class CouponClaimConsumer implements RocketMQListener<MessageExt> {
 
     private final UserCouponMapper userCouponMapper;
     private final CouponTemplateMapper templateMapper;
     private final ObjectMapper objectMapper;
-    private final StringRedisTemplate stringRedisTemplate;
+    private final MessageIdempotentHelper idempotentHelper;
 
-    private static final String IDEMPOTENT_PREFIX = "coupon:claim:idem:";
-    private static final Duration IDEMPOTENT_TTL = Duration.ofHours(24);
+    private static final String BIZ_TYPE = "coupon:claim";
+    private static final long IDEMPOTENT_TTL_SECONDS = 86400; // 24 小时
 
     @Override
     public void onMessage(MessageExt msg) {
@@ -52,11 +51,8 @@ public class CouponClaimConsumer implements RocketMQListener<MessageExt> {
         try {
             String msgId = msg.getMsgId();
 
-            // 1. Redis 快速幂等检查（先查不写入，避免部分成功后被拦截）
-            String idempotentKey = IDEMPOTENT_PREFIX + msgId;
-            String existing = stringRedisTemplate.opsForValue().get(idempotentKey);
-            if ("1".equals(existing)) {
-                log.info("[优惠券MQ] 重复消息(Redis幂等拦截): msgId={}", msgId);
+            // 1. 统一幂等检查
+            if (!idempotentHelper.isFirstProcess(BIZ_TYPE, msgId, IDEMPOTENT_TTL_SECONDS)) {
                 return;
             }
 
@@ -79,16 +75,11 @@ public class CouponClaimConsumer implements RocketMQListener<MessageExt> {
                 // 兜底幂等：唯一索引 uk_claim_no(claim_no) 冲突，说明已写入过
                 log.warn("[优惠券MQ] 重复领券记录(DB唯一索引兜底): userId={}, templateId={}, msgId={}",
                         event.userId(), event.templateId(), msgId);
-                // insert 已成功过，decrementRemainCount 也应该已执行，安全跳过
-                stringRedisTemplate.opsForValue().setIfAbsent(idempotentKey, "1", IDEMPOTENT_TTL);
                 return;
             }
 
             // 3. 扣减模板剩余数量
             templateMapper.decrementRemainCount(event.templateId());
-
-            // 4. 全部成功后设置 Redis 幂等标记（防止后续重复消费）
-            stringRedisTemplate.opsForValue().setIfAbsent(idempotentKey, "1", IDEMPOTENT_TTL);
 
             log.info("[优惠券MQ] 领券持久化成功: userId={}, templateId={}, userCouponId={}",
                     event.userId(), event.templateId(), userCoupon.getId());

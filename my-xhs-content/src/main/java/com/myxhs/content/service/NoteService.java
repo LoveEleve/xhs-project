@@ -11,6 +11,7 @@ import com.myxhs.common.constants.RedisKeyConstants;
 import com.myxhs.common.entity.NotePublishEvent;
 import com.myxhs.common.exception.BizException;
 import com.myxhs.common.id.IdGeneratorUtil;
+import com.myxhs.common.metrics.BusinessMetrics;
 import com.myxhs.common.response.PageResult;
 import com.myxhs.common.response.ResultCode;
 import com.myxhs.content.dto.request.NotePublishRequest;
@@ -57,6 +58,7 @@ public class NoteService {
     private final CacheHelper cacheHelper;
     private final ObjectMapper objectMapper;
     private final RocketMQTemplate rocketMQTemplate;
+    private final BusinessMetrics businessMetrics;
 
     /** 每页最大条数限制 */
     private static final int MAX_PAGE_SIZE = 50;
@@ -87,6 +89,8 @@ public class NoteService {
         // 3. 入库
         noteMapper.insert(note);
         log.info("[笔记] 发布成功: noteId={}, userId={}", note.getId(), userId);
+
+        businessMetrics.recordFeedPush("publish");
 
         // 4.【M2】写入本地消息表（与笔记入库同一事务，保证不丢消息）
         NotePublishEvent event = new NotePublishEvent();
@@ -274,6 +278,7 @@ public class NoteService {
             Note dbNote = noteMapper.selectById(noteId);
             // 只返回已发布的笔记
             if (dbNote != null && dbNote.getStatus() == NoteStatus.PUBLISHED.getCode()) {
+                businessMetrics.recordFeedPush("cache_miss");
                 return dbNote;
             }
             return null;

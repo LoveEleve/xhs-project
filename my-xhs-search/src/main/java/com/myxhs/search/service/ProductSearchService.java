@@ -11,6 +11,7 @@ import co.elastic.clients.elasticsearch.core.search.HighlightField;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.json.JsonData;
 import com.alibaba.fastjson2.JSON;
+import com.myxhs.common.metrics.BusinessMetrics;
 import com.myxhs.search.dto.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +36,7 @@ import java.util.stream.Collectors;
 public class ProductSearchService extends AbstractSearchService {
 
     private final ElasticsearchClient esClient;
+    private final BusinessMetrics businessMetrics;
 
     @Value("${search.product.index-name:product_index}")
     private String productIndexName;
@@ -58,6 +60,7 @@ public class ProductSearchService extends AbstractSearchService {
      */
     public SearchResultVO<ProductSearchVO> searchProducts(ProductSearchRequest request) {
         int size = normalizeSize(request.getSize(), defaultPageSize, maxPageSize);
+        long startTime = System.currentTimeMillis();
 
         try {
             SearchRequest.Builder searchBuilder = new SearchRequest.Builder()
@@ -81,6 +84,9 @@ public class ProductSearchService extends AbstractSearchService {
                     .fields("name", HighlightField.of(hf -> hf.preTags("<em>").postTags("</em>"))));
 
             SearchResponse<Map> response = esClient.search(searchBuilder.build(), Map.class);
+
+            long tookMs = System.currentTimeMillis() - startTime;
+            businessMetrics.recordOrderCreateLatency(tookMs);
 
             return buildProductResult(response, size);
 

@@ -27,6 +27,18 @@ public class BizException extends RuntimeException {
         this.resultCode = resultCode;
     }
 
+    /**
+     * 使用消息模板构造
+     *
+     * @param resultCode 错误码（包含消息模板）
+     * @param args       消息占位符参数
+     */
+    public BizException(ResultCode resultCode, Object... args) {
+        super(resultCode.getMessage(args));
+        this.code = resultCode.getCode();
+        this.resultCode = resultCode;
+    }
+
     public BizException(ResultCode resultCode, String message) {
         super(message);
         this.code = resultCode.getCode();

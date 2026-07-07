@@ -31,7 +31,8 @@ import java.time.ZoneId;
 @RocketMQMessageListener(
         topic = "SOCIAL_TOPIC",
         selectorExpression = "FAVORITE",
-        consumerGroup = "favorite-consumer-group"
+        consumerGroup = "favorite-consumer-group",
+        maxReconsumeTimes = 3
 )
 public class FavoriteConsumer implements RocketMQListener<MessageExt> {
 

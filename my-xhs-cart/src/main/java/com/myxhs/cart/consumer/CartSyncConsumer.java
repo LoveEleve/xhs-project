@@ -31,7 +31,8 @@ import org.springframework.stereotype.Component;
 @RocketMQMessageListener(
         topic = "CART_TOPIC",
         consumerGroup = "cart-sync-consumer-group",
-        selectorExpression = "*"
+        selectorExpression = "*",
+        maxReconsumeTimes = 3
 )
 public class CartSyncConsumer implements RocketMQListener<MessageExt> {
 

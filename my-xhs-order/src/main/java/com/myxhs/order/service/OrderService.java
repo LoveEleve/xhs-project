@@ -3,6 +3,7 @@ package com.myxhs.order.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.common.exception.BizException;
+import com.myxhs.common.metrics.BusinessMetrics;
 import com.myxhs.common.response.ResultCode;
 import com.myxhs.common.trace.MqTraceHelper;
 import com.myxhs.common.entity.CompensationMessage;
@@ -60,6 +61,7 @@ public class OrderService {
     private final ObjectMapper objectMapper;
     private final InventoryFeignClient inventoryFeignClient;
     private final CouponFeignClient couponFeignClient;
+    private final BusinessMetrics businessMetrics;
 
     private static final String IDEMPOTENT_KEY_PREFIX = "order:idempotent:";
     private static final String CREATE_LOCK_PREFIX = "order:create:lock:";
@@ -101,6 +103,9 @@ public class OrderService {
      * </p>
      */
     public OrderVO createOrder(Long userId, OrderCreateRequest request) {
+        long startTime = System.currentTimeMillis();
+        businessMetrics.recordOrderCreated("attempt");
+
         // 1. 幂等校验
         String idempotentKey = IDEMPOTENT_KEY_PREFIX + request.getBizIdentifier();
         Boolean setResult = stringRedisTemplate.opsForValue()
@@ -199,6 +204,9 @@ public class OrderService {
             log.info("[订单] 创建成功(事务消息): userId={}, orderNo={}, payAmount={}",
                     userId, orderNo, payAmount);
 
+            businessMetrics.recordOrderCreated("success");
+            businessMetrics.recordOrderCreateLatency(System.currentTimeMillis() - startTime);
+
             // 查询完整订单信息返回
             Order order = orderMapper.selectOne(
                     new LambdaQueryWrapper<Order>()
@@ -208,9 +216,11 @@ public class OrderService {
 
         } catch (BizException e) {
             // 业务异常：事务未提交，释放幂等键允许重试
+            businessMetrics.recordOrderCreated("fail");
             stringRedisTemplate.delete(idempotentKey);
             throw e;
         } catch (Exception e) {
+            businessMetrics.recordOrderCreated("fail");
             stringRedisTemplate.delete(idempotentKey);
             throw new BizException(ResultCode.INTERNAL_ERROR, "下单失败: " + e.getMessage());
         } finally {

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.myxhs</groupId>
+    <artifactId>my-xhs-bom</artifactId>
+    <version>1.0.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>MyXHS BOM</name>
+    <description>MyXHS 项目 BOM — 统一管理所有模块版本。外部调用方只需引入此 BOM + 目标服务的 api 模块。</description>
+
+    <properties>
+        <java.version>17</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Common 模块 -->
+            <dependency>
+                <groupId>com.myxhs</groupId>
+                <artifactId>my-xhs-common</artifactId>
+                <version>1.0.0-SNAPSHOT</version>
+            </dependency>
+
+            <!-- 各微服务 API 模块（将来拆分后统一管理版本） -->
+            <!--
+            <dependency>
+                <groupId>com.myxhs</groupId>
+                <artifactId>my-xhs-user-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.myxhs</groupId>
+                <artifactId>my-xhs-content-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.myxhs</groupId>
+                <artifactId>my-xhs-order-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.myxhs</groupId>
+                <artifactId>my-xhs-product-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.myxhs</groupId>
+                <artifactId>my-xhs-inventory-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            -->
+        </dependencies>
+    </dependencyManagement>
+</project>

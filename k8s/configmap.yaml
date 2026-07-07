@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: myxhs-config
+  namespace: myxhs
+data:
+  NACOS_ADDR: "nacos:8848"
+  REDIS_HOST: "redis"
+  MYSQL_USER_HOST: "mysql-user"
+  MYSQL_CONTENT_HOST: "mysql-content"
+  MYSQL_ORDER_HOST: "mysql-order"
+  MYSQL_INVENTORY_HOST: "mysql-inventory"
+  ROCKETMQ_NAMESRV: "rocketmq-namesrv:9876"
+  SKYWALKING_OAP: "skywalking-oap:11800"
+  ES_HOST: "elasticsearch:9200"

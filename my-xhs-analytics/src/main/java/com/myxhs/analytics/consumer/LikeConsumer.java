@@ -29,7 +29,8 @@ import java.time.LocalDateTime;
 @RocketMQMessageListener(
         topic = "SOCIAL_TOPIC",
         selectorExpression = "LIKE",
-        consumerGroup = "like-consumer-group"
+        consumerGroup = "like-consumer-group",
+        maxReconsumeTimes = 3
 )
 public class LikeConsumer implements RocketMQListener<MessageExt> {
 

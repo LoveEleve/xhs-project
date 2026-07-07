@@ -82,10 +82,23 @@
             <artifactId>spring-cloud-starter-loadbalancer</artifactId>
         </dependency>
         
+        <!-- XXL-Job -->
+        <dependency>
+            <groupId>com.xuxueli</groupId>
+            <artifactId>xxl-job-core</artifactId>
+        </dependency>
+
         <!-- Common Module -->
         <dependency>
             <groupId>com.myxhs</groupId>
             <artifactId>my-xhs-common</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <!-- User API Module -->
+        <dependency>
+            <groupId>com.myxhs</groupId>
+            <artifactId>my-xhs-user-api</artifactId>
             <version>${project.version}</version>
         </dependency>
         
@@ -95,6 +108,12 @@
             <artifactId>lombok</artifactId>
         </dependency>
         
+        <!-- SkyWalking Logback 集成 -->
+        <dependency>
+            <groupId>org.apache.skywalking</groupId>
+            <artifactId>apm-toolkit-logback-1.x</artifactId>
+        </dependency>
+
         <!-- Test -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

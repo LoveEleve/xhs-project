@@ -1,13 +1,21 @@
 package com.myxhs.common.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.myxhs.common.exception.BizException;
 import com.myxhs.common.exception.RemoteException;
+import com.myxhs.common.response.R;
 import feign.Response;
 import feign.Retryer;
+import feign.Util;
 import feign.codec.ErrorDecoder;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Feign 安全配置
@@ -53,9 +61,12 @@ public class FeignSafeConfig {
      * 携带目标服务名、请求路径、HTTP 状态码等信息，便于定位调用链问题。
      * </p>
      */
+    @Autowired
+    private ObjectMapper objectMapper;
+
     @Bean
     public ErrorDecoder feignErrorDecoder() {
-        return new RemoteCallErrorDecoder();
+        return new RemoteCallErrorDecoder(objectMapper);
     }
 
     /**
@@ -71,15 +82,36 @@ public class FeignSafeConfig {
     static class RemoteCallErrorDecoder implements ErrorDecoder {
 
         private final ErrorDecoder defaultDecoder = new Default();
+        private final ObjectMapper objectMapper;
+
+        RemoteCallErrorDecoder(ObjectMapper objectMapper) {
+            this.objectMapper = objectMapper;
+        }
 
         @Override
         public Exception decode(String methodKey, Response response) {
             String url = response.request().url();
             int status = response.status();
 
-            // 从 methodKey 提取服务名（格式：ServiceName#method(ParamType)）
             String serviceName = extractServiceName(methodKey);
             String path = extractPath(url);
+
+            // 先尝试解析响应体为 R，如果 code != 200 则抛 BizException
+            try {
+                if (response.body() != null) {
+                    byte[] bodyBytes = Util.toByteArray(response.body().asInputStream());
+                    String body = new String(bodyBytes, StandardCharsets.UTF_8);
+
+                    R<?> r = objectMapper.readValue(body, R.class);
+                    if (r != null && !r.isSuccess()) {
+                        log.warn("[Feign 业务异常] methodKey={}, serviceName={}, path={}, code={}, message={}",
+                                methodKey, serviceName, path, r.getCode(), r.getMessage());
+                        return new BizException(r.getCode(), r.getMessage());
+                    }
+                }
+            } catch (IOException e) {
+                log.debug("[Feign ErrorDecoder] 无法解析响应体为 R: {}", e.getMessage());
+            }
 
             // 5xx 错误 → RemoteException（触发告警）
             if (status >= 500) {
@@ -88,9 +120,13 @@ public class FeignSafeConfig {
                 return new RemoteException(serviceName, path, status, message);
             }
 
-            // 4xx 错误 → 使用默认解码器（FeignException）
-            // 不转换为 RemoteException，因为 4xx 通常是调用方的问题
-            log.warn("[Feign 调用 4xx] methodKey={}, url={}, status={}", methodKey, url, status);
+            // 4xx 错误 → 也转换为 BizException，携带服务信息便于定位
+            if (status >= 400) {
+                log.warn("[Feign 调用 4xx] methodKey={}, url={}, serviceName={}, path={}, status={}",
+                        methodKey, url, serviceName, path, status);
+                return new BizException(status, String.format("下游服务 %s %s 返回 HTTP %d", serviceName, path, status));
+            }
+
             return defaultDecoder.decode(methodKey, response);
         }
 

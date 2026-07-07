@@ -11,6 +11,7 @@ import co.elastic.clients.elasticsearch.core.search.HighlightField;
 import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.json.JsonData;
 import com.alibaba.fastjson2.JSON;
+import com.myxhs.common.metrics.BusinessMetrics;
 import com.myxhs.search.dto.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,6 +42,7 @@ public class NoteSearchService extends AbstractSearchService {
 
     private final ElasticsearchClient esClient;
     private final StringRedisTemplate stringRedisTemplate;
+    private final BusinessMetrics businessMetrics;
 
     @Value("${search.note.index-name:note_index}")
     private String noteIndexName;
@@ -64,6 +66,7 @@ public class NoteSearchService extends AbstractSearchService {
      */
     public SearchResultVO<NoteSearchVO> searchNotes(NoteSearchRequest request, Long userId) {
         int size = normalizeSize(request.getSize(), defaultPageSize, maxPageSize);
+        long startTime = System.currentTimeMillis();
 
         try {
             // 记录搜索历史（异步，不影响搜索性能）
@@ -95,6 +98,9 @@ public class NoteSearchService extends AbstractSearchService {
                             .fragmentSize(150).numberOfFragments(1))));
 
             SearchResponse<Map> response = esClient.search(searchBuilder.build(), Map.class);
+
+            long tookMs = System.currentTimeMillis() - startTime;
+            businessMetrics.recordOrderCreateLatency(tookMs);
 
             return buildNoteResult(response, size);
 

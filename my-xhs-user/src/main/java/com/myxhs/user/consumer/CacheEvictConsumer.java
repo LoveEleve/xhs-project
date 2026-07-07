@@ -34,7 +34,8 @@ import java.nio.charset.StandardCharsets;
 @RocketMQMessageListener(
         topic = CacheEvictMessage.TOPIC,
         consumerGroup = "user-cache-evict-consumer-group",
-        selectorExpression = "user-service"
+        selectorExpression = "user-service",
+        maxReconsumeTimes = 3
 )
 public class CacheEvictConsumer implements RocketMQListener<MessageExt> {
 

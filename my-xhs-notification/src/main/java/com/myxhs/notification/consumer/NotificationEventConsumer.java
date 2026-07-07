@@ -1,6 +1,7 @@
 package com.myxhs.notification.consumer;
 
 import com.alibaba.fastjson2.JSON;
+import com.myxhs.common.mq.MessageIdempotentHelper;
 import com.myxhs.common.trace.MqTraceHelper;
 import com.myxhs.notification.dto.NotificationEventDTO;
 import com.myxhs.notification.service.NotificationService;
@@ -9,11 +10,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 
 /**
  * 通知事件消费者
@@ -22,7 +21,7 @@ import java.time.Duration;
  * </p>
  * <p>
  * 幂等保证（两级）：
- * 1. Redis 快速去重（辅助，24h 过期）—— 快速拦截重复消息
+ * 1. MessageIdempotentHelper（msgId, 24h）—— 快速拦截重复消息
  * 2. 聚合器中的 SETNX 窗口锁 —— 保证同一窗口内不重复创建
  * </p>
  * <p>
@@ -35,14 +34,16 @@ import java.time.Duration;
 @RequiredArgsConstructor
 @RocketMQMessageListener(
         topic = "NOTIFICATION_TOPIC",
-        consumerGroup = "notification-event-consumer-group"
+        consumerGroup = "notification-event-consumer-group",
+        maxReconsumeTimes = 3
 )
 public class NotificationEventConsumer implements RocketMQListener<MessageExt> {
 
     private final NotificationService notificationService;
-    private final StringRedisTemplate stringRedisTemplate;
+    private final MessageIdempotentHelper idempotentHelper;
 
-    private static final String CONSUMED_KEY_PREFIX = "notify:consumed:";
+    private static final String BIZ_TYPE = "notify:consumed";
+    private static final long IDEMPOTENT_TTL_SECONDS = 86400; // 24 小时
 
     @Override
     public void onMessage(MessageExt msg) {
@@ -51,11 +52,8 @@ public class NotificationEventConsumer implements RocketMQListener<MessageExt> {
             String msgId = msg.getMsgId();
             String body = new String(msg.getBody(), StandardCharsets.UTF_8);
 
-            // 一级幂等：Redis 快速去重（先检查是否已消费）
-            String consumedKey = CONSUMED_KEY_PREFIX + msgId;
-            Boolean alreadyConsumed = stringRedisTemplate.hasKey(consumedKey);
-            if (Boolean.TRUE.equals(alreadyConsumed)) {
-                log.info("[通知消费] Redis去重跳过: msgId={}", msgId);
+            // 一级幂等：统一幂等检查
+            if (!idempotentHelper.isFirstProcess(BIZ_TYPE, msgId, IDEMPOTENT_TTL_SECONDS)) {
                 return;
             }
 
@@ -75,13 +73,10 @@ public class NotificationEventConsumer implements RocketMQListener<MessageExt> {
             // 处理通知事件
             notificationService.processEvent(event);
 
-            // 消费成功后才写入去重 Key（失败时不写入，允许 RocketMQ 重试）
-            // 注意：这里存在极小概率的重复消费（processEvent 成功但 Redis SET 失败），
-            // 由聚合器的 SETNX 窗口锁兜底保证幂等。
-            stringRedisTemplate.opsForValue().set(consumedKey, "1", Duration.ofHours(24));
-
         } catch (Exception e) {
             log.error("[通知消费] 处理失败: msgId={}", msg.getMsgId(), e);
+            // 业务失败时删除幂等标记，允许 MQ 重试
+            idempotentHelper.removeMark(BIZ_TYPE, msg.getMsgId());
             throw new RuntimeException("通知消费失败", e); // 触发 RocketMQ 重试
         } finally {
             MqTraceHelper.clearTraceId();

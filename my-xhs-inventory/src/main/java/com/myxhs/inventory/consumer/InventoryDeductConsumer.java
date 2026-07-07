@@ -1,6 +1,7 @@
 package com.myxhs.inventory.consumer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.myxhs.common.mq.MessageIdempotentHelper;
 import com.myxhs.common.trace.MqTraceHelper;
 import com.myxhs.inventory.dto.event.InventoryDeductEvent;
 import com.myxhs.inventory.mapper.InventoryMapper;
@@ -21,10 +22,10 @@ import org.springframework.stereotype.Component;
  * - RELEASE：释放库存（locked_stock → available_stock）
  * </p>
  * <p>
- * 幂等保证：
- * - MySQL 使用乐观锁（WHERE locked_stock >= quantity / available_stock >= quantity）
- * - 重复消费不会导致库存变为负数
- * - 最坏情况：重复扣减导致 MySQL 库存偏低，L3 对账修复会以 Redis 为准修正
+ * 幂等保证（双重）：
+ * 1. 消费者层面：MessageIdempotentHelper（msgId, 24h）快速去重，避免重复消费
+ * 2. MySQL 使用乐观锁（WHERE locked_stock >= quantity / available_stock >= quantity）
+ * 3. 最坏情况：重复扣减导致 MySQL 库存偏低，L3 对账修复会以 Redis 为准修正
  * </p>
  */
 @Slf4j
@@ -33,17 +34,27 @@ import org.springframework.stereotype.Component;
 @RocketMQMessageListener(
         topic = "INVENTORY_TOPIC",
         consumerGroup = "inventory-deduct-consumer-group",
-        selectorExpression = "*"
+        selectorExpression = "*",
+        maxReconsumeTimes = 5
 )
 public class InventoryDeductConsumer implements RocketMQListener<MessageExt> {
 
     private final InventoryMapper inventoryMapper;
     private final ObjectMapper objectMapper;
+    private final MessageIdempotentHelper idempotentHelper;
+
+    private static final String BIZ_TYPE = "inventory:deduct";
+    private static final long IDEMPOTENT_TTL_SECONDS = 86400; // 24 小时
 
     @Override
     public void onMessage(MessageExt msg) {
         MqTraceHelper.restoreTraceId(msg);
         try {
+            // 统一幂等检查
+            if (!idempotentHelper.isFirstProcess(BIZ_TYPE, msg.getMsgId(), IDEMPOTENT_TTL_SECONDS)) {
+                return;
+            }
+
             String body = new String(msg.getBody());
             InventoryDeductEvent event = objectMapper.readValue(body, InventoryDeductEvent.class);
 

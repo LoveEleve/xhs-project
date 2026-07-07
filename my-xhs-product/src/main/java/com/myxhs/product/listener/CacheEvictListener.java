@@ -30,7 +30,8 @@ import org.springframework.stereotype.Component;
         topic = SpuService.CACHE_EVICT_TOPIC,
         consumerGroup = "product-cache-evict-group",
         // 广播模式：每个消费者实例都收到消息
-        messageModel = org.apache.rocketmq.spring.annotation.MessageModel.BROADCASTING
+        messageModel = org.apache.rocketmq.spring.annotation.MessageModel.BROADCASTING,
+        maxReconsumeTimes = 3
 )
 public class CacheEvictListener implements RocketMQListener<Long> {
 

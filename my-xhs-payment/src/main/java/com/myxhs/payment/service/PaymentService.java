@@ -2,6 +2,7 @@ package com.myxhs.payment.service;
 
 import com.myxhs.common.exception.BizException;
 import com.myxhs.common.id.IdGeneratorUtil;
+import com.myxhs.common.metrics.BusinessMetrics;
 import com.myxhs.common.response.R;
 import com.myxhs.common.response.ResultCode;
 import com.myxhs.common.trace.MqTraceHelper;
@@ -70,6 +71,7 @@ public class PaymentService {
     private final DefaultRedisScript<Long> paymentTimeoutScript;
     private final OrderFeignClient orderFeignClient;
     private final IdGeneratorUtil idGeneratorUtil;
+    private final BusinessMetrics businessMetrics;
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
     /** Lua 脚本：安全释放分布式锁（只释放自己持有的锁） */
@@ -283,6 +285,8 @@ public class PaymentService {
 
         log.info("[支付成功] orderId={}, paymentNo={}, tradeNo={}", orderId, paymentNo, tradeNo);
 
+        businessMetrics.recordPaymentCallback("success");
+
         // 发送支付成功消息到 MQ（订单服务消费后更新订单状态为"已支付"）
         sendPayResultMq(orderId, userId, true, tradeNo);
     }
@@ -302,6 +306,7 @@ public class PaymentService {
             redisTemplate.opsForValue().set("payment:status:" + orderId, "2", PAYING_KEY_TTL);
             redisTemplate.delete(PAYING_KEY_PREFIX + orderId);
             log.info("[支付失败] orderId={}, paymentNo={}", orderId, paymentNo);
+            businessMetrics.recordPaymentCallback("fail");
             sendPayResultMq(orderId, userId, false, null);
         }
     }

@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: SERVICE_NAME
+  namespace: myxhs
+  labels:
+    app: SERVICE_NAME
+spec:
+  type: ClusterIP
+  selector:
+    app: SERVICE_NAME
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+      name: http

@@ -29,7 +29,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 @RocketMQMessageListener(
         topic = "RECOMMEND_BEHAVIOR_TOPIC",
-        consumerGroup = "recommend-behavior-consumer-group"
+        consumerGroup = "recommend-behavior-consumer-group",
+        maxReconsumeTimes = 3
 )
 public class BehaviorReportConsumer implements RocketMQListener<MessageExt> {
 

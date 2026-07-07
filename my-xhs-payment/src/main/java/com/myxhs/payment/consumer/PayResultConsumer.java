@@ -26,7 +26,8 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 @RocketMQMessageListener(
         topic = "PAY_RESULT_TOPIC",
-        consumerGroup = "payment-pay-result-consumer-group"
+        consumerGroup = "payment-pay-result-consumer-group",
+        maxReconsumeTimes = 5
 )
 public class PayResultConsumer implements RocketMQListener<MessageExt> {
 
