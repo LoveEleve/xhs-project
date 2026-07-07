@@ -274,7 +274,11 @@ public class NoteService {
     public NoteDetailVO getNoteDetail(Long noteId) {
         String cacheKey = RedisKeyConstants.NOTE_DETAIL + noteId;
 
+        // 缓存命中标记：AtomicBoolean 用于在 lambda 中记录是否为 miss
+        java.util.concurrent.atomic.AtomicBoolean cacheMiss = new java.util.concurrent.atomic.AtomicBoolean(false);
+
         Note note = cacheHelper.getWithCacheAside(cacheKey, () -> {
+            cacheMiss.set(true);
             Note dbNote = noteMapper.selectById(noteId);
             // 只返回已发布的笔记
             if (dbNote != null && dbNote.getStatus() == NoteStatus.PUBLISHED.getCode()) {
@@ -283,6 +287,10 @@ public class NoteService {
             }
             return null;
         }, 30, TimeUnit.MINUTES);
+
+        if (note != null && !cacheMiss.get()) {
+            businessMetrics.recordFeedPush("cache_hit");
+        }
 
         if (note == null) {
             throw new BizException(ResultCode.NOTE_NOT_FOUND);

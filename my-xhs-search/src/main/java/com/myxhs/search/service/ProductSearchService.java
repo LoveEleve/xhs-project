@@ -62,6 +62,9 @@ public class ProductSearchService extends AbstractSearchService {
         int size = normalizeSize(request.getSize(), defaultPageSize, maxPageSize);
         long startTime = System.currentTimeMillis();
 
+        // 记录商品搜索次数
+        businessMetrics.recordFeedPush("product_search");
+
         try {
             SearchRequest.Builder searchBuilder = new SearchRequest.Builder()
                     .index(productIndexName)
