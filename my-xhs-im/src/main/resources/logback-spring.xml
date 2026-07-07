@@ -2,7 +2,7 @@
 <!--
     Logback 配置（通用模板）
     特性：
-    1. 日志自动携带 TraceId（通过 MDC 中的 traceId 字段）
+    1. 日志自动携带 TraceId（通过 MDC 中的 traceId 字段）+ SkyWalking tid
     2. 控制台彩色输出（开发环境友好）
     3. 文件滚动输出（按日期+大小滚动，保留 30 天）
     4. 异步写入（高性能，不阻塞业务线程）
@@ -15,13 +15,13 @@
     <!-- 日志目录 -->
     <property name="LOG_HOME" value="./logs/${APP_NAME}"/>
 
-    <!-- 日志格式（含 TraceId） -->
+    <!-- 日志格式（含业务 TraceId + SkyWalking tid） -->
     <property name="LOG_PATTERN"
-              value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId:-}] %-5level %logger{36} - %msg%n"/>
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId:-}]  %-5level %logger{36} - %msg%n"/>
 
     <!-- 彩色控制台格式 -->
     <property name="CONSOLE_PATTERN"
-              value="%d{HH:mm:ss.SSS} %highlight(%-5level) [%boldYellow(%X{traceId:-})] [%thread] %cyan(%logger{36}) - %msg%n"/>
+              value="%d{HH:mm:ss.SSS} %highlight(%-5level) [%boldYellow(%X{traceId:-})] [%boldCyan()] [%thread] %cyan(%logger{36}) - %msg%n"/>
 
     <!-- ==================== 控制台输出 ==================== -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">

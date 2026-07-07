@@ -3,7 +3,7 @@ version: '3.8'
 services:
   # ==========================================
   # MySQL-User — 端口 13306
-  # 用户 + 社交 + 基础设施(nacos_config/xxl_job)
+  # 承载：user + analytics + notification + im + nacos_config + xxl_job
   # ==========================================
   mysql-user:
     image: mysql:8.0
@@ -18,6 +18,27 @@ services:
       --collation-server=utf8mb4_unicode_ci
       --default-authentication-plugin=mysql_native_password
       --max-connections=300
+      --innodb-buffer-pool-size=512M
+      --innodb-log-file-size=256M
+      --innodb-flush-log-at-trx-commit=2
+      --sync-binlog=1
+      --slow-query-log=1
+      --slow-query-log-file=/var/lib/mysql/slow-query.log
+      --long-query-time=0.5
+      --server-id=1
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --binlog-row-image=FULL
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2g
+        reservations:
+          cpus: '1'
+          memory: 1g
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13306", "-u", "root", "-pXhs@2026#MySQL"]
       interval: 30s
@@ -32,11 +53,12 @@ services:
     volumes:
       - mysql-user-data:/var/lib/mysql
       - ./sql/mysql-user-init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./sql/init-replication-user-master.sql:/docker-entrypoint-initdb.d/02-replication-user.sql
     restart: unless-stopped
 
   # ==========================================
   # MySQL-Content — 端口 13307
-  # 内容 + 商品 + 购物车 + 优惠券
+  # 承载：content + counter + search + product + cart + coupon
   # ==========================================
   mysql-content:
     image: mysql:8.0
@@ -51,6 +73,27 @@ services:
       --collation-server=utf8mb4_unicode_ci
       --default-authentication-plugin=mysql_native_password
       --max-connections=300
+      --innodb-buffer-pool-size=512M
+      --innodb-log-file-size=256M
+      --innodb-flush-log-at-trx-commit=2
+      --sync-binlog=1
+      --slow-query-log=1
+      --slow-query-log-file=/var/lib/mysql/slow-query.log
+      --long-query-time=0.5
+      --server-id=2
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --binlog-row-image=FULL
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2g
+        reservations:
+          cpus: '1'
+          memory: 1g
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13307", "-u", "root", "-pXhs@2026#MySQL"]
       interval: 30s
@@ -65,11 +108,12 @@ services:
     volumes:
       - mysql-content-data:/var/lib/mysql
       - ./sql/mysql-content-init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./sql/init-replication-user-master.sql:/docker-entrypoint-initdb.d/02-replication-user.sql
     restart: unless-stopped
 
   # ==========================================
   # MySQL-Order — 端口 13308
-  # 订单(4分片库) + 支付，读高写更高，完全隔离
+  # 承载：order（4 分片库）+ payment + 订单号映射表
   # ==========================================
   mysql-order:
     image: mysql:8.0
@@ -84,6 +128,21 @@ services:
       --collation-server=utf8mb4_unicode_ci
       --default-authentication-plugin=mysql_native_password
       --max-connections=500
+      --innodb-buffer-pool-size=1G
+      --innodb-log-file-size=512M
+      --innodb-flush-log-at-trx-commit=1
+      --sync-binlog=1
+      --slow-query-log=1
+      --slow-query-log-file=/var/lib/mysql/slow-query.log
+      --long-query-time=0.5
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4g
+        reservations:
+          cpus: '2'
+          memory: 2g
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13308", "-u", "root", "-pXhs@2026#MySQL"]
       interval: 30s
@@ -102,7 +161,7 @@ services:
 
   # ==========================================
   # MySQL-Inventory — 端口 13309
-  # 库存独立：最高写争用（行锁），单独部署防止拖垮其他库
+  # 库存独立部署：最高写争用（行锁），单独隔离
   # ==========================================
   mysql-inventory:
     image: mysql:8.0
@@ -117,6 +176,21 @@ services:
       --collation-server=utf8mb4_unicode_ci
       --default-authentication-plugin=mysql_native_password
       --max-connections=200
+      --innodb-buffer-pool-size=512M
+      --innodb-log-file-size=256M
+      --innodb-flush-log-at-trx-commit=1
+      --sync-binlog=1
+      --slow-query-log=1
+      --slow-query-log-file=/var/lib/mysql/slow-query.log
+      --long-query-time=0.2
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2g
+        reservations:
+          cpus: '1'
+          memory: 1g
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13309", "-u", "root", "-pXhs@2026#MySQL"]
       interval: 30s
@@ -134,13 +208,95 @@ services:
     restart: unless-stopped
 
   # ==========================================
-  # Redis 7 — 端口 16379
+  # Redis — 3 实例分离 + 3 Sentinel 哨兵
+  # 端口规划：
+  #   16379 — 主 Redis（Spring Boot 默认连接，allkeys-lru）
+  #   16380 — Cache Redis（缓存数据，allkeys-lru）
+  #   16381 — Business Redis（核心业务数据，noeviction）
+  #   26379 — Sentinel-1
+  #   26380 — Sentinel-2
+  #   26381 — Sentinel-3
   # ==========================================
+
+  # Business Redis — 端口 16381，noeviction（保护核心业务数据不丢失）
+  redis-business:
+    image: redis:7-alpine
+    container_name: my-xhs-redis-business
+    network_mode: host
+    command: >
+      redis-server
+      --port 16381
+      --bind 0.0.0.0
+      --requirepass Xhs@2026#Redis
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 512mb
+      --maxmemory-policy noeviction
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "16381", "-a", "Xhs@2026#Redis", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - redis-business-data:/data
+    restart: unless-stopped
+
+  # Cache Redis — 端口 16380，allkeys-lru（缓存数据可丢弃）
+  redis-cache:
+    image: redis:7-alpine
+    container_name: my-xhs-redis-cache
+    network_mode: host
+    command: >
+      redis-server
+      --port 16380
+      --bind 0.0.0.0
+      --requirepass Xhs@2026#Redis
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "16380", "-a", "Xhs@2026#Redis", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - redis-cache-data:/data
+    restart: unless-stopped
+
+  # 主 Redis（Spring Boot 默认连接）— 端口 16379，allkeys-lru
   redis:
     image: redis:7-alpine
     container_name: my-xhs-redis
     network_mode: host
-    command: redis-server --port 16379 --bind 0.0.0.0 --requirepass Xhs@2026#Redis --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: >
+      redis-server
+      --port 16379
+      --bind 0.0.0.0
+      --requirepass Xhs@2026#Redis
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
     healthcheck:
       test: ["CMD", "redis-cli", "-p", "16379", "-a", "Xhs@2026#Redis", "ping"]
       interval: 15s
@@ -155,6 +311,47 @@ services:
       - redis-data:/data
     restart: unless-stopped
 
+  # Redis Sentinel × 3（哨兵模式 — 自动故障转移）
+  # quorum=2：至少 2 个 Sentinel 认为主节点下线才触发故障转移
+  redis-sentinel-1:
+    image: redis:7-alpine
+    container_name: my-xhs-redis-sentinel-1
+    network_mode: host
+    command: redis-sentinel /etc/redis/sentinel.conf
+    volumes:
+      - ./config/redis/sentinel-1.conf:/etc/redis/sentinel.conf
+    depends_on:
+      - redis
+      - redis-cache
+      - redis-business
+    restart: unless-stopped
+
+  redis-sentinel-2:
+    image: redis:7-alpine
+    container_name: my-xhs-redis-sentinel-2
+    network_mode: host
+    command: redis-sentinel /etc/redis/sentinel.conf
+    volumes:
+      - ./config/redis/sentinel-2.conf:/etc/redis/sentinel.conf
+    depends_on:
+      - redis
+      - redis-cache
+      - redis-business
+    restart: unless-stopped
+
+  redis-sentinel-3:
+    image: redis:7-alpine
+    container_name: my-xhs-redis-sentinel-3
+    network_mode: host
+    command: redis-sentinel /etc/redis/sentinel.conf
+    volumes:
+      - ./config/redis/sentinel-3.conf:/etc/redis/sentinel.conf
+    depends_on:
+      - redis
+      - redis-cache
+      - redis-business
+    restart: unless-stopped
+
   # ==========================================
   # Sentinel Dashboard 1.8.8 — 端口 18082
   # ==========================================
@@ -165,7 +362,6 @@ services:
     environment:
       SERVER_PORT: 18082
     restart: unless-stopped
-
 
   # ==========================================
   # Nacos 2.3 — 端口 18848/18849/18850
@@ -186,12 +382,13 @@ services:
       MYSQL_SERVICE_PASSWORD: Xhs@2026#MySQL
       JVM_XMS: 256m
       JVM_XMX: 512m
+      JVM_EXTRA_OPTS: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0 -XX:MaxMetaspaceSize=256m"
     depends_on:
       - mysql-user
     restart: unless-stopped
 
   # ==========================================
-  # RocketMQ NameServer — 端口 9876
+  # RocketMQ NameServer × 2（高可用）
   # ==========================================
   rocketmq-namesrv:
     image: apache/rocketmq:5.1.4
@@ -199,7 +396,21 @@ services:
     network_mode: host
     command: sh mqnamesrv
     environment:
-      JAVA_OPT_EXT: "-server -Xms256m -Xmx256m"
+      JAVA_OPT_EXT: "-server -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+
+  rocketmq-namesrv-2:
+    image: apache/rocketmq:5.1.4
+    container_name: my-xhs-mq-namesrv-2
+    network_mode: host
+    command: sh mqnamesrv
+    environment:
+      JAVA_OPT_EXT: "-server -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
     logging:
       driver: json-file
       options:
@@ -208,15 +419,15 @@ services:
     restart: unless-stopped
 
   # ==========================================
-  # RocketMQ Broker — 端口 11911
+  # RocketMQ Broker-Master — 端口 11911
   # ==========================================
   rocketmq-broker:
     image: apache/rocketmq:5.1.4
     container_name: my-xhs-mq-broker
     network_mode: host
-    command: sh mqbroker -n 127.0.0.1:9876 -c /home/rocketmq/rocketmq-5.1.4/conf/broker.conf
+    command: sh mqbroker -n 127.0.0.1:9876;127.0.0.1:9877 -c /home/rocketmq/rocketmq-5.1.4/conf/broker.conf
     environment:
-      JAVA_OPT_EXT: "-server -Xms512m -Xmx512m"
+      JAVA_OPT_EXT: "-server -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
     healthcheck:
       test: ["CMD-SHELL", "curl -s http://127.0.0.1:11911 || exit 1"]
       interval: 30s
@@ -234,6 +445,31 @@ services:
       - mq-store:/home/rocketmq/store
     depends_on:
       - rocketmq-namesrv
+      - rocketmq-namesrv-2
+    restart: unless-stopped
+
+  # ==========================================
+  # RocketMQ Broker-Slave — 端口 11912
+  # ==========================================
+  rocketmq-broker-slave:
+    image: apache/rocketmq:5.1.4
+    container_name: my-xhs-mq-broker-slave
+    network_mode: host
+    command: sh mqbroker -n 127.0.0.1:9876;127.0.0.1:9877 -c /home/rocketmq/rocketmq-5.1.4/conf/broker-slave.conf
+    environment:
+      JAVA_OPT_EXT: "-server -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - ./config/rocketmq/broker-slave.conf:/home/rocketmq/rocketmq-5.1.4/conf/broker-slave.conf
+      - mq-logs-slave:/home/rocketmq/logs
+      - mq-store-slave:/home/rocketmq/store
+    depends_on:
+      - rocketmq-namesrv
+      - rocketmq-namesrv-2
     restart: unless-stopped
 
   # ==========================================
@@ -250,7 +486,7 @@ services:
       - ELASTIC_PASSWORD=Xhs@2026#Elastic
       - http.port=19200
       - transport.port=19300
-      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - ES_JAVA_OPTS=-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0 -XX:MaxMetaspaceSize=256m
       - cluster.name=my-xhs-es
       - node.name=es-node-1
     healthcheck:
@@ -270,10 +506,42 @@ services:
     restart: unless-stopped
 
   # ==========================================
-  # Canal 1.1.7 — MySQL Binlog → RocketMQ → ES
-  # note_instance 读 mysql-content:13307
-  # product_instance 读 mysql-content:13307
-  # inventory_instance 读 mysql-inventory:13309
+  # Logstash 8.12.2 — 日志聚合管道，采集 JSON 日志 → ES
+  # ==========================================
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.12.2
+    container_name: myxhs-logstash
+    network_mode: host
+    environment:
+      - XPACK_MONITORING_ENABLED=false
+    volumes:
+      - ./config/logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
+      - ./logs:/logs:ro
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+
+  # ==========================================
+  # Kibana 8.12.2 — 日志可视化，端口 15601
+  # ==========================================
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.12.2
+    container_name: myxhs-kibana
+    network_mode: host
+    environment:
+      - ELASTICSEARCH_HOSTS=http://localhost:19200
+      - ELASTICSEARCH_USERNAME=elastic
+      - ELASTICSEARCH_PASSWORD=Xhs@2026#Elastic
+      - SERVER_PORT=15601
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+
+  # ==========================================
+  # Canal 1.1.7 — MySQL Binlog → RocketMQ → ES/Redis
+  # note_instance: mysql-content:13307 → RocketMQ → ES note_index
+  # product_instance: mysql-content:13307 → RocketMQ → ES product_index
+  # inventory_instance: mysql-inventory:13309 → RocketMQ → Redis 缓存失效
   # ==========================================
   canal:
     image: canal/canal-server:v1.1.7
@@ -388,8 +656,12 @@ volumes:
   mysql-order-data:
   mysql-inventory-data:
   redis-data:
+  redis-cache-data:
+  redis-business-data:
   mq-logs:
   mq-store:
+  mq-logs-slave:
+  mq-store-slave:
   es-data:
   es-plugins:
   prometheus-data:
