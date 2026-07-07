@@ -114,7 +114,7 @@ spring:
       host: 21.91.124.110
       port: 16379
       # 【Nacos 配置】Redis 密码已迁移至 Nacos Config（my-xhs-redis.yaml），本地值为 fallback
-      password: "Xhs@2026#Redis"
+      password: ${spring.data.redis.password:"Xhs@2026#Redis"}
       # Sentinel 高可用配置（取消注释启用 Sentinel 模式，自动覆盖 host:port）
       # sentinel:
       #   master: myMaster
