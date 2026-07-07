@@ -68,6 +68,9 @@ public class NoteSearchService extends AbstractSearchService {
         int size = normalizeSize(request.getSize(), defaultPageSize, maxPageSize);
         long startTime = System.currentTimeMillis();
 
+        // 记录搜索次数
+        businessMetrics.recordFeedPush("note_search");
+
         try {
             // 记录搜索历史（异步，不影响搜索性能）
             if (userId != null && request.getKeyword() != null && !request.getKeyword().isBlank()) {

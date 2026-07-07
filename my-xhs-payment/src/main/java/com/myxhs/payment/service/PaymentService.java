@@ -139,6 +139,9 @@ public class PaymentService {
         String statusKey = "payment:status:" + orderId;
         Long paymentRecordId = null;
 
+        // 记录支付尝试
+        businessMetrics.recordPaymentCallback("attempt");
+
         // 1. 幂等校验：同一订单不能重复发起支付
         Boolean setSuccess = redisTemplate.opsForValue()
                 .setIfAbsent(payingKey, String.valueOf(userId), PAYING_KEY_TTL);
@@ -195,6 +198,7 @@ public class PaymentService {
 
         } catch (BizException e) {
             // 业务异常：清理 SETNX 锁 + 支付状态缓存，DB 记录由独立补偿逻辑处理
+            businessMetrics.recordPaymentCallback("fail");
             redisTemplate.delete(payingKey);
             redisTemplate.delete(statusKey);
             // 删除已插入的支付记录（避免脏数据残留）
@@ -208,6 +212,7 @@ public class PaymentService {
             throw e;
         } catch (Exception e) {
             // 非预期异常：同样清理 Redis 和 DB 记录
+            businessMetrics.recordPaymentCallback("fail");
             log.error("[支付] 创建支付单异常: orderId={}, userId={}", orderId, userId, e);
             redisTemplate.delete(payingKey);
             redisTemplate.delete(statusKey);

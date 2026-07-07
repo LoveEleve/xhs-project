@@ -214,7 +214,7 @@ spring:
       host: 21.91.124.110
       port: 16379
       # 【Nacos 配置】Redis 密码已迁移至 Nacos Config（my-xhs-redis.yaml），本地值为 fallback
-      password: "Xhs@2026#Redis"
+      password: ${spring.data.redis.password:"Xhs@2026#Redis"}
       cache:
         port: 16380  # Cache Redis (allkeys-lru)
       business:
@@ -238,10 +238,10 @@ gateway:
   auth:
     # JWT 签名密钥（必须与 my-xhs-user 的 jwt.secret 保持一致）
     # 优先从 Nacos 读取，本地值为 fallback
-    secret: "MyXhs@2026#JwtSecretKey!ForTokenSign"
+    secret: ${gateway.auth.secret:myxhs-gateway-secret-key-2024}
     # HMAC-SHA256 签名密钥（用于防篡改+防重放校验，与 JWT 密钥分离）
     # 优先从 Nacos 读取，本地值为 fallback
-    hmac-secret: "MyXhs@2026#HmacSecretKey!ForSign"
+    hmac-secret: ${gateway.auth.hmac-secret:myxhs-hmac-secret-key-2024}
     # 白名单路径（不需要鉴权，支持 Ant 风格匹配）
     white-list:
       # ===== 认证相关（注册/登录/验证码/Token刷新/注销） =====
