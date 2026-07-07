@@ -1,11 +1,11 @@
 package com.myxhs.inventory.dto.event;
 
+import com.myxhs.common.event.AbstractDomainEvent;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
-
-import java.io.Serializable;
 
 /**
  * 库存扣减事件（MQ 异步扣 DB）
@@ -17,9 +17,8 @@ import java.io.Serializable;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class InventoryDeductEvent implements Serializable {
-
-    private static final long serialVersionUID = 1L;
+@EqualsAndHashCode(callSuper = false)
+public class InventoryDeductEvent extends AbstractDomainEvent<InventoryDeductEvent> {
 
     /** 订单ID */
     private Long orderId;
@@ -32,4 +31,19 @@ public class InventoryDeductEvent implements Serializable {
 
     /** 操作类型：PRE_DEDUCT / CONFIRM / RELEASE */
     private String action;
+
+    @Override
+    public String getEventType() {
+        return "INVENTORY_DEDUCT";
+    }
+
+    @Override
+    public String getSource() {
+        return "my-xhs-inventory";
+    }
+
+    @Override
+    public InventoryDeductEvent getPayload() {
+        return this;
+    }
 }

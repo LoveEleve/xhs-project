@@ -166,7 +166,7 @@ public class FavoriteService {
     private void sendFavoriteEvent(Long userId, Long noteId, String action, long timestamp) {
         try {
             FavoriteEvent event = FavoriteEvent.builder()
-                    .userId(userId).noteId(noteId).action(action).timestamp(timestamp)
+                    .userId(userId).noteId(noteId).action(action).actionTime(timestamp)
                     .build();
             String payload = objectMapper.writeValueAsString(event);
             rocketMQTemplate.asyncSend(

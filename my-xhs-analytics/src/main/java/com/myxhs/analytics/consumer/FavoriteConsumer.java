@@ -53,7 +53,7 @@ public class FavoriteConsumer implements RocketMQListener<MessageExt> {
             favorite.setUserId(event.getUserId());
             favorite.setNoteId(event.getNoteId());
             favorite.setCreatedAt(LocalDateTime.ofInstant(
-                    Instant.ofEpochMilli(event.getTimestamp()), ZoneId.systemDefault()));
+                    Instant.ofEpochMilli(event.getActionTime()), ZoneId.systemDefault()));
 
             try {
                 favoriteMapper.insert(favorite);

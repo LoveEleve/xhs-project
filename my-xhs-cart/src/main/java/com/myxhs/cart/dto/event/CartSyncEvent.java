@@ -1,11 +1,11 @@
 package com.myxhs.cart.dto.event;
 
+import com.myxhs.common.event.AbstractDomainEvent;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
-
-import java.io.Serializable;
 
 /**
  * 购物车同步事件（MQ 异步持久化到 MySQL）
@@ -14,9 +14,8 @@ import java.io.Serializable;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class CartSyncEvent implements Serializable {
-
-    private static final long serialVersionUID = 1L;
+@EqualsAndHashCode(callSuper = false)
+public class CartSyncEvent extends AbstractDomainEvent<CartSyncEvent> {
 
     /** 用户ID */
     private Long userId;
@@ -32,4 +31,19 @@ public class CartSyncEvent implements Serializable {
 
     /** 操作类型：ADD / UPDATE / DELETE / CHECK */
     private String action;
+
+    @Override
+    public String getEventType() {
+        return "CART_SYNC";
+    }
+
+    @Override
+    public String getSource() {
+        return "my-xhs-cart";
+    }
+
+    @Override
+    public CartSyncEvent getPayload() {
+        return this;
+    }
 }

@@ -1,8 +1,10 @@
 package com.myxhs.analytics.dto.event;
 
+import com.myxhs.common.event.AbstractDomainEvent;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
 /**
@@ -15,7 +17,8 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class LikeEvent {
+@EqualsAndHashCode(callSuper = false)
+public class LikeEvent extends AbstractDomainEvent<LikeEvent> {
 
     /** 用户ID */
     private Long userId;
@@ -28,4 +31,19 @@ public class LikeEvent {
 
     /** 操作类型：LIKE / UNLIKE */
     private String action;
+
+    @Override
+    public String getEventType() {
+        return "LIKE_EVENT";
+    }
+
+    @Override
+    public String getSource() {
+        return "my-xhs-analytics";
+    }
+
+    @Override
+    public LikeEvent getPayload() {
+        return this;
+    }
 }

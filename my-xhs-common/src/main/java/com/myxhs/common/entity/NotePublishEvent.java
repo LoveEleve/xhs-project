@@ -1,7 +1,9 @@
 package com.myxhs.common.entity;
 
+import com.myxhs.common.event.AbstractDomainEvent;
 import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
 /**
@@ -14,7 +16,8 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class NotePublishEvent {
+@EqualsAndHashCode(callSuper = false)
+public class NotePublishEvent extends AbstractDomainEvent<NotePublishEvent> {
 
     /** 笔记ID */
     private Long noteId;
@@ -27,4 +30,19 @@ public class NotePublishEvent {
 
     /** 笔记类型：0-图文 1-视频 */
     private String noteType;
+
+    @Override
+    public String getEventType() {
+        return "NOTE_PUBLISHED";
+    }
+
+    @Override
+    public String getSource() {
+        return "my-xhs-content";
+    }
+
+    @Override
+    public NotePublishEvent getPayload() {
+        return this;
+    }
 }

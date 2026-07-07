@@ -1,8 +1,10 @@
 package com.myxhs.analytics.dto.event;
 
+import com.myxhs.common.event.AbstractDomainEvent;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
 /**
@@ -15,7 +17,8 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class FavoriteEvent {
+@EqualsAndHashCode(callSuper = false)
+public class FavoriteEvent extends AbstractDomainEvent<FavoriteEvent> {
 
     /** 用户ID */
     private Long userId;
@@ -27,5 +30,20 @@ public class FavoriteEvent {
     private String action;
 
     /** 收藏时间戳（毫秒） */
-    private Long timestamp;
+    private Long actionTime;
+
+    @Override
+    public String getEventType() {
+        return "FAVORITE_EVENT";
+    }
+
+    @Override
+    public String getSource() {
+        return "my-xhs-analytics";
+    }
+
+    @Override
+    public FavoriteEvent getPayload() {
+        return this;
+    }
 }

@@ -1,8 +1,10 @@
 package com.myxhs.analytics.dto.event;
 
+import com.myxhs.common.event.AbstractDomainEvent;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
 /**
@@ -15,7 +17,8 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class FollowEvent {
+@EqualsAndHashCode(callSuper = false)
+public class FollowEvent extends AbstractDomainEvent<FollowEvent> {
 
     /** 用户ID（关注者） */
     private Long userId;
@@ -27,5 +30,20 @@ public class FollowEvent {
     private String action;
 
     /** 关注时间戳（毫秒） */
-    private Long timestamp;
+    private Long actionTime;
+
+    @Override
+    public String getEventType() {
+        return "FOLLOW_EVENT";
+    }
+
+    @Override
+    public String getSource() {
+        return "my-xhs-analytics";
+    }
+
+    @Override
+    public FollowEvent getPayload() {
+        return this;
+    }
 }

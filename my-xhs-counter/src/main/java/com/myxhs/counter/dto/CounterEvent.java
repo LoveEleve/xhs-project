@@ -1,8 +1,10 @@
 package com.myxhs.counter.dto;
 
+import com.myxhs.common.event.AbstractDomainEvent;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
 /**
@@ -16,7 +18,8 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class CounterEvent {
+@EqualsAndHashCode(callSuper = false)
+public class CounterEvent extends AbstractDomainEvent<CounterEvent> {
 
     /** 目标类型：1-笔记 2-用户 */
     private Integer targetType;
@@ -29,4 +32,19 @@ public class CounterEvent {
 
     /** 增量：+1 或 -1 */
     private Long delta;
+
+    @Override
+    public String getEventType() {
+        return "COUNTER_CHANGED";
+    }
+
+    @Override
+    public String getSource() {
+        return "my-xhs-counter";
+    }
+
+    @Override
+    public CounterEvent getPayload() {
+        return this;
+    }
 }

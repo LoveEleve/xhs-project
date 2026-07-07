@@ -52,7 +52,7 @@ public class FollowConsumer implements RocketMQListener<MessageExt> {
             follow.setUserId(event.getUserId());
             follow.setFollowUserId(event.getTargetUserId());
             follow.setCreatedAt(LocalDateTime.ofInstant(
-                    Instant.ofEpochMilli(event.getTimestamp()), ZoneId.systemDefault()));
+                    Instant.ofEpochMilli(event.getActionTime()), ZoneId.systemDefault()));
 
             try {
                 followMapper.insert(follow);
