@@ -1,5 +1,6 @@
 package com.myxhs.order.job;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.myxhs.order.entity.LocalMessage;
 import com.myxhs.order.mapper.LocalMessageMapper;
 import com.myxhs.order.service.OrderService;
@@ -13,14 +14,15 @@ import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 本地消息表补发定时任务（XXL-Job 分布式调度）
  * <p>
- * 扫描 status=0（待处理）或 status=2（失败）的消息，重新发送到 MQ。
- * 重试 3 次后标记为死信（status=3），需人工介入。
+ * 扫描 status=0（待处理）或 status=2（失败）且到达重试时间的消息，重新发送到 MQ。
+ * 指数退避重试：30s, 60s, 120s, 240s, 480s（最多 5 次），耗尽后标记为死信（status=3）。
  * </p>
  * <p>
  * 本地消息表的价值：
@@ -40,6 +42,7 @@ public class LocalMessageRetryJob {
     private final RocketMQTemplate rocketMQTemplate;
 
     private static final int BATCH_SIZE = 50;
+    private static final int MAX_RETRIES = 5;
 
     /** 死信累计数（Prometheus 可通过 JMX/Micrometer 暴露） */
     private final AtomicLong deadLetterCount = new AtomicLong(0);
@@ -70,10 +73,17 @@ public class LocalMessageRetryJob {
     }
 
     /**
-     * 补发逻辑：扫描待处理消息 → 重新发送到 MQ → 更新状态
+     * 补发逻辑：扫描到达重试时间的待处理消息 → 重新发送到 MQ → 更新状态
      */
     private void doRetry() {
-        List<LocalMessage> messages = localMessageMapper.selectPendingMessages(BATCH_SIZE);
+        // 只扫描到达重试时间的消息
+        List<LocalMessage> messages = localMessageMapper.selectList(
+            new LambdaQueryWrapper<LocalMessage>()
+                .in(LocalMessage::getStatus, 0, 2)
+                .le(LocalMessage::getNextRetryTime, LocalDateTime.now())
+                .last("LIMIT " + BATCH_SIZE)
+        );
+
         if (messages.isEmpty()) {
             return;
         }
@@ -113,24 +123,29 @@ public class LocalMessageRetryJob {
     }
 
     /**
-     * 处理重试失败：增加重试次数，超过 3 次标记为死信
+     * 指数退避重试：30s, 60s, 120s, 240s, 480s（最多 5 次），耗尽后标记死信
      * <p>
      * 死信指标（deadLetterCount）供 Prometheus 采集，触发告警规则：
      * 当 deadLetterCount > 0 时，需人工排查补偿。
      * </p>
      */
     private void handleRetryFailure(LocalMessage msg) {
-        if (msg.getRetryCount() >= 2) {
-            localMessageMapper.markDead(msg.getId());
+        int retryCount = msg.getRetryCount() + 1;
+        if (retryCount >= MAX_RETRIES) {
+            msg.setStatus(3); // 死信
             long currentDeadCount = deadLetterCount.incrementAndGet();
-            // 死信告警：包含完整上下文信息，方便运维排查
-            log.error("[本地消息] ⚠️ 死信标记(3次重试均失败) ⚠️ " +
-                            "id={}, transactionId={}, operationType={}, deadCount={}, " +
-                            "需人工介入！请检查下游服务是否正常",
+            log.error("[本地消息] 重试耗尽，标记死信: msgId={}, transactionId={}, operationType={}, deadCount={}, 需人工介入！请检查下游服务是否正常",
                     msg.getId(), msg.getTransactionId(), msg.getOperationType(), currentDeadCount);
         } else {
-            localMessageMapper.markFailed(msg.getId());
+            // 指数退避: 30s * 2^(retryCount-1)
+            long delaySeconds = 30L * (1L << (retryCount - 1));
+            msg.setNextRetryTime(LocalDateTime.now().plusSeconds(delaySeconds));
+            msg.setRetryCount(retryCount);
+            msg.setStatus(2); // 失败
+            log.info("[本地消息] 指数退避重试: msgId={}, retry={}/{}, nextRetry={}s",
+                msg.getId(), retryCount, MAX_RETRIES, delaySeconds);
         }
+        localMessageMapper.updateById(msg);
     }
 
     /**
