@@ -30,6 +30,7 @@
         <module>my-xhs-notification</module>
         <module>my-xhs-payment</module>
         <module>my-xhs-test</module>
+        <module>my-xhs-benchmark</module>
 
         <!-- API 子模块 -->
         <module>my-xhs-user/my-xhs-user-api</module>
@@ -94,6 +95,9 @@
         
         <!-- 测试（保留供后续测试阶段使用） -->
         <testcontainers.version>1.19.8</testcontainers.version>
+        
+        <!-- JMH 基准测试 -->
+        <jmh.version>1.37</jmh.version>
         
         <!-- 其他 -->
         <kaptcha.version>1.1.0</kaptcha.version>
@@ -436,6 +440,19 @@
                 <groupId>org.testcontainers</groupId>
                 <artifactId>junit-jupiter</artifactId>
                 <version>${testcontainers.version}</version>
+                <scope>test</scope>
+            </dependency>
+            
+            <!-- JMH Benchmark -->
+            <dependency>
+                <groupId>org.openjdk.jmh</groupId>
+                <artifactId>jmh-core</artifactId>
+                <version>${jmh.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.openjdk.jmh</groupId>
+                <artifactId>jmh-generator-annprocess</artifactId>
+                <version>${jmh.version}</version>
                 <scope>test</scope>
             </dependency>
         </dependencies>
