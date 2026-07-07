@@ -54,6 +54,7 @@ public class OrderService {
     private final OrderSnapshotMapper snapshotMapper;
     private final OrderNoMappingRepository orderNoMappingRepository;
     private final OrderTransactionService transactionService; // 独立事务服务
+    private final OrderEventService orderEventService; // Event Sourcing
     private final RocketMQTemplate rocketMQTemplate;
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
@@ -175,10 +176,24 @@ public class OrderService {
             // 6. 发送延时消息（30 分钟后超时关单）—— 失败不影响下单
             sendCloseDelayMessage(context.getOrderId(), orderNo, userId);
 
-            // 7. 记录订单快照 —— 失败不影响下单
+            // 7. 记录订单创建事件（Event Sourcing）—— 失败不影响下单
+            try {
+                Order order = orderMapper.selectOne(
+                        new LambdaQueryWrapper<Order>()
+                                .eq(Order::getUserId, userId)
+                                .eq(Order::getId, context.getOrderId()));
+                if (order != null) {
+                    orderEventService.appendEvent(order, OrderEventService.EVENT_CREATED, 
+                            Map.of("orderNo", orderNo, "source", "APP"));
+                }
+            } catch (Exception e) {
+                log.error("[订单] 事件记录失败: orderId={}", context.getOrderId(), e);
+            }
+
+            // 8. 记录订单快照 —— 失败不影响下单
             takeSnapshot(context.getOrderId(), userId, "CREATED");
 
-            // 8. 异步写入订单号映射表（解决非分片键查询路由问题）
+            // 9. 异步写入订单号映射表（解决非分片键查询路由问题）
             saveOrderNoMapping(orderNo, userId, context.getOrderId());
 
             log.info("[订单] 创建成功(事务消息): userId={}, orderNo={}, payAmount={}",
@@ -305,10 +320,9 @@ public class OrderService {
             throw new BizException(ResultCode.ORDER_STATUS_ERROR, "只能取消待付款的订单");
         }
 
-        int affected = orderMapper.cancelOrder(orderId, userId, 4, LocalDateTime.now());
-        if (affected == 0) {
-            throw new BizException(ResultCode.ORDER_STATUS_ERROR, "订单状态已变更");
-        }
+        // Event Sourcing: 追加取消事件并更新状态
+        orderEventService.appendEvent(order, OrderEventService.EVENT_CANCELLED, 
+                Map.of("cancelReason", "用户主动取消", "cancelTime", LocalDateTime.now().toString()));
 
         // 联动释放库存 + 退还优惠券（并行执行，互不依赖，带超时控制）
         CompletableFuture<Void> releaseFuture = CompletableFuture.runAsync(() -> releaseInventory(orderId, userId));
@@ -426,14 +440,12 @@ public class OrderService {
             throw new BizException(ResultCode.ORDER_STATUS_ERROR, "只能确认已发货的订单");
         }
 
-        int affected = orderMapper.markCompleted(orderId, userId, LocalDateTime.now());
-        if (affected == 0) {
-            throw new BizException(ResultCode.ORDER_STATUS_ERROR, "订单状态已变更");
-        }
+        // Event Sourcing: 追加完成事件并更新状态
+        orderEventService.appendEvent(order, OrderEventService.EVENT_COMPLETED,
+                Map.of("completeTime", LocalDateTime.now().toString()));
 
         takeSnapshot(orderId, userId, "COMPLETED");
         stringRedisTemplate.delete("order:info:" + orderId);
-        log.info("[订单] 确认收货: userId={}, orderId={}", userId, orderId);
         log.info("[订单] 确认收货: userId={}, orderId={}", userId, orderId);
     }
 
@@ -464,11 +476,23 @@ public class OrderService {
             userId = mapping.getUserId();
         }
 
-        int affected = orderMapper.markPaid(orderId, userId, LocalDateTime.now());
-        if (affected == 0) {
+        // 查询订单（需要 userId + orderId 联合查询）
+        Order order = orderMapper.selectOne(
+                new LambdaQueryWrapper<Order>()
+                        .eq(Order::getUserId, userId)
+                        .eq(Order::getId, orderId));
+        if (order == null) {
+            log.warn("[订单] 支付回调但订单不存在: orderId={}", orderId);
+            return false;
+        }
+        if (order.getStatus() != 0) {
             log.warn("[订单] 支付回调但订单状态不是待付款: orderId={}", orderId);
             return false; // 订单已取消或已支付
         }
+
+        // Event Sourcing: 追加支付事件并更新状态
+        orderEventService.appendEvent(order, OrderEventService.EVENT_PAID,
+                Map.of("paidTime", LocalDateTime.now().toString()));
 
         takeSnapshot(orderId, userId, "PAID");
         stringRedisTemplate.delete("order:info:" + orderId);
@@ -495,10 +519,9 @@ public class OrderService {
                 return; // 幂等
             }
 
-            int affected = orderMapper.cancelOrder(orderId, userId, 4, LocalDateTime.now());
-            if (affected == 0) {
-                return; // 并发：已被支付或取消
-            }
+            // Event Sourcing: 追加超时取消事件并更新状态
+            orderEventService.appendEvent(order, OrderEventService.EVENT_TIMEOUT_CANCELLED,
+                    Map.of("cancelReason", "超时未支付", "cancelTime", LocalDateTime.now().toString()));
 
             // 联动释放库存（与 cancelOrder 复用同一逻辑）
             releaseInventory(orderId, userId);
@@ -724,14 +747,14 @@ public class OrderService {
             log.warn("[订单] 退款回调但订单不存在: orderId={}, userId={}", orderId, userId);
             return;
         }
-
-        // 3. 乐观锁更新订单状态为"已退款(5)"
-        // 使用 OrderMapper.markRefunded（乐观锁 WHERE status=1 已支付）
-        int affected = orderMapper.markRefunded(orderId, userId);
-        if (affected == 0) {
+        if (order.getStatus() != 1) {
             log.warn("[订单] 退款回调但订单状态不是已支付: orderId={}", orderId);
             return;
         }
+
+        // 3. Event Sourcing: 追加退款事件并更新状态
+        orderEventService.appendEvent(order, OrderEventService.EVENT_REFUNDED,
+                Map.of("refundTime", LocalDateTime.now().toString()));
 
         // 4. 释放库存
         releaseInventory(orderId, userId);

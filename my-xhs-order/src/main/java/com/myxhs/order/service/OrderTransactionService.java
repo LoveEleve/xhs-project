@@ -32,6 +32,7 @@ public class OrderTransactionService {
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
     private final LocalMessageMapper localMessageMapper;
+    private final OrderEventService orderEventService;
     private final ObjectMapper objectMapper;
 
     /**
@@ -65,7 +66,10 @@ public class OrderTransactionService {
                 "\"address\":\"北京市朝阳区xxx路xxx号\"}");
         orderMapper.insert(order);
 
-        // 2. 创建订单明细
+        // 2. 记录 Event Sourcing 事件（与订单创建同事务）
+        orderEventService.appendEvent(order, OrderEventService.EVENT_CREATED, null);
+
+        // 3. 创建订单明细
         for (OrderCreateRequest.SkuItem skuItem : request.getSkuItems()) {
             OrderItem item = new OrderItem();
             item.setOrderId(order.getId());
