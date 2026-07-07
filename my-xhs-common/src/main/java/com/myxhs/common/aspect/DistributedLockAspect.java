@@ -1,17 +1,22 @@
 package com.myxhs.common.aspect;
 
 import com.myxhs.common.annotation.DistributedLock;
+import com.myxhs.common.annotation.DistributedLock.LockType;
 import com.myxhs.common.exception.BizException;
 import com.myxhs.common.response.ResultCode;
-import com.myxhs.common.spel.SpELParser;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
+import org.aspectj.lang.reflect.MethodSignature;
 import org.redisson.api.RLock;
+import org.redisson.api.RReadWriteLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.core.annotation.Order;
+import org.springframework.expression.ExpressionParser;
+import org.springframework.expression.spel.standard.SpelExpressionParser;
+import org.springframework.expression.spel.support.StandardEvaluationContext;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.TimeUnit;
@@ -19,7 +24,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * 分布式锁 AOP 切面
  * <p>
- * 基于 Redisson RLock，支持 Watchdog 自动续期。
+ * 基于 Redisson，支持互斥锁（MUTEX）、读写锁（READ/WRITE）和公平锁（FAIR）。
  * Watchdog 原理：leaseTime=-1 时启用，默认锁 30 秒，每 10 秒（leaseTime/3）自动续期。
  * </p>
  * <p>
@@ -38,60 +43,90 @@ import java.util.concurrent.TimeUnit;
 public class DistributedLockAspect {
 
     private final RedissonClient redissonClient;
+    private final ExpressionParser parser = new SpelExpressionParser();
 
     @Around("@annotation(distributedLock)")
     public Object around(ProceedingJoinPoint joinPoint, DistributedLock distributedLock) throws Throwable {
-        // 1. SpEL 解析 Key
-        String key = SpELParser.parse(distributedLock.key(), joinPoint);
-        String lockKey = distributedLock.prefix() + ":" + key;
+        String lockKey = getLockKey(joinPoint, distributedLock);
+        LockType lockType = distributedLock.lockType();
+        long waitTime = distributedLock.waitTime();
+        long leaseTime = distributedLock.leaseTime();
+        TimeUnit timeUnit = distributedLock.timeUnit();
 
-        // 2. 获取 Redisson RLock
-        RLock lock;
-        try {
-            lock = redissonClient.getLock(lockKey);
-        } catch (Exception e) {
-            // Redisson 连接失败，降级放行
-            log.error("[分布式锁] Redisson不可用，降级放行, key={}", lockKey, e);
-            return joinPoint.proceed();
-        }
+        RLock lock = getLock(lockKey, lockType);
+        boolean locked = false;
 
-        boolean acquired;
         try {
-            // leaseTime=-1 时启用 Watchdog 自动续期
-            if (distributedLock.leaseTime() == -1) {
-                acquired = lock.tryLock(distributedLock.waitTime(), TimeUnit.SECONDS);
+            if (leaseTime == -1) {
+                locked = lock.tryLock(waitTime, timeUnit);
             } else {
-                acquired = lock.tryLock(distributedLock.waitTime(),
-                        distributedLock.leaseTime(), TimeUnit.SECONDS);
+                locked = lock.tryLock(waitTime, leaseTime, timeUnit);
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new BizException(ResultCode.LOCK_ACQUIRE_FAIL, "获取锁被中断");
         } catch (Exception e) {
             // Redis 连接异常，降级放行
-            log.error("[分布式锁] Redis不可用，降级放行, key={}", lockKey, e);
-            return joinPoint.proceed();
+            log.error("[DistributedLock] Redis不可用，降级放行: key={}, type={}", lockKey, lockType, e);
+            try {
+                return joinPoint.proceed();
+            } catch (Exception ex) {
+                throw ex;
+            }
         }
 
-        if (!acquired) {
-            log.warn("[分布式锁] 获取锁失败, key={}, waitTime={}s", lockKey, distributedLock.waitTime());
+        if (!locked) {
+            log.warn("[DistributedLock] 获取锁失败: key={}, type={}, waitTime={}", lockKey, lockType, waitTime);
             throw new BizException(ResultCode.LOCK_ACQUIRE_FAIL, distributedLock.message());
         }
 
-        // 3. 执行业务方法，finally 释放锁
         try {
-            log.debug("[分布式锁] 获取锁成功, key={}", lockKey);
+            log.debug("[DistributedLock] 获取锁成功: key={}, type={}", lockKey, lockType);
             return joinPoint.proceed();
         } finally {
-            try {
-                if (lock.isHeldByCurrentThread()) {
+            if (locked && lock.isHeldByCurrentThread()) {
+                try {
                     lock.unlock();
-                    log.debug("[分布式锁] 释放锁成功, key={}", lockKey);
+                    log.debug("[DistributedLock] 释放锁: key={}, type={}", lockKey, lockType);
+                } catch (Exception e) {
+                    log.warn("[DistributedLock] 释放锁失败，由 Watchdog 兜底: key={}", lockKey, e);
                 }
-            } catch (Exception e) {
-                // 释放锁失败（Redis 连接断开等），Redisson Watchdog 会在 leaseTime 后自动过期
-                log.error("[分布式锁] 释放锁失败(将由Watchdog自动过期), key={}", lockKey, e);
             }
         }
+    }
+
+    /**
+     * 根据锁类型获取对应的 RLock
+     */
+    private RLock getLock(String lockKey, LockType lockType) {
+        switch (lockType) {
+            case READ:
+                RReadWriteLock rwLock = redissonClient.getReadWriteLock(lockKey);
+                return rwLock.readLock();
+            case WRITE:
+                RReadWriteLock rwLock2 = redissonClient.getReadWriteLock(lockKey);
+                return rwLock2.writeLock();
+            case FAIR:
+                return redissonClient.getFairLock(lockKey);
+            case MUTEX:
+            default:
+                return redissonClient.getLock(lockKey);
+        }
+    }
+
+    private String getLockKey(ProceedingJoinPoint joinPoint, DistributedLock distributedLock) {
+        MethodSignature signature = (MethodSignature) joinPoint.getSignature();
+        Object[] args = joinPoint.getArgs();
+        StandardEvaluationContext context = new StandardEvaluationContext();
+
+        String[] paramNames = signature.getParameterNames();
+        if (paramNames != null) {
+            for (int i = 0; i < paramNames.length; i++) {
+                context.setVariable(paramNames[i], args[i]);
+            }
+        }
+
+        String key = distributedLock.prefix() + ":" + parser.parseExpression(distributedLock.key()).getValue(context, String.class);
+        return key;
     }
 }
