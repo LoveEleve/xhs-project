@@ -5,6 +5,7 @@ import com.myxhs.common.shutdown.GracefulShutdownHook;
 import com.myxhs.counter.dto.CounterFlushDTO;
 import com.myxhs.counter.mapper.CounterMapper;
 import jakarta.annotation.PreDestroy;
+import jdk.internal.vm.annotation.Contended;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -35,6 +36,7 @@ import java.util.stream.Collectors;
  * 避免 flush 期间 add 写入的数据被 clear 丢失。
  * </p>
  */
+@Contended
 @Slf4j
 @Component
 @RequiredArgsConstructor

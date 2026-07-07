@@ -3,6 +3,7 @@ package com.myxhs.common.metrics;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import jdk.internal.vm.annotation.Contended;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.ConcurrentHashMap;
@@ -19,6 +20,7 @@ import java.util.concurrent.TimeUnit;
  * - Timer：耗时分布，适合记录操作延迟（下单耗时 P50/P90/P99）
  * - Gauge：可增可减，适合当前状态（热点 SKU 数、MQ 积压量）
  */
+@Contended
 @Component
 public class BusinessMetrics {
 
