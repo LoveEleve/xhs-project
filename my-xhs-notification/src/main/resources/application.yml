@@ -158,6 +158,7 @@ mybatis-plus:
 # Redisson 配置
 redisson:
   address: redis://21.91.124.110:16379
+  # 【Nacos 配置】Redisson 密码已迁移至 Nacos Config（my-xhs-redis.yaml），本地值为 fallback
   password: "Xhs@2026#Redis"
   cache:
     port: 16380  # Cache Redis (allkeys-lru)
