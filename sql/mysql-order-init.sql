@@ -122,6 +122,7 @@ CREATE TABLE IF NOT EXISTS t_local_message_0 (
     payload         TEXT          NOT NULL COMMENT '操作参数JSON',
     status          TINYINT       NOT NULL DEFAULT 0 COMMENT '状态：0-待处理 1-成功 2-失败 3-死信',
     retry_count     INT           NOT NULL DEFAULT 0 COMMENT '重试次数',
+    next_retry_time DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '下次重试时间',
     created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (id),

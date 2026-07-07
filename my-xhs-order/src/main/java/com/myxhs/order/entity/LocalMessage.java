@@ -43,6 +43,10 @@ public class LocalMessage implements Serializable {
     /** 重试次数 */
     private Integer retryCount;
 
+    /** 下次重试时间（指数退避） */
+    @TableField("next_retry_time")
+    private LocalDateTime nextRetryTime;
+
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }
