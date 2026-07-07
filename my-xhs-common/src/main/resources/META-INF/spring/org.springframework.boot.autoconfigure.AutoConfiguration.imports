@@ -27,4 +27,6 @@ com.myxhs.common.config.HttpCacheConfig
 com.myxhs.common.config.LettuceMetricsConfig
 com.myxhs.common.metrics.MyBatisMetricsAutoConfiguration
 com.myxhs.common.metrics.DlqMetrics
+com.myxhs.common.config.TransactionConfig
 com.myxhs.common.tcc.TccFenceService
+com.myxhs.common.config.TransactionConfig
