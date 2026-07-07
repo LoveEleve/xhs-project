@@ -164,6 +164,17 @@ logging:
     com.myxhs: info
     org.springframework.web: info
 
+# Dubbo Triple 配置（Consumer：作为 BFF 层聚合调用下游 Dubbo 服务）
+dubbo:
+  application:
+    name: ${spring.application.name}
+  registry:
+    address: nacos://21.91.124.110:18848?namespace=my-xhs
+  consumer:
+    check: false
+    timeout: 3000
+    retries: 0
+
 # XXL-Job 分布式调度配置
 xxl:
   job:
