@@ -56,7 +56,7 @@ public class HttpCacheConfig implements WebMvcConfigurer {
         // API GET 查询接口：缓存 10 秒，私有缓存，必须每次验证
         cacheInterceptor.addCacheMapping(
                 CacheControl.maxAge(10, TimeUnit.SECONDS).cachePrivate().mustRevalidate(),
-                "/api/**/get/**", "/api/**/query/**", "/api/**/list/**");
+                "/api/**");
 
         registry.addInterceptor(cacheInterceptor).addPathPatterns("/**");
     }

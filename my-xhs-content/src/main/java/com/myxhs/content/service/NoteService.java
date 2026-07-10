@@ -93,19 +93,22 @@ public class NoteService {
         businessMetrics.recordFeedPush("publish");
 
         // 4.【M2】写入本地消息表（与笔记入库同一事务，保证不丢消息）
+        LocalMessage localMsg = new LocalMessage();
+        localMsg.setTopic("FEED_TOPIC");
+        localMsg.setStatus(0); // 待发送
+        localMsg.setRetryCount(0);
+        localMsg.setCreatedAt(java.time.LocalDateTime.now());
+        localMessageMapper.insert(localMsg);
+
         NotePublishEvent event = new NotePublishEvent();
         event.setNoteId(note.getId());
         event.setAuthorId(userId);
         event.setPublishTime(System.currentTimeMillis());
         event.setNoteType(note.getNoteType() != null ? note.getNoteType().toString() : "0");
+        event.setLocalMsgId(localMsg.getId()); // 传递 localMsgId 用于推送进度跟踪
 
-        LocalMessage localMsg = new LocalMessage();
-        localMsg.setTopic("FEED_TOPIC");
         localMsg.setBody(toJson(event));
-        localMsg.setStatus(0); // 待发送
-        localMsg.setRetryCount(0);
-        localMsg.setCreatedAt(java.time.LocalDateTime.now());
-        localMessageMapper.insert(localMsg);
+        localMessageMapper.updateById(localMsg);
 
         final Long localMsgId = localMsg.getId();
 

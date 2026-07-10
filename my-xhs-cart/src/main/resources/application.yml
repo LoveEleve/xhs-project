@@ -19,6 +19,9 @@ server:
     enabled: true
 
 spring:
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
   application:
     name: my-xhs-cart
   # 排除不需要的自动装配，减少内存占用和启动时间
@@ -34,7 +37,7 @@ spring:
       enabled: true  # 读写分离开关
     # 写库（主库）
     master:
-      url: jdbc:mysql://21.91.124.110:13307/my_xhs_cart?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
+      url: jdbc:mysql://21.130.247.89:13307/my_xhs_cart?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true&autoReconnect=true&failOverReadOnly=false&connectTimeout=5000&socketTimeout=30000
       username: root
       password: "Xhs@2026#MySQL"
       driver-class-name: com.mysql.cj.jdbc.Driver
@@ -49,7 +52,7 @@ spring:
         validation-timeout: 3000
     # 读库（从库，指向 slave 实例）
     slave:
-      url: jdbc:mysql://21.91.124.110:13311/my_xhs_cart?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
+      url: jdbc:mysql://21.130.247.89:13311/my_xhs_cart?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true&autoReconnect=true&failOverReadOnly=false&connectTimeout=5000&socketTimeout=30000
       username: root
       password: "Xhs@2026#MySQL"
       driver-class-name: com.mysql.cj.jdbc.Driver
@@ -64,14 +67,11 @@ spring:
         validation-timeout: 3000
   data:
     redis:
-      host: 21.91.124.110
-      port: 16379
       # 【Nacos 配置】Redis 密码已迁移至 Nacos Config（my-xhs-redis.yaml），本地值为 fallback
-      password: ${spring.data.redis.password:"Xhs@2026#Redis"}
-      # Sentinel 高可用配置（取消注释启用 Sentinel 模式，自动覆盖 host:port）
-      # sentinel:
-      #   master: myMaster
-      #   nodes: 21.91.124.110:26379,21.91.124.110:26380,21.91.124.110:26381
+      password: "Xhs@2026#Redis"
+      sentinel:
+        master: mymaster
+        nodes: 21.130.247.89:26379,21.130.247.89:26380,21.130.247.89:26381
       cache:
         port: 16380  # Cache Redis (allkeys-lru)
       business:
@@ -86,24 +86,26 @@ spring:
     nacos:
       discovery:
         enabled: true
-        server-addr: 21.91.124.110:18848
+        server-addr: 21.130.247.89:18848
         namespace: my-xhs
         group: DEFAULT_GROUP
+        metadata:
+          zone: ${MYXHS_ZONE:defaultZone}
       config:
         enabled: true
-        server-addr: 21.91.124.110:18848
+        server-addr: 21.130.247.89:18848
         import-check:
           enabled: false
         file-extension: yaml
     sentinel:
       transport:
-        dashboard: 21.91.124.110:18082
+        dashboard: 21.130.247.89:18082
         port: 8729
       eager: true
       datasource:
         degrade:
           nacos:
-            server-addr: 21.91.124.110:18848
+            server-addr: 21.130.247.89:18848
             namespace: my-xhs
             group-id: SENTINEL_GROUP
             data-id: my-xhs-cart-degrade-rules
@@ -130,7 +132,7 @@ mybatis-plus:
 
 # RocketMQ 配置
 rocketmq:
-  name-server: 21.91.124.110:9876
+  name-server: 21.130.247.89:9876;21.130.247.89:9877
   producer:
     group: cart-producer-group
     send-message-timeout: 3000
@@ -168,24 +170,12 @@ logging:
     com.myxhs: info
     org.springframework.web: info
 
-# Dubbo Triple 配置（Provider + Consumer）
-dubbo:
-  application:
-    name: ${spring.application.name}
-  protocol:
-    name: tri
-    port: -1
-  registry:
-    address: nacos://21.91.124.110:18848?namespace=my-xhs
-  consumer:
-    check: false
-
 # XXL-Job 分布式调度配置
 xxl:
   job:
     enabled: true
     admin:
-      addresses: http://21.91.124.110:18080/xxl-job-admin
+      addresses: http://21.130.247.89:18080/xxl-job-admin
     accessToken: my-xhs-xxl-job-token-2026
     executor:
       port: 9993

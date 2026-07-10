@@ -12,10 +12,12 @@ import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -51,6 +53,13 @@ import java.util.Map;
 public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
 
     private final ElasticsearchClient esClient;
+    private final StringRedisTemplate stringRedisTemplate;
+
+    /**
+     * 追踪当前正在处理的 spuId，用于在 catch 块中记录失败的 docId 到 Redis。
+     * RocketMQ 消费者默认单线程消费，ThreadLocal 安全。
+     */
+    private final ThreadLocal<Long> currentSpuId = new ThreadLocal<>();
 
     @Value("${search.product.index-name:product_index}")
     private String productIndexName;
@@ -78,8 +87,18 @@ public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
 
         } catch (co.elastic.clients.elasticsearch._types.ElasticsearchException
                  | java.io.IOException e) {
-            log.error("[商品索引同步] ES 通信异常，触发重试: msgId={}, reconsumeTimes={}",
-                    msg.getMsgId(), msg.getReconsumeTimes(), e);
+            Long spuId = currentSpuId.get();
+            log.error("[商品索引同步] ES 通信异常，触发重试: spuId={}, msgId={}, reconsumeTimes={}",
+                    spuId, msg.getMsgId(), msg.getReconsumeTimes(), e);
+            // 记录失败 spuId 到 Redis Set，供 IncrementalIndexSyncJob 增量补偿
+            if (spuId != null && stringRedisTemplate != null) {
+                try {
+                    stringRedisTemplate.opsForSet().add("myxhs:es:sync:failed:product", String.valueOf(spuId));
+                    stringRedisTemplate.expire("myxhs:es:sync:failed:product", Duration.ofHours(1));
+                } catch (Exception redisEx) {
+                    log.warn("[商品索引同步] 记录失败 spuId 到 Redis 失败: spuId={}", spuId, redisEx);
+                }
+            }
             throw new RuntimeException("商品索引同步失败（可重试）", e);
         } catch (Exception e) {
             log.error("[商品索引同步] 不可重试异常，跳过: msgId={}", msg.getMsgId(), e);
@@ -125,8 +144,14 @@ public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
             }
 
             switch (type) {
-                case "INSERT", "UPDATE" -> indexProductFromCanal(spuId, row, version);
-                case "DELETE" -> deleteProduct(spuId);
+                case "INSERT", "UPDATE" -> {
+                    currentSpuId.set(spuId);
+                    indexProductFromCanal(spuId, row, version);
+                }
+                case "DELETE" -> {
+                    currentSpuId.set(spuId);
+                    deleteProduct(spuId);
+                }
                 default -> log.debug("[商品索引同步] 忽略事件类型: type={}", type);
             }
         }
@@ -144,8 +169,14 @@ public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
         }
 
         switch (type) {
-            case "INSERT", "UPDATE" -> indexProductFromFlat(spuId, event);
-            case "DELETE" -> deleteProduct(spuId);
+            case "INSERT", "UPDATE" -> {
+                currentSpuId.set(spuId);
+                indexProductFromFlat(spuId, event);
+            }
+            case "DELETE" -> {
+                currentSpuId.set(spuId);
+                deleteProduct(spuId);
+            }
             default -> log.warn("[商品索引同步] 未知事件类型: type={}, spuId={}", type, spuId);
         }
     }

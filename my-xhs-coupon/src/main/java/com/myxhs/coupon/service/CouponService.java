@@ -21,6 +21,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -283,6 +284,7 @@ public class CouponService {
      * 回退后其他用户可以重新领取这张券。
      * </p>
      */
+    @Transactional(rollbackFor = Exception.class)
     public void returnCoupon(Long userId, ReturnCouponRequest request) {
         // 1. 查询用户券
         UserCoupon userCoupon = userCouponMapper.selectById(request.getUserCouponId());
@@ -299,9 +301,11 @@ public class CouponService {
         }
 
         // 3. MySQL 原子回退模板剩余数量（SQL 原子操作，避免并发 ABA 问题）
+        // 与步骤2在同一 @Transactional 事务中，保证原子性
         templateMapper.incrementRemainCount(userCoupon.getCouponId());
 
         // 4. Redis 回退库存 + 减少领取次数（Lua 原子操作）
+        // Redis 操作在 MySQL 事务提交后执行，若 Redis 失败则通过定时对账修复
         String stockKey = stockKey(userCoupon.getCouponId());
         String claimedKey = claimedKey(userCoupon.getCouponId(), userId);
 

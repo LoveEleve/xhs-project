@@ -1,10 +1,26 @@
 version: '3.8'
 
+# ============================================================
+# MyXHS 完整版 Docker Compose（单机 32C/64G）
+#
+# 包含：4 MySQL 主 + 4 MySQL 从（主从复制）
+#       3 Redis + 3 Sentinel（高可用）
+#       RocketMQ 双 NameServer + Master-Slave Broker
+#       Elasticsearch × 2（业务 + SkyWalking 存储）
+#       Canal / Nacos / Sentinel / XXL-Job
+#       SkyWalking OAP + UI
+#       Prometheus + VictoriaMetrics + Grafana
+#       Filebeat + Logstash + Kibana
+#
+# 微服务（15 个）通过 IDEA 直接启动，不在此文件管理
+# 预计中间件内存：~12G，微服务预留：~8G，总计 ~20G
+# ============================================================
+
 services:
   # ==========================================
-  # MySQL-User — 端口 13306
-  # 承载：user + analytics + notification + im + nacos_config + xxl_job
+  # MySQL 主库 × 4
   # ==========================================
+
   mysql-user:
     image: mysql:8.0
     container_name: my-xhs-mysql-user
@@ -17,13 +33,12 @@ services:
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_unicode_ci
       --default-authentication-plugin=mysql_native_password
-      --max-connections=300
-      --innodb-buffer-pool-size=512M
-      --innodb-log-file-size=256M
+      --max-connections=200
+      --innodb-buffer-pool-size=256M
+      --innodb-log-file-size=128M
       --innodb-flush-log-at-trx-commit=2
-      --sync-binlog=1
+      --sync-binlog=0
       --slow-query-log=1
-      --slow-query-log-file=/var/lib/mysql/slow-query.log
       --long-query-time=0.5
       --server-id=1
       --log-bin=mysql-bin
@@ -33,33 +48,16 @@ services:
       --binlog-row-image=FULL
     deploy:
       resources:
-        limits:
-          cpus: '2'
-          memory: 2g
-        reservations:
-          cpus: '1'
-          memory: 1g
+        limits: { cpus: '1', memory: 512m }
+        reservations: { cpus: '0.25', memory: 256m }
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13306", "-u", "root", "-pXhs@2026#MySQL"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+      interval: 30s; timeout: 10s; retries: 3; start_period: 40s
     volumes:
       - mysql-user-data:/var/lib/mysql
       - ./sql/mysql-user-init.sql:/docker-entrypoint-initdb.d/01-init.sql
-      - ./sql/init-replication-user-master.sql:/docker-entrypoint-initdb.d/02-replication-user.sql
     restart: unless-stopped
 
-  # ==========================================
-  # MySQL-Content — 端口 13307
-  # 承载：content + counter + search + product + cart + coupon
-  # ==========================================
   mysql-content:
     image: mysql:8.0
     container_name: my-xhs-mysql-content
@@ -72,13 +70,12 @@ services:
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_unicode_ci
       --default-authentication-plugin=mysql_native_password
-      --max-connections=300
-      --innodb-buffer-pool-size=512M
-      --innodb-log-file-size=256M
+      --max-connections=200
+      --innodb-buffer-pool-size=256M
+      --innodb-log-file-size=128M
       --innodb-flush-log-at-trx-commit=2
-      --sync-binlog=1
+      --sync-binlog=0
       --slow-query-log=1
-      --slow-query-log-file=/var/lib/mysql/slow-query.log
       --long-query-time=0.5
       --server-id=2
       --log-bin=mysql-bin
@@ -88,33 +85,16 @@ services:
       --binlog-row-image=FULL
     deploy:
       resources:
-        limits:
-          cpus: '2'
-          memory: 2g
-        reservations:
-          cpus: '1'
-          memory: 1g
+        limits: { cpus: '1', memory: 512m }
+        reservations: { cpus: '0.25', memory: 256m }
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13307", "-u", "root", "-pXhs@2026#MySQL"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+      interval: 30s; timeout: 10s; retries: 3; start_period: 40s
     volumes:
       - mysql-content-data:/var/lib/mysql
       - ./sql/mysql-content-init.sql:/docker-entrypoint-initdb.d/01-init.sql
-      - ./sql/init-replication-user-master.sql:/docker-entrypoint-initdb.d/02-replication-user.sql
     restart: unless-stopped
 
-  # ==========================================
-  # MySQL-Order — 端口 13308
-  # 承载：order（4 分片库）+ payment + 订单号映射表
-  # ==========================================
   mysql-order:
     image: mysql:8.0
     container_name: my-xhs-mysql-order
@@ -127,13 +107,12 @@ services:
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_unicode_ci
       --default-authentication-plugin=mysql_native_password
-      --max-connections=500
-      --innodb-buffer-pool-size=1G
-      --innodb-log-file-size=512M
-      --innodb-flush-log-at-trx-commit=1
-      --sync-binlog=1
+      --max-connections=200
+      --innodb-buffer-pool-size=256M
+      --innodb-log-file-size=128M
+      --innodb-flush-log-at-trx-commit=2
+      --sync-binlog=0
       --slow-query-log=1
-      --slow-query-log-file=/var/lib/mysql/slow-query.log
       --long-query-time=0.5
       --server-id=3
       --log-bin=mysql-bin
@@ -143,33 +122,16 @@ services:
       --binlog-row-image=FULL
     deploy:
       resources:
-        limits:
-          cpus: '4'
-          memory: 4g
-        reservations:
-          cpus: '2'
-          memory: 2g
+        limits: { cpus: '1', memory: 512m }
+        reservations: { cpus: '0.25', memory: 256m }
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13308", "-u", "root", "-pXhs@2026#MySQL"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+      interval: 30s; timeout: 10s; retries: 3; start_period: 40s
     volumes:
       - mysql-order-data:/var/lib/mysql
       - ./sql/mysql-order-init.sql:/docker-entrypoint-initdb.d/01-init.sql
-      - ./sql/init-replication-user-master.sql:/docker-entrypoint-initdb.d/02-replication-user.sql
     restart: unless-stopped
 
-  # ==========================================
-  # MySQL-Inventory — 端口 13309
-  # 库存独立部署：最高写争用（行锁），单独隔离
-  # ==========================================
   mysql-inventory:
     image: mysql:8.0
     container_name: my-xhs-mysql-inventory
@@ -182,13 +144,12 @@ services:
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_unicode_ci
       --default-authentication-plugin=mysql_native_password
-      --max-connections=200
-      --innodb-buffer-pool-size=512M
-      --innodb-log-file-size=256M
-      --innodb-flush-log-at-trx-commit=1
-      --sync-binlog=1
+      --max-connections=150
+      --innodb-buffer-pool-size=256M
+      --innodb-log-file-size=128M
+      --innodb-flush-log-at-trx-commit=2
+      --sync-binlog=0
       --slow-query-log=1
-      --slow-query-log-file=/var/lib/mysql/slow-query.log
       --long-query-time=0.2
       --server-id=4
       --log-bin=mysql-bin
@@ -198,33 +159,22 @@ services:
       --binlog-row-image=FULL
     deploy:
       resources:
-        limits:
-          cpus: '2'
-          memory: 2g
-        reservations:
-          cpus: '1'
-          memory: 1g
+        limits: { cpus: '1', memory: 512m }
+        reservations: { cpus: '0.25', memory: 256m }
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13309", "-u", "root", "-pXhs@2026#MySQL"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+      interval: 30s; timeout: 10s; retries: 3; start_period: 40s
     volumes:
       - mysql-inventory-data:/var/lib/mysql
       - ./sql/mysql-inventory-init.sql:/docker-entrypoint-initdb.d/01-init.sql
-      - ./sql/init-replication-user-master.sql:/docker-entrypoint-initdb.d/02-replication-user.sql
     restart: unless-stopped
 
   # ==========================================
-  # MySQL-User-Slave — 端口 13310
-  # 主从复制：mysql-user:13306 (Master) → :13310 (Slave)
+  # MySQL 从库 × 4（主从复制）
+  # 端口：13310(user-slave) 13311(content-slave)
+  #       13312(order-slave) 13313(inventory-slave)
   # ==========================================
+
   mysql-user-slave:
     image: mysql:8.0
     container_name: my-xhs-mysql-user-slave
@@ -237,52 +187,32 @@ services:
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_unicode_ci
       --default-authentication-plugin=mysql_native_password
-      --max-connections=300
-      --innodb-buffer-pool-size=512M
-      --innodb-log-file-size=256M
+      --max-connections=100
+      --innodb-buffer-pool-size=128M
+      --innodb-log-file-size=64M
+      --read-only=1
       --innodb-flush-log-at-trx-commit=2
-      --sync-binlog=1
+      --sync-binlog=0
       --slow-query-log=1
-      --slow-query-log-file=/var/lib/mysql/slow-query.log
-      --long-query-time=0.5
-      --server-id=101
+      --long-query-time=1
+      --server-id=11
       --log-bin=mysql-bin
-      --log-slave-updates
       --binlog-format=ROW
       --gtid-mode=ON
       --enforce-gtid-consistency=ON
-      --read-only=ON
-      --skip-slave-start
+      --binlog-row-image=FULL
     deploy:
       resources:
-        limits:
-          cpus: '2'
-          memory: 2g
-        reservations:
-          cpus: '1'
-          memory: 1g
+        limits: { cpus: '0.5', memory: 384m }
+        reservations: { cpus: '0.25', memory: 192m }
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13310", "-u", "root", "-pXhs@2026#MySQL"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+      interval: 30s; timeout: 10s; retries: 3; start_period: 40s
     volumes:
       - mysql-user-slave-data:/var/lib/mysql
       - ./sql/init-replication-user.sql:/docker-entrypoint-initdb.d/01-init-replication.sql
-    depends_on:
-      - mysql-user
     restart: unless-stopped
 
-  # ==========================================
-  # MySQL-Content-Slave — 端口 13311
-  # 主从复制：mysql-content:13307 (Master) → :13311 (Slave)
-  # ==========================================
   mysql-content-slave:
     image: mysql:8.0
     container_name: my-xhs-mysql-content-slave
@@ -295,52 +225,32 @@ services:
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_unicode_ci
       --default-authentication-plugin=mysql_native_password
-      --max-connections=300
-      --innodb-buffer-pool-size=512M
-      --innodb-log-file-size=256M
+      --max-connections=100
+      --innodb-buffer-pool-size=128M
+      --innodb-log-file-size=64M
+      --read-only=1
       --innodb-flush-log-at-trx-commit=2
-      --sync-binlog=1
+      --sync-binlog=0
       --slow-query-log=1
-      --slow-query-log-file=/var/lib/mysql/slow-query.log
-      --long-query-time=0.5
-      --server-id=102
+      --long-query-time=1
+      --server-id=12
       --log-bin=mysql-bin
-      --log-slave-updates
       --binlog-format=ROW
       --gtid-mode=ON
       --enforce-gtid-consistency=ON
-      --read-only=ON
-      --skip-slave-start
+      --binlog-row-image=FULL
     deploy:
       resources:
-        limits:
-          cpus: '2'
-          memory: 2g
-        reservations:
-          cpus: '1'
-          memory: 1g
+        limits: { cpus: '0.5', memory: 384m }
+        reservations: { cpus: '0.25', memory: 192m }
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13311", "-u", "root", "-pXhs@2026#MySQL"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+      interval: 30s; timeout: 10s; retries: 3; start_period: 40s
     volumes:
       - mysql-content-slave-data:/var/lib/mysql
       - ./sql/init-replication-content.sql:/docker-entrypoint-initdb.d/01-init-replication.sql
-    depends_on:
-      - mysql-content
     restart: unless-stopped
 
-  # ==========================================
-  # MySQL-Order-Slave — 端口 13312
-  # 主从复制：mysql-order:13308 (Master) → :13312 (Slave)
-  # ==========================================
   mysql-order-slave:
     image: mysql:8.0
     container_name: my-xhs-mysql-order-slave
@@ -353,52 +263,32 @@ services:
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_unicode_ci
       --default-authentication-plugin=mysql_native_password
-      --max-connections=500
-      --innodb-buffer-pool-size=1G
-      --innodb-log-file-size=512M
-      --innodb-flush-log-at-trx-commit=1
-      --sync-binlog=1
+      --max-connections=100
+      --innodb-buffer-pool-size=128M
+      --innodb-log-file-size=64M
+      --read-only=1
+      --innodb-flush-log-at-trx-commit=2
+      --sync-binlog=0
       --slow-query-log=1
-      --slow-query-log-file=/var/lib/mysql/slow-query.log
-      --long-query-time=0.5
-      --server-id=103
+      --long-query-time=1
+      --server-id=13
       --log-bin=mysql-bin
-      --log-slave-updates
       --binlog-format=ROW
       --gtid-mode=ON
       --enforce-gtid-consistency=ON
-      --read-only=ON
-      --skip-slave-start
+      --binlog-row-image=FULL
     deploy:
       resources:
-        limits:
-          cpus: '4'
-          memory: 4g
-        reservations:
-          cpus: '2'
-          memory: 2g
+        limits: { cpus: '0.5', memory: 384m }
+        reservations: { cpus: '0.25', memory: 192m }
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13312", "-u", "root", "-pXhs@2026#MySQL"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+      interval: 30s; timeout: 10s; retries: 3; start_period: 40s
     volumes:
       - mysql-order-slave-data:/var/lib/mysql
       - ./sql/init-replication-order.sql:/docker-entrypoint-initdb.d/01-init-replication.sql
-    depends_on:
-      - mysql-order
     restart: unless-stopped
 
-  # ==========================================
-  # MySQL-Inventory-Slave — 端口 13313
-  # 主从复制：mysql-inventory:13309 (Master) → :13313 (Slave)
-  # ==========================================
   mysql-inventory-slave:
     image: mysql:8.0
     container_name: my-xhs-mysql-inventory-slave
@@ -411,159 +301,116 @@ services:
       --character-set-server=utf8mb4
       --collation-server=utf8mb4_unicode_ci
       --default-authentication-plugin=mysql_native_password
-      --max-connections=200
-      --innodb-buffer-pool-size=512M
-      --innodb-log-file-size=256M
-      --innodb-flush-log-at-trx-commit=1
-      --sync-binlog=1
+      --max-connections=100
+      --innodb-buffer-pool-size=128M
+      --innodb-log-file-size=64M
+      --read-only=1
+      --innodb-flush-log-at-trx-commit=2
+      --sync-binlog=0
       --slow-query-log=1
-      --slow-query-log-file=/var/lib/mysql/slow-query.log
-      --long-query-time=0.2
-      --server-id=104
+      --long-query-time=1
+      --server-id=14
       --log-bin=mysql-bin
-      --log-slave-updates
       --binlog-format=ROW
       --gtid-mode=ON
       --enforce-gtid-consistency=ON
-      --read-only=ON
-      --skip-slave-start
+      --binlog-row-image=FULL
     deploy:
       resources:
-        limits:
-          cpus: '2'
-          memory: 2g
-        reservations:
-          cpus: '1'
-          memory: 1g
+        limits: { cpus: '0.5', memory: 384m }
+        reservations: { cpus: '0.25', memory: 192m }
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13313", "-u", "root", "-pXhs@2026#MySQL"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+      interval: 30s; timeout: 10s; retries: 3; start_period: 40s
     volumes:
       - mysql-inventory-slave-data:/var/lib/mysql
       - ./sql/init-replication-inventory.sql:/docker-entrypoint-initdb.d/01-init-replication.sql
-    depends_on:
-      - mysql-inventory
     restart: unless-stopped
 
   # ==========================================
-  # Redis — 3 实例分离 + 3 Sentinel 哨兵
-  # 端口规划：
-  #   16379 — 主 Redis（Spring Boot 默认连接，allkeys-lru）
-  #   16380 — Cache Redis（缓存数据，allkeys-lru）
-  #   16381 — Business Redis（核心业务数据，noeviction）
-  #   26379 — Sentinel-1
-  #   26380 — Sentinel-2
-  #   26381 — Sentinel-3
+  # Redis × 3（不同淘汰策略，按用途隔离）
+  #   16379 — 主 Redis（allkeys-lru）
+  #   16380 — Cache Redis（allkeys-lru）
+  #   16381 — Business Redis（noeviction）
   # ==========================================
 
-  # Business Redis — 端口 16381，noeviction（保护核心业务数据不丢失）
-  redis-business:
-    image: redis:7-alpine
-    container_name: my-xhs-redis-business
-    network_mode: host
-    command: >
-      redis-server
-      --port 16381
-      --bind 0.0.0.0
-      --requirepass Xhs@2026#Redis
-      --appendonly yes
-      --appendfsync everysec
-      --maxmemory 512mb
-      --maxmemory-policy noeviction
-      --save 900 1
-      --save 300 10
-      --save 60 10000
-    healthcheck:
-      test: ["CMD", "redis-cli", "-p", "16381", "-a", "Xhs@2026#Redis", "ping"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-    volumes:
-      - redis-business-data:/data
-    restart: unless-stopped
-
-  # Cache Redis — 端口 16380，allkeys-lru（缓存数据可丢弃）
-  redis-cache:
-    image: redis:7-alpine
-    container_name: my-xhs-redis-cache
-    network_mode: host
-    command: >
-      redis-server
-      --port 16380
-      --bind 0.0.0.0
-      --requirepass Xhs@2026#Redis
-      --appendonly yes
-      --appendfsync everysec
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
-      --save 900 1
-      --save 300 10
-      --save 60 10000
-    healthcheck:
-      test: ["CMD", "redis-cli", "-p", "16380", "-a", "Xhs@2026#Redis", "ping"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-    volumes:
-      - redis-cache-data:/data
-    restart: unless-stopped
-
-  # 主 Redis（Spring Boot 默认连接）— 端口 16379，allkeys-lru
   redis:
     image: redis:7-alpine
     container_name: my-xhs-redis
     network_mode: host
     command: >
       redis-server
-      --port 16379
-      --bind 0.0.0.0
-      --requirepass Xhs@2026#Redis
-      --appendonly yes
-      --appendfsync everysec
-      --maxmemory 256mb
-      --maxmemory-policy allkeys-lru
-      --save 900 1
-      --save 300 10
-      --save 60 10000
+      --port 16379 --bind 0.0.0.0 --requirepass Xhs@2026#Redis
+      --appendonly yes --appendfsync everysec
+      --maxmemory 64mb --maxmemory-policy allkeys-lru
+      --save 900 1 --save 300 10
+    deploy:
+      resources:
+        limits: { cpus: '0.25', memory: 128m }
+        reservations: { cpus: '0.1', memory: 64m }
     healthcheck:
       test: ["CMD", "redis-cli", "-p", "16379", "-a", "Xhs@2026#Redis", "ping"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+      interval: 15s; timeout: 5s; retries: 3
     volumes:
       - redis-data:/data
     restart: unless-stopped
 
-  # Redis Sentinel × 3（哨兵模式 — 自动故障转移）
-  # quorum=2：至少 2 个 Sentinel 认为主节点下线才触发故障转移
+  redis-cache:
+    image: redis:7-alpine
+    container_name: my-xhs-redis-cache
+    network_mode: host
+    command: >
+      redis-server
+      --port 16380 --bind 0.0.0.0 --requirepass Xhs@2026#Redis
+      --appendonly yes --appendfsync everysec
+      --maxmemory 64mb --maxmemory-policy allkeys-lru
+      --save 900 1 --save 300 10
+    deploy:
+      resources:
+        limits: { cpus: '0.25', memory: 128m }
+        reservations: { cpus: '0.1', memory: 64m }
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "16380", "-a", "Xhs@2026#Redis", "ping"]
+      interval: 15s; timeout: 5s; retries: 3
+    volumes:
+      - redis-cache-data:/data
+    restart: unless-stopped
+
+  redis-business:
+    image: redis:7-alpine
+    container_name: my-xhs-redis-business
+    network_mode: host
+    command: >
+      redis-server
+      --port 16381 --bind 0.0.0.0 --requirepass Xhs@2026#Redis
+      --appendonly yes --appendfsync everysec
+      --maxmemory 64mb --maxmemory-policy noeviction
+      --save 900 1 --save 300 10
+    deploy:
+      resources:
+        limits: { cpus: '0.25', memory: 128m }
+        reservations: { cpus: '0.1', memory: 64m }
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "16381", "-a", "Xhs@2026#Redis", "ping"]
+      interval: 15s; timeout: 5s; retries: 3
+    volumes:
+      - redis-business-data:/data
+    restart: unless-stopped
+
+  # ==========================================
+  # Redis Sentinel × 3（高可用）
+  #   26379 / 26380 / 26381
+  # ==========================================
+
   redis-sentinel-1:
     image: redis:7-alpine
     container_name: my-xhs-redis-sentinel-1
     network_mode: host
     command: redis-sentinel /etc/redis/sentinel.conf
+    deploy:
+      resources:
+        limits: { cpus: '0.1', memory: 64m }
+        reservations: { cpus: '0.05', memory: 32m }
     volumes:
       - ./config/redis/sentinel-1.conf:/etc/redis/sentinel.conf
     depends_on:
@@ -577,6 +424,10 @@ services:
     container_name: my-xhs-redis-sentinel-2
     network_mode: host
     command: redis-sentinel /etc/redis/sentinel.conf
+    deploy:
+      resources:
+        limits: { cpus: '0.1', memory: 64m }
+        reservations: { cpus: '0.05', memory: 32m }
     volumes:
       - ./config/redis/sentinel-2.conf:/etc/redis/sentinel.conf
     depends_on:
@@ -590,6 +441,10 @@ services:
     container_name: my-xhs-redis-sentinel-3
     network_mode: host
     command: redis-sentinel /etc/redis/sentinel.conf
+    deploy:
+      resources:
+        limits: { cpus: '0.1', memory: 64m }
+        reservations: { cpus: '0.05', memory: 32m }
     volumes:
       - ./config/redis/sentinel-3.conf:/etc/redis/sentinel.conf
     depends_on:
@@ -599,128 +454,86 @@ services:
     restart: unless-stopped
 
   # ==========================================
-  # Sentinel Dashboard 1.8.8 — 端口 18082
+  # RocketMQ — 双 NameServer + Master-Slave Broker
+  #   NameServer: 9876 / 9877
+  #   Broker Master: 11911
+  #   Broker Slave:  11912
   # ==========================================
-  sentinel-dashboard:
-    image: bladex/sentinel-dashboard:1.8.8
-    container_name: my-xhs-sentinel-dashboard
-    network_mode: host
-    environment:
-      SERVER_PORT: 18082
-    restart: unless-stopped
 
-  # ==========================================
-  # Nacos 2.3 — 端口 18848/18849/18850
-  # ==========================================
-  nacos:
-    image: nacos/nacos-server:v2.3.2
-    container_name: my-xhs-nacos
-    network_mode: host
-    environment:
-      MODE: standalone
-      NACOS_SERVER_PORT: 18848
-      NACOS_SERVER_IP: 21.91.124.110
-      SPRING_DATASOURCE_PLATFORM: mysql
-      MYSQL_SERVICE_HOST: 127.0.0.1
-      MYSQL_SERVICE_PORT: 13306
-      MYSQL_SERVICE_DB_NAME: nacos_config
-      MYSQL_SERVICE_USER: root
-      MYSQL_SERVICE_PASSWORD: Xhs@2026#MySQL
-      JVM_XMS: 256m
-      JVM_XMX: 512m
-      JVM_EXTRA_OPTS: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0 -XX:MaxMetaspaceSize=256m"
-    depends_on:
-      - mysql-user
-    restart: unless-stopped
-
-  # ==========================================
-  # RocketMQ NameServer × 2（高可用）
-  # ==========================================
-  rocketmq-namesrv:
+  rocketmq-namesrv-1:
     image: apache/rocketmq:5.1.4
-    container_name: my-xhs-mq-namesrv
+    container_name: my-xhs-mq-namesrv-1
     network_mode: host
     command: sh mqnamesrv
     environment:
-      JAVA_OPT_EXT: "-server -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+      JAVA_OPT_EXT: "-server -Xms128m -Xmx256m -Xmn64m"
+    deploy:
+      resources:
+        limits: { cpus: '0.25', memory: 384m }
+        reservations: { cpus: '0.1', memory: 192m }
     restart: unless-stopped
 
   rocketmq-namesrv-2:
     image: apache/rocketmq:5.1.4
     container_name: my-xhs-mq-namesrv-2
     network_mode: host
-    command: sh mqnamesrv
+    command: sh mqnamesrv -p 9877
     environment:
-      JAVA_OPT_EXT: "-server -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+      JAVA_OPT_EXT: "-server -Xms128m -Xmx256m -Xmn64m"
+    deploy:
+      resources:
+        limits: { cpus: '0.25', memory: 384m }
+        reservations: { cpus: '0.1', memory: 192m }
     restart: unless-stopped
 
-  # ==========================================
-  # RocketMQ Broker-Master — 端口 11911
-  # ==========================================
-  rocketmq-broker:
+  rocketmq-broker-master:
     image: apache/rocketmq:5.1.4
-    container_name: my-xhs-mq-broker
+    container_name: my-xhs-mq-broker-master
     network_mode: host
-    command: sh mqbroker -n 127.0.0.1:9876;127.0.0.1:9877 -c /home/rocketmq/rocketmq-5.1.4/conf/broker.conf
+    command: sh mqbroker -c /home/rocketmq/rocketmq-5.1.4/conf/broker.conf
     environment:
-      JAVA_OPT_EXT: "-server -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
+      JAVA_OPT_EXT: "-server -Xms256m -Xmx512m -Xmn128m"
+    deploy:
+      resources:
+        limits: { cpus: '0.5', memory: 768m }
+        reservations: { cpus: '0.25', memory: 384m }
     healthcheck:
       test: ["CMD-SHELL", "curl -s http://127.0.0.1:11911 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+      interval: 30s; timeout: 10s; retries: 3; start_period: 60s
     volumes:
       - ./config/rocketmq/broker.conf:/home/rocketmq/rocketmq-5.1.4/conf/broker.conf
-      - mq-logs:/home/rocketmq/logs
-      - mq-store:/home/rocketmq/store
+      - mq-master-logs:/home/rocketmq/logs
+      - mq-master-store:/home/rocketmq/store
     depends_on:
-      - rocketmq-namesrv
+      - rocketmq-namesrv-1
       - rocketmq-namesrv-2
     restart: unless-stopped
 
-  # ==========================================
-  # RocketMQ Broker-Slave — 端口 11912
-  # ==========================================
   rocketmq-broker-slave:
     image: apache/rocketmq:5.1.4
     container_name: my-xhs-mq-broker-slave
     network_mode: host
-    command: sh mqbroker -n 127.0.0.1:9876;127.0.0.1:9877 -c /home/rocketmq/rocketmq-5.1.4/conf/broker-slave.conf
+    command: sh mqbroker -c /home/rocketmq/rocketmq-5.1.4/conf/broker-slave.conf
     environment:
-      JAVA_OPT_EXT: "-server -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0"
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+      JAVA_OPT_EXT: "-server -Xms256m -Xmx512m -Xmn128m"
+    deploy:
+      resources:
+        limits: { cpus: '0.5', memory: 768m }
+        reservations: { cpus: '0.25', memory: 384m }
     volumes:
       - ./config/rocketmq/broker-slave.conf:/home/rocketmq/rocketmq-5.1.4/conf/broker-slave.conf
-      - mq-logs-slave:/home/rocketmq/logs
-      - mq-store-slave:/home/rocketmq/store
+      - mq-slave-logs:/home/rocketmq/logs
+      - mq-slave-store:/home/rocketmq/store
     depends_on:
-      - rocketmq-namesrv
-      - rocketmq-namesrv-2
+      - rocketmq-broker-master
     restart: unless-stopped
 
   # ==========================================
-  # Elasticsearch 8.12 — 端口 19200/19300
+  # Elasticsearch × 2
+  #   19200 — 业务搜索（IK 分词器）
+  #   19201 — SkyWalking 链路追踪存储
   # ==========================================
+
   elasticsearch:
     image: elasticsearch:8.12.2
     container_name: my-xhs-elasticsearch
@@ -732,67 +545,65 @@ services:
       - ELASTIC_PASSWORD=Xhs@2026#Elastic
       - http.port=19200
       - transport.port=19300
-      - ES_JAVA_OPTS=-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:InitialRAMPercentage=50.0 -XX:MaxMetaspaceSize=256m
+      - ES_JAVA_OPTS=-Xms256m -Xmx512m
       - cluster.name=my-xhs-es
       - node.name=es-node-1
+    command: >
+      bash -c "
+        if [ ! -d /usr/share/elasticsearch/plugins/analysis-ik ]; then
+          echo '=== Installing IK Analyzer ===' &&
+          elasticsearch-plugin install --batch https://github.com/medcl/elasticsearch-analysis-ik/releases/download/v8.12.2/elasticsearch-analysis-ik-8.12.2.zip 2>/dev/null ||
+          echo '=== IK install failed (network issue), will skip ==='
+        fi &&
+        /usr/local/bin/docker-entrypoint.sh eswrapper
+      "
+    deploy:
+      resources:
+        limits: { cpus: '0.5', memory: 768m }
+        reservations: { cpus: '0.25', memory: 384m }
     healthcheck:
       test: ["CMD-SHELL", "curl -s -u elastic:Xhs@2026#Elastic http://127.0.0.1:19200/_cluster/health?local=true | grep -q 'green\\|yellow'"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+      interval: 30s; timeout: 10s; retries: 3; start_period: 60s
     volumes:
       - es-data:/usr/share/elasticsearch/data
-      - es-plugins:/usr/share/elasticsearch/plugins
     restart: unless-stopped
 
-  # ==========================================
-  # Logstash 8.12.2 — 日志聚合管道，采集 JSON 日志 → ES
-  # ==========================================
-  logstash:
-    image: docker.elastic.co/logstash/logstash:8.12.2
-    container_name: myxhs-logstash
+  elasticsearch-skywalking:
+    image: elasticsearch:8.12.2
+    container_name: my-xhs-es-skywalking
     network_mode: host
     environment:
-      - XPACK_MONITORING_ENABLED=false
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - http.port=19201
+      - transport.port=19301
+      - ES_JAVA_OPTS=-Xms256m -Xmx512m
+      - cluster.name=my-xhs-sw-es
+      - node.name=sw-es-node-1
+      - path.repo=/usr/share/elasticsearch/backup
+    deploy:
+      resources:
+        limits: { cpus: '0.5', memory: 768m }
+        reservations: { cpus: '0.25', memory: 384m }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://127.0.0.1:19201/_cluster/health?local=true | grep -q 'green\\|yellow'"]
+      interval: 30s; timeout: 10s; retries: 3; start_period: 60s
     volumes:
-      - ./config/logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
-      - ./logs:/logs:ro
-    depends_on:
-      - elasticsearch
+      - es-sw-data:/usr/share/elasticsearch/data
     restart: unless-stopped
 
   # ==========================================
-  # Kibana 8.12.2 — 日志可视化，端口 15601
+  # Canal — MySQL Binlog → RocketMQ → ES/Redis
   # ==========================================
-  kibana:
-    image: docker.elastic.co/kibana/kibana:8.12.2
-    container_name: myxhs-kibana
-    network_mode: host
-    environment:
-      - ELASTICSEARCH_HOSTS=http://localhost:19200
-      - ELASTICSEARCH_USERNAME=elastic
-      - ELASTICSEARCH_PASSWORD=Xhs@2026#Elastic
-      - SERVER_PORT=15601
-    depends_on:
-      - elasticsearch
-    restart: unless-stopped
 
-  # ==========================================
-  # Canal 1.1.7 — MySQL Binlog → RocketMQ → ES/Redis
-  # note_instance: mysql-content:13307 → RocketMQ → ES note_index
-  # product_instance: mysql-content:13307 → RocketMQ → ES product_index
-  # inventory_instance: mysql-inventory:13309 → RocketMQ → Redis 缓存失效
-  # ==========================================
   canal:
     image: canal/canal-server:v1.1.7
     container_name: my-xhs-canal
     network_mode: host
+    deploy:
+      resources:
+        limits: { cpus: '0.25', memory: 384m }
+        reservations: { cpus: '0.1', memory: 192m }
     volumes:
       - ./config/canal/conf/canal.properties:/home/admin/canal-server/conf/canal.properties
       - ./config/canal/conf/note_instance/instance.properties:/home/admin/canal-server/conf/note_instance/instance.properties
@@ -801,24 +612,61 @@ services:
       - canal-data:/home/admin/canal-server/logs
     healthcheck:
       test: ["CMD-SHELL", "curl -s http://127.0.0.1:11111 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+      interval: 30s; timeout: 10s; retries: 3; start_period: 60s
     depends_on:
       - mysql-content
       - mysql-inventory
-      - rocketmq-broker
+      - rocketmq-broker-master
     restart: unless-stopped
 
   # ==========================================
-  # XXL-Job Admin 2.4.2 — 端口 18080
+  # Nacos — 注册中心 + 配置中心
   # ==========================================
+
+  nacos:
+    image: nacos/nacos-server:v2.3.2
+    container_name: my-xhs-nacos
+    network_mode: host
+    environment:
+      MODE: standalone
+      NACOS_SERVER_PORT: 18848
+      NACOS_SERVER_IP: 21.130.247.89
+      SPRING_DATASOURCE_PLATFORM: mysql
+      MYSQL_SERVICE_HOST: 127.0.0.1
+      MYSQL_SERVICE_PORT: 13306
+      MYSQL_SERVICE_DB_NAME: nacos_config
+      MYSQL_SERVICE_USER: root
+      MYSQL_SERVICE_PASSWORD: Xhs@2026#MySQL
+      JVM_XMS: 256m
+      JVM_XMX: 512m
+    deploy:
+      resources:
+        limits: { cpus: '0.5', memory: 768m }
+        reservations: { cpus: '0.25', memory: 384m }
+    depends_on:
+      - mysql-user
+    restart: unless-stopped
+
+  # ==========================================
+  # Sentinel Dashboard — 流控降级面板
+  # ==========================================
+
+  sentinel-dashboard:
+    image: bladex/sentinel-dashboard:1.8.8
+    container_name: my-xhs-sentinel-dashboard
+    network_mode: host
+    environment:
+      SERVER_PORT: 18082
+    deploy:
+      resources:
+        limits: { cpus: '0.25', memory: 256m }
+        reservations: { cpus: '0.1', memory: 128m }
+    restart: unless-stopped
+
+  # ==========================================
+  # XXL-Job Admin — 分布式任务调度中心
+  # ==========================================
+
   xxl-job-admin:
     image: xuxueli/xxl-job-admin:2.4.2
     container_name: my-xhs-xxl-job-admin
@@ -831,22 +679,99 @@ services:
         --server.port=18080
         --xxl.job.accessToken=my-xhs-xxl-job-token-2026
         --xxl.job.i18n=zh_CN
+    deploy:
+      resources:
+        limits: { cpus: '0.25', memory: 384m }
+        reservations: { cpus: '0.1', memory: 256m }
     depends_on:
       - mysql-user
     restart: unless-stopped
 
   # ==========================================
-  # Prometheus 2.48 — 端口 19090
+  # SkyWalking OAP + UI — 全链路追踪
+  #   OAP gRPC: 11800
+  #   OAP HTTP: 12800
+  #   UI: 18081
   # ==========================================
+
+  skywalking-oap:
+    image: apache/skywalking-oap-server:9.7.0
+    container_name: my-xhs-skywalking-oap
+    network_mode: host
+    environment:
+      SW_STORAGE: elasticsearch
+      SW_STORAGE_ES_CLUSTER_NODES: 127.0.0.1:19201
+      SW_ES_USER: ""
+      SW_ES_PASSWORD: ""
+      SW_HEALTH_CHECKER: default
+      SW_TELEMETRY: prometheus
+      SW_TELEMETRY_PROMETHEUS_HOST: 127.0.0.1
+      SW_TELEMETRY_PROMETHEUS_PORT: 1234
+      JAVA_OPTS: "-Xms512m -Xmx1024m"
+    deploy:
+      resources:
+        limits: { cpus: '1', memory: 1536m }
+        reservations: { cpus: '0.5', memory: 768m }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://127.0.0.1:12800/healthCheck || exit 1"]
+      interval: 30s; timeout: 10s; retries: 3; start_period: 90s
+    depends_on:
+      - elasticsearch-skywalking
+    restart: unless-stopped
+
+  skywalking-ui:
+    image: apache/skywalking-ui:9.7.0
+    container_name: my-xhs-skywalking-ui
+    network_mode: host
+    environment:
+      SW_OAP_ADDRESS: http://127.0.0.1:12800
+      SERVER_PORT: 18081
+    deploy:
+      resources:
+        limits: { cpus: '0.25', memory: 384m }
+        reservations: { cpus: '0.1', memory: 192m }
+    depends_on:
+      - skywalking-oap
+    restart: unless-stopped
+
+  # ==========================================
+  # VictoriaMetrics — 时序数据库（Prometheus 兼容）
+  # ==========================================
+
+  victoria-metrics:
+    image: victoriametrics/victoria-metrics:v1.93.12
+    container_name: my-xhs-victoria-metrics
+    network_mode: host
+    command: >
+      -storageDataPath=/victoria-metrics-data
+      -retentionPeriod=30d
+      -httpListenAddr=:8428
+    deploy:
+      resources:
+        limits: { cpus: '0.25', memory: 384m }
+        reservations: { cpus: '0.1', memory: 192m }
+    volumes:
+      - vm-data:/victoria-metrics-data
+    restart: unless-stopped
+
+  # ==========================================
+  # Prometheus — 指标采集
+  # ==========================================
+
   prometheus:
     image: prom/prometheus:v2.48.1
     container_name: my-xhs-prometheus
     network_mode: host
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--web.listen-address=:19090'
-      - '--storage.tsdb.retention.time=15d'
-      - '--storage.tsdb.path=/prometheus'
+    command: >
+      --config.file=/etc/prometheus/prometheus.yml
+      --web.listen-address=:19090
+      --storage.tsdb.path=/prometheus
+      --storage.tsdb.retention.time=15d
+      --web.enable-lifecycle
+    deploy:
+      resources:
+        limits: { cpus: '0.25', memory: 384m }
+        reservations: { cpus: '0.1', memory: 192m }
     volumes:
       - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - ./config/prometheus/alert_rules:/etc/prometheus/alert_rules
@@ -854,66 +779,145 @@ services:
     restart: unless-stopped
 
   # ==========================================
-  # Grafana 10 — 端口 13000
+  # Grafana — 可视化面板
   # ==========================================
+
   grafana:
     image: grafana/grafana:10.2.3
     container_name: my-xhs-grafana
     network_mode: host
     environment:
-      - GF_SERVER_HTTP_PORT=13000
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=Xhs@2026#Grafana
-      - GF_USERS_ALLOW_SIGN_UP=false
+      GF_SERVER_HTTP_PORT: 13000
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: Xhs@2026#Admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+    deploy:
+      resources:
+        limits: { cpus: '0.25', memory: 384m }
+        reservations: { cpus: '0.1', memory: 192m }
     volumes:
+      - ./config/grafana/provisioning/datasources/prometheus.yml:/etc/grafana/provisioning/datasources/prometheus.yml
+      - ./config/grafana/provisioning/dashboards/dashboard-provider.yml:/etc/grafana/provisioning/dashboards/dashboard-provider.yml
+      - ./config/grafana/provisioning/dashboards/json:/etc/grafana/provisioning/dashboards/json
       - grafana-data:/var/lib/grafana
-      - ./config/grafana/provisioning:/etc/grafana/provisioning
-    restart: unless-stopped
-
-  # ==========================================
-  # SkyWalking OAP 9.7.0 — 链路追踪后端
-  # ==========================================
-  skywalking-oap:
-    image: apache/skywalking-oap-server:9.7.0
-    container_name: my-xhs-skywalking-oap
-    network_mode: host
-    environment:
-      SW_STORAGE: elasticsearch
-      SW_STORAGE_ES_CLUSTER_NODES: 127.0.0.1:19200
-    restart: unless-stopped
-
-  # ==========================================
-  # SkyWalking UI 9.7.0 — 链路追踪控制台
-  # ==========================================
-  skywalking-ui:
-    image: apache/skywalking-ui:9.7.0
-    container_name: my-xhs-skywalking-ui
-    network_mode: host
-    environment:
-      SW_OAP_ADDRESS: http://127.0.0.1:12800
-      SW_SERVER_PORT: 18081
     depends_on:
-      - skywalking-oap
+      - prometheus
     restart: unless-stopped
+
+  # ==========================================
+  # Filebeat — 日志采集 → Logstash
+  # ==========================================
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.12.2
+    container_name: my-xhs-filebeat
+    network_mode: host
+    user: root
+    command: >
+      filebeat -e
+      -E output.logstash.hosts=["127.0.0.1:15044"]
+      -E filebeat.inputs=[{"type":"log","enabled":true,"paths":["/logs/*.json"],"json.keys_under_root":true,"json.add_error_key":true}]
+    deploy:
+      resources:
+        limits: { cpus: '0.1', memory: 192m }
+        reservations: { cpus: '0.05', memory: 96m }
+    volumes:
+      - /data/workspace/my-xhs/logs:/logs:ro
+    depends_on:
+      - logstash
+    restart: unless-stopped
+
+  # ==========================================
+  # Logstash — 日志管道
+  # ==========================================
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.12.2
+    container_name: my-xhs-logstash
+    network_mode: host
+    environment:
+      LS_JAVA_OPTS: "-Xms256m -Xmx512m"
+      XPACK_MONITORING_ENABLED: "false"
+    command: >
+      logstash
+      -e '
+        input { beats { port => 15044 } }
+        filter {
+          grok {
+            match => { "[log][file][path]" => "/logs/(?<service>[^/]+)\.json" }
+          }
+          date {
+            match => [ "timestamp", "ISO8601" ]
+            target => "@timestamp"
+          }
+        }
+        output {
+          elasticsearch {
+            hosts => ["127.0.0.1:19200"]
+            user => "elastic"
+            password => "Xhs@2026#Elastic"
+            index => "myxhs-logs-%{+YYYY.MM.dd}"
+          }
+        }
+      '
+    deploy:
+      resources:
+        limits: { cpus: '0.5', memory: 768m }
+        reservations: { cpus: '0.25', memory: 384m }
+    restart: unless-stopped
+
+  # ==========================================
+  # Kibana — 日志可视化
+  # ==========================================
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.12.2
+    container_name: my-xhs-kibana
+    network_mode: host
+    environment:
+      SERVER_PORT: 15601
+      ELASTICSEARCH_HOSTS: http://127.0.0.1:19200
+      ELASTICSEARCH_USERNAME: elastic
+      ELASTICSEARCH_PASSWORD: Xhs@2026#Elastic
+    deploy:
+      resources:
+        limits: { cpus: '0.25', memory: 768m }
+        reservations: { cpus: '0.1', memory: 384m }
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+
+# ==========================================
+# Volumes
+# ==========================================
 
 volumes:
+  # MySQL
   mysql-user-data:
-  mysql-user-slave-data:
   mysql-content-data:
-  mysql-content-slave-data:
   mysql-order-data:
-  mysql-order-slave-data:
   mysql-inventory-data:
+  mysql-user-slave-data:
+  mysql-content-slave-data:
+  mysql-order-slave-data:
   mysql-inventory-slave-data:
+  # Redis
   redis-data:
   redis-cache-data:
   redis-business-data:
-  mq-logs:
-  mq-store:
-  mq-logs-slave:
-  mq-store-slave:
+  # RocketMQ
+  mq-master-logs:
+  mq-master-store:
+  mq-slave-logs:
+  mq-slave-store:
+  # Elasticsearch
   es-data:
-  es-plugins:
-  prometheus-data:
-  grafana-data:
+  es-sw-data:
+  # Canal
   canal-data:
+  # VictoriaMetrics
+  vm-data:
+  # Prometheus
+  prometheus-data:
+  # Grafana
+  grafana-data:

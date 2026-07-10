@@ -82,32 +82,7 @@
             <version>${project.version}</version>
         </dependency>
 
-        <!-- Dubbo 服务接口依赖（编译时需要接口类，运行时通过 Nacos 注册中心发现） -->
-        <dependency>
-            <groupId>com.myxhs</groupId>
-            <artifactId>my-xhs-user-api</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.myxhs</groupId>
-            <artifactId>my-xhs-content-api</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.myxhs</groupId>
-            <artifactId>my-xhs-product-api</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.myxhs</groupId>
-            <artifactId>my-xhs-order-api</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.myxhs</groupId>
-            <artifactId>my-xhs-inventory-api</artifactId>
-            <version>${project.version}</version>
-        </dependency>
+        <!-- 内部服务模块依赖 -->
         <dependency>
             <groupId>com.myxhs</groupId>
             <artifactId>my-xhs-counter</artifactId>
@@ -144,20 +119,6 @@
         <dependency>
             <groupId>org.apache.skywalking</groupId>
             <artifactId>apm-toolkit-logback-1.x</artifactId>
-        </dependency>
-
-        <!-- Dubbo Triple（Consumer：RPC 调用其他服务，逐步替换高频 Feign 调用） -->
-        <dependency>
-            <groupId>org.apache.dubbo</groupId>
-            <artifactId>dubbo-spring-boot-starter</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.dubbo</groupId>
-            <artifactId>dubbo-rpc-triple</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.google.protobuf</groupId>
-            <artifactId>protobuf-java</artifactId>
         </dependency>
 
         <!-- Test -->

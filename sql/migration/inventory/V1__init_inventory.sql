@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS t_inventory (
     sku_id          BIGINT  NOT NULL COMMENT 'SKU ID',
     available_stock INT     NOT NULL DEFAULT 0 COMMENT '可用库存',
     locked_stock    INT     NOT NULL DEFAULT 0 COMMENT '锁定库存',
+    freezing_stock  INT     NOT NULL DEFAULT 0 COMMENT 'TCC冻结库存',
     deleted         TINYINT NOT NULL DEFAULT 0 COMMENT '逻辑删除',
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',

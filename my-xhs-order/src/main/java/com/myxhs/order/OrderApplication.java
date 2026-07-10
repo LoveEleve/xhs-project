@@ -1,11 +1,14 @@
 package com.myxhs.order;
 
+import com.baomidou.mybatisplus.autoconfigure.MybatisPlusAutoConfiguration;
+import com.myxhs.common.config.ReadWriteRoutingDataSourceConfig;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.FilterType;
 
 /**
  * 订单服务启动类
@@ -20,8 +23,10 @@ import org.springframework.context.annotation.ComponentScan;
  * 不使用 Spring Boot 的自动配置（避免 HikariCP 与 ShardingSphere Driver 冲突）。
  * </p>
  */
-@SpringBootApplication(exclude = {DataSourceAutoConfiguration.class})
-@ComponentScan(basePackages = {"com.myxhs.order", "com.myxhs.common"})
+@SpringBootApplication(exclude = {DataSourceAutoConfiguration.class, MybatisPlusAutoConfiguration.class})
+@ComponentScan(basePackages = {"com.myxhs.order", "com.myxhs.common"},
+        excludeFilters = @ComponentScan.Filter(type = FilterType.ASSIGNABLE_TYPE,
+                classes = ReadWriteRoutingDataSourceConfig.class))
 @MapperScan("com.myxhs.order.mapper")
 @EnableFeignClients(basePackages = "com.myxhs.order.feign")
 public class OrderApplication {

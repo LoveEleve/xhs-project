@@ -82,6 +82,12 @@
             <artifactId>apm-toolkit-logback-1.x</artifactId>
         </dependency>
 
+        <!-- Logstash Logback Encoder（JSON 结构化日志） -->
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+        </dependency>
+
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>

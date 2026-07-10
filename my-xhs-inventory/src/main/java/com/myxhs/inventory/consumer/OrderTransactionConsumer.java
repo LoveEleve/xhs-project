@@ -23,12 +23,18 @@ import java.nio.charset.StandardCharsets;
  * </p>
  * <p>
  * 幂等保证（双重）：
- * 1. 消费者层面：MessageIdempotentHelper（orderNo, 24h），重复消费直接跳过
+ * 1. 消费者层面：MessageIdempotentHelper（msgId），RocketMQ at-least-once 重复投递时跳过
  * 2. InventoryService 层面：Lua 脚本内置幂等（PREDEDUCT_KEY 已存在则返回 -1）
  * </p>
  * <p>
+ * 幂等键选择说明：
+ * - 使用 msgId 而非 orderNo：避免 rebalance 时实例崩溃导致部分 SKU 永久跳过
+ *   （旧实现：幂等标记在循环前设置，实例崩溃后新实例因 orderNo 幂等跳过全部 SKU）
+ * - preDeduct() Lua 脚本以 pseudoOrderId 为幂等键，防止同一订单重复预扣
+ * </p>
+ * <p>
  * 失败策略：
- * - 抛出异常触发 RocketMQ 重试（指数退避，最多 16 次）
+ * - 抛出异常触发 RocketMQ 重试（指数退避，最多 5 次）
  * - 超过重试次数进死信队列，运维人工介入
  * </p>
  */
@@ -60,8 +66,9 @@ public class OrderTransactionConsumer implements RocketMQListener<MessageExt> {
             String orderNo = payload.get("orderNo").asText();
             Long userId = payload.get("userId").asLong();
 
-            // 消费者层面幂等校验：同一个 orderNo 只消费一次
-            if (!idempotentHelper.isFirstProcess(BIZ_TYPE, orderNo, IDEMPOTENT_TTL_SECONDS)) {
+            // 消费者层面幂等校验：msgId 级别去重，避免 rebalance 时部分 SKU 永久跳过
+            // 使用 msgId 而非 orderNo：orderNo 在循环内部分成功时会导致 rebalance 后新实例跳过
+            if (!idempotentHelper.isFirstProcess(BIZ_TYPE, msg.getMsgId(), IDEMPOTENT_TTL_SECONDS)) {
                 return;
             }
 
@@ -88,8 +95,8 @@ public class OrderTransactionConsumer implements RocketMQListener<MessageExt> {
                         log.info("[库存-事务消费] 预扣减成功: orderNo={}, skuId={}, qty={}",
                                 orderNo, skuId, quantity);
                     } catch (Exception e) {
-                        // 预扣减失败，删除消费者幂等键允许 MQ 重试
-                        idempotentHelper.removeMark(BIZ_TYPE, orderNo);
+                        // 预扣减失败，抛出异常触发 RocketMQ 重试
+                        // msgId 级别幂等确保 rebalance 后不会跳过未处理的 SKU
                         log.error("[库存-事务消费] 预扣减失败: orderNo={}, skuId={}, qty={}",
                                 orderNo, skuId, quantity, e);
                         throw new RuntimeException("库存预扣减失败: skuId=" + skuId, e);

@@ -39,5 +39,8 @@ public class ChatMessage {
     /** 会话内消息序列号（Redis INCR 生成，保证同会话消息严格有序） */
     private Long seqNo;
 
+    /** 是否已读：0-未读 1-已读 */
+    private Integer isRead;
+
     private LocalDateTime createdAt;
 }

@@ -32,12 +32,6 @@
         <module>my-xhs-test</module>
         <module>my-xhs-benchmark</module>
 
-        <!-- API 子模块 -->
-        <module>my-xhs-user/my-xhs-user-api</module>
-        <module>my-xhs-content/my-xhs-content-api</module>
-        <module>my-xhs-product/my-xhs-product-api</module>
-        <module>my-xhs-order/my-xhs-order-api</module>
-        <module>my-xhs-inventory/my-xhs-inventory-api</module>
     </modules>
 
     <properties>
@@ -58,7 +52,6 @@
         
         <!-- 缓存相关 -->
         <redisson.version>3.27.0</redisson.version>
-        <caffeine.version>3.1.8</caffeine.version>
         
         <!-- 消息队列 -->
         <rocketmq.version>5.1.4</rocketmq.version>
@@ -98,12 +91,6 @@
         
         <!-- JMH 基准测试 -->
         <jmh.version>1.37</jmh.version>
-        
-        <!-- Dubbo Triple（HTTP/2 + Protobuf） -->
-        <dubbo.version>3.3.0</dubbo.version>
-        <grpc.version>1.64.0</grpc.version>
-        <protobuf.version>3.25.3</protobuf.version>
-        <protobuf.plugin.version>0.6.1</protobuf.plugin.version>
         
         <!-- 其他 -->
         <kaptcha.version>1.1.0</kaptcha.version>
@@ -193,12 +180,6 @@
                 <version>${redisson.version}</version>
             </dependency>
             
-            <!-- Caffeine -->
-            <dependency>
-                <groupId>com.github.ben-manes.caffeine</groupId>
-                <artifactId>caffeine</artifactId>
-                <version>${caffeine.version}</version>
-            </dependency>
             
             <!-- Feign HttpClient 5（连接池） -->
             <dependency>
@@ -297,48 +278,6 @@
                 <groupId>me.ahoo.cosid</groupId>
                 <artifactId>cosid-spring-boot-starter</artifactId>
                 <version>${cosid.version}</version>
-            </dependency>
-            
-            <!-- Apache Dubbo BOM（Triple 协议：HTTP/2 + Protobuf，替代高频 Feign 调用） -->
-            <dependency>
-                <groupId>org.apache.dubbo</groupId>
-                <artifactId>dubbo-bom</artifactId>
-                <version>${dubbo.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            
-            <!-- Dubbo Spring Boot Starter（Spring Boot 3 兼容） -->
-            <dependency>
-                <groupId>org.apache.dubbo</groupId>
-                <artifactId>dubbo-spring-boot-starter</artifactId>
-                <version>${dubbo.version}</version>
-            </dependency>
-            
-            <!-- Dubbo Triple 协议依赖 -->
-            <dependency>
-                <groupId>org.apache.dubbo</groupId>
-                <artifactId>dubbo-rpc-triple</artifactId>
-                <version>${dubbo.version}</version>
-            </dependency>
-            
-            <!-- Protobuf（Triple 序列化） -->
-            <dependency>
-                <groupId>com.google.protobuf</groupId>
-                <artifactId>protobuf-java</artifactId>
-                <version>${protobuf.version}</version>
-            </dependency>
-            
-            <!-- gRPC Stub（Triple 兼容 gRPC） -->
-            <dependency>
-                <groupId>io.grpc</groupId>
-                <artifactId>grpc-stub</artifactId>
-                <version>${grpc.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.grpc</groupId>
-                <artifactId>grpc-protobuf</artifactId>
-                <version>${grpc.version}</version>
             </dependency>
             
             <!-- Sentinel（统一版本 ${sentinel.version}，覆盖 Spring Cloud Alibaba 传递的 1.8.6） -->

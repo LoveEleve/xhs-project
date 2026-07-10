@@ -5,6 +5,9 @@ import co.elastic.clients.json.jackson.JacksonJsonpMapper;
 import co.elastic.clients.transport.ElasticsearchTransport;
 import co.elastic.clients.transport.rest_client.RestClientTransport;
 import org.apache.http.HttpHost;
+import org.apache.http.auth.AuthScope;
+import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.nio.reactor.IOReactorConfig;
 import org.elasticsearch.client.RestClient;
 import org.elasticsearch.client.RestClientBuilder;
@@ -24,6 +27,12 @@ public class ElasticsearchConfig {
 
     @Value("${elasticsearch.uris:http://localhost:19200}")
     private String uris;
+
+    @Value("${elasticsearch.username:elastic}")
+    private String username;
+
+    @Value("${elasticsearch.password:}")
+    private String password;
 
     @Value("${elasticsearch.connect-timeout:5000}")
     private int connectTimeout;
@@ -50,11 +59,18 @@ public class ElasticsearchConfig {
             hosts[i] = HttpHost.create(uri);
         }
 
+        // Basic Auth 凭据
+        final BasicCredentialsProvider credentialsProvider = new BasicCredentialsProvider();
+        credentialsProvider.setCredentials(
+                AuthScope.ANY,
+                new UsernamePasswordCredentials(username, password));
+
         RestClientBuilder builder = RestClient.builder(hosts)
                 .setRequestConfigCallback(config -> config
                         .setConnectTimeout(connectTimeout)
                         .setSocketTimeout(socketTimeout))
                 .setHttpClientConfigCallback(httpClientBuilder -> httpClientBuilder
+                        .setDefaultCredentialsProvider(credentialsProvider)
                         .setMaxConnTotal(maxConnTotal)
                         .setMaxConnPerRoute(maxConnPerRoute)
                         .setDefaultIOReactorConfig(IOReactorConfig.custom()

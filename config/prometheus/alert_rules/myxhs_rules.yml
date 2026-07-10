@@ -225,6 +225,17 @@ groups:
           summary: "RocketMQ Broker 磁盘使用率超过 80%"
           description: "Broker: {{ $labels.broker }}, 使用率: {{ $value }}%"
 
+      # DLQ 死信队列有消息 → P1
+      - alert: DlqMessageDetected
+        expr: myxhs_mq_dlq_total > 0
+        for: 1m
+        labels:
+          severity: critical
+          level: P1
+        annotations:
+          summary: "DLQ 死信队列检测到消息"
+          description: "ConsumerGroup: {{ $labels.consumerGroup }}, Topic: {{ $labels.topic }}, 数量: {{ $value }}"
+
   # ==================== 核心链路按 4 黄金信号告警 ====================
   - name: myxhs_core_golden_signals
     rules:

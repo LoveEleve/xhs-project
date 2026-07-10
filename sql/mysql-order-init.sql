@@ -162,6 +162,7 @@ CREATE TABLE IF NOT EXISTS t_order_event_0 (
     event_time      DATETIME(3)   NOT NULL COMMENT '事件发生时间',
     created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (id),
+    UNIQUE INDEX uk_order_event_seq (order_id, event_seq),
     INDEX idx_order_id (order_id),
     INDEX idx_user_id (user_id),
     INDEX idx_event_time (event_time)

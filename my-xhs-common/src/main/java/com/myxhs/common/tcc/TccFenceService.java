@@ -51,23 +51,44 @@ public class TccFenceService {
     }
 
     /**
-     * Confirm 阶段：更新 Fence 状态为已确认
+     * Confirm 阶段：更新 Fence 状态为已确认（仅允许从 Try 状态转换）
+     * 幂等：已是 Confirm 状态时直接返回成功
      */
     public void confirmFence(String xid, Long branchId) {
+        // 先检查当前状态
+        Integer currentStatus = jdbcTemplate.queryForObject(
+            "SELECT status FROM t_tcc_fence WHERE xid = ? AND branch_id = ?",
+            Integer.class, xid, branchId
+        );
+        if (currentStatus == null) {
+            log.error("[TCC Fence] Confirm时Fence记录不存在: xid={}, branchId={}", xid, branchId);
+            return;
+        }
+        if (currentStatus == 2) {
+            log.debug("[TCC Fence] Confirm 幂等：已是已确认状态: xid={}, branchId={}", xid, branchId);
+            return;
+        }
+        if (currentStatus == 3) {
+            log.error("[TCC Fence] Confirm 拒绝：当前已是已取消状态: xid={}, branchId={}", xid, branchId);
+            return;
+        }
+        // status=1（Try），执行状态转换
         int affected = jdbcTemplate.update(
-            "UPDATE t_tcc_fence SET status = 2 WHERE xid = ? AND branch_id = ?",
+            "UPDATE t_tcc_fence SET status = 2 WHERE xid = ? AND branch_id = ? AND status = 1",
             xid, branchId
         );
-        if (affected == 0) {
-            log.error("[TCC Fence] Confirm时Fence记录不存在: xid={}, branchId={}", xid, branchId);
-        } else {
+        if (affected > 0) {
             log.debug("[TCC Fence] Confirm fence updated: xid={}, branchId={}", xid, branchId);
+        } else {
+            log.warn("[TCC Fence] Confirm fence 并发更新失败: xid={}, branchId={}", xid, branchId);
         }
     }
 
     /**
      * Cancel 阶段：空回滚处理
      * 如果 Try 还没执行，插入一条 CANCELLED 状态的记录
+     * 幂等：已是 Cancel 状态时直接返回成功
+     * 状态检查：只能从 Try(status=1) 或已 Cancel(status=3) 转为 Cancel，拒绝覆盖 Confirm(status=2)
      */
     public void cancelFence(String xid, Long branchId, String actionName) {
         try {
@@ -77,12 +98,33 @@ public class TccFenceService {
             );
             log.debug("[TCC Fence] Cancel fence inserted (空回滚): xid={}, branchId={}", xid, branchId);
         } catch (DuplicateKeyException e) {
-            // 已存在记录，更新状态
-            jdbcTemplate.update(
-                "UPDATE t_tcc_fence SET status = 3 WHERE xid = ? AND branch_id = ?",
+            // 已存在记录，检查当前状态
+            Integer currentStatus = jdbcTemplate.queryForObject(
+                "SELECT status FROM t_tcc_fence WHERE xid = ? AND branch_id = ?",
+                Integer.class, xid, branchId
+            );
+            if (currentStatus == null) {
+                log.warn("[TCC Fence] Cancel 并发异常：记录被删除: xid={}, branchId={}", xid, branchId);
+                return;
+            }
+            if (currentStatus == 3) {
+                log.debug("[TCC Fence] Cancel 幂等：已是已取消状态: xid={}, branchId={}", xid, branchId);
+                return;
+            }
+            if (currentStatus == 2) {
+                log.error("[TCC Fence] Cancel 拒绝：当前已是已确认状态，不可取消: xid={}, branchId={}", xid, branchId);
+                return;
+            }
+            // status=1（Try），执行状态转换
+            int affected = jdbcTemplate.update(
+                "UPDATE t_tcc_fence SET status = 3 WHERE xid = ? AND branch_id = ? AND status = 1",
                 xid, branchId
             );
-            log.debug("[TCC Fence] Cancel fence updated: xid={}, branchId={}", xid, branchId);
+            if (affected > 0) {
+                log.debug("[TCC Fence] Cancel fence updated: xid={}, branchId={}", xid, branchId);
+            } else {
+                log.warn("[TCC Fence] Cancel fence 并发更新失败: xid={}, branchId={}", xid, branchId);
+            }
         }
     }
 }

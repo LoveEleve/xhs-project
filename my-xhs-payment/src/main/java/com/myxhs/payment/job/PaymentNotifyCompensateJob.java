@@ -48,7 +48,7 @@ import java.util.concurrent.TimeUnit;
 public class PaymentNotifyCompensateJob {
 
     private final JdbcTemplate paymentJdbcTemplate;
-    private final StringRedisTemplate redisTemplate;
+    private final StringRedisTemplate stringRedisTemplate;
     private final OrderFeignClient orderFeignClient;
 
     /** 通知计数器 Redis Key 前缀 */
@@ -103,7 +103,7 @@ public class PaymentNotifyCompensateJob {
         for (Long orderId : orderIds) {
             try {
                 String countKey = NOTIFY_COUNT_PREFIX + orderId;
-                String countStr = redisTemplate.opsForValue().get(countKey);
+                String countStr = stringRedisTemplate.opsForValue().get(countKey);
                 int retryCount = countStr != null ? Integer.parseInt(countStr) : 0;
 
                 if (retryCount >= MAX_RETRY_COUNT) {
@@ -129,7 +129,7 @@ public class PaymentNotifyCompensateJob {
                         R<Void> notifyResult = orderFeignClient.notifyPaySuccess(orderId, tradeNo);
                         if (notifyResult != null && notifyResult.isSuccess()) {
                             log.info("[补偿任务] 订单 {} 通知成功", orderId);
-                            redisTemplate.delete(countKey);
+                            stringRedisTemplate.delete(countKey);
                             compensated++;
                         } else {
                             log.warn("[补偿任务] 订单 {} 通知失败: {}", orderId,
@@ -139,7 +139,7 @@ incrementRetryCount(countKey);
                     } else {
                         // 订单已不是待支付（已支付/已取消/已关闭等），无需补偿
                         log.debug("[补偿任务] 订单 {} 已不是待支付，无需补偿", orderId);
-                        redisTemplate.delete(countKey);
+                        stringRedisTemplate.delete(countKey);
                     }
                 } else if (payAmountResult == null || payAmountResult.getCode() == 503) {
                     // 订单服务不可达，稍后重试
@@ -149,12 +149,12 @@ incrementRetryCount(countKey);
                     // 订单服务返回其他错误（如订单已删除），无需补偿
                     log.debug("[补偿任务] 订单 {} 查询返回错误(code={})，无需补偿", orderId,
                             payAmountResult != null ? payAmountResult.getCode() : -1);
-                    redisTemplate.delete(countKey);
+                    stringRedisTemplate.delete(countKey);
                 }
             } catch (Exception e) {
                 log.error("[补偿任务] 处理订单 {} 补偿异常", orderId, e);
                 String countKey = NOTIFY_COUNT_PREFIX + orderId;
-                String countStr = redisTemplate.opsForValue().get(countKey);
+                String countStr = stringRedisTemplate.opsForValue().get(countKey);
                 int retryCount = countStr != null ? Integer.parseInt(countStr) : 0;
 incrementRetryCount(countKey);
             }
@@ -177,11 +177,11 @@ incrementRetryCount(countKey);
      * </p>
      */
     private void incrementRetryCount(String countKey) {
-        Boolean setSuccess = redisTemplate.opsForValue()
+        Boolean setSuccess = stringRedisTemplate.opsForValue()
                 .setIfAbsent(countKey, "1", NOTIFY_COUNT_TTL);
         if (Boolean.FALSE.equals(setSuccess)) {
             // Key 已存在，原子递增（INCR 是原子操作，TTL 不受影响）
-            redisTemplate.opsForValue().increment(countKey);
+            stringRedisTemplate.opsForValue().increment(countKey);
         }
         // SETNX 成功：初始值已设为 "1"，且带 TTL，无需额外操作
     }

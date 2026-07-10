@@ -18,6 +18,9 @@ server:
     enabled: true
 
 spring:
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
   application:
     name: my-xhs-home
   # BFF 层无数据库，排除需要 DataSource 的自动配置
@@ -25,23 +28,17 @@ spring:
     exclude:
       - org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration
       - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
-      - com.myxhs.common.config.MybatisPlusConfig
-      - com.myxhs.common.id.SegmentIdGenerator
-      - com.myxhs.common.id.IdGeneratorUtil
       - org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
       - org.springframework.boot.autoconfigure.batch.BatchAutoConfiguration
       - org.springframework.boot.autoconfigure.quartz.QuartzAutoConfiguration
       - org.springframework.boot.autoconfigure.jmx.JmxAutoConfiguration
   data:
     redis:
-      host: 21.91.124.110
-      port: 16379
       # 【Nacos 配置】Redis 密码已迁移至 Nacos Config（my-xhs-redis.yaml），本地值为 fallback
-      password: ${spring.data.redis.password:"Xhs@2026#Redis"}
-      # Sentinel 高可用配置（取消注释启用 Sentinel 模式，自动覆盖 host:port）
-      # sentinel:
-      #   master: myMaster
-      #   nodes: 21.91.124.110:26379,21.91.124.110:26380,21.91.124.110:26381
+      password: "Xhs@2026#Redis"
+      sentinel:
+        master: mymaster
+        nodes: 21.130.247.89:26379,21.130.247.89:26380,21.130.247.89:26381
       cache:
         port: 16380  # Cache Redis (allkeys-lru)
       business:
@@ -56,12 +53,14 @@ spring:
     nacos:
       discovery:
         enabled: true
-        server-addr: 21.91.124.110:18848
+        server-addr: 21.130.247.89:18848
         namespace: my-xhs
         group: DEFAULT_GROUP
+        metadata:
+          zone: ${MYXHS_ZONE:defaultZone}
       config:
         enabled: true
-        server-addr: 21.91.124.110:18848
+        server-addr: 21.130.247.89:18848
         import-check:
           enabled: false
         file-extension: yaml
@@ -79,13 +78,13 @@ spring:
         #       lock-timeout-ms: 3000  # 分布式锁超时
     sentinel:
       transport:
-        dashboard: 21.91.124.110:18082
+        dashboard: 21.130.247.89:18082
         port: 8725
       eager: true
       datasource:
         degrade:
           nacos:
-            server-addr: 21.91.124.110:18848
+            server-addr: 21.130.247.89:18848
             namespace: my-xhs
             group-id: SENTINEL_GROUP
             data-id: my-xhs-home-degrade-rules
@@ -110,7 +109,7 @@ spring:
 
 # RocketMQ 配置（消费笔记发布事件，推送到粉丝收件箱）
 rocketmq:
-  name-server: 21.91.124.110:9876
+  name-server: 21.130.247.89:9876;21.130.247.89:9877
   consumer:
     group: home-consumer-group
 
@@ -164,23 +163,12 @@ logging:
     com.myxhs: info
     org.springframework.web: info
 
-# Dubbo Triple 配置（Consumer：作为 BFF 层聚合调用下游 Dubbo 服务）
-dubbo:
-  application:
-    name: ${spring.application.name}
-  registry:
-    address: nacos://21.91.124.110:18848?namespace=my-xhs
-  consumer:
-    check: false
-    timeout: 3000
-    retries: 0
-
 # XXL-Job 分布式调度配置
 xxl:
   job:
     enabled: true
     admin:
-      addresses: http://21.91.124.110:18080/xxl-job-admin
+      addresses: http://21.130.247.89:18080/xxl-job-admin
     accessToken: my-xhs-xxl-job-token-2026
     executor:
       port: 9994

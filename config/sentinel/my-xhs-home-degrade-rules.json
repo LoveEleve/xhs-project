@@ -1,0 +1,12 @@
+[
+  {
+    "resource": "GET:/api/home/**",
+    "limitApp": "default",
+    "grade": 0,
+    "count": 1500,
+    "timeWindow": 10,
+    "minRequestAmount": 5,
+    "statIntervalMs": 1000,
+    "slowRatioThreshold": 0.5
+  }
+]

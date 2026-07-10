@@ -19,6 +19,9 @@ server:
     enabled: true
 
 spring:
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
   application:
     name: my-xhs-order
   # ShardingSphere-JDBC 数据源由 ShardingSphereDataSourceConfig 手动创建
@@ -33,14 +36,11 @@ spring:
       - org.springframework.boot.autoconfigure.jmx.JmxAutoConfiguration
   data:
     redis:
-      host: 21.91.124.110
-      port: 16379
       # 【Nacos 配置】Redis 密码已迁移至 Nacos Config（my-xhs-redis.yaml），本地值为 fallback
-      password: ${spring.data.redis.password:"Xhs@2026#Redis"}
-      # Sentinel 高可用配置（取消注释启用 Sentinel 模式，自动覆盖 host:port）
-      # sentinel:
-      #   master: myMaster
-      #   nodes: 21.91.124.110:26379,21.91.124.110:26380,21.91.124.110:26381
+      password: "Xhs@2026#Redis"
+      sentinel:
+        master: mymaster
+        nodes: 21.130.247.89:26379,21.130.247.89:26380,21.130.247.89:26381
       cache:
         port: 16380  # Cache Redis (allkeys-lru)
       business:
@@ -55,12 +55,14 @@ spring:
     nacos:
       discovery:
         enabled: true
-        server-addr: 21.91.124.110:18848
+        server-addr: 21.130.247.89:18848
         namespace: my-xhs
         group: DEFAULT_GROUP
+        metadata:
+          zone: ${MYXHS_ZONE:defaultZone}
       config:
         enabled: true
-        server-addr: 21.91.124.110:18848
+        server-addr: 21.130.247.89:18848
         import-check:
           enabled: false
         file-extension: yaml
@@ -79,7 +81,7 @@ spring:
     # Sentinel 配置（轻量模式，暂不连接 Dashboard）
     sentinel:
       transport:
-        dashboard: 21.91.124.110:18082
+        dashboard: 21.130.247.89:18082
       # 取消懒加载，应用启动时即初始化 Sentinel
       eager: true
       # Sentinel 舱壁隔离规则（通过 Nacos 动态配置推送）：
@@ -91,14 +93,14 @@ spring:
       datasource:
         flow:
           nacos:
-            server-addr: 21.91.124.110:18848
+            server-addr: 21.130.247.89:18848
             namespace: my-xhs
             group-id: SENTINEL_GROUP
             data-id: my-xhs-order-flow-rules
             rule-type: flow
         degrade:
           nacos:
-            server-addr: 21.91.124.110:18848
+            server-addr: 21.130.247.89:18848
             namespace: my-xhs
             group-id: SENTINEL_GROUP
             data-id: my-xhs-order-degrade-rules
@@ -125,7 +127,7 @@ mybatis-plus:
 
 # RocketMQ 配置
 rocketmq:
-  name-server: 21.91.124.110:9876
+  name-server: 21.130.247.89:9876;21.130.247.89:9877
   producer:
     group: order-producer-group
     send-message-timeout: 3000
@@ -147,8 +149,8 @@ pay:
   type: mock
   # 支付数据源（payment 表在独立库，不走分片）
   datasource:
-    # 生产环境建议通过环境变量注入：${MYSQL_HOST:21.91.124.110}
-    url: jdbc:mysql://21.91.124.110:13308/my_xhs_payment?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
+    # 生产环境建议通过环境变量注入：${MYSQL_HOST:21.130.247.89}
+    url: jdbc:mysql://21.130.247.89:13308/my_xhs_payment?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
     username: root
     password: "Xhs@2026#MySQL"
 
@@ -156,8 +158,8 @@ pay:
 order:
   mapping:
     datasource:
-      # 生产环境建议通过环境变量注入：${MYSQL_HOST:21.91.124.110}
-      url: jdbc:mysql://21.91.124.110:13308/my_xhs_order?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
+      # 生产环境建议通过环境变量注入：${MYSQL_HOST:21.130.247.89}
+      url: jdbc:mysql://21.130.247.89:13308/my_xhs_order?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
       username: root
       password: "Xhs@2026#MySQL"
 
@@ -166,7 +168,7 @@ xxl:
   job:
     enabled: true
     admin:
-      addresses: http://21.91.124.110:18080/xxl-job-admin
+      addresses: http://21.130.247.89:18080/xxl-job-admin
     accessToken: my-xhs-xxl-job-token-2026
     executor:
       port: 9999
@@ -197,14 +199,3 @@ logging:
     org.springframework.web: info
     org.apache.shardingsphere: info
 
-# Dubbo Triple 配置（Consumer）
-dubbo:
-  application:
-    name: ${spring.application.name}
-  protocol:
-    name: tri
-    port: -1
-  registry:
-    address: nacos://21.91.124.110:18848?namespace=my-xhs
-  consumer:
-    check: false

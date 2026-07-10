@@ -1,0 +1,161 @@
+version: '3.8'
+
+# ============================================================
+# 机器 A：MySQL × 4（纯数据库，不跑从库，8C/16G 够用）
+# 预计内存：~6G
+# ============================================================
+
+services:
+  mysql-user:
+    image: mysql:8.0
+    container_name: my-xhs-mysql-user
+    network_mode: host
+    environment:
+      MYSQL_ROOT_PASSWORD: Xhs@2026#MySQL
+      TZ: Asia/Shanghai
+    command: >
+      --port=13306
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+      --max-connections=300
+      --innodb-buffer-pool-size=512M
+      --innodb-log-file-size=256M
+      --innodb-flush-log-at-trx-commit=2
+      --sync-binlog=1
+      --slow-query-log=1
+      --long-query-time=0.5
+      --server-id=1
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --binlog-row-image=FULL
+    deploy:
+      resources:
+        limits: { cpus: '2', memory: 2g }
+        reservations: { cpus: '1', memory: 1g }
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13306", "-u", "root", "-pXhs@2026#MySQL"]
+      interval: 30s; timeout: 10s; retries: 3; start_period: 40s
+    volumes:
+      - mysql-user-data:/var/lib/mysql
+      - ./sql/mysql-user-init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    restart: unless-stopped
+
+  mysql-content:
+    image: mysql:8.0
+    container_name: my-xhs-mysql-content
+    network_mode: host
+    environment:
+      MYSQL_ROOT_PASSWORD: Xhs@2026#MySQL
+      TZ: Asia/Shanghai
+    command: >
+      --port=13307
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+      --max-connections=300
+      --innodb-buffer-pool-size=512M
+      --innodb-log-file-size=256M
+      --innodb-flush-log-at-trx-commit=2
+      --sync-binlog=1
+      --slow-query-log=1
+      --long-query-time=0.5
+      --server-id=2
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --binlog-row-image=FULL
+    deploy:
+      resources:
+        limits: { cpus: '2', memory: 2g }
+        reservations: { cpus: '1', memory: 1g }
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13307", "-u", "root", "-pXhs@2026#MySQL"]
+      interval: 30s; timeout: 10s; retries: 3; start_period: 40s
+    volumes:
+      - mysql-content-data:/var/lib/mysql
+      - ./sql/mysql-content-init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    restart: unless-stopped
+
+  mysql-order:
+    image: mysql:8.0
+    container_name: my-xhs-mysql-order
+    network_mode: host
+    environment:
+      MYSQL_ROOT_PASSWORD: Xhs@2026#MySQL
+      TZ: Asia/Shanghai
+    command: >
+      --port=13308
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+      --max-connections=500
+      --innodb-buffer-pool-size=1G
+      --innodb-log-file-size=512M
+      --innodb-flush-log-at-trx-commit=1
+      --sync-binlog=1
+      --slow-query-log=1
+      --long-query-time=0.5
+      --server-id=3
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --binlog-row-image=FULL
+    deploy:
+      resources:
+        limits: { cpus: '4', memory: 4g }
+        reservations: { cpus: '2', memory: 2g }
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13308", "-u", "root", "-pXhs@2026#MySQL"]
+      interval: 30s; timeout: 10s; retries: 3; start_period: 40s
+    volumes:
+      - mysql-order-data:/var/lib/mysql
+      - ./sql/mysql-order-init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    restart: unless-stopped
+
+  mysql-inventory:
+    image: mysql:8.0
+    container_name: my-xhs-mysql-inventory
+    network_mode: host
+    environment:
+      MYSQL_ROOT_PASSWORD: Xhs@2026#MySQL
+      TZ: Asia/Shanghai
+    command: >
+      --port=13309
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+      --max-connections=200
+      --innodb-buffer-pool-size=512M
+      --innodb-log-file-size=256M
+      --innodb-flush-log-at-trx-commit=1
+      --sync-binlog=1
+      --slow-query-log=1
+      --long-query-time=0.2
+      --server-id=4
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --binlog-row-image=FULL
+    deploy:
+      resources:
+        limits: { cpus: '2', memory: 2g }
+        reservations: { cpus: '1', memory: 1g }
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "13309", "-u", "root", "-pXhs@2026#MySQL"]
+      interval: 30s; timeout: 10s; retries: 3; start_period: 40s
+    volumes:
+      - mysql-inventory-data:/var/lib/mysql
+      - ./sql/mysql-inventory-init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    restart: unless-stopped
+
+volumes:
+  mysql-user-data:
+  mysql-content-data:
+  mysql-order-data:
+  mysql-inventory-data:

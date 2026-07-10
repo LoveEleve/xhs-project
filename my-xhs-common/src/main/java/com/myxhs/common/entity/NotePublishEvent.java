@@ -31,6 +31,9 @@ public class NotePublishEvent extends AbstractDomainEvent<NotePublishEvent> {
     /** 笔记类型：0-图文 1-视频 */
     private String noteType;
 
+    /** 本地消息表 ID（用于 FeedPushConsumer 更新推送进度，支持断点续推） */
+    private Long localMsgId;
+
     @Override
     public String getEventType() {
         return "NOTE_PUBLISHED";

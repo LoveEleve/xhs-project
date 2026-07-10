@@ -1,11 +1,15 @@
 package com.myxhs.common.metrics;
 
+import com.myxhs.common.mq.DlqMessageHandler;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.actuate.autoconfigure.metrics.MeterRegistryCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.event.ContextRefreshedEvent;
+import org.springframework.context.event.EventListener;
 
 import java.net.InetAddress;
 
@@ -14,16 +18,12 @@ import java.net.InetAddress;
  * <p>
  * 核心职责：为所有指标注入公共标签（application / instance）
  * </p>
- * <p>
- * 公共标签的作用：
- * - Prometheus 查询时可以按 application 过滤：rate(myxhs_order_create_total{application="my-xhs-order"}[5m])
- * - Grafana Dashboard 可以用 $application 变量做下拉选择
- * - 多实例部署时，通过 instance 标签区分不同实例
- * </p>
  */
 @Slf4j
 @Configuration
 public class MetricsAutoConfiguration {
+
+    private final ObjectProvider<BusinessMetrics> businessMetricsProvider;
 
     @Value("${spring.application.name:unknown}")
     private String applicationName;
@@ -31,13 +31,23 @@ public class MetricsAutoConfiguration {
     @Value("${server.port:8080}")
     private int serverPort;
 
+    public MetricsAutoConfiguration(ObjectProvider<BusinessMetrics> businessMetricsProvider) {
+        this.businessMetricsProvider = businessMetricsProvider;
+    }
+
     /**
-     * 为所有指标注入公共标签
-     * <p>
-     * 每个指标都会自动携带 application 和 instance 标签：
-     * myxhs_order_create_total{application="my-xhs-order", instance="192.168.1.100:19011", status="success"} 42
-     * </p>
+     * 容器刷新完成后将 BusinessMetrics 注入到 DlqMessageHandler
+     * 使用事件监听而非 @PostConstruct，避免与 MeterRegistry 的创建形成循环依赖
      */
+    @EventListener(ContextRefreshedEvent.class)
+    public void initDlqMetrics() {
+        BusinessMetrics bm = businessMetricsProvider.getIfAvailable();
+        if (bm != null) {
+            DlqMessageHandler.setBusinessMetrics(bm);
+            log.info("[监控] DlqMessageHandler 已注入 BusinessMetrics");
+        }
+    }
+
     @Bean
     public MeterRegistryCustomizer<MeterRegistry> commonTagsCustomizer() {
         return registry -> {
@@ -51,9 +61,6 @@ public class MetricsAutoConfiguration {
         };
     }
 
-    /**
-     * 获取实例标识（IP:Port）
-     */
     private String getInstanceId() {
         try {
             String hostAddress = InetAddress.getLocalHost().getHostAddress();

@@ -12,10 +12,12 @@ import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -56,6 +58,13 @@ import java.util.Map;
 public class NoteIndexSyncConsumer implements RocketMQListener<MessageExt> {
 
     private final ElasticsearchClient esClient;
+    private final StringRedisTemplate stringRedisTemplate;
+
+    /**
+     * 追踪当前正在处理的 noteId，用于在 catch 块中记录失败的 docId 到 Redis。
+     * RocketMQ 消费者默认单线程消费，ThreadLocal 安全。
+     */
+    private final ThreadLocal<Long> currentNoteId = new ThreadLocal<>();
 
     @Value("${search.note.index-name:note_index}")
     private String noteIndexName;
@@ -85,8 +94,18 @@ public class NoteIndexSyncConsumer implements RocketMQListener<MessageExt> {
 
         } catch (co.elastic.clients.elasticsearch._types.ElasticsearchException
                  | java.io.IOException e) {
-            log.error("[笔记索引同步] ES 通信异常，触发重试: msgId={}, reconsumeTimes={}",
-                    msg.getMsgId(), msg.getReconsumeTimes(), e);
+            Long noteId = currentNoteId.get();
+            log.error("[笔记索引同步] ES 通信异常，触发重试: noteId={}, msgId={}, reconsumeTimes={}",
+                    noteId, msg.getMsgId(), msg.getReconsumeTimes(), e);
+            // 记录失败 noteId 到 Redis Set，供 IncrementalIndexSyncJob 增量补偿
+            if (noteId != null && stringRedisTemplate != null) {
+                try {
+                    stringRedisTemplate.opsForSet().add("myxhs:es:sync:failed:note", String.valueOf(noteId));
+                    stringRedisTemplate.expire("myxhs:es:sync:failed:note", Duration.ofHours(1));
+                } catch (Exception redisEx) {
+                    log.warn("[笔记索引同步] 记录失败 noteId 到 Redis 失败: noteId={}", noteId, redisEx);
+                }
+            }
             throw new RuntimeException("笔记索引同步失败（可重试）", e);
         } catch (Exception e) {
             log.error("[笔记索引同步] 不可重试异常，跳过: msgId={}", msg.getMsgId(), e);
@@ -126,8 +145,14 @@ public class NoteIndexSyncConsumer implements RocketMQListener<MessageExt> {
             }
 
             switch (type) {
-                case "INSERT", "UPDATE" -> indexNoteFromCanal(noteId, row, version);
-                case "DELETE" -> deleteNote(noteId);
+                case "INSERT", "UPDATE" -> {
+                    currentNoteId.set(noteId);
+                    indexNoteFromCanal(noteId, row, version);
+                }
+                case "DELETE" -> {
+                    currentNoteId.set(noteId);
+                    deleteNote(noteId);
+                }
                 default -> log.debug("[笔记索引同步] 忽略事件类型: type={}", type);
             }
         }
@@ -145,8 +170,14 @@ public class NoteIndexSyncConsumer implements RocketMQListener<MessageExt> {
         }
 
         switch (type) {
-            case "INSERT", "UPDATE" -> indexNoteFromFlat(noteId, event);
-            case "DELETE" -> deleteNote(noteId);
+            case "INSERT", "UPDATE" -> {
+                currentNoteId.set(noteId);
+                indexNoteFromFlat(noteId, event);
+            }
+            case "DELETE" -> {
+                currentNoteId.set(noteId);
+                deleteNote(noteId);
+            }
             default -> log.warn("[笔记索引同步] 未知事件类型: type={}, noteId={}", type, noteId);
         }
     }

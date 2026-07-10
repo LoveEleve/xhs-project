@@ -4,6 +4,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import jdk.internal.vm.annotation.Contended;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.ConcurrentHashMap;
@@ -24,10 +25,10 @@ import java.util.concurrent.TimeUnit;
 @Component
 public class BusinessMetrics {
 
-    private final MeterRegistry meterRegistry;
+    private final ObjectProvider<MeterRegistry> meterRegistryProvider;
 
-    public BusinessMetrics(MeterRegistry meterRegistry) {
-        this.meterRegistry = meterRegistry;
+    public BusinessMetrics(ObjectProvider<MeterRegistry> meterRegistryProvider) {
+        this.meterRegistryProvider = meterRegistryProvider;
     }
 
     // ==================== 订单指标 ====================
@@ -95,7 +96,18 @@ public class BusinessMetrics {
         counter("coupon.action.total", "action", action, "result", success ? "success" : "fail").increment();
     }
 
+    // ==================== MQ 指标 ====================
+
+    /** 记录 DLQ 死信消息 */
+    public void recordDlqMessage(String consumerGroup, String topic) {
+        counter("myxhs.mq.dlq.total", "consumerGroup", consumerGroup, "topic", topic).increment();
+    }
+
     // ==================== 内部方法 ====================
+
+    private MeterRegistry meterRegistry() {
+        return meterRegistryProvider.getObject();
+    }
 
     private Counter counter(String name, String... tags) {
         io.micrometer.core.instrument.Tags micrometerTags = io.micrometer.core.instrument.Tags.empty();
@@ -105,13 +117,13 @@ public class BusinessMetrics {
         return Counter.builder(name)
                 .description("业务指标: " + name)
                 .tags(micrometerTags)
-                .register(meterRegistry);
+                .register(meterRegistry());
     }
 
     private Timer timer(String name) {
         return Timer.builder(name)
                 .description("业务延迟: " + name)
                 .publishPercentiles(0.5, 0.9, 0.99)
-                .register(meterRegistry);
+                .register(meterRegistry());
     }
 }

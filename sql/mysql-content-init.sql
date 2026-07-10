@@ -204,18 +204,23 @@ CREATE TABLE IF NOT EXISTS t_user_coupon (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户优惠券表';
 
 -- Canal 同步账号
--- 本地消息表（Feed发送端可靠性保障）
+CREATE USER IF NOT EXISTS 'canal'@'%' IDENTIFIED BY 'Canal@2026#Sync';
+GRANT SELECT, REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'canal'@'%';
+FLUSH PRIVILEGES;
+
+-- 本地消息表（Feed发送端可靠性保障）— 放在 my_xhs_content 库
+USE my_xhs_content;
 CREATE TABLE IF NOT EXISTS t_local_message (
     id              BIGINT       NOT NULL COMMENT 'ID',
     topic           VARCHAR(64)  NOT NULL COMMENT 'MQ Topic',
     body            TEXT         NOT NULL COMMENT '消息体JSON',
     status          TINYINT      NOT NULL DEFAULT 0 COMMENT '0=待发送 1=已发送 2=发送失败 3=死信',
     retry_count     INT          NOT NULL DEFAULT 0 COMMENT '重试次数',
+    push_status     TINYINT      NOT NULL DEFAULT 0 COMMENT '推送状态：0=未推送 1=推送中 2=已推送 3=推送失败',
+    push_cursor     INT          NOT NULL DEFAULT 0 COMMENT '推送游标（已推送到第几个粉丝）',
+    push_total      INT          NOT NULL DEFAULT 0 COMMENT '总粉丝数',
     created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (id),
-    INDEX idx_status_retry (status, retry_count, created_at)
+    INDEX idx_status_retry (status, retry_count, created_at),
+    INDEX idx_push_status (push_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='本地消息表(Feed可靠性保障)';
-
-CREATE USER IF NOT EXISTS 'canal'@'%' IDENTIFIED BY 'Canal@2026#Sync';
-GRANT SELECT, REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'canal'@'%';
-FLUSH PRIVILEGES;

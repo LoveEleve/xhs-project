@@ -13,21 +13,18 @@ import java.lang.management.ThreadMXBean;
  * 应用就绪健康检查指示器
  * <p>
  * 检测应用自身的运行状态（内存、线程），而非外部依赖。
- * 外部依赖（Redis、DB）的健康检查由 Spring Boot Actuator 内置的
- * RedisHealthIndicator、DataSourceHealthIndicator 自动处理。
+ * </p>
+ * <p>
+ * 外部依赖健康检查由以下 HealthIndicator 覆盖：
+ * - Business Redis：Spring Boot Actuator 内置 RedisHealthIndicator（@Primary 数据源）
+ * - Cache Redis：CacheRedisHealthIndicator（16380，防止 Feed 缓存全量穿透）
+ * - RocketMQ：RocketMQHealthIndicator（NameServer 连接检测）
+ * - DataSource：Spring Boot Actuator 内置 DataSourceHealthIndicator（如有 DataSource Bean）
  * </p>
  * <p>
  * 检测项：
  * 1. 堆内存使用率 — 超过 90% 标记为 DOWN（可能即将 OOM）
  * 2. 死锁线程检测 — 存在死锁标记为 DOWN
- * </p>
- * <p>
- * 为什么不重复实现 Redis 健康检查？
- * Spring Boot Actuator + spring-data-redis 已自带 RedisHealthIndicator，
- * 会自动注册到 /actuator/health 端点。重复实现会导致：
- * 1. Bean 名称冲突
- * 2. 连接泄漏（手动 getConnection() 需要手动关闭）
- * 3. 维护两份逻辑
  * </p>
  */
 @Slf4j

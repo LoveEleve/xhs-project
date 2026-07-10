@@ -37,4 +37,13 @@ public class LocalMessage implements Serializable {
 
     /** 创建时间 */
     private LocalDateTime createdAt;
+
+    /** 推送状态：0=未推送 1=推送中 2=已推送 3=推送失败 */
+    private Integer pushStatus;
+
+    /** 推送游标（已推送到第几个粉丝） */
+    private Integer pushCursor;
+
+    /** 总粉丝数 */
+    private Integer pushTotal;
 }

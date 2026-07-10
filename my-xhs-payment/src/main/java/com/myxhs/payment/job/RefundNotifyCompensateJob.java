@@ -43,7 +43,7 @@ import java.util.List;
 public class RefundNotifyCompensateJob {
 
     private final JdbcTemplate paymentJdbcTemplate;
-    private final StringRedisTemplate redisTemplate;
+    private final StringRedisTemplate stringRedisTemplate;
     private final OrderFeignClient orderFeignClient;
 
     /** 通知计数器 Redis Key 前缀 */
@@ -101,7 +101,7 @@ public class RefundNotifyCompensateJob {
         for (RefundRecord refund : refunds) {
             try {
                 String countKey = NOTIFY_COUNT_PREFIX + refund.orderId;
-                String countStr = redisTemplate.opsForValue().get(countKey);
+                String countStr = stringRedisTemplate.opsForValue().get(countKey);
                 int retryCount = countStr != null ? Integer.parseInt(countStr) : 0;
 
                 if (retryCount >= MAX_RETRY_COUNT) {
@@ -148,7 +148,7 @@ incrementRetryCount(countKey);
 
                 if (notifyResult != null && notifyResult.isSuccess()) {
                     log.info("[补偿任务] 退款订单 {} 通知成功", refund.orderId);
-                    redisTemplate.delete(countKey);
+                    stringRedisTemplate.delete(countKey);
                     compensated++;
                 } else {
                     // 通知失败：可能是订单已不是已支付状态，或订单服务暂时不可用
@@ -159,7 +159,7 @@ incrementRetryCount(countKey);
             } catch (Exception e) {
                 log.error("[补偿任务] 处理退款订单 {} 补偿异常", refund.orderId, e);
                 String countKey = NOTIFY_COUNT_PREFIX + refund.orderId;
-                String countStr = redisTemplate.opsForValue().get(countKey);
+                String countStr = stringRedisTemplate.opsForValue().get(countKey);
                 int retryCount = countStr != null ? Integer.parseInt(countStr) : 0;
 incrementRetryCount(countKey);
             }
@@ -182,11 +182,11 @@ incrementRetryCount(countKey);
      * </p>
      */
     private void incrementRetryCount(String countKey) {
-        Boolean setSuccess = redisTemplate.opsForValue()
+        Boolean setSuccess = stringRedisTemplate.opsForValue()
                 .setIfAbsent(countKey, "1", NOTIFY_COUNT_TTL);
         if (Boolean.FALSE.equals(setSuccess)) {
             // Key 已存在，原子递增（INCR 是原子操作，TTL 不受影响）
-            redisTemplate.opsForValue().increment(countKey);
+            stringRedisTemplate.opsForValue().increment(countKey);
         }
         // SETNX 成功：初始值已设为 "1"，且带 TTL，无需额外操作
     }

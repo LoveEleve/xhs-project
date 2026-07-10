@@ -58,6 +58,21 @@ public interface OrderMapper extends BaseMapper<Order> {
     int markRefunded(@Param("id") Long id, @Param("userId") Long userId);
 
     /**
+     * 通用乐观锁状态更新（Event Sourcing 使用）
+     * 只有当前状态匹配时才执行更新，防止并发覆盖
+     * @param id 订单 ID
+     * @param userId 用户 ID（分片键）
+     * @param currentStatus 当前状态（乐观锁条件）
+     * @param targetStatus 目标状态
+     * @return 受影响行数（0 表示并发冲突）
+     */
+    @Update("UPDATE t_order SET status = #{targetStatus}, updated_at = NOW() " +
+            "WHERE id = #{id} AND user_id = #{userId} AND status = #{currentStatus} AND deleted = 0")
+    int updateStatusWithLock(@Param("id") Long id, @Param("userId") Long userId,
+                              @Param("currentStatus") Integer currentStatus,
+                              @Param("targetStatus") Integer targetStatus);
+
+    /**
      * 查询超时未支付订单（30分钟前创建且仍为待付款）
      * <p>
      * 注意：此查询不带分片键，ShardingSphere 会扫描所有分片。

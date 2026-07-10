@@ -22,11 +22,17 @@ import java.util.Set;
  * Feed 推送消费者
  * <p>
  * 消费 FEED_TOPIC 中的笔记发布事件：
- * - 普通用户（粉丝数 < 阈值）→ 推模式：遍历粉丝列表，ZADD 到每个粉丝的收件箱
+ * - 普通用户（粉丝数 < 阈值）→ 推模式：遍历粉丝列表，Pipeline 批量 ZADD 到每个粉丝的收件箱
  * - 大V（粉丝数 >= 阈值）→ 拉模式：ZADD 到作者的发件箱
  * </p>
  * <p>
  * 幂等性：ZADD 天然幂等（相同 member 只更新 score），不需要额外去重。
+ * </p>
+ * <p>
+ * 推送进度记录（P0-3 修复）：
+ * 每批 Pipeline 推送完成后，将进度写入 Redis（key=myxhs:feed:push:progress:{localMsgId}）。
+ * content 模块的 FeedMessageRetryJob 从 Redis 读取进度并同步到 t_local_message 表，
+ * 实现断点续推：如果 Consumer 崩溃，MQ 重试时从上次进度继续推送。
  * </p>
  */
 @Slf4j
@@ -51,6 +57,8 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
     @Value("${home.feed.inbox-max-size:500}")
     private int inboxMaxSize;
 
+    private static final String PUSH_PROGRESS_PREFIX = "myxhs:feed:push:progress:";
+
     @Override
     public void onMessage(MessageExt msg) {
         MqTraceHelper.restoreTraceId(msg);
@@ -61,6 +69,8 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
             Long noteId = ((Number) event.get("noteId")).longValue();
             Long authorId = ((Number) event.get("authorId")).longValue();
             Long publishTime = ((Number) event.get("publishTime")).longValue();
+            Long localMsgId = event.get("localMsgId") != null
+                    ? ((Number) event.get("localMsgId")).longValue() : null;
 
             // 判断是否大V
             boolean isBigV = checkBigV(authorId);
@@ -72,8 +82,8 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
                 stringRedisTemplate.expire(outboxKey, Duration.ofDays(inboxMaxDays));
                 log.info("[Feed推送] 大V拉模式: authorId={}, noteId={}", authorId, noteId);
             } else {
-                // 推模式：遍历粉丝列表，写入每个粉丝的收件箱
-                pushToFollowers(authorId, noteId, publishTime);
+                // 推模式：遍历粉丝列表，写入每个粉丝的收件箱（带进度记录）
+                pushToFollowers(authorId, noteId, publishTime, localMsgId);
             }
 
         } catch (Exception e) {
@@ -91,21 +101,45 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
      * 500 个粉丝从 500 次 Redis 往返 → 1 次（Pipeline），性能提升 ~100x。
      * </p>
      * <p>
+     * 【P0-3 修复】断点续推：
+     * - 每批 Pipeline 完成后将进度（cursor）写入 Redis
+     * - 如果 Consumer 崩溃，MQ 重试时从上次进度继续推送
+     * - ZADD 天然幂等，重复推送不产生重复数据
+     * - 进度 Redis Key: myxhs:feed:push:progress:{localMsgId}，TTL 1 小时
+     * </p>
+     * <p>
      * 裁剪逻辑移至 FeedCleanupJob 异步执行（大部分收件箱未达到上限，实时裁剪不必要）。
-     * ZADD 天然幂等，重复推送不产生重复数据。
      * </p>
      */
-    private void pushToFollowers(Long authorId, Long noteId, Long publishTime) {
+    private void pushToFollowers(Long authorId, Long noteId, Long publishTime, Long localMsgId) {
         String followerKey = RedisKeyConstants.FOLLOW_FANS + authorId;
 
-        long cursor = 0;
+        long totalFollowers = stringRedisTemplate.opsForZSet().zCard(followerKey) != null
+                ? stringRedisTemplate.opsForZSet().zCard(followerKey) : 0;
         int batchSize = 500;
         int pushed = 0;
         int expireSeconds = inboxMaxDays * 24 * 3600;
 
         byte[] noteIdBytes = String.valueOf(noteId).getBytes();
 
-        while (true) {
+        // 断点恢复：检查是否有之前的推送进度
+        long startCursor = 0;
+        if (localMsgId != null) {
+            String progressKey = PUSH_PROGRESS_PREFIX + localMsgId;
+            String progressStr = stringRedisTemplate.opsForValue().get(progressKey);
+            if (progressStr != null) {
+                startCursor = Long.parseLong(progressStr);
+                log.info("[Feed推送] 断点续推: authorId={}, noteId={}, localMsgId={}, resumeFrom={}",
+                        authorId, noteId, localMsgId, startCursor);
+            }
+            // 记录总粉丝数
+            stringRedisTemplate.opsForHash().put(progressKey, "total", String.valueOf(totalFollowers));
+            stringRedisTemplate.expire(progressKey, Duration.ofHours(1));
+        }
+
+        long cursor = startCursor;
+
+        while (cursor < totalFollowers) {
             Set<String> followerIds = stringRedisTemplate.opsForZSet()
                     .range(followerKey, cursor, cursor + batchSize - 1);
 
@@ -128,12 +162,27 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
             pushed += followerIds.size();
             cursor += batchSize;
 
+            // 每批完成后更新进度到 Redis（支持断点��推）
+            if (localMsgId != null) {
+                String progressKey = PUSH_PROGRESS_PREFIX + localMsgId;
+                stringRedisTemplate.opsForValue().set(progressKey, String.valueOf(cursor),
+                        Duration.ofHours(1));
+            }
+
             if (followerIds.size() < batchSize) {
                 break;
             }
         }
 
-        log.info("[Feed推送] 推模式完成: authorId={}, noteId={}, pushed={}", authorId, noteId, pushed);
+        // 推送完成，标记完成状态
+        if (localMsgId != null) {
+            String progressKey = PUSH_PROGRESS_PREFIX + localMsgId;
+            stringRedisTemplate.opsForHash().put(progressKey, "status", "completed");
+            stringRedisTemplate.expire(progressKey, Duration.ofHours(1));
+        }
+
+        log.info("[Feed推送] 推模式完成: authorId={}, noteId={}, pushed={}/{}, localMsgId={}",
+                authorId, noteId, pushed, totalFollowers, localMsgId);
     }
 
     /**

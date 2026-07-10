@@ -122,6 +122,7 @@ CREATE TABLE IF NOT EXISTS t_local_message_0 (
     payload         TEXT          NOT NULL COMMENT '操作参数JSON',
     status          TINYINT       NOT NULL DEFAULT 0 COMMENT '状态：0-待处理 1-成功 2-失败 3-死信',
     retry_count     INT           NOT NULL DEFAULT 0 COMMENT '重试次数',
+    next_retry_time DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '下次重试时间',
     created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (id),
@@ -148,6 +149,28 @@ CREATE TABLE IF NOT EXISTS t_order_snapshot_1 LIKE t_order_snapshot_0;
 CREATE TABLE IF NOT EXISTS t_order_snapshot_2 LIKE t_order_snapshot_0;
 CREATE TABLE IF NOT EXISTS t_order_snapshot_3 LIKE t_order_snapshot_0;
 
+-- Event Sourcing 订单事件流（不可变）
+CREATE TABLE IF NOT EXISTS t_order_event_0 (
+    id              BIGINT        NOT NULL AUTO_INCREMENT COMMENT '事件ID',
+    order_id        BIGINT        NOT NULL COMMENT '订单ID',
+    user_id         BIGINT        NOT NULL COMMENT '用户ID（分片键）',
+    event_type      VARCHAR(32)   NOT NULL COMMENT '事件类型',
+    from_status     TINYINT       DEFAULT NULL COMMENT '变更前状态',
+    to_status       TINYINT       NOT NULL COMMENT '变更后状态',
+    payload         TEXT          DEFAULT NULL COMMENT '事件载荷（JSON）',
+    event_seq       INT           NOT NULL COMMENT '事件序号',
+    event_time      DATETIME(3)   NOT NULL COMMENT '事件发生时间',
+    created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (id),
+    UNIQUE INDEX uk_order_event_seq (order_id, event_seq),
+    INDEX idx_order_id (order_id),
+    INDEX idx_user_id (user_id),
+    INDEX idx_event_time (event_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单事件流(Event Sourcing)_0';
+CREATE TABLE IF NOT EXISTS t_order_event_1 LIKE t_order_event_0;
+CREATE TABLE IF NOT EXISTS t_order_event_2 LIKE t_order_event_0;
+CREATE TABLE IF NOT EXISTS t_order_event_3 LIKE t_order_event_0;
+
 -- ==================== 分片数据库 1 ====================
 CREATE DATABASE IF NOT EXISTS my_xhs_order_1 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE my_xhs_order_1;
@@ -168,6 +191,10 @@ CREATE TABLE IF NOT EXISTS t_order_snapshot_0 LIKE my_xhs_order_0.t_order_snapsh
 CREATE TABLE IF NOT EXISTS t_order_snapshot_1 LIKE my_xhs_order_0.t_order_snapshot_0;
 CREATE TABLE IF NOT EXISTS t_order_snapshot_2 LIKE my_xhs_order_0.t_order_snapshot_0;
 CREATE TABLE IF NOT EXISTS t_order_snapshot_3 LIKE my_xhs_order_0.t_order_snapshot_0;
+CREATE TABLE IF NOT EXISTS t_order_event_0 LIKE my_xhs_order_0.t_order_event_0;
+CREATE TABLE IF NOT EXISTS t_order_event_1 LIKE my_xhs_order_0.t_order_event_0;
+CREATE TABLE IF NOT EXISTS t_order_event_2 LIKE my_xhs_order_0.t_order_event_0;
+CREATE TABLE IF NOT EXISTS t_order_event_3 LIKE my_xhs_order_0.t_order_event_0;
 
 -- ==================== 分片数据库 2 ====================
 CREATE DATABASE IF NOT EXISTS my_xhs_order_2 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -189,6 +216,10 @@ CREATE TABLE IF NOT EXISTS t_order_snapshot_0 LIKE my_xhs_order_0.t_order_snapsh
 CREATE TABLE IF NOT EXISTS t_order_snapshot_1 LIKE my_xhs_order_0.t_order_snapshot_0;
 CREATE TABLE IF NOT EXISTS t_order_snapshot_2 LIKE my_xhs_order_0.t_order_snapshot_0;
 CREATE TABLE IF NOT EXISTS t_order_snapshot_3 LIKE my_xhs_order_0.t_order_snapshot_0;
+CREATE TABLE IF NOT EXISTS t_order_event_0 LIKE my_xhs_order_0.t_order_event_0;
+CREATE TABLE IF NOT EXISTS t_order_event_1 LIKE my_xhs_order_0.t_order_event_0;
+CREATE TABLE IF NOT EXISTS t_order_event_2 LIKE my_xhs_order_0.t_order_event_0;
+CREATE TABLE IF NOT EXISTS t_order_event_3 LIKE my_xhs_order_0.t_order_event_0;
 
 -- ==================== 分片数据库 3 ====================
 CREATE DATABASE IF NOT EXISTS my_xhs_order_3 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -210,6 +241,10 @@ CREATE TABLE IF NOT EXISTS t_order_snapshot_0 LIKE my_xhs_order_0.t_order_snapsh
 CREATE TABLE IF NOT EXISTS t_order_snapshot_1 LIKE my_xhs_order_0.t_order_snapshot_0;
 CREATE TABLE IF NOT EXISTS t_order_snapshot_2 LIKE my_xhs_order_0.t_order_snapshot_0;
 CREATE TABLE IF NOT EXISTS t_order_snapshot_3 LIKE my_xhs_order_0.t_order_snapshot_0;
+CREATE TABLE IF NOT EXISTS t_order_event_0 LIKE my_xhs_order_0.t_order_event_0;
+CREATE TABLE IF NOT EXISTS t_order_event_1 LIKE my_xhs_order_0.t_order_event_0;
+CREATE TABLE IF NOT EXISTS t_order_event_2 LIKE my_xhs_order_0.t_order_event_0;
+CREATE TABLE IF NOT EXISTS t_order_event_3 LIKE my_xhs_order_0.t_order_event_0;
 
 -- Canal 同步账号
 CREATE USER IF NOT EXISTS 'canal'@'%' IDENTIFIED BY 'Canal@2026#Sync';

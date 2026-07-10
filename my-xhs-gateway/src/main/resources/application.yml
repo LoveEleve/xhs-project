@@ -19,6 +19,9 @@ server:
     enabled: true
 
 spring:
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
   application:
     name: my-xhs-gateway
   # Gateway 是 WebFlux 网关，无数据库
@@ -35,9 +38,20 @@ spring:
       # Nacos 服务发现（Gateway 需要通过 Nacos 发现下游微服务实例）
       discovery:
         enabled: true
-        server-addr: 21.91.124.110:18848
+        server-addr: 21.130.247.89:18848
         namespace: my-xhs
         group: DEFAULT_GROUP
+        metadata:
+          zone: ${MYXHS_ZONE:defaultZone}
+      # Nacos 配置中心（用于动态配置推送：降级开关、阈值等）
+      config:
+        enabled: true
+        server-addr: 21.130.247.89:18848
+        namespace: my-xhs
+        group: DEFAULT_GROUP
+        import-check:
+          enabled: false
+        file-extension: yaml
     sentinel:
       # Nacos 动态配置示例（myxhs-dynamic.yml）：
       # myxhs:
@@ -53,7 +67,7 @@ spring:
       #       lock-timeout-ms: 3000  # 分布式锁超时
       # Sentinel 控制台配置（当前未部署控制台，仅使用限流规则）
       transport:
-        dashboard: 21.91.124.110:18082
+        dashboard: 21.130.247.89:18082
         client-ip: 21.214.97.212
         port: 8719
       # 取消懒加载，启动时立即初始化 Sentinel
@@ -64,11 +78,18 @@ spring:
       datasource:
         flow:
           nacos:
-            server-addr: 21.91.124.110:18848
+            server-addr: 21.130.247.89:18848
             namespace: my-xhs
             group-id: SENTINEL_GROUP
             data-id: my-xhs-gateway-flow-rules
             rule-type: gw-flow
+        degrade:
+          nacos:
+            server-addr: 21.130.247.89:18848
+            namespace: my-xhs
+            group-id: SENTINEL_GROUP
+            data-id: my-xhs-gateway-degrade-rules
+            rule-type: degrade
     gateway:
       httpclient:
         connect-timeout: 2000       # 全局默认连接超时 2s
@@ -211,10 +232,11 @@ spring:
             rate-limit-qps: 100
   data:
     redis:
-      host: 21.91.124.110
-      port: 16379
       # 【Nacos 配置】Redis 密码已迁移至 Nacos Config（my-xhs-redis.yaml），本地值为 fallback
-      password: ${spring.data.redis.password:"Xhs@2026#Redis"}
+      password: "Xhs@2026#Redis"
+      sentinel:
+        master: mymaster
+        nodes: 21.130.247.89:26379,21.130.247.89:26380,21.130.247.89:26381
       cache:
         port: 16380  # Cache Redis (allkeys-lru)
       business:
@@ -238,10 +260,10 @@ gateway:
   auth:
     # JWT 签名密钥（必须与 my-xhs-user 的 jwt.secret 保持一致）
     # 优先从 Nacos 读取，本地值为 fallback
-    secret: ${gateway.auth.secret:myxhs-gateway-secret-key-2024}
+    secret: "MyXhs@2026#JwtSecretKey!ForTokenSign"
     # HMAC-SHA256 签名密钥（用于防篡改+防重放校验，与 JWT 密钥分离）
     # 优先从 Nacos 读取，本地值为 fallback
-    hmac-secret: ${gateway.auth.hmac-secret:myxhs-hmac-secret-key-2024}
+    hmac-secret: myxhs-hmac-secret-key-2024
     # 白名单路径（不需要鉴权，支持 Ant 风格匹配）
     white-list:
       # ===== 认证相关（注册/登录/验证码/Token刷新/注销） =====

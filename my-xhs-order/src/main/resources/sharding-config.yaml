@@ -14,7 +14,7 @@ dataSources:
   ds0:
     dataSourceClassName: com.zaxxer.hikari.HikariDataSource
     driverClassName: com.mysql.cj.jdbc.Driver
-    jdbcUrl: jdbc:mysql://21.91.124.110:13308/my_xhs_order_0?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    jdbcUrl: jdbc:mysql://21.130.247.89:13308/my_xhs_order_0?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
     username: root
     password: "Xhs@2026#MySQL"
     connectionTimeoutMilliseconds: 10000
@@ -28,7 +28,7 @@ dataSources:
   ds1:
     dataSourceClassName: com.zaxxer.hikari.HikariDataSource
     driverClassName: com.mysql.cj.jdbc.Driver
-    jdbcUrl: jdbc:mysql://21.91.124.110:13308/my_xhs_order_1?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    jdbcUrl: jdbc:mysql://21.130.247.89:13308/my_xhs_order_1?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
     username: root
     password: "Xhs@2026#MySQL"
     connectionTimeoutMilliseconds: 10000
@@ -42,7 +42,7 @@ dataSources:
   ds2:
     dataSourceClassName: com.zaxxer.hikari.HikariDataSource
     driverClassName: com.mysql.cj.jdbc.Driver
-    jdbcUrl: jdbc:mysql://21.91.124.110:13308/my_xhs_order_2?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    jdbcUrl: jdbc:mysql://21.130.247.89:13308/my_xhs_order_2?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
     username: root
     password: "Xhs@2026#MySQL"
     connectionTimeoutMilliseconds: 10000
@@ -56,7 +56,7 @@ dataSources:
   ds3:
     dataSourceClassName: com.zaxxer.hikari.HikariDataSource
     driverClassName: com.mysql.cj.jdbc.Driver
-    jdbcUrl: jdbc:mysql://21.91.124.110:13308/my_xhs_order_3?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    jdbcUrl: jdbc:mysql://21.130.247.89:13308/my_xhs_order_3?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
     username: root
     password: "Xhs@2026#MySQL"
     connectionTimeoutMilliseconds: 10000
@@ -127,10 +127,24 @@ rules:
         keyGenerateStrategy:
           column: id
           keyGeneratorName: snowflake
+      # 订单事件流表（Event Sourcing）
+      t_order_event:
+        actualDataNodes: ds${0..3}.t_order_event_${0..3}
+        databaseStrategy:
+          standard:
+            shardingColumn: user_id
+            shardingAlgorithmName: db-inline
+        tableStrategy:
+          standard:
+            shardingColumn: user_id
+            shardingAlgorithmName: t-order-event-inline
+        keyGenerateStrategy:
+          column: id
+          keyGeneratorName: snowflake
 
     # 绑定表组：保证关联查询不产生笛卡尔积
     bindingTables:
-      - t_order,t_order_item,t_local_message,t_order_snapshot
+      - t_order,t_order_item,t_local_message,t_order_snapshot,t_order_event
 
     # 分片算法（使用 INLINE 表达式，兼容 standard 策略）
     shardingAlgorithms:
@@ -156,6 +170,10 @@ rules:
         type: INLINE
         props:
           algorithm-expression: t_order_snapshot_${(user_id.intdiv(4)) % 4}
+      t-order-event-inline:
+        type: INLINE
+        props:
+          algorithm-expression: t_order_event_${(user_id.intdiv(4)) % 4}
 
     # 主键生成器
     keyGenerators:

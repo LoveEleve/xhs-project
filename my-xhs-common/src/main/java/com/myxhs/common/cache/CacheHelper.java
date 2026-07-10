@@ -6,6 +6,7 @@ import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.Executors;
@@ -51,6 +52,10 @@ public class CacheHelper {
                 t.setDaemon(true);
                 return t;
             });
+
+    /** 延迟双删延迟时间（毫秒），可通过配置覆盖 */
+    @Value("${myxhs.cache.double-delete-delay-ms:500}")
+    private long doubleDeleteDelayMs;
 
     public CacheHelper(RedisOperator redisOperator, RedissonClient redissonClient) {
         this.redisOperator = redisOperator;
@@ -291,14 +296,16 @@ public class CacheHelper {
      * <p>
      * 执行流程：
      * 1. 立即删缓存（第一次删）
-     * 2. 延迟 500ms 再删缓存（第二次删，覆盖并发读回填的旧值）
+     * 2. 延迟 doubleDeleteDelayMs 毫秒再删缓存（第二次删，覆盖并发读回填的旧值）
      * </p>
      * <p>
      * 为什么需要两次删？
      * - 第一次删：清除当前缓存，让后续读请求查 DB 获取最新值
-     * - 第二次删（延迟 500ms）：覆盖在"DB 更新 → 第一次删"之间，
+     * - 第二次删（延迟 doubleDeleteDelayMs 毫秒）：覆盖在"DB 更新 → 第一次删"之间，
      *   并发读请求从从库读到旧值并回填缓存的情况
-     * - 500ms = 主从同步延迟(~200ms) + 业务读耗时(~100ms) + 安全余量(~200ms)
+     * - 默认 500ms = 主从同步延迟(~200ms) + 业务读耗时(~100ms) + 安全余量(~200ms)
+     * - 可通过 myxhs.cache.double-delete-delay-ms 配置调整，主从延迟较大的环境建议增大
+     * - 更优方案：订阅 Binlog（Canal）删缓存，不受延迟窗口限制（参考 inventory 模块的 InventoryCacheEvictConsumer）
      * </p>
      *
      * @param key 缓存 Key
@@ -342,7 +349,7 @@ public class CacheHelper {
                     }
                 }
             }
-        }, 500, TimeUnit.MILLISECONDS);
+        }, doubleDeleteDelayMs, TimeUnit.MILLISECONDS);
     }
 
     /**

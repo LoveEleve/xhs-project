@@ -1,0 +1,22 @@
+[
+  {
+    "resource": "POST:/api/payment/**",
+    "limitApp": "default",
+    "grade": 0,
+    "count": 3000,
+    "timeWindow": 10,
+    "minRequestAmount": 5,
+    "statIntervalMs": 1000,
+    "slowRatioThreshold": 0.5
+  },
+  {
+    "resource": "GET:/api/payment/**",
+    "limitApp": "default",
+    "grade": 0,
+    "count": 1500,
+    "timeWindow": 10,
+    "minRequestAmount": 5,
+    "statIntervalMs": 1000,
+    "slowRatioThreshold": 0.5
+  }
+]

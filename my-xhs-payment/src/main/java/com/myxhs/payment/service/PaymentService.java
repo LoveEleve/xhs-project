@@ -19,6 +19,8 @@ import com.myxhs.payment.strategy.PayChannelStrategy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -32,6 +34,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * 支付服务 — 支付模块核心业务逻辑
@@ -65,8 +68,9 @@ import java.util.Map;
 public class PaymentService {
 
     private final JdbcTemplate paymentJdbcTemplate;
-    private final StringRedisTemplate redisTemplate;
+    private final StringRedisTemplate stringRedisTemplate;
     private final RocketMQTemplate rocketMQTemplate;
+    private final RedissonClient redissonClient;
     private final Map<Integer, PayChannelStrategy> payChannelStrategyMap;
     private final DefaultRedisScript<Long> paymentTimeoutScript;
     private final OrderFeignClient orderFeignClient;
@@ -142,15 +146,28 @@ public class PaymentService {
         // 记录支付尝试
         businessMetrics.recordPaymentCallback("attempt");
 
-        // 1. 幂等校验：同一订单不能重复发起支付
-        Boolean setSuccess = redisTemplate.opsForValue()
-                .setIfAbsent(payingKey, String.valueOf(userId), PAYING_KEY_TTL);
-        if (Boolean.FALSE.equals(setSuccess)) {
-            log.warn("[支付] 重复支付请求: orderId={}, userId={}", orderId, userId);
-            throw new BizException(ResultCode.IDEMPOTENT_REJECT, "请勿重复支付");
-        }
-
+        // 1. 幂等校验：Redisson 分布式锁 + DB 乐观锁双重保障
+        //    Redisson 对 Sentinel 主从切换有更好的支持（自动重试 + Watchdog 续期），
+        //    即使主从切换导致锁短暂丢失，DB 乐观锁（WHERE status = 待支付）作为最终防线。
+        RLock payLock = redissonClient.getLock("lock:payment:pay:" + orderId);
+        boolean locked = false;
         try {
+            locked = payLock.tryLock(3, 10, TimeUnit.SECONDS);
+            if (!locked) {
+                log.warn("[支付] 获取分布式锁超时: orderId={}, userId={}", orderId, userId);
+                throw new BizException(ResultCode.INTERNAL_ERROR, "系统繁忙，请稍后再试");
+            }
+
+            // 双重检查：获取锁后再次确认是否已支付
+            String existingStatus = stringRedisTemplate.opsForValue().get(statusKey);
+            if (existingStatus != null) {
+                log.warn("[支付] 重复支付请求（锁后检查）: orderId={}, status={}", orderId, existingStatus);
+                throw new BizException(ResultCode.IDEMPOTENT_REJECT, "请勿重复支付");
+            }
+
+            // 设置 Redis 支付状态缓存（防重标记，TTL 与订单超时一致）
+            stringRedisTemplate.opsForValue().set(payingKey, String.valueOf(userId), PAYING_KEY_TTL);
+
             // 2. 生成支付流水号
             String paymentNo = generatePaymentNo();
 
@@ -178,7 +195,7 @@ public class PaymentService {
             log.info("[支付] 支付记录已创建: paymentNo={}, orderId={}, amount={}", paymentNo, orderId, amount);
 
             // 4. 设置 Redis 支付状态缓存（用于超时检测定时任务）
-            redisTemplate.opsForValue().set(statusKey, "0", PAYING_KEY_TTL);
+            stringRedisTemplate.opsForValue().set(statusKey, "0", PAYING_KEY_TTL);
 
             // 5. 通过策略模式调用对应支付渠道
             PayChannelStrategy strategy = payChannelStrategyMap.get(payType);
@@ -197,10 +214,10 @@ public class PaymentService {
             return R.ok(buildPaymentVO(payment));
 
         } catch (BizException e) {
-            // 业务异常：清理 SETNX 锁 + 支付状态缓存，DB 记录由独立补偿逻辑处理
+            // 业务异常：清理 Redis 支付状态缓存，DB 记录由独立补偿逻辑处理
             businessMetrics.recordPaymentCallback("fail");
-            redisTemplate.delete(payingKey);
-            redisTemplate.delete(statusKey);
+            stringRedisTemplate.delete(payingKey);
+            stringRedisTemplate.delete(statusKey);
             // 删除已插入的支付记录（避免脏数据残留）
             if (paymentRecordId != null) {
                 try {
@@ -214,8 +231,8 @@ public class PaymentService {
             // 非预期异常：同样清理 Redis 和 DB 记录
             businessMetrics.recordPaymentCallback("fail");
             log.error("[支付] 创建支付单异常: orderId={}, userId={}", orderId, userId, e);
-            redisTemplate.delete(payingKey);
-            redisTemplate.delete(statusKey);
+            stringRedisTemplate.delete(payingKey);
+            stringRedisTemplate.delete(statusKey);
             if (paymentRecordId != null) {
                 try {
                     paymentJdbcTemplate.update("DELETE FROM t_payment WHERE id = ?", paymentRecordId);
@@ -224,6 +241,11 @@ public class PaymentService {
                 }
             }
             throw new BizException(ResultCode.INTERNAL_ERROR, "支付失败: " + e.getMessage());
+        } finally {
+            // 安全释放 Redisson 分布式锁
+            if (locked && payLock.isHeldByCurrentThread()) {
+                payLock.unlock();
+            }
         }
     }
 
@@ -283,10 +305,10 @@ public class PaymentService {
         }
 
         // 更新 Redis 支付状态缓存
-        redisTemplate.opsForValue().set("payment:status:" + orderId, "1", PAYING_KEY_TTL);
+        stringRedisTemplate.opsForValue().set("payment:status:" + orderId, "1", PAYING_KEY_TTL);
 
         // 删除幂等键（支付完成后允许该订单再次支付，如退款后重新支付）
-        redisTemplate.delete(PAYING_KEY_PREFIX + orderId);
+        stringRedisTemplate.delete(PAYING_KEY_PREFIX + orderId);
 
         log.info("[支付成功] orderId={}, paymentNo={}, tradeNo={}", orderId, paymentNo, tradeNo);
 
@@ -308,8 +330,8 @@ public class PaymentService {
         );
 
         if (updated > 0) {
-            redisTemplate.opsForValue().set("payment:status:" + orderId, "2", PAYING_KEY_TTL);
-            redisTemplate.delete(PAYING_KEY_PREFIX + orderId);
+            stringRedisTemplate.opsForValue().set("payment:status:" + orderId, "2", PAYING_KEY_TTL);
+            stringRedisTemplate.delete(PAYING_KEY_PREFIX + orderId);
             log.info("[支付失败] orderId={}, paymentNo={}", orderId, paymentNo);
             businessMetrics.recordPaymentCallback("fail");
             sendPayResultMq(orderId, userId, false, null);
@@ -338,15 +360,26 @@ public class PaymentService {
         String refundingKey = REFUNDING_KEY_PREFIX + paymentId;
         Long refundRecordId = null;
 
-        // 1. 幂等校验：同一支付单不能重复退款
-        Boolean setSuccess = redisTemplate.opsForValue()
-                .setIfAbsent(refundingKey, String.valueOf(userId), REFUNDING_KEY_TTL);
-        if (Boolean.FALSE.equals(setSuccess)) {
-            log.warn("[退款] 重复退款请求: paymentId={}, userId={}", paymentId, userId);
-            throw new BizException(ResultCode.IDEMPOTENT_REJECT, "请勿重复退款");
-        }
-
+        // 1. 幂等校验：Redisson 分布式锁 + DB 乐观锁双重保障
+        RLock refundLock = redissonClient.getLock("lock:payment:refund:" + paymentId);
+        boolean locked = false;
         try {
+            locked = refundLock.tryLock(3, 10, TimeUnit.SECONDS);
+            if (!locked) {
+                log.warn("[退款] 获取分布式锁超时: paymentId={}, userId={}", paymentId, userId);
+                throw new BizException(ResultCode.INTERNAL_ERROR, "系统繁忙，请稍后再试");
+            }
+
+            // 双重检查：获取锁后再次确认是否已在退款中
+            String existingStatus = stringRedisTemplate.opsForValue().get(refundingKey);
+            if (existingStatus != null) {
+                log.warn("[退款] 重复退款请求（锁后检查）: paymentId={}", paymentId);
+                throw new BizException(ResultCode.IDEMPOTENT_REJECT, "请勿重复退款");
+            }
+
+            // 设置 Redis 退款状态标记
+            stringRedisTemplate.opsForValue().set(refundingKey, String.valueOf(userId), REFUNDING_KEY_TTL);
+
             // 2. 查询支付单
             Payment payment = findById(paymentId);
             if (payment == null) {
@@ -407,14 +440,19 @@ public class PaymentService {
             return R.ok();
 
         } catch (BizException e) {
-            // 业务异常：清理 SETNX 锁（事务已回滚 DB 的 INSERT）
-            redisTemplate.delete(refundingKey);
+            // 业务异常：清理 Redis 标记（事务已回滚 DB 的 INSERT）
+            stringRedisTemplate.delete(refundingKey);
             throw e;
         } catch (Exception e) {
-            // 非预期异常：清理 SETNX 锁
+            // 非预期异常：清理 Redis 标记
             log.error("[退款] 退款异常: paymentId={}, userId={}", paymentId, userId, e);
-            redisTemplate.delete(refundingKey);
+            stringRedisTemplate.delete(refundingKey);
             throw new BizException(ResultCode.INTERNAL_ERROR, "退款失败: " + e.getMessage());
+        } finally {
+            // 安全释放 Redisson 分布式锁
+            if (locked && refundLock.isHeldByCurrentThread()) {
+                refundLock.unlock();
+            }
         }
     }
 
@@ -477,8 +515,8 @@ public class PaymentService {
         );
 
         // 4. 清理 Redis
-        redisTemplate.delete(REFUNDING_KEY_PREFIX + refund.getPaymentId());
-        redisTemplate.opsForValue().set("payment:status:" + refund.getOrderId(), "3", PAYING_KEY_TTL);
+        stringRedisTemplate.delete(REFUNDING_KEY_PREFIX + refund.getPaymentId());
+        stringRedisTemplate.opsForValue().set("payment:status:" + refund.getOrderId(), "3", PAYING_KEY_TTL);
 
         log.info("[退款成功] refundNo={}, paymentId={}, orderId={}", refundNo, refund.getPaymentId(), refund.getOrderId());
 
@@ -498,7 +536,7 @@ public class PaymentService {
         );
         if (updated > 0) {
             Refund refund = findByRefundNo(refundNo);
-            redisTemplate.delete(REFUNDING_KEY_PREFIX + refund.getPaymentId());
+            stringRedisTemplate.delete(REFUNDING_KEY_PREFIX + refund.getPaymentId());
             log.info("[退款失败] refundNo={}", refundNo);
             sendRefundResultMq(refund.getOrderId(), refund.getUserId(), false, refundNo);
         }
@@ -520,7 +558,7 @@ public class PaymentService {
         // 分布式锁：防止多实例重复执行
         String lockKey = "payment:lock:timeout-check";
         String lockValue = java.util.UUID.randomUUID().toString();
-        Boolean locked = redisTemplate.opsForValue()
+        Boolean locked = stringRedisTemplate.opsForValue()
                 .setIfAbsent(lockKey, lockValue, Duration.ofSeconds(30));
         if (Boolean.FALSE.equals(locked)) {
             log.debug("[支付超时检查] 未获取到分布式锁，跳过本次检查");
@@ -530,7 +568,7 @@ public class PaymentService {
         try {
             // Lua 脚本原子操作：检查 Redis 中的支付状态，如果待支付且超时则标记为失败
             Long timeout = System.currentTimeMillis() - PAY_TIMEOUT_MS;
-            Long result = redisTemplate.execute(paymentTimeoutScript,
+            Long result = stringRedisTemplate.execute(paymentTimeoutScript,
                     java.util.Collections.singletonList("payment:status:*"),
                     String.valueOf(timeout), String.valueOf(System.currentTimeMillis()));
 
@@ -556,7 +594,7 @@ public class PaymentService {
     public void checkRefundTimeout() {
         String lockKey = "payment:lock:refund-timeout-check";
         String lockValue = java.util.UUID.randomUUID().toString();
-        Boolean locked = redisTemplate.opsForValue()
+        Boolean locked = stringRedisTemplate.opsForValue()
                 .setIfAbsent(lockKey, lockValue, Duration.ofSeconds(60));
         if (Boolean.FALSE.equals(locked)) {
             return;
@@ -587,7 +625,7 @@ public class PaymentService {
                         record.id(), REFUND_STATUS_PROCESSING
                 );
                 if (updated > 0) {
-                    redisTemplate.delete(REFUNDING_KEY_PREFIX + record.paymentId());
+                    stringRedisTemplate.delete(REFUNDING_KEY_PREFIX + record.paymentId());
                     log.info("[退款超时] 退款单已关闭: refundNo={}", record.refundNo());
                     sendRefundResultMq(record.orderId(), record.userId(), false, record.refundNo());
                 }
@@ -614,7 +652,7 @@ public class PaymentService {
         try {
             org.springframework.data.redis.core.script.DefaultRedisScript<Long> script =
                     new org.springframework.data.redis.core.script.DefaultRedisScript<>(UNLOCK_SCRIPT, Long.class);
-            redisTemplate.execute(script, java.util.Collections.singletonList(lockKey), lockValue);
+            stringRedisTemplate.execute(script, java.util.Collections.singletonList(lockKey), lockValue);
         } catch (Exception e) {
             log.warn("[支付] 释放锁异常(不影响业务): key={}", lockKey, e);
         }
@@ -639,7 +677,7 @@ public class PaymentService {
     public void reconcile() {
         String lockKey = "payment:lock:reconcile";
         String lockValue = java.util.UUID.randomUUID().toString();
-        Boolean locked = redisTemplate.opsForValue()
+        Boolean locked = stringRedisTemplate.opsForValue()
                 .setIfAbsent(lockKey, lockValue, Duration.ofMinutes(5));
         if (Boolean.FALSE.equals(locked)) {
             return;

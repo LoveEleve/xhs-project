@@ -1,0 +1,622 @@
+# ============================================================
+# My-XHS HPA（Horizontal Pod Autoscaler）配置模板
+# ============================================================
+# 说明：
+# 1. HPA 根据 CPU/内存使用率自动调整 Pod 副本数
+# 2. 与 Sentinel 单节点限流的协调策略见下方注释
+# 3. 生产部署前需根据实际负载调整 minReplicas/maxReplicas
+#
+# ============================================================
+# Sentinel 单节点限流与 HPA 协调策略（P1-9 修复）
+# ============================================================
+#
+# 问题：Sentinel 的 GatewayFlowRule 是单节点限流（如 order-service=500 QPS），
+#       HPA 扩缩容时总 QPS 会随实例数变化：
+#       - 1 个实例: 总 QPS = 500
+#       - 3 个实例: 总 QPS = 1500
+#       - 缩容后可能低于业务需求
+#
+# 解决方案（双层防御）：
+#
+# 第一层：HPA 保底（本文档）
+#   设置 minReplicas 保证最低实例数，确保总 QPS 不低于业务需求：
+#     totalQps >= serviceGatewayQps × minReplicas
+#   例如：order-service Gateway QPS=500, minReplicas=3 → 最低 1500 QPS
+#
+# 第二层：Sentinel 集群流控（未来升级）
+#   将 Sentinel 升级为集群流控模式（Token Server），
+#   由 Token Server 统一分配 QPS 额度，不再依赖实例数。
+#   当前 Sentinel 版本支持集群流控，但需要额外部署 Token Server。
+#   在集群流控就绪前，HPA minReplicas 保底策略作为过渡方案。
+#
+# 第三层：Gateway 全局全局限流（未来升级）
+#   在 Gateway 层实现 Redis 令牌桶全局限流（类似 RequestRateLimiter），
+#   不依赖 Pod 实例数，保证全局 QPS 恒定。
+# ============================================================
+
+---
+# ============================================================
+# 核心交易链路（严格限流，高可用）
+# ============================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: order-service-hpa
+  namespace: myxhs
+  labels:
+    app: order-service
+    tier: core
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: order-service
+  minReplicas: 3     # Gateway QPS=500, 3实例=1500 QPS 保底
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300   # 缩容稳定窗口 5 分钟（避免频繁缩容）
+      policies:
+        - type: Percent
+          value: 30                      # 每次最多缩容 30%
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60    # 扩容稳定窗口 1 分钟
+      policies:
+        - type: Percent
+          value: 100                    # 每次最多扩容 100%
+          periodSeconds: 30
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: payment-service-hpa
+  namespace: myxhs
+  labels:
+    app: payment-service
+    tier: core
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: payment-service
+  minReplicas: 3     # Gateway QPS=300, 3实例=900 QPS 保底
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 30
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: inventory-service-hpa
+  namespace: myxhs
+  labels:
+    app: inventory-service
+    tier: core
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: inventory-service
+  minReplicas: 2     # Gateway QPS=500, 2实例=1000 QPS 保底
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 30
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: coupon-service-hpa
+  namespace: myxhs
+  labels:
+    app: coupon-service
+    tier: core
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: coupon-service
+  minReplicas: 2     # Gateway QPS=200, 2实例=400 QPS 保底
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 30
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+
+---
+# ============================================================
+# 高频读接口（限流宽松，弹性伸缩）
+# ============================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: search-service-hpa
+  namespace: myxhs
+  labels:
+    app: search-service
+    tier: read-heavy
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: search-service
+  minReplicas: 2     # Gateway QPS=1000, 2实例=2000 QPS 保底
+  maxReplicas: 15    # 搜索流量波动大，扩容上限高
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 600   # 缩容更保守（10 分钟窗口）
+      policies:
+        - type: Percent
+          value: 20
+          periodSeconds: 120
+    scaleUp:
+      stabilizationWindowSeconds: 30    # 扩容更激进
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: home-service-hpa
+  namespace: myxhs
+  labels:
+    app: home-service
+    tier: read-heavy
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: home-service
+  minReplicas: 2     # Gateway QPS=1000, 2实例=2000 QPS 保底
+  maxReplicas: 12
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 600
+      policies:
+        - type: Percent
+          value: 20
+          periodSeconds: 120
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: product-service-hpa
+  namespace: myxhs
+  labels:
+    app: product-service
+    tier: read-heavy
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: product-service
+  minReplicas: 2     # Gateway QPS=800, 2实例=1600 QPS 保底
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 600
+      policies:
+        - type: Percent
+          value: 20
+          periodSeconds: 120
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+
+---
+# ============================================================
+# 用户认证（CPU 密集，中等限流）
+# ============================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: user-service-hpa
+  namespace: myxhs
+  labels:
+    app: user-service
+    tier: auth
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: user-service
+  minReplicas: 3     # Gateway QPS=200 + Redis 令牌桶 50, 3实例保底
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 55    # 密码校验 CPU 密集，阈值更低
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 30
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+
+---
+# ============================================================
+# 内容/社交接口（中等限流）
+# ============================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: content-service-hpa
+  namespace: myxhs
+  labels:
+    app: content-service
+    tier: content
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: content-service
+  minReplicas: 2     # Gateway QPS=500, 2实例=1000 QPS 保底
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 30
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+
+---
+# ============================================================
+# 辅助服务（限流较宽松）
+# ============================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: notification-service-hpa
+  namespace: myxhs
+  labels:
+    app: notification-service
+    tier: auxiliary
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: notification-service
+  minReplicas: 2     # Gateway QPS=300, 2实例=600 QPS 保底
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 30
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: im-service-hpa
+  namespace: myxhs
+  labels:
+    app: im-service
+    tier: auxiliary
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: im-service
+  minReplicas: 2     # Gateway QPS=500, 2实例=1000 QPS 保底
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 30
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+
+---
+# ============================================================
+# 统计/分析服务
+# ============================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: analytics-service-hpa
+  namespace: myxhs
+  labels:
+    app: analytics-service
+    tier: auxiliary
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: analytics-service
+  minReplicas: 2     # Gateway QPS=500, 2实例=1000 QPS 保底
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 65
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 30
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+
+---
+# ============================================================
+# Gateway 自身 HPA（全局入口，高可用）
+# ============================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gateway-hpa
+  namespace: myxhs
+  labels:
+    app: gateway
+    tier: gateway
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: gateway
+  minReplicas: 3     # Gateway 是全局入口，至少 3 个实例
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 75
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 30
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 30    # Gateway 扩容更快
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30

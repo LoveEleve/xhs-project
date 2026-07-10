@@ -50,6 +50,15 @@ public class Notification {
     /** 聚合数量 */
     private Integer aggregateCount;
 
+    /** 是否已聚合：0-否 1-是 */
+    private Integer isAggregated;
+
+    /** 聚合组ID */
+    private Long aggregateId;
+
+    /** 通知日期(虚拟列，由created_at派生) */
+    private LocalDateTime notifyDate;
+
     /** 扩展数据JSON */
     private String extraData;
 

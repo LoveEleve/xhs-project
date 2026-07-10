@@ -1,7 +1,10 @@
 package com.myxhs.order.config;
 
+import com.baomidou.mybatisplus.extension.spring.MybatisSqlSessionFactoryBean;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.ibatis.session.SqlSessionFactory;
 import org.apache.shardingsphere.driver.api.yaml.YamlShardingSphereDataSourceFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -44,6 +47,21 @@ public class ShardingSphereDataSourceConfig {
         log.info("[ShardingSphere] Snowflake worker-id={}", workerId);
 
         return YamlShardingSphereDataSourceFactory.createDataSource(yamlContent.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * MyBatis-Plus SqlSessionFactory
+     * <p>
+     * 由于排除了 MybatisPlusAutoConfiguration（它无法正确处理 ShardingSphere DataSource），
+     * 此处手动创建 SqlSessionFactory。ShardingSphere DataSource 作为唯一数据源注入。
+     * </p>
+     */
+    @Bean
+    @Primary
+    public SqlSessionFactory sqlSessionFactory(@Qualifier("dataSource") DataSource dataSource) throws Exception {
+        MybatisSqlSessionFactoryBean factoryBean = new MybatisSqlSessionFactoryBean();
+        factoryBean.setDataSource(dataSource);
+        return factoryBean.getObject();
     }
 
     /**

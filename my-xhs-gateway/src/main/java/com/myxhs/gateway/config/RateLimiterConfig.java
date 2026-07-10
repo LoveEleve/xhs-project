@@ -3,6 +3,7 @@ package com.myxhs.gateway.config;
 import org.springframework.cloud.gateway.filter.ratelimit.KeyResolver;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import reactor.core.publisher.Mono;
 
 /**
@@ -25,6 +26,7 @@ public class RateLimiterConfig {
      * 适用于未登录接口（注册、登录等）
      */
     @Bean
+    @Primary
     public KeyResolver remoteAddrKeyResolver() {
         return exchange -> {
             // 优先从反向代理头获取真实 IP
