@@ -3,7 +3,6 @@ package com.myxhs.product.service;
 import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.github.benmanes.caffeine.cache.Cache;
 import com.myxhs.common.cache.RedisOperator;
 import com.myxhs.common.constants.RedisKeyConstants;
 import com.myxhs.common.exception.BizException;
@@ -27,7 +26,6 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.redisson.api.RBloomFilter;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
@@ -46,7 +44,6 @@ import java.util.stream.Collectors;
  * SPU 服务（商品核心服务）
  * <p>
  * 【多级缓存架构】
- * L1: Caffeine 本地缓存（5min TTL，5000 容量，微秒级响应）
  * L2: Redis 分布式缓存（30min 逻辑过期，防缓存击穿）
  * L3: MySQL 持久化存储
  * <p>
@@ -56,7 +53,7 @@ import java.util.stream.Collectors;
  * - 缓存雪崩：TTL 随机偏移（CacheHelper 已内置）
  * <p>
  * 【一致性策略】
- * 写操作：先更新 DB → 删 Redis → MQ 广播删 Caffeine（所有实例）
+ * 写操作：先更新 DB → 删 Redis
  * </p>
  */
 @Slf4j
@@ -69,10 +66,7 @@ public class SpuService {
     private final CategoryMapper categoryMapper;
     private final RedisOperator redisOperator;
     private final RedissonClient redissonClient;
-    private final RocketMQTemplate rocketMQTemplate;
     private final IdGeneratorUtil idGeneratorUtil;
-    private final Cache<Long, SpuDetailVO> spuLocalCache;
-    private final Cache<Long, String> categoryNameLocalCache;
 
     /** 【修复m12】自定义有界线程池，替代 ForkJoinPool.commonPool()，避免阻塞公共线程池 */
     private static final java.util.concurrent.ExecutorService SPU_ASYNC_EXECUTOR =
@@ -121,9 +115,6 @@ public class SpuService {
 
     /** 缓存刷新分布式锁前缀 */
     private static final String CACHE_REFRESH_LOCK = "myxhs:product:lock:spu:";
-
-    /** MQ 缓存清除 Topic */
-    public static final String CACHE_EVICT_TOPIC = "product-cache-evict";
 
     /**
      * 初始化布隆过滤器
@@ -341,7 +332,7 @@ public class SpuService {
     /**
      * 获取 SPU 详情（多级缓存 + 逻辑过期 + 统一空值防穿透）
      * <p>
-     * 查询链路：布隆过滤器(前置) → Caffeine(L1) → Redis(L2, 逻辑过期) → MySQL(L3)
+     * 查询链路：布隆过滤器(前置) → Redis(L2, 逻辑过期) → MySQL(L3)
      * <p>
      * 【三层防穿透策略 — 大厂生产级方案】
      * <p>
@@ -378,14 +369,7 @@ public class SpuService {
             return null;
         }
 
-        // 2. L1: Caffeine 本地缓存
-        SpuDetailVO cached = spuLocalCache.getIfPresent(spuId);
-        if (cached != null) {
-            log.debug("[多级缓存] L1 Caffeine 命中, spuId={}", spuId);
-            return cached;
-        }
-
-        // 3. L2: Redis 分布式缓存（统一用 RedisCacheData 包装，包括空值）
+        // 2. L2: Redis 分布式缓存（统一用 RedisCacheData 包装，包括空值）
         String redisKey = RedisKeyConstants.PRODUCT_SPU + spuId;
         RedisCacheData<SpuDetailVO> cacheData = redisOperator.get(redisKey);
 
@@ -397,8 +381,6 @@ public class SpuService {
                     log.info("[多级缓存] 命中空值缓存(防穿透), spuId={}", spuId);
                     return null;
                 }
-                // 正常数据命中，回填 L1
-                spuLocalCache.put(spuId, cacheData.getData());
                 log.debug("[多级缓存] L2 Redis 命中(未过期), spuId={}", spuId);
                 return cacheData.getData();
             }
@@ -412,19 +394,17 @@ public class SpuService {
                 // 正常数据过期 → 返回旧值 + 异步刷新（只有一个线程刷新）
                 log.info("[多级缓存] L2 Redis 逻辑过期, 异步刷新, spuId={}", spuId);
                 asyncRefreshCache(spuId, redisKey);
-                spuLocalCache.put(spuId, cacheData.getData());
                 return cacheData.getData();
             }
         }
 
-        // 4. L3: MySQL 兜底
+        // 3. L3: MySQL 兜底
         log.info("[多级缓存] L2 Redis 未命中, 查询 DB, spuId={}", spuId);
         SpuDetailVO detail = loadSpuDetailFromDb(spuId);
         if (detail != null) {
-            // 回填 L2（逻辑过期）和 L1
+            // 回填 L2（逻辑过期）
             RedisCacheData<SpuDetailVO> newCacheData = RedisCacheData.of(detail, LOGIC_EXPIRE_MINUTES);
             redisOperator.set(redisKey, newCacheData);
-            spuLocalCache.put(spuId, detail);
         } else {
             // 【第二层防穿透】DB 也查不到 → 缓存空值（统一用 RedisCacheData 包装）
             // 逻辑过期 2 分钟（2 分钟后重新查 DB，数据可能已新增）
@@ -460,35 +440,13 @@ public class SpuService {
     /**
      * 清除 SPU 缓存（写操作后调用）
      * <p>
-     * 1. 删除 Redis 缓存
-     * 2. 清除本地 Caffeine
-     * 3. MQ 广播通知其他实例清除 Caffeine
+     * 删除 Redis 缓存
      * </p>
      */
     public void evictSpuCache(Long spuId) {
         // 删 Redis
         String redisKey = RedisKeyConstants.PRODUCT_SPU + spuId;
         redisOperator.delete(redisKey);
-
-        // 删本地 Caffeine
-        spuLocalCache.invalidate(spuId);
-
-        // MQ 广播（其他实例收到后清除自己的 Caffeine）
-        try {
-            rocketMQTemplate.convertAndSend(CACHE_EVICT_TOPIC, spuId);
-            log.info("[缓存清除] MQ 广播发送成功, spuId={}", spuId);
-        } catch (Exception e) {
-            // MQ 发送失败不影响主流程，Caffeine TTL 5min 兜底
-            log.warn("[缓存清除] MQ 广播发送失败(TTL兜底), spuId={}", spuId, e);
-        }
-    }
-
-    /**
-     * 清除本地 Caffeine 缓存（MQ 消费者调用）
-     */
-    public void evictLocalCache(Long spuId) {
-        spuLocalCache.invalidate(spuId);
-        log.info("[缓存清除] 本地 Caffeine 已清除, spuId={}", spuId);
     }
 
     // ==================== 私有方法 ====================
@@ -518,7 +476,6 @@ public class SpuService {
                 if (detail != null) {
                     RedisCacheData<SpuDetailVO> newCacheData = RedisCacheData.of(detail, LOGIC_EXPIRE_MINUTES);
                     redisOperator.set(redisKey, newCacheData);
-                    spuLocalCache.put(spuId, detail);
                     log.info("[缓存刷新] 异步刷新完成, spuId={}", spuId);
                 }
             } catch (InterruptedException e) {
@@ -536,10 +493,6 @@ public class SpuService {
 
     /**
      * 从 DB 加载 SPU 详情（含 SKU 列表）
-     * <p>
-     * 分类名称通过 Caffeine 本地缓存获取（1h TTL），避免每次查 DB（解决 N+1 问题）。
-     * 分类数据极少变更，本地缓存完全满足需求。
-     * </p>
      */
     private SpuDetailVO loadSpuDetailFromDb(Long spuId) {
         Spu spu = spuMapper.selectById(spuId);
@@ -554,27 +507,21 @@ public class SpuService {
                         .eq(Sku::getStatus, ProductStatus.ON_SHELF.getCode())
                         .orderByAsc(Sku::getId));
 
-        // 查询分类名称（Caffeine 本地缓存，避免 N+1 查 DB）
+        // 查询分类名称（直接查 DB）
         String categoryName = getCategoryName(spu.getCategoryId());
 
         return toSpuDetailVO(spu, skuList, categoryName);
     }
 
     /**
-     * 获取分类名称（Caffeine 本地缓存 + DB 兜底）
-     * <p>
-     * 分类数据极少变更，使用 Caffeine 本地缓存（1h TTL）。
-     * 缓存未命中时查 DB 并回填，后续相同 categoryId 直接命中本地缓存。
-     * </p>
+     * 获取分类名称（直接查询 DB）
      */
     private String getCategoryName(Long categoryId) {
         if (categoryId == null) {
             return null;
         }
-        return categoryNameLocalCache.get(categoryId, id -> {
-            Category category = categoryMapper.selectById(id);
-            return category != null ? category.getName() : null;
-        });
+        Category category = categoryMapper.selectById(categoryId);
+        return category != null ? category.getName() : null;
     }
 
     // ==================== 对象转换 ====================

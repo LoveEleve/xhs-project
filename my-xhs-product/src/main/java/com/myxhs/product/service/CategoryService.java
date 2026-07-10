@@ -1,7 +1,6 @@
 package com.myxhs.product.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.github.benmanes.caffeine.cache.Cache;
 import com.myxhs.common.cache.RedisOperator;
 import com.myxhs.product.dto.response.CategoryTreeVO;
 import com.myxhs.product.entity.Category;
@@ -20,7 +19,7 @@ import java.util.stream.Collectors;
 /**
  * 分类服务
  * <p>
- * 三级分类树缓存策略：Caffeine(1h) → Redis(2h) → MySQL
+ * 三级分类树缓存策略：Redis(2h) → MySQL
  * 分类数据极少变更，长 TTL 即可。
  * </p>
  */
@@ -31,29 +30,19 @@ public class CategoryService {
 
     private final CategoryMapper categoryMapper;
     private final RedisOperator redisOperator;
-    private final Cache<String, List<CategoryTreeVO>> categoryTreeLocalCache;
 
     private static final String CATEGORY_TREE_REDIS_KEY = "myxhs:product:category:tree";
-    private static final String CATEGORY_TREE_CACHE_KEY = "tree";
 
     /**
      * 获取三级分类树
      * <p>
-     * 查询链路：Caffeine(L1, 1h) → Redis(L2, 2h) → MySQL(L3)
+     * 查询链路：Redis(L2, 2h) → MySQL(L3)
      * </p>
      */
     public List<CategoryTreeVO> getCategoryTree() {
-        // 1. L1: Caffeine
-        List<CategoryTreeVO> cached = categoryTreeLocalCache.getIfPresent(CATEGORY_TREE_CACHE_KEY);
-        if (cached != null) {
-            log.debug("[分类] L1 Caffeine 命中");
-            return cached;
-        }
-
-        // 2. L2: Redis
+        // 1. L2: Redis
         List<CategoryTreeVO> redisCached = redisOperator.get(CATEGORY_TREE_REDIS_KEY);
         if (redisCached != null) {
-            categoryTreeLocalCache.put(CATEGORY_TREE_CACHE_KEY, redisCached);
             log.debug("[分类] L2 Redis 命中");
             return redisCached;
         }
@@ -64,7 +53,6 @@ public class CategoryService {
 
         // 回填缓存
         redisOperator.set(CATEGORY_TREE_REDIS_KEY, tree, 2, TimeUnit.HOURS);
-        categoryTreeLocalCache.put(CATEGORY_TREE_CACHE_KEY, tree);
 
         return tree;
     }
