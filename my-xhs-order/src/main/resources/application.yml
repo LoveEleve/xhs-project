@@ -84,27 +84,6 @@ spring:
         dashboard: 21.130.247.89:18082
       # 取消懒加载，应用启动时即初始化 Sentinel
       eager: true
-      # Sentinel 舱壁隔离规则（通过 Nacos 动态配置推送）：
-      # - resource: my-xhs-inventory → threadPoolMaxSize=10, maxQueueSize=20
-      # - resource: my-xhs-coupon → threadPoolMaxSize=8, maxQueueSize=15
-      # - resource: my-xhs-payment → threadPoolMaxSize=15, maxQueueSize=30
-      # 其他 resource 使用默认值 threadPoolMaxSize=5, maxQueueSize=10
-      # Nacos 数据源持久化限流规则（Feign 熔断降级规则）
-      datasource:
-        flow:
-          nacos:
-            server-addr: 21.130.247.89:18848
-            namespace: my-xhs
-            group-id: SENTINEL_GROUP
-            data-id: my-xhs-order-flow-rules
-            rule-type: flow
-        degrade:
-          nacos:
-            server-addr: 21.130.247.89:18848
-            namespace: my-xhs
-            group-id: SENTINEL_GROUP
-            data-id: my-xhs-order-degrade-rules
-            rule-type: degrade
     openfeign:
       httpclient:
         hc5:
@@ -148,8 +127,6 @@ feign:
 pay:
   type: mock
   # 支付数据源（payment 表在独立库，不走分片）
-  datasource:
-    # 生产环境建议通过环境变量注入：${MYSQL_HOST:21.130.247.89}
     url: jdbc:mysql://21.130.247.89:13308/my_xhs_payment?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
     username: root
     password: "Xhs@2026#MySQL"
@@ -157,8 +134,6 @@ pay:
 # 订单号映射表数据源（不分片的公共库）
 order:
   mapping:
-    datasource:
-      # 生产环境建议通过环境变量注入：${MYSQL_HOST:21.130.247.89}
       url: jdbc:mysql://21.130.247.89:13308/my_xhs_order?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
       username: root
       password: "Xhs@2026#MySQL"

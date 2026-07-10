@@ -72,24 +72,6 @@ spring:
         port: 8719
       # 取消懒加载，启动时立即初始化 Sentinel
       eager: true
-      # Nacos 数据源持久化限流规则
-      # 启动时从 Nacos 加载规则，运行时规则变更通过 Nacos 推送实时同步
-      # 多网关实例共享同一份规则，运维可通过 Nacos Console 动态调整
-      datasource:
-        flow:
-          nacos:
-            server-addr: 21.130.247.89:18848
-            namespace: my-xhs
-            group-id: SENTINEL_GROUP
-            data-id: my-xhs-gateway-flow-rules
-            rule-type: gw-flow
-        degrade:
-          nacos:
-            server-addr: 21.130.247.89:18848
-            namespace: my-xhs
-            group-id: SENTINEL_GROUP
-            data-id: my-xhs-gateway-degrade-rules
-            rule-type: degrade
     gateway:
       httpclient:
         connect-timeout: 2000       # 全局默认连接超时 2s

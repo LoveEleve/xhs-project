@@ -81,14 +81,6 @@ spring:
         dashboard: 21.130.247.89:18082
         port: 8725
       eager: true
-      datasource:
-        degrade:
-          nacos:
-            server-addr: 21.130.247.89:18848
-            namespace: my-xhs
-            group-id: SENTINEL_GROUP
-            data-id: my-xhs-home-degrade-rules
-            rule-type: degrade
       feign:
         sentinel:
           enabled: true

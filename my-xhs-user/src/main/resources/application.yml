@@ -52,14 +52,6 @@ spring:
         dashboard: 21.130.247.89:18082
         port: 8721
       eager: true
-      datasource:
-        degrade:
-          nacos:
-            server-addr: 21.130.247.89:18848
-            namespace: my-xhs
-            group-id: SENTINEL_GROUP
-            data-id: my-xhs-user-degrade-rules
-            rule-type: degrade
       feign:
         sentinel:
           enabled: true
@@ -81,7 +73,6 @@ spring:
           enabled: true
           max-connections: 200
           max-connections-per-route: 50
-  datasource:
     readwrite:
       enabled: true  # 读写分离开关
     # 写库（主库）

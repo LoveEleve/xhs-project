@@ -31,7 +31,6 @@ spring:
       - org.springframework.boot.autoconfigure.batch.BatchAutoConfiguration
       - org.springframework.boot.autoconfigure.quartz.QuartzAutoConfiguration
       - org.springframework.boot.autoconfigure.jmx.JmxAutoConfiguration
-  datasource:
     readwrite:
       enabled: true  # 读写分离开关
     # 写库（主库）
@@ -101,14 +100,6 @@ spring:
         dashboard: 21.130.247.89:18082
         port: 8732
       eager: true
-      datasource:
-        degrade:
-          nacos:
-            server-addr: 21.130.247.89:18848
-            namespace: my-xhs
-            group-id: SENTINEL_GROUP
-            data-id: my-xhs-im-degrade-rules
-            rule-type: degrade
       feign:
         sentinel:
           enabled: true

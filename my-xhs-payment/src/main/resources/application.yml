@@ -49,7 +49,6 @@ spring:
           max-idle: 8
           min-idle: 4
           max-wait: 3000ms
-  datasource:
     readwrite:
       enabled: true  # 读写分离开关
     # 写库（主库）
@@ -122,22 +121,6 @@ spring:
         dashboard: 21.130.247.89:18082
       # 取消懒加载，应用启动时即初始化 Sentinel
       eager: true
-      # Nacos 数据源持久化限流规则（Feign 熔断降级规则）
-      datasource:
-        flow:
-          nacos:
-            server-addr: 21.130.247.89:18848
-            namespace: my-xhs
-            group-id: SENTINEL_GROUP
-            data-id: my-xhs-payment-flow-rules
-            rule-type: flow
-        degrade:
-          nacos:
-            server-addr: 21.130.247.89:18848
-            namespace: my-xhs
-            group-id: SENTINEL_GROUP
-            data-id: my-xhs-payment-degrade-rules
-            rule-type: degrade
     openfeign:
       httpclient:
         hc5:
