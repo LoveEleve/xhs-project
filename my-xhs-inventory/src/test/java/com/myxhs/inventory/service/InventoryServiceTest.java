@@ -1,0 +1,254 @@
+package com.myxhs.inventory.service;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.myxhs.common.exception.BizException;
+import com.myxhs.common.metrics.BusinessMetrics;
+import com.myxhs.common.response.ResultCode;
+import com.myxhs.inventory.dto.request.InventoryInitRequest;
+import com.myxhs.inventory.dto.request.PreDeductRequest;
+import com.myxhs.inventory.dto.request.ReleaseStockRequest;
+import com.myxhs.inventory.entity.Inventory;
+import com.myxhs.inventory.hot.HotSkuDetector;
+import com.myxhs.inventory.mapper.InventoryMapper;
+import org.apache.rocketmq.client.producer.SendResult;
+import org.apache.rocketmq.client.producer.SendStatus;
+import org.apache.rocketmq.spring.core.RocketMQTemplate;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+import org.springframework.data.redis.core.HashOperations;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.messaging.Message;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+/**
+ * InventoryService 单元测试
+ * <p>
+ * 测试策略：纯 Mockito Mock，不连接任何外部服务。
+ * Mock 对象：StringRedisTemplate, RocketMQTemplate, InventoryMapper,
+ * DefaultRedisScript, BusinessMetrics, HotSkuDetector
+ * </p>
+ */
+@ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
+class InventoryServiceTest {
+
+    @Mock
+    private StringRedisTemplate stringRedisTemplate;
+    @Mock
+    private RocketMQTemplate rocketMQTemplate;
+    @Mock
+    private InventoryMapper inventoryMapper;
+    @Mock
+    private DefaultRedisScript<Long> preDeductScript;
+    @Mock
+    private DefaultRedisScript<Long> releaseScript;
+    @Mock
+    private DefaultRedisScript<Long> confirmScript;
+    @Mock
+    private BusinessMetrics businessMetrics;
+    @Mock
+    private HotSkuDetector hotSkuDetector;
+    @Mock
+    private ValueOperations<String, String> valueOperations;
+    @Mock
+    private HashOperations<String, Object, Object> hashOperations;
+
+    private ObjectMapper objectMapper;
+    private InventoryService inventoryService;
+
+    private static final Long SKU_ID = 10001L;
+    private static final Long ORDER_ID = 123456L;
+    private static final Long USER_ID = 1001L;
+
+    @BeforeEach
+    void setUp() {
+        objectMapper = new ObjectMapper();
+        objectMapper.registerModule(new JavaTimeModule());
+        inventoryService = new InventoryService(
+                stringRedisTemplate, rocketMQTemplate, inventoryMapper, objectMapper,
+                preDeductScript, releaseScript, confirmScript, businessMetrics, hotSkuDetector
+        );
+        // 注入 @Value 字段（非 final，不在 Lombok 构造函数中）
+        ReflectionTestUtils.setField(inventoryService, "defaultBucketCount", 2);
+        ReflectionTestUtils.setField(inventoryService, "hotBucketCount", 8);
+        ReflectionTestUtils.setField(inventoryService, "preDeductExpireSeconds", 1800);
+
+        // 默认 mock stringRedisTemplate 返回操作接口
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(stringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+    }
+
+    // ==================== initStock ====================
+
+    @Test
+    @DisplayName("库存初始化 - 正常初始化设置可用库存正确")
+    void initStockSuccess() {
+        // SETNX 幂等检查成功
+        when(valueOperations.setIfAbsent(
+                eq("inventory:{10001}:total"), eq("100")))
+                .thenReturn(true);
+        // MySQL 中无已有记录
+        when(inventoryMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
+        when(inventoryMapper.insert(any(Inventory.class))).thenReturn(1);
+
+        InventoryInitRequest request = new InventoryInitRequest();
+        request.setSkuId(SKU_ID);
+        request.setTotalStock(100);
+
+        inventoryService.initStock(request);
+
+        // 验证 setIfAbsent 被调用（幂等检查）
+        verify(valueOperations).setIfAbsent(eq("inventory:{10001}:total"), eq("100"));
+        // 验证分桶写入：100 / 2 = 50
+        verify(valueOperations).set(eq("inventory:{10001}:bucket:0"), eq("50"));
+        verify(valueOperations).set(eq("inventory:{10001}:bucket:1"), eq("50"));
+        // 验证 totalKey 和 bucketCount 写入
+        verify(valueOperations).set(eq("inventory:{10001}:total"), eq("100"));
+        verify(valueOperations).set(eq("inventory:bucket:count:10001"), eq("2"));
+        // 验证 MySQL 记录创建
+        verify(inventoryMapper).insert(any(Inventory.class));
+    }
+
+    @Test
+    @DisplayName("库存初始化 - 重复初始化不会加倍库存，应抛出异常")
+    void initStockDuplicatePrevention() {
+        // SETNX 返回 false，表示已初始化
+        when(valueOperations.setIfAbsent(
+                eq("inventory:{10001}:total"), anyString()))
+                .thenReturn(false);
+
+        InventoryInitRequest request = new InventoryInitRequest();
+        request.setSkuId(SKU_ID);
+        request.setTotalStock(100);
+
+        assertThatThrownBy(() -> inventoryService.initStock(request))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("库存已初始化");
+
+        // 验证根因：setIfAbsent 返回 false 即抛出异常
+        verify(valueOperations).setIfAbsent(eq("inventory:{10001}:total"), eq("100"));
+        // 不应进入后续的 MySQL 和分桶操作
+        verify(inventoryMapper, never()).selectOne(any(LambdaQueryWrapper.class));
+    }
+
+    // ==================== preDeduct ====================
+
+    @Test
+    @DisplayName("预扣减 - 正常扣减库存成功")
+    void preDeductSuccess() {
+        // 未在扩容暂停中
+        when(stringRedisTemplate.hasKey(eq("inventory:paused:10001"))).thenReturn(false);
+        // 分桶计数 Key 存在，值为 2
+        when(valueOperations.get(eq("inventory:bucket:count:10001"))).thenReturn("2");
+        // 非热点 SKU
+        when(hotSkuDetector.recordAndCheck(SKU_ID)).thenReturn(false);
+        // Lua 预扣脚本返回 1（成功）
+        when(stringRedisTemplate.execute(
+                eq(preDeductScript), anyList(),
+                anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(1L);
+        // MQ 发送成功（ObjectMapper 使用真实实例序列化，只 mock syncSend）
+        SendResult sendResult = new SendResult();
+        sendResult.setSendStatus(SendStatus.SEND_OK);
+        when(rocketMQTemplate.syncSend(
+                eq("INVENTORY_TOPIC:PRE_DEDUCT"), any(Message.class), eq(3000L)))
+                .thenReturn(sendResult);
+
+        PreDeductRequest request = new PreDeductRequest();
+        request.setSkuId(SKU_ID);
+        request.setOrderId(ORDER_ID);
+        request.setQuantity(2);
+        request.setUserId(USER_ID);
+
+        assertThatCode(() -> inventoryService.preDeduct(request))
+                .doesNotThrowAnyException();
+
+        // 验证 MQ 消息已发送
+        verify(rocketMQTemplate).syncSend(
+                eq("INVENTORY_TOPIC:PRE_DEDUCT"), any(Message.class), eq(3000L));
+    }
+
+    @Test
+    @DisplayName("预扣减 - 库存不足时抛出业务异常")
+    void preDeductInsufficientStock() {
+        // 未在扩容暂停中
+        when(stringRedisTemplate.hasKey(eq("inventory:paused:10001"))).thenReturn(false);
+        // 分桶计数 Key 存在
+        when(valueOperations.get(eq("inventory:bucket:count:10001"))).thenReturn("2");
+        // 非热点 SKU
+        when(hotSkuDetector.recordAndCheck(SKU_ID)).thenReturn(false);
+        // Lua 预扣脚本返回 0（库存不足）
+        when(stringRedisTemplate.execute(
+                eq(preDeductScript), anyList(),
+                anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(0L);
+
+        PreDeductRequest request = new PreDeductRequest();
+        request.setSkuId(SKU_ID);
+        request.setOrderId(ORDER_ID);
+        request.setQuantity(999);
+        request.setUserId(USER_ID);
+
+        assertThatThrownBy(() -> inventoryService.preDeduct(request))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining(ResultCode.STOCK_NOT_ENOUGH.getMessage());
+
+        // 库存不足时不应发送 MQ
+        verify(rocketMQTemplate, never()).syncSend(anyString(), any(Message.class), anyLong());
+    }
+
+    // ==================== releaseStock ====================
+
+    @Test
+    @DisplayName("释放库存 - 预扣后释放恢复可用库存")
+    void releaseStock() {
+        // 模拟预扣记录
+        Map<Object, Object> entries = new HashMap<>();
+        entries.put("10001", "5");
+        when(hashOperations.entries(eq("inventory:prededuct:123456")))
+                .thenReturn(entries);
+        // 模拟 :bucket 辅助字段
+        when(hashOperations.get(eq("inventory:prededuct:123456"), eq("10001:bucket")))
+                .thenReturn("0");
+        // Lua 释放脚本返回 1（成功）
+        when(stringRedisTemplate.execute(
+                eq(releaseScript), anyList(), anyString()))
+                .thenReturn(1L);
+        // MQ 发送成功
+        SendResult sendResult = new SendResult();
+        sendResult.setSendStatus(SendStatus.SEND_OK);
+        when(rocketMQTemplate.syncSend(
+                eq("INVENTORY_TOPIC:RELEASE"), any(Message.class), eq(3000L)))
+                .thenReturn(sendResult);
+
+        ReleaseStockRequest request = new ReleaseStockRequest();
+        request.setOrderId(ORDER_ID);
+
+        assertThatCode(() -> inventoryService.releaseStock(request))
+                .doesNotThrowAnyException();
+
+        // 验证释放脚本被调用
+        verify(stringRedisTemplate).execute(
+                eq(releaseScript), anyList(), eq("10001"));
+        // 验证 MQ 释放消息已发送
+        verify(rocketMQTemplate).syncSend(
+                eq("INVENTORY_TOPIC:RELEASE"), any(Message.class), eq(3000L));
+    }
+}
