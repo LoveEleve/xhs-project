@@ -89,7 +89,7 @@
 | RPC | OpenFeign |
 | 限流熔断 | Sentinel |
 | 数据库 | MySQL 8.0（1主1从） |
-| 缓存 | Redis Cluster 3分片 + Caffeine 本地缓存 |
+| 缓存 | Redis Sentinel 3分片 + Caffeine 本地缓存 |
 | 消息队列 | RocketMQ 5.x（1主1从同步双写） |
 | 搜索引擎 | Elasticsearch 8.x（3节点集群） |
 | 分库分表 | ShardingSphere 5.x |

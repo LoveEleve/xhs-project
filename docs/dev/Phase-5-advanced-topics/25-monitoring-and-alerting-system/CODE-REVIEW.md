@@ -262,7 +262,7 @@ expr: |
 
 jvm_memory_used_bytes{
   application="my-xhs-user",     ← 自动注入
-  instance="127.0.0.1:9001",     ← 自动注入
+  instance="127.0.0.1:19001",     ← 自动注入
   area="heap",
   id="G1 Old Gen"
 } 46055416.0
@@ -312,7 +312,7 @@ jvm_memory_used_bytes{
               ▼            ▼            ▼
         ┌──────────┐ ┌──────────┐ ┌──────────┐
         │ User     │ │ Order    │ │ Product  │ ...
-        │ :9001    │ │ :9011    │ │ :9005    │
+        │ :19001    │ │ :19011    │ │ :19015    │
         └──────────┘ └──────────┘ └──────────┘
               │            │            │
         Micrometer + ApiMetricsFilter + BusinessMetrics

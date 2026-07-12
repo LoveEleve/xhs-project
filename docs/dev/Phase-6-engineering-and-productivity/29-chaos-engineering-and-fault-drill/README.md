@@ -112,19 +112,19 @@ run_drill() {
 # 场景1: Redis 不可用 → 验证降级走 DB
 run_drill "Redis不可用" \
     "create network drop --port 6379" \
-    "curl -s -o /dev/null -w '%{http_code}' http://localhost:9001/api/user/profile -H 'Authorization: Bearer test'" \
+    "curl -s -o /dev/null -w '%{http_code}' http://localhost:19001/api/user/profile -H 'Authorization: Bearer test'" \
     10
 
 # 场景2: 库存服务网络隔离 → 验证 Sentinel 熔断
 run_drill "库存服务网络隔离" \
     "create network drop --remote-port 9009" \
-    "curl -s http://localhost:9011/api/order/create -X POST -H 'Content-Type: application/json' -d '{\"skuItems\":[{\"skuId\":1,\"quantity\":1}]}'" \
+    "curl -s http://localhost:19011/api/order/create -X POST -H 'Content-Type: application/json' -d '{\"skuItems\":[{\"skuId\":1,\"quantity\":1}]}'" \
     15
 
 # 场景3: CPU 满载 → 验证限流
 run_drill "CPU满载" \
     "create cpu fullload --cpu-count 2" \
-    "curl -s http://localhost:9000/actuator/health" \
+    "curl -s http://localhost:19000/actuator/health" \
     20
 
 echo "演练完成，报告已生成: $REPORT_DIR/report.txt"

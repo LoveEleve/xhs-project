@@ -272,7 +272,7 @@ config.useSentinelServers()
 
 ## 7. 集群模式（扩展方案）
 
-当数据量超过单机内存限制时，升级为 Redis Cluster：
+当数据量超过单机内存限制时，升级为 Redis Sentinel：
 
 ### 特点
 - 数据自动分片（16384 个 slot）
@@ -362,7 +362,7 @@ redis-cli -h sentinel-1 -p 26379 sentinel failover mymaster
 
 ### 已就绪
 - ✅ Redisson RLock 分布式锁（已实现 Watchdog 机制）
-- ✅ Redis Cluster hash tag 格式 `{lock}:xxx`（已实现）
+- ✅ Redis Sentinel hash tag 格式 `{lock}:xxx`（已实现）
 - ✅ Lua 脚本 Key 在 hash tag 内（已实现）
 - ✅ 延迟双删缓存策略（CacheHelper）
 

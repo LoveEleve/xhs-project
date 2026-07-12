@@ -67,14 +67,14 @@
 | 方案 | 配置 | 能力 | 选择 |
 |------|------|------|------|
 | Redis Sentinel | 1主2从 | 10万QPS写入 | ❌ 不够 |
-| Redis Cluster 3分片 | 3主6从 | 30万QPS写入 | ✅ 够用 |
-| Redis Cluster 6分片 | 6主12从 | 60万QPS写入 | ✅ 冗余 |
+| Redis Sentinel 3分片 | 3主6从 | 30万QPS写入 | ✅ 够用 |
+| Redis Sentinel 6分片 | 6主12从 | 60万QPS写入 | ✅ 冗余 |
 
-**建议**：将 Redis Sentinel 修改为 **Redis Cluster 3分片**（3主6从）
+**建议**：将 Redis Sentinel 修改为 **Redis Sentinel 3分片**（3主6从）
 
 ```
 修正后的设计：
-  Redis Cluster: 3主6从
+  Redis Sentinel: 3主6从
   - 每个主节点承载1/3的写入
   - 总写入QPS: 30万
   - 总读取QPS: 60万（从节点分担读）
@@ -296,7 +296,7 @@
 
 ### Q: 你的系统真的能扛100万DAU吗？
 
-> "我做过容量推算。100万DAU的峰值QPS约1000，主要在首页Feed和笔记详情。Redis Cluster 3分片能扛30万QPS，ES 3节点集群能扛5000搜索QPS，MySQL 1主1从的写入QPS 3000+完全够用。日常20个服务实例，预留了50%冗余。如果实际流量超过预期，K8s HPA自动扩容，30秒内新增实例。"
+> "我做过容量推算。100万DAU的峰值QPS约1000，主要在首页Feed和笔记详情。Redis Sentinel 3分片能扛30万QPS，ES 3节点集群能扛5000搜索QPS，MySQL 1主1从的写入QPS 3000+完全够用。日常20个服务实例，预留了50%冗余。如果实际流量超过预期，K8s HPA自动扩容，30秒内新增实例。"
 
 ### Q: 为什么不用单节点Redis/ES？
 
@@ -304,4 +304,4 @@
 
 ### Q: 扩容时怎么保证平滑？
 
-> "Redis Cluster在线添加分片，槽位自动迁移；ES增加节点后调整分片副本数；K8s HPA根据CPU利用率自动扩缩容。扩容期间服务不中断。"
+> "Redis Sentinel在线添加分片，槽位自动迁移；ES增加节点后调整分片副本数；K8s HPA根据CPU利用率自动扩缩容。扩容期间服务不中断。"

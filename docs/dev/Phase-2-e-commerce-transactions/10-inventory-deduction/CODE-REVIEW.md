@@ -139,11 +139,11 @@ T4: 定时任务 → delete(predeductKey)  ← Key 已不存在，无影响
 
 **修复**：添加 `@Max(999)` 入口校验。
 
-### 问题 4（P1）：Lua 脚本中动态构造 Key 不符合 Redis Cluster 规范
+### 问题 4（P1）：Lua 脚本中动态构造 Key 不符合 Redis Sentinel 规范
 
-**独立发现过程**：`prededuct.lua` 中 KEYS 只传了 2 个（totalKey 和 predeductKey），但脚本内部动态构造了 `inventory:bucket:{skuId}:{bucketNo}` 这些 Key。在 Redis Cluster 模式下，所有操作的 Key 必须在 KEYS 参数中声明。
+**独立发现过程**：`prededuct.lua` 中 KEYS 只传了 2 个（totalKey 和 predeductKey），但脚本内部动态构造了 `inventory:bucket:{skuId}:{bucketNo}` 这些 Key。在 Redis Sentinel 模式下，所有操作的 Key 必须在 KEYS 参数中声明。
 
-**分析**：当前使用单机 Redis，此问题不影响功能。但如果未来迁移到 Redis Cluster，需要：
+**分析**：当前使用单机 Redis，此问题不影响功能。但如果未来迁移到 Redis Sentinel，需要：
 1. 使用 Hash Tag `{skuId}` 保证所有相关 Key 在同一 slot
 2. 或者将所有桶 Key 都传入 KEYS 参数
 

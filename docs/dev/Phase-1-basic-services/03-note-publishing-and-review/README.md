@@ -450,7 +450,7 @@ public class LocalFileStorageService implements FileStorageService {
     @Value("${storage.local.path:/data/uploads}")
     private String basePath;
 
-    @Value("${storage.local.url-prefix:http://localhost:9002/uploads}")
+    @Value("${storage.local.url-prefix:http://localhost:19002/uploads}")
     private String urlPrefix;
 
     @Override

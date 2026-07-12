@@ -361,9 +361,9 @@ public class FollowServiceImpl implements FollowService {
 ### 8.1 Lua 脚本 KEYS 参数传递错误
 
 - **现象**：Lua 脚本执行报错 `CROSSSLOT Keys in request don't hash to the same slot`
-- **原因**：Redis Cluster 模式下，Lua 脚本的 KEYS 必须在同一个 slot
+- **原因**：Redis Sentinel 模式下，Lua 脚本的 KEYS 必须在同一个 slot
 - **解决**：使用 Hash Tag `{userId}` 保证相关 Key 在同一 slot，或使用单机 Redis
-- **教训**：Lua 脚本在 Redis Cluster 下有 slot 限制
+- **教训**：Lua 脚本在 Redis Sentinel 下有 slot 限制
 
 ### 8.2 大 V 粉丝列表 ZSet 内存爆炸
 
