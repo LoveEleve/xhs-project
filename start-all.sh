@@ -36,7 +36,7 @@ start_service() {
     fi
     
     echo -n "启动 $MODULE (端口 $PORT)... "
-    nohup java ${JAVA_OPTS//SW_PLACEHOLDER/$MODULE} -jar "$JAR" > "$LOG" 2>&1 &
+    setsid java ${JAVA_OPTS//SW_PLACEHOLDER/$MODULE} -jar "$JAR" < /dev/null > "$LOG" 2>&1 &
     local PID=$!
     echo $PID > "$PID_FILE"
     
