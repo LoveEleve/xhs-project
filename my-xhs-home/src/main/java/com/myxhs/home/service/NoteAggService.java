@@ -69,9 +69,14 @@ public class NoteAggService {
         CompletableFuture<Boolean> likeFuture = CompletableFuture
                 .supplyAsync(() -> {
                     if (userId == null) return false;
-                    R<Map<Long, Boolean>> r = analyticsFeignClient.batchCheckLikeStatus(userId, 1, String.valueOf(noteId));
-                    return (r != null && r.isSuccess() && r.getData() != null)
-                            ? r.getData().getOrDefault(noteId, false) : false;
+                    try {
+                        R<Map<Long, Boolean>> r = analyticsFeignClient.batchCheckLikeStatus(userId, 1, String.valueOf(noteId));
+                        return (r != null && r.isSuccess() && r.getData() != null)
+                                ? r.getData().getOrDefault(noteId, false) : false;
+                    } catch (Exception e) {
+                        log.warn("[笔记详情] 查询点赞状态失败: noteId={}", noteId, e);
+                        return false;
+                    }
                 }, aggregatorPool);
 
         // 1c. 收藏状态

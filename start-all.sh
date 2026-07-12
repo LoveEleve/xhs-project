@@ -1,17 +1,16 @@
 #!/bin/bash
 # my-xhs 全部微服务启动脚本
 # 用法: ./start-all.sh
-
-set -e
 BASE_DIR="/data/workspace/my-xhs"
 LOG_DIR="$BASE_DIR/logs"
 PIDS_DIR="$BASE_DIR/pids"
 mkdir -p "$LOG_DIR" "$PIDS_DIR"
 
-JAVA_OPTS_BASE="-Xms128m -Xmx256m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
-JAVA_OPTS_GW="-Xms128m -Xmx256m"
-JAVA_OPTS_ORDER="-Xms128m -Xmx256m"
-JAVA_OPTS_SEARCH="-Xms128m -Xmx384m"
+JAVA_OPTS_BASE="-Xms512m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
+JAVA_OPTS_GW="-Xms256m -Xmx256m"
+JAVA_OPTS_ORDER="-Xms512m -Xmx1024m"
+JAVA_OPTS_SEARCH="-Xms512m -Xmx1024m"
+JAVA_OPTS_INVENTORY="-Xms512m -Xmx1024m"
 
 echo "=== 启动所有 my-xhs 微服务 ==="
 
@@ -67,7 +66,7 @@ sleep 2
 # ===== 业务服务 =====
 start_service "my-xhs-product"      19006 &
 start_service "my-xhs-cart"         19008 &
-start_service "my-xhs-inventory"    19009 "$JAVA_OPTS_ORDER" &
+start_service "my-xhs-inventory"    19009 "$JAVA_OPTS_INVENTORY" &
 start_service "my-xhs-coupon"       19010 &
 wait
 sleep 2
@@ -109,5 +108,5 @@ for PORT in 19000 19001 19002 19015 19016 19011 19012; do
 done
 
 echo ""
-echo "Sentinel Dashboard: http://21.91.124.110:18082"
+echo "Sentinel Dashboard: http://21.130.247.89:8858"
 echo "Nacos Console:      http://21.91.124.110:18848/nacos"

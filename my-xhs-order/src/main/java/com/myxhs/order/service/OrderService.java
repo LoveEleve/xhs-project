@@ -459,6 +459,39 @@ public class OrderService {
         log.info("[订单] 确认收货: userId={}, orderId={}", userId, orderId);
     }
 
+    // ==================== 发货 ====================
+
+    /**
+     * 发货（状态流转：1 → 2）
+     * <p>
+     * 只能对已付款(1)的订单执行发货操作。
+     * 乐观锁：WHERE status = 1
+     * </p>
+     */
+    public void deliverOrder(Long userId, Long orderId, String logisticsCompany, String trackingNo) {
+        Order order = orderMapper.selectOne(
+                new LambdaQueryWrapper<Order>()
+                        .eq(Order::getUserId, userId)
+                        .eq(Order::getId, orderId));
+        if (order == null) {
+            throw new BizException(ResultCode.ORDER_NOT_FOUND);
+        }
+        if (order.getStatus() != 1) {
+            throw new BizException(ResultCode.ORDER_STATUS_ERROR, "只能对已付款的订单执行发货");
+        }
+
+        // Event Sourcing: 追加发货事件并更新状态
+        orderEventService.appendEvent(order, OrderEventService.EVENT_DELIVERED,
+                Map.of("deliveredTime", LocalDateTime.now().toString(),
+                       "logisticsCompany", logisticsCompany != null ? logisticsCompany : "",
+                       "trackingNo", trackingNo != null ? trackingNo : ""));
+
+        takeSnapshot(orderId, userId, "DELIVERED");
+        stringRedisTemplate.delete("order:info:" + orderId);
+        log.info("[订单] 发货成功: userId={}, orderId={}, logisticsCompany={}, trackingNo={}",
+                userId, orderId, logisticsCompany, trackingNo);
+    }
+
     // ==================== 支付成功回调 ====================
 
     /**

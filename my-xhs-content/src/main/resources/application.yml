@@ -36,40 +36,9 @@ spring:
       - org.springframework.boot.autoconfigure.quartz.QuartzAutoConfiguration
       - org.springframework.boot.autoconfigure.websocket.servlet.WebSocketServletAutoConfiguration
       - org.springframework.boot.autoconfigure.jmx.JmxAutoConfiguration
-    readwrite:
-      enabled: true  # 读写分离开关
-    # 写库（主库）
-    master:
-      url: jdbc:mysql://21.130.247.89:13307/my_xhs_content?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true&autoReconnect=true&failOverReadOnly=false&connectTimeout=5000&socketTimeout=30000
-      username: root
-      password: "Xhs@2026#MySQL"
-      driver-class-name: com.mysql.cj.jdbc.Driver
-      hikari:
-        minimum-idle: 5
-        maximum-pool-size: 20
-        idle-timeout: 30000
-        max-lifetime: 1800000
-        connection-timeout: 10000
-        keepalive-time: 30000
-        connection-test-query: SELECT 1
-        validation-timeout: 3000
-    # 读库（从库，指向 slave 实例）
-    slave:
-      url: jdbc:mysql://21.130.247.89:13311/my_xhs_content?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true&autoReconnect=true&failOverReadOnly=false&connectTimeout=5000&socketTimeout=30000
-      username: root
-      password: "Xhs@2026#MySQL"
-      driver-class-name: com.mysql.cj.jdbc.Driver
-      hikari:
-        minimum-idle: 5
-        maximum-pool-size: 10  # 读库连接池可以小一些
-        idle-timeout: 30000
-        max-lifetime: 1800000
-        connection-timeout: 10000
-        keepalive-time: 30000
-        connection-test-query: SELECT 1
-        validation-timeout: 3000
   data:
     redis:
+      host: 21.130.247.89
       # 【Nacos 配置】Redis 密码已迁移至 Nacos Config（my-xhs-redis.yaml），本地值为 fallback
       password: "Xhs@2026#Redis"
       sentinel:
@@ -102,7 +71,7 @@ spring:
         file-extension: yaml
     sentinel:
       transport:
-        dashboard: 21.130.247.89:18082
+        dashboard: 21.130.247.89:8858
         port: 8722
       eager: true
       feign:
@@ -177,3 +146,5 @@ logging:
     com.myxhs: info
     org.springframework.web: info
 
+
+spring.datasource.readwrite.enabled: true

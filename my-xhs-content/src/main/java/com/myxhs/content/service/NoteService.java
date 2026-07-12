@@ -93,22 +93,21 @@ public class NoteService {
         businessMetrics.recordFeedPush("publish");
 
         // 4.【M2】写入本地消息表（与笔记入库同一事务，保证不丢消息）
-        LocalMessage localMsg = new LocalMessage();
-        localMsg.setTopic("FEED_TOPIC");
-        localMsg.setStatus(0); // 待发送
-        localMsg.setRetryCount(0);
-        localMsg.setCreatedAt(java.time.LocalDateTime.now());
-        localMessageMapper.insert(localMsg);
-
         NotePublishEvent event = new NotePublishEvent();
         event.setNoteId(note.getId());
         event.setAuthorId(userId);
         event.setPublishTime(System.currentTimeMillis());
         event.setNoteType(note.getNoteType() != null ? note.getNoteType().toString() : "0");
-        event.setLocalMsgId(localMsg.getId()); // 传递 localMsgId 用于推送进度跟踪
 
+        LocalMessage localMsg = new LocalMessage();
+        localMsg.setTopic("FEED_TOPIC");
         localMsg.setBody(toJson(event));
-        localMessageMapper.updateById(localMsg);
+        localMsg.setStatus(0); // 待发送
+        localMsg.setRetryCount(0);
+        localMsg.setCreatedAt(java.time.LocalDateTime.now());
+        localMessageMapper.insert(localMsg);
+
+        event.setLocalMsgId(localMsg.getId()); // 传递 localMsgId 用于推送进度跟踪
 
         final Long localMsgId = localMsg.getId();
 
@@ -411,6 +410,28 @@ public class NoteService {
                 }
             }
         });
+    }
+
+    // ==================== 分享笔记 ====================
+
+    /**
+     * 分享笔记
+     * <p>
+     * 使用 Redis Hash 递增笔记的分享计数。
+     * Key 格式：myxhs:note:count:{noteId}，field=share
+     * </p>
+     */
+    public void shareNote(Long noteId, Long userId) {
+        // 校验笔记是否存在且已发布
+        Note note = noteMapper.selectById(noteId);
+        if (note == null || note.getStatus() != NoteStatus.PUBLISHED.getCode()) {
+            throw new BizException(ResultCode.NOTE_NOT_FOUND);
+        }
+
+        String countKey = RedisKeyConstants.NOTE_COUNT + noteId;
+        Long shareCount = cacheHelper.getRedisOperator().hIncrement(countKey, "share", 1);
+
+        log.info("[笔记] 分享成功: noteId={}, userId={}, shareCount={}", noteId, userId, shareCount);
     }
 
     // ==================== 私有方法 ====================

@@ -60,8 +60,13 @@ public class ProductAggService {
         // 1a. SPU 详情（含 SKU 列表）
         CompletableFuture<Map<String, Object>> spuFuture = CompletableFuture
                 .supplyAsync(() -> {
-                    R<Map<String, Object>> r = productFeignClient.getSpuDetail(spuId);
-                    return (r != null && r.isSuccess() && r.getData() != null) ? r.getData() : Collections.emptyMap();
+                    try {
+                        R<Map<String, Object>> r = productFeignClient.getSpuDetail(spuId);
+                        return (r != null && r.isSuccess() && r.getData() != null) ? r.getData() : Collections.emptyMap();
+                    } catch (Exception e) {
+                        log.warn("[商品详情] 获取SPU异常: spuId={}", spuId, e);
+                        return Collections.emptyMap();
+                    }
                 }, aggregatorPool);
 
         // 1b. 商品计数（收藏数、浏览数）

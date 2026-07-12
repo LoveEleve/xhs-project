@@ -297,6 +297,13 @@ public class HotSearchService {
     private void snapshotToDatabase(List<Map.Entry<String, Double>> topEntries,
                                     Map<String, Long> rawCountMap,
                                     LocalDateTime snapshotTime) {
+        // 前置检查：快照表是否存在
+        try {
+            jdbcTemplate.queryForList("SELECT 1 FROM t_hot_search_snapshot LIMIT 1");
+        } catch (Exception e) {
+            log.info("[热搜] 快照表不存在，跳过持久化(需建表: t_hot_search_snapshot)");
+            return;
+        }
         try {
             String sql = "INSERT INTO t_hot_search_snapshot (id, keyword, score, rank_no, search_count, snapshot_time) " +
                     "VALUES (?, ?, ?, ?, ?, ?)";

@@ -1,6 +1,7 @@
 package com.myxhs.common.entity;
 
 import com.myxhs.common.event.AbstractDomainEvent;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -45,6 +46,7 @@ public class NotePublishEvent extends AbstractDomainEvent<NotePublishEvent> {
     }
 
     @Override
+    @JsonIgnore
     public NotePublishEvent getPayload() {
         return this;
     }

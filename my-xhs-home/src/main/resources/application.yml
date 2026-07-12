@@ -34,6 +34,7 @@ spring:
       - org.springframework.boot.autoconfigure.jmx.JmxAutoConfiguration
   data:
     redis:
+      host: 21.130.247.89
       # 【Nacos 配置】Redis 密码已迁移至 Nacos Config（my-xhs-redis.yaml），本地值为 fallback
       password: "Xhs@2026#Redis"
       sentinel:
@@ -50,6 +51,9 @@ spring:
           min-idle: 4
           max-wait: 3000ms
   cloud:
+    loadbalancer:
+      cache:
+        enabled: false
     nacos:
       discovery:
         enabled: true
@@ -78,7 +82,7 @@ spring:
         #       lock-timeout-ms: 3000  # 分布式锁超时
     sentinel:
       transport:
-        dashboard: 21.130.247.89:18082
+        dashboard: 21.130.247.89:8858
         port: 8725
       eager: true
       feign:
@@ -144,6 +148,10 @@ management:
       probes:
         enabled: true
   health:
+    redis:
+      enabled: false
+    redis-reactivestreams:
+      enabled: false
     livenessState:
       enabled: true
     readinessState:

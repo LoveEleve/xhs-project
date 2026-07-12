@@ -1,6 +1,7 @@
 package com.myxhs.analytics.dto.event;
 
 import com.myxhs.common.event.AbstractDomainEvent;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -43,6 +44,7 @@ public class LikeEvent extends AbstractDomainEvent<LikeEvent> {
     }
 
     @Override
+    @JsonIgnore
     public LikeEvent getPayload() {
         return this;
     }

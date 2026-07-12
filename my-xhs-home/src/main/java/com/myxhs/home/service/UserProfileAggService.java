@@ -55,8 +55,13 @@ public class UserProfileAggService {
         // 1. 用户基本信息
         CompletableFuture<Map<String, Object>> userFuture = CompletableFuture
                 .supplyAsync(() -> {
-                    R<Map<String, Object>> r = userFeignClient.getUserPublicInfo(targetUserId);
-                    return (r != null && r.isSuccess() && r.getData() != null) ? r.getData() : Collections.emptyMap();
+                    try {
+                        R<Map<String, Object>> r = userFeignClient.getUserPublicInfo(targetUserId);
+                        return (r != null && r.isSuccess() && r.getData() != null) ? r.getData() : Collections.emptyMap();
+                    } catch (Exception e) {
+                        log.warn("[用户主页] 获取用户信息失败: userId={}", targetUserId, e);
+                        return Collections.emptyMap();
+                    }
                 }, aggregatorPool);
 
         // 2. 计数（关注数/粉丝数/获赞与收藏数/笔记数）

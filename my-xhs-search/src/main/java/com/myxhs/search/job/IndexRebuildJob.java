@@ -132,6 +132,15 @@ public class IndexRebuildJob {
      */
     private void doRebuild() {
         log.info("[索引重建] 开始执行...");
+
+        // 前置检查：源表是否存在（Canal 未启动时可能不存在）
+        try {
+            jdbcTemplate.queryForList("SELECT 1 FROM t_note LIMIT 1");
+        } catch (Exception e) {
+            log.info("[索引重建] 源表 t_note 不可用，跳过重建(data sync not ready)");
+            return;
+        }
+
         long startTime = System.currentTimeMillis();
 
         // 读取断点

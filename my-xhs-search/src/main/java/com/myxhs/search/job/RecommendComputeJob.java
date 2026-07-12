@@ -63,6 +63,13 @@ public class RecommendComputeJob {
     }
 
     private void doComputeItemCFMatrix() {
+        // 前置检查：行为数据表是否存在
+        try {
+            jdbcTemplate.queryForList("SELECT 1 FROM t_user_behavior LIMIT 1");
+        } catch (Exception e) {
+            log.info("[推荐-ItemCF] 源表 t_user_behavior 不可用，跳过计算(data sync not ready)");
+            return;
+        }
         long start = System.currentTimeMillis();
 
         // 1. 获取最近 7 天有正向行为的用户-物品对
@@ -177,6 +184,13 @@ public class RecommendComputeJob {
     }
 
     private void doExtractFeatures() {
+        // 前置检查：源表是否存在
+        try {
+            jdbcTemplate.queryForList("SELECT 1 FROM t_note LIMIT 1");
+        } catch (Exception e) {
+            log.info("[推荐-特征] 源表 t_note 不可用，跳过提取(data sync not ready)");
+            return;
+        }
         long start = System.currentTimeMillis();
 
         try {
@@ -396,7 +410,15 @@ public class RecommendComputeJob {
     }
 
     private void doRefreshHotPool() {
+        // 前置检查
+        try {
+            jdbcTemplate.queryForList("SELECT 1 FROM t_user_behavior LIMIT 1");
+        } catch (Exception e) {
+            log.info("[推荐-热门] 源表 t_user_behavior 不可用，跳过更新(data sync not ready)");
+            return;
+        }
         long start = System.currentTimeMillis();
+        // ... rest of method        long start = System.currentTimeMillis();
 
         try {
             List<Map<String, Object>> hotNotes = jdbcTemplate.queryForList(

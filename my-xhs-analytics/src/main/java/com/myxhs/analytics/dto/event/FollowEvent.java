@@ -1,5 +1,6 @@
 package com.myxhs.analytics.dto.event;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.myxhs.common.event.AbstractDomainEvent;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -43,6 +44,7 @@ public class FollowEvent extends AbstractDomainEvent<FollowEvent> {
     }
 
     @Override
+    @JsonIgnore
     public FollowEvent getPayload() {
         return this;
     }

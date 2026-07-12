@@ -3,6 +3,7 @@ package com.myxhs.order.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.common.exception.BizException;
+import com.myxhs.common.metrics.BusinessMetrics;
 import com.myxhs.common.response.R;
 import com.myxhs.common.response.ResultCode;
 import com.myxhs.order.dto.request.OrderCreateRequest;
@@ -77,6 +78,8 @@ class OrderServiceTest {
     private InventoryFeignClient inventoryFeignClient;
     @Mock
     private CouponFeignClient couponFeignClient;
+    @Mock
+    private BusinessMetrics businessMetrics;
 
     private ObjectMapper objectMapper;
     private OrderService orderService;
@@ -93,7 +96,8 @@ class OrderServiceTest {
                 orderNoMappingRepository, transactionService,
                 orderEventService,
                 rocketMQTemplate, stringRedisTemplate, objectMapper,
-                inventoryFeignClient, couponFeignClient
+                inventoryFeignClient, couponFeignClient,
+                businessMetrics
         );
     }
 

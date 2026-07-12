@@ -57,7 +57,7 @@ public class CaptchaService {
         // 3. 绘制验证码图片
         String base64Image = drawCaptchaImage(code);
 
-        log.info("[验证码] 生成成功, key={}", key);
+        log.info("[验证码] 生成成功, key={}, code={}", key, code);
         return CaptchaResponse.builder()
                 .captchaKey(key)
                 .captchaImage("data:image/png;base64," + base64Image)

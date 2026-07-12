@@ -104,6 +104,15 @@ public class CartController {
     }
 
     /**
+     * 清空购物车
+     */
+    @DeleteMapping("/clear")
+    public R<Void> clearCart(@RequestHeader("X-User-Id") Long userId) {
+        cartService.clearCart(userId);
+        return R.ok();
+    }
+
+    /**
      * 获取购物车商品数量（角标用）
      */
     @GetMapping("/count")

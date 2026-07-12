@@ -10,6 +10,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Set;
+
 /**
  * 用户信息接口
  * <p>
@@ -63,5 +65,37 @@ public class UserController {
             @Valid @RequestBody ChangePasswordRequest request) {
         userService.changePassword(userId, request);
         return R.ok();
+    }
+
+    // ==================== 屏蔽管理 ====================
+
+    /**
+     * 屏蔽用户
+     */
+    @PostMapping("/block/{targetUserId}")
+    public R<Void> blockUser(
+            @RequestHeader("X-User-Id") Long userId,
+            @PathVariable Long targetUserId) {
+        userService.blockUser(userId, targetUserId);
+        return R.ok();
+    }
+
+    /**
+     * 取消屏蔽
+     */
+    @DeleteMapping("/block/{targetUserId}")
+    public R<Void> unblockUser(
+            @RequestHeader("X-User-Id") Long userId,
+            @PathVariable Long targetUserId) {
+        userService.unblockUser(userId, targetUserId);
+        return R.ok();
+    }
+
+    /**
+     * 获取屏蔽用户列表
+     */
+    @GetMapping("/block/list")
+    public R<Set<Object>> getBlockList(@RequestHeader("X-User-Id") Long userId) {
+        return R.ok(userService.getBlockList(userId));
     }
 }

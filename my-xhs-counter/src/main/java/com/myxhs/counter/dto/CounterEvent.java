@@ -1,5 +1,6 @@
 package com.myxhs.counter.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.myxhs.common.event.AbstractDomainEvent;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -44,6 +45,7 @@ public class CounterEvent extends AbstractDomainEvent<CounterEvent> {
     }
 
     @Override
+    @JsonIgnore
     public CounterEvent getPayload() {
         return this;
     }

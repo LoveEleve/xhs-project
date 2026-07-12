@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -23,10 +24,16 @@ import java.time.ZoneId;
  * <p>
  * 消费 SOCIAL_TOPIC:FOLLOW 消息，将关注记录写入 t_follow 表。
  * </p>
+ * <p>
+ * 注意：当前 FollowService 使用同步方式（Redis Lua 脚本 + 同步 MySQL），
+ * 不发送 MQ 消息，此消费者暂不会收到消息。默认禁用，如需启用请设置
+ * myxhs.mq.follow-consumer.enabled=true。
+ * </p>
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(name = "myxhs.mq.follow-consumer.enabled", havingValue = "true")
 @RocketMQMessageListener(
         topic = "SOCIAL_TOPIC",
         selectorExpression = "FOLLOW",

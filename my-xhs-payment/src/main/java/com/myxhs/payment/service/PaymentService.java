@@ -316,6 +316,13 @@ public class PaymentService {
 
         // 发送支付成功消息到 MQ（订单服务消费后更新订单状态为"已支付"）
         sendPayResultMq(orderId, userId, true, tradeNo);
+
+        // 同步通知订单服务支付成功（Feign 直调，保证订单状态及时更新）
+        try {
+            orderFeignClient.notifyPaySuccess(orderId, tradeNo);
+        } catch (Exception e) {
+            log.error("[支付成功] 通知订单服务失败(订单MQ消费者会兜底): orderId={}, tradeNo={}", orderId, tradeNo, e);
+        }
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.myxhs.cart.dto.event;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.myxhs.common.event.AbstractDomainEvent;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -43,6 +44,7 @@ public class CartSyncEvent extends AbstractDomainEvent<CartSyncEvent> {
     }
 
     @Override
+    @JsonIgnore
     public CartSyncEvent getPayload() {
         return this;
     }

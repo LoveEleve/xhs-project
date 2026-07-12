@@ -23,6 +23,7 @@ import org.redisson.api.RedissonClient;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -358,6 +359,39 @@ public class UserService {
             throw new BizException(ResultCode.USER_NOT_FOUND);
         }
         return toUserInfoResponse(user);
+    }
+
+    // ==================== 屏蔽管理 ====================
+
+    private static final String USER_BLOCK_KEY = "myxhs:user:block:";
+
+    /**
+     * 屏蔽用户
+     */
+    public void blockUser(Long userId, Long targetUserId) {
+        if (userId.equals(targetUserId)) {
+            throw new BizException(ResultCode.BAD_REQUEST, "不能屏蔽自己");
+        }
+        String blockKey = USER_BLOCK_KEY + userId;
+        redisOperator.sAdd(blockKey, targetUserId.toString());
+        log.info("[屏蔽] 用户屏蔽成功: userId={}, targetUserId={}", userId, targetUserId);
+    }
+
+    /**
+     * 取消屏蔽
+     */
+    public void unblockUser(Long userId, Long targetUserId) {
+        String blockKey = USER_BLOCK_KEY + userId;
+        redisOperator.sRemove(blockKey, targetUserId.toString());
+        log.info("[屏蔽] 用户取消屏蔽: userId={}, targetUserId={}", userId, targetUserId);
+    }
+
+    /**
+     * 获取屏蔽用户列表
+     */
+    public Set<Object> getBlockList(Long userId) {
+        String blockKey = USER_BLOCK_KEY + userId;
+        return redisOperator.sMembers(blockKey);
     }
 
     /**

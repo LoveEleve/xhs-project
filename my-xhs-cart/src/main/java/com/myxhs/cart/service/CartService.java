@@ -478,6 +478,29 @@ public class CartService {
         return size != null ? size.intValue() : 0;
     }
 
+    // ==================== 清空购物车 ====================
+
+    /**
+     * 清空购物车
+     * <p>
+     * 删除 Redis 中用户的三个购物车结构（items/checked/sort），
+     * 并发送 MQ 事件用于异步持久化（标记全部删除）。
+     * </p>
+     */
+    public void clearCart(Long userId) {
+        String itemsKey = itemsKey(userId);
+        String checkedKey = checkedKey(userId);
+        String sortKey = sortKey(userId);
+
+        List<String> keys = List.of(itemsKey, checkedKey, sortKey);
+        stringRedisTemplate.delete(keys);
+
+        log.info("[购物车] 清空成功: userId={}", userId);
+
+        // MQ 异步通知清空
+        sendCartSyncEvent(userId, null, 0, 0, "CLEAR");
+    }
+
     // ==================== 私有方法 ====================
 
     /**

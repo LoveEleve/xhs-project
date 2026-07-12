@@ -37,6 +37,7 @@ spring:
   data:
     redis:
       # 【Nacos 配置】Redis 密码已迁移至 Nacos Config（my-xhs-redis.yaml），本地值为 fallback
+      host: 21.130.247.89
       password: "Xhs@2026#Redis"
       sentinel:
         master: mymaster
@@ -81,7 +82,7 @@ spring:
     # Sentinel 配置（轻量模式，暂不连接 Dashboard）
     sentinel:
       transport:
-        dashboard: 21.130.247.89:18082
+        dashboard: 21.130.247.89:8858
       # 取消懒加载，应用启动时即初始化 Sentinel
       eager: true
     openfeign:
@@ -127,6 +128,7 @@ feign:
 pay:
   type: mock
   # 支付数据源（payment 表在独立库，不走分片）
+  datasource:
     url: jdbc:mysql://21.130.247.89:13308/my_xhs_payment?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
     username: root
     password: "Xhs@2026#MySQL"
@@ -134,6 +136,7 @@ pay:
 # 订单号映射表数据源（不分片的公共库）
 order:
   mapping:
+    datasource:
       url: jdbc:mysql://21.130.247.89:13308/my_xhs_order?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
       username: root
       password: "Xhs@2026#MySQL"

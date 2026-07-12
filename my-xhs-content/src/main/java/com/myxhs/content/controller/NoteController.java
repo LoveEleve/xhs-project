@@ -143,4 +143,19 @@ public class NoteController {
         String url = fileStorageService.upload(file, "note");
         return R.ok("上传成功", Map.of("url", url));
     }
+
+    /**
+     * 分享笔记
+     * <p>
+     * 记录一次分享事件，递增笔记的分享计数。
+     * 使用 Redis Hash 存储笔记的各维度计数（分享、点赞、收藏等）。
+     * </p>
+     */
+    @PostMapping("/{id}/share")
+    public R<Void> shareNote(
+            @RequestHeader("X-User-Id") Long userId,
+            @PathVariable("id") Long noteId) {
+        noteService.shareNote(noteId, userId);
+        return R.ok();
+    }
 }

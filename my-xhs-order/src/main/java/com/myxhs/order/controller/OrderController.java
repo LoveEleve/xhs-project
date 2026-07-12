@@ -2,6 +2,7 @@ package com.myxhs.order.controller;
 
 import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
+import com.myxhs.order.dto.request.DeliverRequest;
 import com.myxhs.order.dto.request.OrderCreateRequest;
 import com.myxhs.order.dto.request.PayRequest;
 import com.myxhs.order.dto.response.OrderVO;
@@ -90,6 +91,17 @@ public class OrderController {
     public R<Void> confirmReceive(@RequestHeader("X-User-Id") Long userId,
                                   @RequestParam Long orderId) {
         orderService.confirmReceive(userId, orderId);
+        return R.ok();
+    }
+
+    /**
+     * 发货（状态流转：1-已付款 → 2-已发货）
+     */
+    @PostMapping("/deliver")
+    public R<Void> deliverOrder(@RequestHeader("X-User-Id") Long userId,
+                                @Valid @RequestBody DeliverRequest request) {
+        orderService.deliverOrder(userId, request.getOrderId(),
+                request.getLogisticsCompany(), request.getTrackingNo());
         return R.ok();
     }
 

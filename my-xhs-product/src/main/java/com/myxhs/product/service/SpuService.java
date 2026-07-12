@@ -145,10 +145,15 @@ public class SpuService {
             log.info("[布隆过滤器] 检测到首次初始化, 异步加载历史 SPU ID...");
             asyncLoadBloomFilter();
         } else {
-            // 已有布隆过滤器，直接标记就绪
-            bloomFilterReady.set(true);
-            log.info("[布隆过滤器] Redis 中已存在布隆过滤器(count={}), 直接复用, 跳过全量加载",
-                    spuBloomFilter.count());
+            // 已有布隆过滤器，但检查是否为空（count=0 说明之前加载失败或数据被清空）
+            if (spuBloomFilter.count() == 0) {
+                log.info("[布隆过滤器] Redis 中布隆过滤器为空(count=0), 重新异步加载...");
+                asyncLoadBloomFilter();
+            } else {
+                bloomFilterReady.set(true);
+                log.info("[布隆过滤器] Redis 中已存在布隆过滤器(count={}), 直接复用, 跳过全量加载",
+                        spuBloomFilter.count());
+            }
         }
     }
 

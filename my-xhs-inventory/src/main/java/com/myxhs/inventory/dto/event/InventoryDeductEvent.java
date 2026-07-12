@@ -1,5 +1,6 @@
 package com.myxhs.inventory.dto.event;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.myxhs.common.event.AbstractDomainEvent;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -43,6 +44,7 @@ public class InventoryDeductEvent extends AbstractDomainEvent<InventoryDeductEve
     }
 
     @Override
+    @JsonIgnore
     public InventoryDeductEvent getPayload() {
         return this;
     }
