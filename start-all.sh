@@ -7,17 +7,15 @@ PIDS_DIR="$BASE_DIR/pids"
 mkdir -p "$LOG_DIR" "$PIDS_DIR"
 
 JAVA_OPTS_BASE="-Xms512m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
-JAVA_OPTS_GW="-Xms256m -Xmx256m"
-JAVA_OPTS_ORDER="-Xms1024m -Xmx1024m"
-JAVA_OPTS_SEARCH="-Xms1024m -Xmx1024m"
-JAVA_OPTS_INVENTORY="-Xms1024m -Xmx1024m"
+JAVA_OPTS_GW="-Xms256m -Xmx256m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
+JAVA_OPTS_HEAVY="-Xms1024m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
 
 echo "=== 启动所有 my-xhs 微服务 ==="
 
 start_service() {
     local MODULE=$1
     local PORT=$2
-    local EXTRA_OPTS=${3:-}
+    local JAVA_OPTS=$3
     
     local JAR="$BASE_DIR/$MODULE/target/$MODULE-1.0-SNAPSHOT.jar"
     local LOG="$LOG_DIR/$MODULE.log"
@@ -38,7 +36,7 @@ start_service() {
     fi
     
     echo -n "启动 $MODULE (端口 $PORT)... "
-    nohup java $JAVA_OPTS_BASE $EXTRA_OPTS -jar "$JAR" > "$LOG" 2>&1 &
+    nohup java $JAVA_OPTS -jar "$JAR" > "$LOG" 2>&1 &
     local PID=$!
     echo $PID > "$PID_FILE"
     
@@ -66,13 +64,13 @@ sleep 2
 # ===== 业务服务 =====
 start_service "my-xhs-product"      19006 &
 start_service "my-xhs-cart"         19008 &
-start_service "my-xhs-inventory"    19009 "$JAVA_OPTS_INVENTORY" &
+start_service "my-xhs-inventory"    19009 "$JAVA_OPTS_HEAVY" &
 start_service "my-xhs-coupon"       19010 &
 wait
 sleep 2
 
 # ===== 交易链路 =====
-start_service "my-xhs-order"        19011 "$JAVA_OPTS_ORDER" &
+start_service "my-xhs-order"        19011 "$JAVA_OPTS_HEAVY" &
 start_service "my-xhs-payment"      19012 &
 wait
 sleep 2
@@ -81,7 +79,7 @@ sleep 2
 start_service "my-xhs-notification" 19013 &
 start_service "my-xhs-im"           19014 &
 start_service "my-xhs-home"         19015 &
-start_service "my-xhs-search"       19016 "$JAVA_OPTS_SEARCH" &
+start_service "my-xhs-search"       19016 "$JAVA_OPTS_HEAVY" &
 wait
 sleep 2
 
