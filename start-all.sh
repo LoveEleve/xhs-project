@@ -8,9 +8,9 @@ mkdir -p "$LOG_DIR" "$PIDS_DIR"
 
 JAVA_OPTS_BASE="-Xms512m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
 JAVA_OPTS_GW="-Xms256m -Xmx256m"
-JAVA_OPTS_ORDER="-Xms512m -Xmx1024m"
-JAVA_OPTS_SEARCH="-Xms512m -Xmx1024m"
-JAVA_OPTS_INVENTORY="-Xms512m -Xmx1024m"
+JAVA_OPTS_ORDER="-Xms1024m -Xmx1024m"
+JAVA_OPTS_SEARCH="-Xms1024m -Xmx1024m"
+JAVA_OPTS_INVENTORY="-Xms1024m -Xmx1024m"
 
 echo "=== 启动所有 my-xhs 微服务 ==="
 
