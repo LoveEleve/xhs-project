@@ -6,9 +6,9 @@ LOG_DIR="$BASE_DIR/logs"
 PIDS_DIR="$BASE_DIR/pids"
 mkdir -p "$LOG_DIR" "$PIDS_DIR"
 
-JAVA_OPTS_BASE="-Xms512m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
-JAVA_OPTS_GW="-Xms256m -Xmx256m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
-JAVA_OPTS_HEAVY="-Xms1024m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
+JAVA_OPTS_BASE="-javaagent:/data/workspace/my-xhs/skywalking-agent/skywalking-agent.jar -Dskywalking.agent.service_name=SW_PLACEHOLDER -Dskywalking.collector.backend_service=21.130.247.89:11800 -Xms512m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
+JAVA_OPTS_GW="-javaagent:/data/workspace/my-xhs/skywalking-agent/skywalking-agent.jar -Dskywalking.agent.service_name=SW_PLACEHOLDER -Dskywalking.collector.backend_service=21.130.247.89:11800 -Xms256m -Xmx256m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
+JAVA_OPTS_HEAVY="-javaagent:/data/workspace/my-xhs/skywalking-agent/skywalking-agent.jar -Dskywalking.agent.service_name=SW_PLACEHOLDER -Dskywalking.collector.backend_service=21.130.247.89:11800 -Xms1024m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
 
 echo "=== 启动所有 my-xhs 微服务 ==="
 
@@ -36,7 +36,7 @@ start_service() {
     fi
     
     echo -n "启动 $MODULE (端口 $PORT)... "
-    nohup java $JAVA_OPTS -jar "$JAR" > "$LOG" 2>&1 &
+    nohup java ${JAVA_OPTS//SW_PLACEHOLDER/$MODULE} -jar "$JAR" > "$LOG" 2>&1 &
     local PID=$!
     echo $PID > "$PID_FILE"
     
