@@ -10,6 +10,7 @@ import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
 
+import java.lang.reflect.Method;
 import java.util.Objects;
 
 /**
@@ -83,6 +84,10 @@ public class ResponseAutoWrapper implements ResponseBodyAdvice<Object> {
      */
     @Override
     public boolean supports(MethodParameter returnType, Class<? extends HttpMessageConverter<?>> converterType) {
+        // 排除 actuator 端点（Prometheus/metrics 等不应被包装为 R<>）
+        if (isActuatorEndpoint(returnType)) {
+            return false;
+        }
         // 排除已经是 R 类型的返回值（包括 GlobalExceptionHandler 的异常响应）
         if (R.class.isAssignableFrom(returnType.getParameterType())) {
             return false;
@@ -93,6 +98,14 @@ public class ResponseAutoWrapper implements ResponseBodyAdvice<Object> {
             return false;
         }
         return true;
+    }
+
+    /** 检查是否为 actuator 端点 */
+    private boolean isActuatorEndpoint(MethodParameter returnType) {
+        Method method = returnType.getMethod();
+        if (method == null) return false;
+        Class<?> clazz = method.getDeclaringClass();
+        return clazz.getName().startsWith("org.springframework.boot.actuate");
     }
 
     /**
@@ -120,6 +133,10 @@ public class ResponseAutoWrapper implements ResponseBodyAdvice<Object> {
                                    Class<? extends HttpMessageConverter<?>> selectedConverterType,
                                    ServerHttpRequest request,
                                    ServerHttpResponse response) {
+        // 排除 actuator 端点（Prometheus/metrics 返回原始类型，不能被包装为 R<>）
+        if (request.getURI().getPath().startsWith("/actuator")) {
+            return body;
+        }
         // void 返回（null）包装为 R.ok()
         if (body == null) {
             return R.ok();
