@@ -97,6 +97,12 @@
     <!-- MyBatis SQL 日志（开发时可改为 DEBUG 查看 SQL） -->
     <logger name="com.myxhs" level="INFO"/>
 
+    <!-- ==================== Logstash 远程日志推送 ==================== -->
+    <appender name="LOGSTASH" class="net.logstash.logback.appender.LogstashTcpSocketAppender">
+        <destination>21.130.247.89:15044</destination>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+    </appender>
+
     <!-- ==================== Root 配置 ==================== -->
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
