@@ -41,6 +41,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.*;
 
 /**
@@ -102,8 +103,11 @@ class NoteServiceTest {
 
             when(dfaFilter.detect(anyString())).thenReturn(Collections.emptySet());
             when(idGeneratorUtil.nextId()).thenReturn(NOTE_ID);
-            when(noteMapper.insert(any(Note.class))).thenReturn(1);
-            when(localMessageMapper.insert(any(LocalMessage.class))).thenReturn(1);
+
+            doAnswer(invocation -> { Note n = invocation.getArgument(0); n.setId(NOTE_ID); return 1; })
+                .when(noteMapper).insert(any(Note.class));
+            doAnswer(invocation -> { LocalMessage lm = invocation.getArgument(0); lm.setId(2L); return 1; })
+                .when(localMessageMapper).insert(any(LocalMessage.class));
 
             NotePublishRequest request = buildPublishRequest("测试标题", "这是一篇测试笔记内容");
             Long noteId = noteService.publishNote(USER_ID, request);
@@ -122,8 +126,11 @@ class NoteServiceTest {
 
             when(dfaFilter.detect(anyString())).thenReturn(Collections.emptySet());
             when(idGeneratorUtil.nextId()).thenReturn(NOTE_ID);
-            when(noteMapper.insert(any(Note.class))).thenReturn(1);
-            when(localMessageMapper.insert(any(LocalMessage.class))).thenReturn(1);
+
+            doAnswer(invocation -> { Note n = invocation.getArgument(0); n.setId(NOTE_ID); return 1; })
+                .when(noteMapper).insert(any(Note.class));
+            doAnswer(invocation -> { LocalMessage lm = invocation.getArgument(0); lm.setId(2L); return 1; })
+                .when(localMessageMapper).insert(any(LocalMessage.class));
 
             NotePublishRequest request = buildPublishRequest("测试标题", "测试内容");
             noteService.publishNote(USER_ID, request);
