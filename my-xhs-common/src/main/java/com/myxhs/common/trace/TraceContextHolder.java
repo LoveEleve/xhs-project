@@ -23,6 +23,9 @@ public final class TraceContextHolder {
 
     public static void set(TraceContext ctx) {
         CONTEXT.set(ctx);
+        // 同步注入 SkyWalking Correlation：将业务 traceId 挂到当前 Span 的 Tag
+        // 配合 agent.config: correlation.auto_tag_keys=traceId
+        injectSkyWalkingCorrelation(ctx);
     }
 
     public static TraceContext get() {
@@ -49,6 +52,7 @@ public final class TraceContextHolder {
      */
     public static void clear() {
         CONTEXT.remove();
+        clearSkyWalkingCorrelation();
     }
 
     // ==================== 便捷方法 ====================
@@ -108,5 +112,39 @@ public final class TraceContextHolder {
         copy.setAbGroup(src.getAbGroup());
         copy.setPressureTest(src.getPressureTest());
         return copy;
+    }
+
+    // ==================== SkyWalking 关联 ====================
+
+    /**
+     * 将业务 traceId 注入到 SkyWalking Correlation Context（Span Tag）
+     * <p>
+     * 当 SkyWalking Agent 加载时，每个 Span 自动携带 traceId Tag，
+     * 实现"用业务 ID 搜索 SkyWalking 链路"。
+     * Agent 未加载时（本地开发）静默降级，不影响业务。
+     * </p>
+     */
+    private static void injectSkyWalkingCorrelation(TraceContext ctx) {
+        if (ctx == null || ctx.getTraceId() == null) return;
+        try {
+            Class<?> swContext = Class.forName(
+                "org.apache.skywalking.apm.toolkit.trace.TraceContext");
+            java.lang.reflect.Method putCorrelation = swContext.getMethod(
+                "putCorrelation", String.class, String.class);
+            putCorrelation.invoke(null, "traceId", ctx.getTraceId());
+        } catch (Exception ignored) {
+            // SkyWalking Agent 未加载
+        }
+    }
+
+    private static void clearSkyWalkingCorrelation() {
+        try {
+            Class<?> swContext = Class.forName(
+                "org.apache.skywalking.apm.toolkit.trace.TraceContext");
+            java.lang.reflect.Method removeCorrelation = swContext.getMethod(
+                "removeCorrelation", String.class);
+            removeCorrelation.invoke(null, "traceId");
+        } catch (Exception ignored) {
+        }
     }
 }

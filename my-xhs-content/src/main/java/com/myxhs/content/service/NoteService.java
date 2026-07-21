@@ -25,6 +25,7 @@ import com.myxhs.content.enums.NoteStatus;
 import com.myxhs.content.filter.DFAFilter;
 import com.myxhs.content.mapper.LocalMessageMapper;
 import com.myxhs.content.mapper.NoteMapper;
+import com.myxhs.common.trace.MqTraceHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
@@ -122,7 +123,11 @@ public class NoteService {
 
                 // 异步通知 Feed 服务
                 try {
-                    rocketMQTemplate.asyncSend("FEED_TOPIC", event, new org.apache.rocketmq.client.producer.SendCallback() {
+                    rocketMQTemplate.asyncSend("FEED_TOPIC", 
+                        MqTraceHelper.wrapWithTraceContext(
+                            org.springframework.messaging.support.MessageBuilder.withPayload(event).build()
+                        ), 
+                        new org.apache.rocketmq.client.producer.SendCallback() {
                         @Override
                         public void onSuccess(org.apache.rocketmq.client.producer.SendResult sendResult) {
                             log.info("[NoteService] Feed推送成功, noteId={}", finalNoteId);
@@ -393,7 +398,11 @@ public class NoteService {
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.NOTE_LIST_USER + finalUserId);
 
                 try {
-                    rocketMQTemplate.asyncSend("FEED_TOPIC", draftEvent, new org.apache.rocketmq.client.producer.SendCallback() {
+                    rocketMQTemplate.asyncSend("FEED_TOPIC", 
+                        MqTraceHelper.wrapWithTraceContext(
+                            org.springframework.messaging.support.MessageBuilder.withPayload(draftEvent).build()
+                        ), 
+                        new org.apache.rocketmq.client.producer.SendCallback() {
                         @Override
                         public void onSuccess(org.apache.rocketmq.client.producer.SendResult sendResult) {
                             log.info("[NoteService] 草稿发布Feed推送成功, noteId={}", noteId);

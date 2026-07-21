@@ -29,7 +29,7 @@ echo ""
 echo "--- 0. 认证 ---"
 CAPTCHA=$(curl -s $API:19001/api/user/auth/captcha)
 KEY=$(echo $CAPTCHA | python3 -c "import json,sys;print(json.load(sys.stdin)['data']['captchaKey'])")
-CODE=$(python3 -c "import socket;s=socket.socket();s.settimeout(5);s.connect(('21.91.124.110',16379));s.send(b'AUTH Xhs@2026#Redis\r\n');s.recv(1024);s.send(f'GET myxhs:user:captcha:$KEY\r\n'.encode());print(s.recv(1024).decode().strip().split('\r\n')[-1].strip('\"'))")
+CODE=$(python3 -c "import socket;s=socket.socket();s.settimeout(5);s.connect(('21.130.247.89',16379));s.send(b'AUTH Xhs@2026#Redis\r\n');s.recv(1024);s.send(f'GET myxhs:user:captcha:$KEY\r\n'.encode());print(s.recv(1024).decode().strip().split('\r\n')[-1].strip('\"'))")
 LOGIN=$(curl -s -X POST $API:19001/api/user/auth/login -H 'Content-Type: application/json' -d "{\"username\":\"p8test\",\"password\":\"Test@2026\",\"captchaKey\":\"$KEY\",\"captchaCode\":\"$CODE\"}")
 TOKEN=$(echo $LOGIN | python3 -c "import json,sys;print(json.load(sys.stdin)['data']['accessToken'])")
 XID=1

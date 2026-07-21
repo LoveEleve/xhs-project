@@ -41,3 +41,6 @@ logs/
 
 # sverklo per-project state (memory journal, etc.)
 .sverklo/
+
+# CodeBuddy local settings
+.codebuddy/

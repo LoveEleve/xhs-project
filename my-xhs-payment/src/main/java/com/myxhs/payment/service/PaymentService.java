@@ -961,9 +961,9 @@ public class PaymentService {
             bodyMap.put("success", success);
             bodyMap.put("tradeNo", tradeNo != null ? tradeNo : "");
             String body = objectMapper.writeValueAsString(bodyMap);
-            Message<String> message = MessageBuilder.withPayload(body)
+            Message<String> message = MqTraceHelper.wrapWithTraceId(MessageBuilder.withPayload(body)
                     .setHeader("KEYS", key)
-                    .build();
+                    .build());
             rocketMQTemplate.syncSend(destination, message);
             log.info("[支付结果MQ] 发送成功: topic={}, tag={}, orderId={}", topic, tag, orderId);
         } catch (Exception e) {

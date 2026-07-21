@@ -134,28 +134,32 @@ class CacheHelperTest {
     }
 
     @Test
-    @DisplayName("deleteAfterUpdate - 删除失败重试3次")
-    void testDeleteAfterUpdateRetry() {
-        // 模拟 delete 始终返回 false（Redis 异常被吞）
+    @DisplayName("deleteAfterUpdate - Key不存在视为成功")
+    void testDeleteAfterUpdateKeyNotExists() {
+        // RedisOperator.delete() 返回 false 表示 Key 不存在（非异常）
+        // CacheHelper.deleteAfterUpdate 将第一次 false 视为"Key不存在=成功"
         when(redisOperator.delete("user:info:1")).thenReturn(false);
 
         boolean result = cacheHelper.deleteAfterUpdate("user:info:1");
 
-        assertThat(result).isFalse();
-        verify(redisOperator, times(3)).delete("user:info:1");
+        // 第一次 false → 视为 Key 不存在 → 成功
+        assertThat(result).isTrue();
+        verify(redisOperator, times(1)).delete("user:info:1");
     }
 
     @Test
-    @DisplayName("deleteAfterUpdate - 多个Key部分失败")
-    void testDeleteAfterUpdatePartialFailure() {
+    @DisplayName("deleteAfterUpdate - 多个Key部分已删除")
+    void testDeleteAfterUpdateMultipleKeysAllSucceed() {
+        // key1 → true（删除成功）, key2 → false（首次=Key不存在=成功）
         when(redisOperator.delete("key1")).thenReturn(true);
         when(redisOperator.delete("key2")).thenReturn(false);
 
         boolean result = cacheHelper.deleteAfterUpdate("key1", "key2");
 
-        assertThat(result).isFalse();
+        // 两个都成功：key1 删除成功, key2 Key不存在视为成功
+        assertThat(result).isTrue();
         verify(redisOperator, times(1)).delete("key1");
-        verify(redisOperator, times(3)).delete("key2");
+        verify(redisOperator, times(1)).delete("key2");
     }
 
     @Test
