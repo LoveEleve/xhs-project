@@ -23,13 +23,27 @@ public interface FollowMapper extends BaseMapper<Follow> {
 
     /**
      * 分页获取去重后的用户ID列表（用于计数对账）
+     * 使用子查询先按 id 排序取 batch，再 DISTINCT，避免 DISTINCT + ORDER BY id 的不兼容
      */
-    @Select("SELECT DISTINCT user_id FROM t_follow WHERE id > #{lastId} ORDER BY id LIMIT #{batchSize}")
+    @Select("SELECT DISTINCT t.user_id FROM (SELECT user_id, id FROM t_follow WHERE id > #{lastId} ORDER BY id LIMIT #{batchSize}) t")
     List<Long> selectDistinctUserIds(@Param("lastId") long lastId, @Param("batchSize") int batchSize);
 
     /**
      * 获取当前批次的最大ID（用于分页推进）
+     * 通过子查询限制范围后取 MAX，确保每批推进不超过 batchSize 行
      */
-    @Select("SELECT MAX(id) FROM t_follow WHERE id > #{lastId} LIMIT #{batchSize}")
+    @Select("SELECT MAX(id) FROM (SELECT id FROM t_follow WHERE id > #{lastId} ORDER BY id LIMIT #{batchSize}) t")
     Long selectMaxIdByLastId(@Param("lastId") long lastId, @Param("batchSize") int batchSize);
+
+    /**
+     * 查询某用户所有关注目标的 user_id（用于 Redis ↔ MySQL 关系对账）
+     */
+    @Select("SELECT follow_user_id FROM t_follow WHERE user_id = #{userId}")
+    List<Long> selectFollowUserIdsByUserId(@Param("userId") Long userId);
+
+    /**
+     * 删除指定 ID 的关注关系记录（用于对账清理孤儿行）
+     */
+    @Delete("DELETE FROM t_follow WHERE id = #{id}")
+    int deleteById(@Param("id") Long id);
 }

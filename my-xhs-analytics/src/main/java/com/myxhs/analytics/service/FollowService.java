@@ -418,4 +418,65 @@ public class FollowService {
         }
         return "计数一致，无需修复";
     }
+
+    /**
+     * Redis ↔ MySQL 关系全量对账修复
+     * <p>
+     * 对比用户关注列表的 Redis ZSet 与 MySQL t_follow 表：
+     * - Redis 有、MySQL 无 → INSERT 补上（follow 时 MySQL 写入失败）
+     * - MySQL 有、Redis 无 → DELETE 清理（unfollow 时 MySQL 删除失败）
+     * </p>
+     * <p>
+     * 修复策略：以 Redis ZSet 为准（Redis 是权威数据源），MySQL 为从。
+     * </p>
+     *
+     * @param userId 用户ID
+     * @return 对账结果
+     */
+    public String repairUserRelationships(Long userId) {
+        String followingKey = RedisKeyConstants.FOLLOW_LIST + userId;
+
+        // 1. 获取 Redis ZSet 中所有关注目标
+        Set<String> redisFollowing = stringRedisTemplate.opsForZSet()
+                .range(followingKey, 0, -1);
+        java.util.Set<Long> redisSet;
+        if (redisFollowing == null || redisFollowing.isEmpty()) {
+            redisSet = java.util.Collections.emptySet();
+        } else {
+            redisSet = redisFollowing.stream().map(Long::valueOf).collect(java.util.stream.Collectors.toSet());
+        }
+
+        // 2. 获取 MySQL 中所有关注目标
+        java.util.List<Long> mysqlIds = followMapper.selectFollowUserIdsByUserId(userId);
+        java.util.Set<Long> mysqlSet = new java.util.HashSet<>(mysqlIds);
+
+        int inserted = 0;
+        int deleted = 0;
+
+        // 3. Redis 有、MySQL 无 → INSERT 补上
+        for (Long targetId : redisSet) {
+            if (!mysqlSet.contains(targetId)) {
+                Follow follow = new Follow();
+                follow.setUserId(userId);
+                follow.setFollowUserId(targetId);
+                followMapper.insert(follow);
+                inserted++;
+                log.info("[关注对账] 补缺失关系: userId={}, targetUserId={}", userId, targetId);
+            }
+        }
+
+        // 4. MySQL 有、Redis 无 → DELETE 清理
+        for (Long targetId : mysqlSet) {
+            if (!redisSet.contains(targetId)) {
+                followMapper.deleteByUserIdAndFollowUserId(userId, targetId);
+                deleted++;
+                log.info("[关注对账] 清理孤儿行: userId={}, targetUserId={}", userId, targetId);
+            }
+        }
+
+        if (inserted > 0 || deleted > 0) {
+            return String.format("关系修复: 补插入%d条, 清孤儿行%d条", inserted, deleted);
+        }
+        return "关系一致，无需修复";
+    }
 }

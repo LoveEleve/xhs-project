@@ -119,7 +119,8 @@ public class LikeService {
      * 取消点赞
      * <p>
      * SREM 返回 0 表示未点赞，直接返回（幂等）。
-     * 不发 MQ，不更新计数——防止计数变为负数。
+     * 发送 UNLIKE 事件到 MQ 让 Consumer 异步删除 DB 记录。
+     * 不通过计数器维护 count——点赞数通过 SCARD 实时查询。
      * </p>
      *
      * @param userId  当前用户ID
@@ -262,6 +263,7 @@ public class LikeService {
         try {
             LikeEvent event = LikeEvent.builder()
                     .userId(userId).bizType(bizType).bizId(bizId).action(action)
+                    .actionTime(System.currentTimeMillis())
                     .build();
             String payload = objectMapper.writeValueAsString(event);
             org.apache.rocketmq.client.producer.SendResult sendResult = rocketMQTemplate.syncSend(

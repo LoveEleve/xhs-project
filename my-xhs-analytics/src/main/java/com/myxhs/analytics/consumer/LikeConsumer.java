@@ -52,7 +52,13 @@ public class LikeConsumer implements RocketMQListener<MessageExt> {
             like.setUserId(event.getUserId());
             like.setBizType(event.getBizType());
             like.setBizId(event.getBizId());
-            like.setCreatedAt(LocalDateTime.now());
+            if (event.getActionTime() != null) {
+                like.setCreatedAt(LocalDateTime.ofInstant(
+                    java.time.Instant.ofEpochMilli(event.getActionTime()),
+                    java.time.ZoneId.systemDefault()));
+            } else {
+                like.setCreatedAt(LocalDateTime.now());
+            }
 
             try {
                 likeMapper.insert(like);

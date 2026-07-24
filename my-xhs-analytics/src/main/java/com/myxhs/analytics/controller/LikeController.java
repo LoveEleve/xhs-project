@@ -51,6 +51,8 @@ public class LikeController {
      * 取消点赞
      */
     @DeleteMapping
+    @RateLimit(windowSeconds = 60, maxRequests = 30, perUser = true, prefix = "social:unlike",
+            message = "操作过于频繁，请稍后重试")
     public R<Void> unlike(
             @RequestHeader("X-User-Id") Long userId,
             @Valid @RequestBody LikeRequest request) {

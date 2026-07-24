@@ -50,6 +50,8 @@ public class FavoriteController {
      * 取消收藏
      */
     @DeleteMapping
+    @RateLimit(windowSeconds = 60, maxRequests = 30, perUser = true, prefix = "social:unfavorite",
+            message = "操作过于频繁，请稍后重试")
     public R<Void> unfavorite(
             @RequestHeader("X-User-Id") Long userId,
             @Valid @RequestBody FavoriteRequest request) {

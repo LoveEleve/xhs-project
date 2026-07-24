@@ -129,7 +129,17 @@ management:
     readinessState:
       enabled: true
 
-# 日志配置
+# XXL-Job 调度中心配置
+xxl:
+  job:
+    admin:
+      addresses: http://21.130.247.89:18080/xxl-job-admin
+    accessToken: my-xhs-xxl-job-token-2026
+    executor:
+      appname: my-xhs-analytics
+      port: 9999
+      logpath: ./logs/xxl-job
+      logretentiondays: 7
 logging:
   level:
     com.myxhs: info

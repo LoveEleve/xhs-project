@@ -33,6 +33,9 @@ public class LikeEvent extends AbstractDomainEvent<LikeEvent> {
     /** 操作类型：LIKE / UNLIKE */
     private String action;
 
+    /** 事件发生时间（毫秒时间戳），Consumer 侧用此值设置 t_like.createdAt */
+    private Long actionTime;
+
     @Override
     public String getEventType() {
         return "LIKE_EVENT";

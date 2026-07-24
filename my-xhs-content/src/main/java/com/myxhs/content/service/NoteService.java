@@ -396,7 +396,8 @@ public class NoteService {
             @Override
             public void afterCommit() {
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.NOTE_LIST_USER + finalUserId);
-
+                // 清除笔记详情缓存（避免草稿时的空值占位符导致发布后 404）
+                cacheHelper.delayDoubleDelete(RedisKeyConstants.NOTE_DETAIL + noteId);
                 try {
                     rocketMQTemplate.asyncSend("FEED_TOPIC", 
                         MqTraceHelper.wrapWithTraceContext(

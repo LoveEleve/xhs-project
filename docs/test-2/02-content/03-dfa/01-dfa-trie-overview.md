@@ -2,6 +2,7 @@
 
 > `my-xhs-content/src/main/java/com/myxhs/content/filter/DFAFilter.java`（305 行）
 > 一个完整的工程问题：数据结构选择 → 算法实现 → 性能分析 → 多实例一致 → 线程安全 → 生产缺项。
+> **调用上下文**：`checkSensitiveWords()` 在 `NoteService.publishNote()` 的 `@Transactional` 方法内被调用（`NoteService.java:83`）。详见 `04-transaction-aftercommit/` 了解事务生命周期。
 
 ---
 
