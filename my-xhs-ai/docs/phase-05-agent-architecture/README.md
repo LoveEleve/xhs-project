@@ -63,20 +63,75 @@ Phase 5 是 14 个 Phase 的**核心枢纽**——前面全是基础，Phase 5 �
 | **冷启动** | Phase 4 记忆系统提供默认上下文；Phase 3 RAG 提供业务知识 | 新会话首次回答问题可用 |
 | **模型降级** | FallbackModel：DeepSeek→备选模型（本地 Ollama）自动切换 | 主模型故障→Agent 不中断 |
 
-## 文档清单（10 篇）
+## 文档清单（14 篇）
 
-| # | 文档 | 轨道 | 内容要点 |
-|---|------|:---:|---------|
-| 01 | control-plane.md | A | OpenAI Symphony+任务树+HITL |
-| 02 | distributed-runtime.md | A | Google Agent Executor+事件日志+快照 |
-| 03 | loop-comparison.md | A | CoT/ToT/ReAct/Reflexion/Self-Refine 五种对比+选择决策树 |
-| 04 | graph-orchestration.md | A | LangGraph StateGraph+条件路由+并行+检查点 |
-| 05 | myxhs-runtime.md | A | my-xhs 已有基础设施→Agent 分布式运行时（7 组件映射） |
-| 06 | react-paper.md | A | ReAct 论文精读（ICLR 2023） |
-| 07 | reflexion-paper.md | A | Reflexion 论文精读（NeurIPS 2023） |
-| 08 | harness-architecture.md | B | AgentScope Harness 双层设计+无状态引擎+Builder 源码 |
-| 09 | memory-skill-permission.md | B | 三层记忆+Skill 生命周期+权限三态源码分析 |
-| 10 | agentscope-vs-langchain4j.md | B | 能力矩阵+架构差异+适用场景+自实现方案 |
+### 5-A：理论基础（8 篇）
+
+| # | 文档 | 内容要点 |
+|---|------|---------|
+| 01 | control-plane.md | OpenAI Symphony 架构：看板→Agent 调度器、任务树+依赖、HITL |
+| 02 | distributed-runtime.md | Google Agent Executor：事件日志+快照+可恢复执行 |
+| 03 | loop-comparison.md | CoT/ToT/ReAct/Reflexion/Self-Refine 五种对比：适用场景+选择决策树 |
+| 04 | graph-orchestration.md | LangGraph StateGraph：条件路由+并行+检查点+HITL |
+| 05 | myxhs-runtime.md | my-xhs 7 组件→Agent 分布式运行时映射 |
+| 06 | react-paper.md | ReAct 论文提取（详见下方） |
+| 07 | reflexion-paper.md | Reflexion 论文提取（详见下方） |
+| 08 | harness-survey-paper.md | arxiv:2604.18071 — 70 Agent 系统实证研究提取：Agent=Model+Harness 公式 |
+
+### 5-B：AgentScope 2.0 源码深度（6 篇）
+
+| # | 文档 | 内容要点 | 源码阅读目标 |
+|---|------|---------|-------------|
+| 09 | harness-architecture.md | AgentScope 2.0 双层设计：ReActAgent（推理引擎）+HarnessAgent（工程化层）；单例无状态引擎；Builder 模式全部参数 | `HarnessAgent.java` — build() 方法链 + 全部配置项 |
+| 10 | memory-layer.md | 三层记忆源码：Flush（对话→memory/*.md）→Consolidation（合并→MEMORY.md）→Compaction（结构化压缩保留目标/状态/结论/下一步）；vs LangChain4j TokenWindow | `MemoryConfig.java` + `MemoryHooks.java` + `CompactionConfig.java` |
+| 11 | skill-lifecycle.md | Skill 5 状态转换（create→validate→publish→deprecate→archive）；存储后端（Git/Nacos/MySQL）切换；4 层优先级覆盖；NacosSkillRepository 源码 | `SkillManager.java` + `SkillRepository.java` + `NacosSkillRepository.java` |
+| 12 | permission-system.md | 权限三态决策树：允许（passthrough）/审批（ask）/拒绝（deny）；HITL 内生机制——暂停→人工确认→恢复；6 维权限模型 | `PermissionEngine.java` + `HITLManager.java` |
+| 13 | plan-mode-events.md | Plan Mode：只读规划态→plan 文件持久化→驱动执行；28 种类型化事件 start→delta→end 三段式；SSE 推送前端 | `PlanContext.java` + `EventBus.java` |
+| 14 | agentscope-vs-langchain4j.md | 能力矩阵对比（8 维度）；哪些 LangChain4j 没有——自实现方案（记忆压缩/技能注册/权限引擎/中间件链） | 两者关键类对照 |
+
+### 论文提取规划
+
+#### ReAct (ICLR 2023) — 文档 06
+
+| 要提取什么 | 产出 |
+|-----------|------|
+| Think-Act-Observe 循环的**设计动机**——为什么不是 Think-Think-Act？交替的好处是什么？ | 设计决策分析表 |
+| **实验数据**：ReAct vs Act-only vs Chain-of-Thought 在 HotpotQA/Fever 上的准确率对比 | 数据对比表 |
+| **局限**：ReAct 在什么场景下不如纯 CoT？什么时候不如纯 Act？ | 适用边界图 |
+| **为什么没有引入到 LangChain4j/AgentScope 中**——框架怎么把 ReAct 从论文变成代码 | 框架实现映射 |
+
+#### Reflexion (NeurIPS 2023) — 文档 07
+
+| 要提取什么 | 产出 |
+|-----------|------|
+| "反思" vs "盲重试"的**本质差异**——反思多做了什么？为什么有帮助？ | 设计决策分析 |
+| **什么时候反思有用**：HumanEval 上反思 vs 不反思的通过率对比 | 数据对比表 |
+| **什么时候反思没用**——问题太简单/太难时反思反降准确率？ | 适用边界图 |
+| **反思的内存管理**——反思内容存在哪里？怎么检索？怎么不污染上下文？ | 记忆策略 |
+
+#### Harness 实证 (arxiv 2604.18071) — 文档 08
+
+| 要提取什么 | 产出 |
+|-----------|------|
+| 70 个公开 Agent 系统的**架构模式分类** | 架构分类表 |
+| "Agent = Model + Harness" 公式的**实证依据**——哪些系统用了 Harness、效果差异 | 数据支撑 |
+| Harness 的**关键设计决策**：Control/Loop/Policy/State/Governance 五维 | 设计模式总结 |
+
+#### Tree-of-Thoughts (NeurIPS 2023) — 文档 03 基础
+
+| 要提取什么 | 产出 |
+|-----------|------|
+| **Tree 展开机制**：从单线推理（CoT）→多路径探索（ToT）——每一步如何生成 N 个候选、如何评估、如何剪枝？ | 算法流程图 |
+| **何时 ToT > CoT**：需要回溯/多路径探索的任务（Game of 24）vs 单线推理任务 | 适用场景决策树 |
+| **ToT 的成本**：每步 N 个候选→计算量是 CoT 的 N 倍——什么时候值？ | 成本分析 |
+
+#### Voyager (NeurIPS 2023) — 文档 03/04 参考
+
+| 要提取什么 | 产出 |
+|-----------|------|
+| **技能库（Skill Library）**：Minecraft 中自动积累的技能→存储+检索+复用机制 | 技能管理架构 |
+| **自动课程（Automatic Curriculum）**：Agent 如何自主选择"下一个要学的技能"——难度递增策略 | Agent 自学习模式 |
+| **对 AgentScope Skill 系统的启发**——Voyager 的经验如何映射到企业 Agent 的技能沉淀 | 跨领域映射 |
 
 ## 代码结构
 
@@ -90,12 +145,14 @@ src/main/java/com/myxhs/ai/
 │   ├── DriftDetector.java      # 任务偏离度检测
 │   └── FallbackRouter.java     # 主备模型切换
 
-5-B（AgentScope 深学）：
+5-B（AgentScope 2.0 深学）：
 src/main/java/com/myxhs/ai/harness/
-├── MemoryCompactor.java        # 自实现结构化压缩
-├── SkillRegistry.java          # Nacos 技能注册中心
-├── PermissionEngine.java       # 三态权限引擎
-└── MiddlewareChain.java        # 5 阶段中间件链
+├── MemoryCompactor.java        # 自实现结构化压缩（对应 10-memory-layer）
+├── SkillRegistry.java          # Nacos 技能注册中心（对应 11-skill-lifecycle）
+├── SkillLifecycleManager.java  # Skill 状态机（对应 11-skill-lifecycle）
+├── PermissionEngine.java       # 三态权限引擎（对应 12-permission-system）
+├── EventBus.java               # 28 种事件流（对应 13-plan-mode-events）
+└── MiddlewareChain.java        # 5 阶段中间件链（对应 14-agentscope-vs-langchain4j）
 ```
 
 ## 验证标准

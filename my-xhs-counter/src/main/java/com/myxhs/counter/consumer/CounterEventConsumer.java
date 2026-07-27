@@ -17,7 +17,7 @@ import java.util.Map;
  * 计数事件 MQ 消费者 — 消费 SOCIAL_TOPIC 更新计数
  * <p>
  * 消费 SOCIAL_TOPIC 的 LIKE/UNLIKE/FAVORITE/UNFAVORITE Tag，
- * 根据事件类型映射到对应的计数维度，执行 Redis INCR/DECR + Buffer 写入。
+ * 根据事件类型映射到对应的计数维度，执行 Redis 原子去重 + INCR/DECR + Buffer 写入。
  * <p>
  * 消息来源：
  * - analytics 服务：点赞/取消点赞/收藏/取消收藏事件 → 计数更新
@@ -29,10 +29,10 @@ import java.util.Map;
  * - FAVORITE  → 笔记收藏数 +1（targetType=1, countType=2）
  * - UNFAVORITE→ 笔记收藏数 -1
  * <p>
- * 幂等性说明：
- * - 计数操作本身不是幂等的（INCR/DECR 多次执行会导致计数偏差）
- * - 但 MQ 重复消费的概率极低（RocketMQ 至少一次语义）
- * - 即使偶尔重复，对账修复会在凌晨自动修正
+ * 幂等性（生产级修复 m3）：
+ * - 使用 Lua 脚本原子化「msgId 去重 + 计数增减」，消除竞态窗口
+ * - 重复消息被去重拦截（status=0），Consumer 静默跳过并 ACK
+ * - 归零保护消息正常 ACK（status=-1），避免无限重试
  * </p>
  */
 @Slf4j
@@ -59,32 +59,31 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
 
     @Override
     public void onMessage(MessageExt msg) {
-        // 恢复 TraceId
         MqTraceHelper.restoreTraceContext(msg);
+        String msgId = msg.getMsgId();
         try {
             String tag = msg.getTags();
             String message = new String(msg.getBody(), StandardCharsets.UTF_8);
 
-            log.debug("[计数Consumer] 收到消息: tag={}, msgId={}", tag, msg.getMsgId());
+            log.debug("[计数Consumer] 收到消息: tag={}, msgId={}", tag, msgId);
 
-            // 解析 JSON 消息体（LikeEvent/FavoriteEvent 统一用 Map 接收）
             @SuppressWarnings("unchecked")
             Map<String, Object> eventMap = objectMapper.readValue(message, Map.class);
 
             switch (tag) {
                 case "LIKE":
                 case "UNLIKE":
-                    handleLikeEvent(eventMap, tag);
+                    handleLikeEvent(msgId, eventMap, tag);
                     break;
                 case "FAVORITE":
                 case "UNFAVORITE":
-                    handleFavoriteEvent(eventMap, tag);
+                    handleFavoriteEvent(msgId, eventMap, tag);
                     break;
                 default:
                     log.warn("[计数Consumer] 未知Tag: {}, 忽略消息", tag);
             }
         } catch (Exception e) {
-            log.error("[计数Consumer] 消费失败: msgId={}", msg.getMsgId(), e);
+            log.error("[计数Consumer] 消费失败: msgId={}", msgId, e);
             throw new RuntimeException("计数消息消费失败，触发重试", e);
         } finally {
             MqTraceHelper.clearTraceContext();
@@ -95,10 +94,11 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
      * 处理点赞/取消点赞事件
      * <p>
      * LikeEvent 字段：userId, bizType(1-笔记 2-评论), bizId, action(LIKE/UNLIKE)
-     * 当 bizType=1(笔记) 时，更新笔记的点赞计数
+     * 当 bizType=1(笔记) 时，更新笔记的点赞计数。
+     * 使用 incrementWithDedup/decrementWithDedup 保证 MQ 幂等。
      * </p>
      */
-    private void handleLikeEvent(Map<String, Object> eventMap, String tag) {
+    private void handleLikeEvent(String msgId, Map<String, Object> eventMap, String tag) {
         Integer bizType = toInt(eventMap.get("bizType"));
         Long bizId = toLong(eventMap.get("bizId"));
 
@@ -107,21 +107,20 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
             return;
         }
 
-        // bizType=1(笔记) → 更新笔记点赞数
         if (bizType == 1) {
             int targetType = TARGET_TYPE_NOTE;
             int countType = COUNT_TYPE_LIKE;
 
+            boolean executed;
             if ("LIKE".equals(tag)) {
-                counterService.increment(targetType, bizId, countType);
+                executed = counterService.incrementWithDedup(msgId, targetType, bizId, countType);
             } else {
-                counterService.decrement(targetType, bizId, countType);
+                executed = counterService.decrementWithDedup(msgId, targetType, bizId, countType);
             }
 
-            log.info("[计数Consumer] 点赞计数更新: targetType={}, targetId={}, countType={}, action={}",
-                    targetType, bizId, countType, tag);
+            log.info("[计数Consumer] 点赞计数{}: msgId={}, targetType={}, targetId={}, countType={}, action={}",
+                    executed ? "更新" : "去重跳过", msgId, targetType, bizId, countType, tag);
         }
-        // bizType=2(评论) → 暂不处理评论点赞计数
     }
 
     /**
@@ -129,9 +128,10 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
      * <p>
      * FavoriteEvent 字段：userId, noteId, action(FAVORITE/UNFAVORITE), timestamp
      * 收藏只针对笔记，targetType=1, countType=2(收藏)
+     * 使用 incrementWithDedup/decrementWithDedup 保证 MQ 幂等。
      * </p>
      */
-    private void handleFavoriteEvent(Map<String, Object> eventMap, String tag) {
+    private void handleFavoriteEvent(String msgId, Map<String, Object> eventMap, String tag) {
         Long noteId = toLong(eventMap.get("noteId"));
 
         if (noteId == null) {
@@ -142,14 +142,15 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
         int targetType = TARGET_TYPE_NOTE;
         int countType = COUNT_TYPE_FAVORITE;
 
+        boolean executed;
         if ("FAVORITE".equals(tag)) {
-            counterService.increment(targetType, noteId, countType);
+            executed = counterService.incrementWithDedup(msgId, targetType, noteId, countType);
         } else {
-            counterService.decrement(targetType, noteId, countType);
+            executed = counterService.decrementWithDedup(msgId, targetType, noteId, countType);
         }
 
-        log.info("[计数Consumer] 收藏计数更新: targetType={}, targetId={}, countType={}, action={}",
-                targetType, noteId, countType, tag);
+        log.info("[计数Consumer] 收藏计数{}: msgId={}, targetType={}, targetId={}, countType={}, action={}",
+                executed ? "更新" : "去重跳过", msgId, targetType, noteId, countType, tag);
     }
 
     private static Integer toInt(Object value) {

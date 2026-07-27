@@ -1,5 +1,6 @@
 package com.myxhs.counter.controller;
 
+import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
 import com.myxhs.counter.dto.CounterBatchRequest;
 import com.myxhs.counter.dto.CounterRequest;
@@ -30,6 +31,8 @@ public class CounterController {
      * 计数 +1（内部调用）
      */
     @PostMapping("/increment")
+    @RateLimit(windowSeconds = 60, maxRequests = 500, prefix = "counter:increment",
+            message = "计数递增请求过于频繁，请稍后重试")
     public R<Void> increment(@RequestBody @Valid CounterRequest request) {
         counterService.increment(request.getTargetType(), request.getTargetId(), request.getCountType());
         return R.ok();
@@ -39,6 +42,8 @@ public class CounterController {
      * 计数 -1（内部调用）
      */
     @PostMapping("/decrement")
+    @RateLimit(windowSeconds = 60, maxRequests = 500, prefix = "counter:decrement",
+            message = "计数递减请求过于频繁，请稍后重试")
     public R<Void> decrement(@RequestBody @Valid CounterRequest request) {
         boolean success = counterService.decrement(request.getTargetType(), request.getTargetId(), request.getCountType());
         if (!success) {
@@ -75,6 +80,8 @@ public class CounterController {
      * 手动触发对账修复（管理接口）
      */
     @PostMapping("/reconcile")
+    @RateLimit(windowSeconds = 60, maxRequests = 2, prefix = "counter:reconcile",
+            message = "对账修复请求过于频繁，每分钟最多 2 次")
     public R<Integer> reconcile() {
         int fixedCount = counterService.reconcile();
         return R.ok(fixedCount);

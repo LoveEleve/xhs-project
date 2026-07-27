@@ -52,6 +52,26 @@ Phase 2 理解了"LLM 怎么生成文本"，Phase 3 解决"LLM 怎么利用外�
 | 08 | rag-evaluation.md | RAGAS 四指标详解+检索/生成故障分类定位 |
 | 09 | myxhs-knowledge.md | 索引 my-xhs 模块文档+SQL schema+API 文档→知识库问答验证 |
 
+### 论文提取规划
+
+#### RAG: Retrieval-Augmented Generation (NeurIPS 2020) — 文档 05 基础
+
+| 要提取什么 | 产出 |
+|-----------|------|
+| **RAG 的双组件设计**：Retriever（DPR）为什么用双塔模型？Generator（BART）为什么微调？ | 架构设计动机 |
+| **端到端训练的巧妙之处**——检索和生成一起训练 vs 分开训练——RAG 怎么做到的？ | 训练策略分析 |
+| **RAG-Sequence vs RAG-Token** 两种解码方式——对每个 Token 分别检索 vs 对整个序列检索一次 | 两种模式对比+适用场景 |
+| **对比 Closed-Book QA（纯 LLM）与 RAG 的实验数据**——在哪些任务上 RAG 提升最明显？ | 数据对比表 |
+
+#### Lost in the Middle (2023) — 文档 07 基础
+
+| 要提取什么 | 产出 |
+|-----------|------|
+| **核心实验**：把答案放在文档开头/中间/末尾——LLM 准确率的变化曲线 | 准确率位置曲线图 |
+| **为什么中间的信息被忽略**——Attention 的"首尾偏好"机制分析 | 根因分析 |
+| **对 Chunking 策略的直接影响**：关键信息应该在文档开头和结尾，不重要信息放中间 | 分块策略指南 |
+| **对 Rerank 策略的影响**：Rerank 时位置偏见的修正——Cross-Encoder 是否改善？ | 策略优化建议 |
+
 ## 代码结构
 
 ```

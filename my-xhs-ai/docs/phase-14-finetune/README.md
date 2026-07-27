@@ -40,10 +40,19 @@
 | # | 文档 | 内容要点 |
 |---|------|---------|
 | 01 | rag-vs-finetune.md | 决策树：知识更新频率→RAG / 风格固定→微调 / 两者都要→组合 |
-| 02 | lora-principle.md | LoRA 低秩近似数学推导+参数量对比（r=8/16/64）+QLoRA 4-bit |
+| 02 | lora-principle.md | LoRA 论文提取（详见下方）+QLoRA 4-bit |
 | 03 | data-engineering.md | SFT 数据构建全流程：对话日志→清洗→去重→格式统一→质量评分 |
 | 04 | finetune-practice.md | HuggingFace PEFT LoRA 微调脚本+训练参数配置+loss 曲线监控 |
 | 05 | evaluation.md | 微调前后评测对比（通用能力+领域能力）+灾难性遗忘检测+部署决策 |
+
+### LoRA 论文提取规划（文档 02 基础）
+
+| 要提取什么 | 产出 |
+|-----------|------|
+| **低秩假设的数学证明**——为什么微调时 ΔW 可以用低秩矩阵近似？秩 r 取多少合适？ | 数学推导 |
+| **参数量对比**：全量 d×d vs LoRA 2×d×r——r=8/16/64 时的压缩比 | 参数量对比表 |
+| **对 Attention 权重矩阵的应用**——为什么只对 Q/K/V/O 做 LoRA，不对 FFN 做？ | 架构选择分析 |
+| **QLoRA 扩展**：4-bit 量化 + LoRA——量化的精度损失 vs LoRA 的适配能力的权衡 | 量化 vs 质量对比 |
 
 ## 代码结构（Python 实验）
 

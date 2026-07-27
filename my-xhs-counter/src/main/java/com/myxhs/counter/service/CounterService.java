@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.*;
 
 /**
@@ -50,6 +51,44 @@ public class CounterService {
                 "return 1",
                 Long.class);
     }
+
+    /**
+     * 原子去重 + 增减 Lua 脚本（生产级 MQ 幂等保护）
+     * <p>
+     * KEYS[1]: dedup key（myxhs:counter:dedup:{msgId}）
+     * KEYS[2]: counter key（myxhs:counter:{targetType}:{targetId}:{countType}）
+     * ARGV[1]: delta（+1 或 -1）
+     * ARGV[2]: dedup TTL（秒，默认 7200 = 2小时）
+     * <p>
+     * 返回 List [status, currentCount]：
+     *   status: 1=执行成功, 0=已去重（跳过）, -1=归零保护触发
+     * <p>
+     * 原子性保证：去重设置 + 计数增减在同一个 Lua 执行单元中完成，
+     * 消除「去重成功但计数未执行」或「计数已执行但去重未设置」的竞态窗口。
+     * 归零保护触发时不删除去重标记——消息是有效的业务拒绝，不需重试。
+     * </p>
+     */
+    private static final org.springframework.data.redis.core.script.DefaultRedisScript<List> INCR_WITH_DEDUP_SCRIPT;
+    static {
+        INCR_WITH_DEDUP_SCRIPT = new org.springframework.data.redis.core.script.DefaultRedisScript<>(
+                "if redis.call('EXISTS', KEYS[1]) == 1 then return {0, 0} end " +
+                "redis.call('SET', KEYS[1], '1', 'EX', ARGV[2]) " +
+                "local delta = tonumber(ARGV[1]) " +
+                "if delta > 0 then " +
+                "  redis.call('INCRBY', KEYS[2], delta) " +
+                "  return {1, tonumber(redis.call('GET', KEYS[2]))} " +
+                "end " +
+                "local current = tonumber(redis.call('GET', KEYS[2]) or '0') " +
+                "if current <= 0 then " +
+                "  return {-1, 0} " +
+                "end " +
+                "redis.call('INCRBY', KEYS[2], delta) " +  // delta is negative, so INCRBY works
+                "return {1, tonumber(redis.call('GET', KEYS[2]))}",
+                List.class);
+    }
+
+    /** MQ 去重 TTL（2 小时，覆盖 MQ 最大重试窗口） */
+    private static final long DEDUP_TTL_SECONDS = Duration.ofHours(2).toSeconds();
 
     // ==================== 写操作 ====================
 
@@ -96,6 +135,86 @@ public class CounterService {
 
         log.debug("[计数] -1: targetType={}, targetId={}, countType={}", targetType, targetId, countType);
         return true;
+    }
+
+    /**
+     * 计数 +1（带 MQ 去重，由 Consumer 调用）
+     * <p>
+     * 原子去重 + INCR：Lua 脚本保证「检查 msgId 是否已处理」和「INCR」
+     * 在同一个 Redis 命令中完成，消除 MQ 重复消费导致的计数偏差。
+     * </p>
+     *
+     * @param msgId     MQ 消息 ID（用作去重 Key）
+     * @return true=执行成功, false=重复消息（已处理过）
+     */
+    public boolean incrementWithDedup(String msgId, int targetType, long targetId, int countType) {
+        String dedupKey = buildDedupKey(msgId);
+        String counterKey = buildRedisKey(targetType, targetId, countType);
+
+        @SuppressWarnings("unchecked")
+        List<Long> result = stringRedisTemplate.execute(
+                INCR_WITH_DEDUP_SCRIPT,
+                List.of(dedupKey, counterKey),
+                "1", String.valueOf(DEDUP_TTL_SECONDS));
+
+        if (result == null || result.isEmpty()) {
+            throw new RuntimeException("Lua 脚本返回异常: null or empty");
+        }
+
+        long status = result.get(0);
+        if (status == 0) {
+            log.info("[计数-去重] 重复消息跳过: msgId={}, targetType={}, targetId={}, countType={}",
+                    msgId, targetType, targetId, countType);
+            return false;
+        }
+        // status == 1: INCR 成功，写入 Buffer
+        counterBuffer.add(targetType, targetId, countType, 1L);
+        log.debug("[计数] 去重+1: msgId={}, targetType={}, targetId={}, countType={}",
+                msgId, targetType, targetId, countType);
+        return true;
+    }
+
+    /**
+     * 计数 -1（带 MQ 去重 + 归零保护，由 Consumer 调用）
+     *
+     * @param msgId     MQ 消息 ID（用作去重 Key）
+     * @return true=执行成功, false=重复消息或零保护触发
+     */
+    public boolean decrementWithDedup(String msgId, int targetType, long targetId, int countType) {
+        String dedupKey = buildDedupKey(msgId);
+        String counterKey = buildRedisKey(targetType, targetId, countType);
+
+        @SuppressWarnings("unchecked")
+        List<Long> result = stringRedisTemplate.execute(
+                INCR_WITH_DEDUP_SCRIPT,
+                List.of(dedupKey, counterKey),
+                "-1", String.valueOf(DEDUP_TTL_SECONDS));
+
+        if (result == null || result.isEmpty()) {
+            throw new RuntimeException("Lua 脚本返回异常: null or empty");
+        }
+
+        long status = result.get(0);
+        if (status == 0) {
+            log.info("[计数-去重] 重复消息跳过: msgId={}, targetType={}, targetId={}, countType={}",
+                    msgId, targetType, targetId, countType);
+            return false;
+        }
+        if (status == -1) {
+            log.warn("[计数-去重] 归零保护触发: msgId={}, targetType={}, targetId={}, countType={}",
+                    msgId, targetType, targetId, countType);
+            return false;
+        }
+        // status == 1: DECR 成功，写入 Buffer
+        counterBuffer.add(targetType, targetId, countType, -1L);
+        log.debug("[计数] 去重-1: msgId={}, targetType={}, targetId={}, countType={}",
+                msgId, targetType, targetId, countType);
+        return true;
+    }
+
+    /** 构建 MQ 消息去重 Key */
+    private String buildDedupKey(String msgId) {
+        return RedisKeyConstants.COUNTER_DEDUP + msgId;
     }
 
     // ==================== 读操作 ====================
@@ -220,7 +339,8 @@ public class CounterService {
      * 扫描 DB 所有计数记录，逐条与 Redis 对比：
      * - Redis 有值，DB 有值，不一致 → 以 Redis 为准（Redis 是实时更新的权威源）
      * - Redis 值为 0，DB 有值 → 以 DB 为准（Redis 可能数据丢失）
-     * - Redis 有值，DB 无记录 → 以 Redis 为准，INSERT DB
+     * <p>
+     * 注意：以 DB 扫描为基准，DB 中无记录但 Redis 有值的情况不在本算法覆盖范围内——等 Buffer 刷盘自然解。
      * </p>
      *
      * @return 修复条数

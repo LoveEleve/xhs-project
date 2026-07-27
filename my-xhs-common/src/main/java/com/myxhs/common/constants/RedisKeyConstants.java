@@ -90,6 +90,9 @@ public final class RedisKeyConstants {
     /** 计数 Buffer myxhs:counter:buffer */
     public static final String COUNTER_BUFFER = PROJECT_PREFIX + "counter:buffer";
 
+    /** MQ 去重 myxhs:counter:dedup:{msgId}（2小时TTL） */
+    public static final String COUNTER_DEDUP = PROJECT_PREFIX + "counter:dedup:";
+
     // ==================== 电商服务 ====================
 
     /** 商品缓存 myxhs:product:spu:{spuId} */

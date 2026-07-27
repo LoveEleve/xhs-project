@@ -39,6 +39,15 @@
 | 04 | parallel-execution.md | 并行架构+超时+结果合并 |
 | 05 | hitl.md | 高风险暂停+人工确认+恢复/拒绝 |
 
+### CAMEL 论文提取规划（文档 01 基础）
+
+| 要提取什么 | 产出 |
+|-----------|------|
+| **角色扮演（Role-Playing）机制**：AI User 给 AI Assistant 分配任务→Assistant 执行→User 反馈——闭环 | 交互流程图 |
+| **Inception Prompting**——如何用"初始提示"锚定两个 Agent 的角色和行为边界 | Prompt 设计方法 |
+| **多 Agent 对话的失控风险**——两个 Agent 聊着聊着偏题怎么办？CAMEL 的控制机制 | 问题+对策 |
+| **对 Meta Planner 的启发**——CAMEL 的角色分配 vs Meta Planner 的任务分配有何不同？ | 架构对比 |
+
 ## 代码结构
 
 ```

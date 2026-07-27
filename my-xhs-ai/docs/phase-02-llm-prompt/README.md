@@ -54,6 +54,27 @@ Phase 1 给了 ML 底层概念，Phase 2 用这些概念理解 LLM 内部机制�
 | 08 | structured-output.md | JSON Schema 约束+Java Record 映射+格式错误重试（最多 3 次） |
 | 09 | prompt-security.md | 注入攻击 10 种案例+输入过滤+结构化约束防御+检测率验证 |
 
+### 论文提取规划
+
+#### Attention Is All You Need (NeurIPS 2017) — 文档 03/04 基础
+
+| 要提取什么 | 产出 |
+|-----------|------|
+| **Self-Attention 的设计动机**——为什么不是 RNN/LSTM？RNN 的两个致命问题（串行依赖+长程梯度消失） | 设计决策对比表 |
+| **Scaled Dot-Product Attention 公式推导**：Q·K^T / √d_k → Softmax → ×V，每一步的物理含义 | 公式拆解图 |
+| **Multi-Head 的数学证明**——为什么多头比单头好？每个 Head 学到不同关系模式的实验证据 | 多头 vs 单头对比 |
+| **Positional Encoding 的 Sinusoidal 设计**——为什么用 sin/cos 而不是可学习参数？ | 设计动机分析 |
+| **残差连接 + Layer Norm 的位置**——Pre-LN vs Post-LN 的差异？为什么现在都用 Pre-LN？ | 架构对比 |
+
+#### InstructGPT (NeurIPS 2022) — 文档 07 基础
+
+| 要提取什么 | 产出 |
+|-----------|------|
+| **RLHF 三阶段**：SFT→RM→PPO——每阶段的数据需求、训练目标、算力配比 | 三阶段流程图 |
+| **为什么需要 RLHF**——Base Model 的"续写"行为 vs Assistant 的"回答"行为本质差异 | 行为对比分析 |
+| **Reward Model 的局限**——"奖励黑客"（reward hacking）现象：模型学会了取悦打分器而非真正有用 | 问题+对策 |
+| **KL 散度惩罚**——为什么 RL 阶段需要约束模型不要偏离 SFT 太远？数学公式+直觉解释 | 公式+直觉 |
+
 ## 代码结构
 
 ```
