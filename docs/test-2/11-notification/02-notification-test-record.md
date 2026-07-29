@@ -212,3 +212,34 @@ POST /api/notification/read/2082390138970755073, X-User-Id: 10001
 
 ---
 
+## L7 XXL-Job：unreadReconcileJob 对账验证
+
+在 Admin 创建 JobGroup + Job（handler=unreadReconcileJob），触发执行：
+
+- 人为设 Redis `notify:unread:10001=999` → 触发对账 → Redis 修复为 DB 值 `2`
+- 日志：`[对账] 修复: userId=10001, redis=999, db=2` ✅
+- 日志：`[对账] 完成: 检查2个用户, 修复1个` ✅
+
+---
+
+## L8 MQ 消费者验证
+
+通过 `MqTestProducer` 发送 RocketMQ 消息到 `NOTIFICATION_TOPIC`：
+
+- 消费线程：`ConsumeMessageThread_notification-event-consumer-group_1` ✅
+- 处理日志：`[通知] 处理完成: targetUserId=10001, type=3, senderId=10002` ✅
+- MySQL：通知记录写入（sender=`MQ测试用户`, type=3 FOLLOW） ✅
+- 幂等：msgId 去重 (Redis 24h) + 跳过自己给自己的通知
+
+---
+
+## L10 Sentinel 流控验证
+
+通过 Sentinel Dashboard API 创建 QPS=1 流控规则（`/api/notification/unread-count`）：
+
+- 第 1 次请求：HTTP 200 ✅
+- 第 2 次请求：`Blocked by Sentinel (flow limiting)` HTTP 429 ✅
+- Sentinel transport 端口 8731、Dashboard 8858 通讯正常
+
+---
+
