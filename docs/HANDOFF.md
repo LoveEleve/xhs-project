@@ -40,7 +40,7 @@
 - 核心：事务消息 + ShardingSphere 4×4分片 + Event Sourcing + Feign编排
 - 修复：traceId跨MQ传播 + Feign URL + MockPayService完整模拟
 
-### 10-payment — 支付服务 ✅
+### 10-payment — 支付服务 ✅（简模块，无深度文档）
 - 架构文档 + curl 测试（5/5）
 - 核心：JdbcTemplate + 策略模式 + Feign双向回调
 - 修复：extractPaymentNo/refundNo JSON解析 + mvn clean package
@@ -68,7 +68,7 @@
 | order → inventory | — | ✅ URL override |
 | order → coupon | — | ✅ URL override |
 | order → payment | — | ✅ URL override |
-| payment → order | — | ✅ URL override |
+| payment → order | — | ⚠️ 待验证（callback 测试期间未报错但未确认 URL override） |
 | home → 所有服务 | — | 待处理 |
 
 **Feign URL override 修复方式**：Spring Cloud 2023.0.1 + Nacos 2.3.0 的 LoadBalancer hashCode NPE bug，修复为 `spring.cloud.openfeign.client.config.{service}.url=http://localhost:{port}`。
