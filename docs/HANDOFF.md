@@ -46,9 +46,11 @@
 - 修复：extractPaymentNo/refundNo JSON解析 + mvn clean package
 
 ### 11-notification — 通知服务 ✅
-- 架构文档 + curl 测试（10/10 11用例）+ 深度 3 篇
-- 核心：SSE长连接 + Redis Pub/Sub跨实例推送 + 5min窗口聚合 + 未读计数+Lua防负数 + XXL-Job对账
-- 修复：uk_aggregate唯一约束过严 + processWithAggregate重构为SETNX-first
+- 架构文档 + curl 测试（9/9 + 聚合/SSE推送/心跳/MQ/Sentinel/XXL-Job 全15层）
+- 深度 3 篇：SSE跨实例推送 / 聚合机制 / 未读计数与对账
+- 核心：SSE长连接 + Ticket两步认证 + Redis Pub/Sub跨实例推送 + 5min窗口聚合(SETNX-first) + Lua防负数 + XXL-Job游标分页对账
+- 修复：uk_aggregate唯一约束→普通索引 + processWithAggregate重构为SETNX-first
+- XXL-Job: JobGroup=5(appname=my-xhs-notification), handler=unreadReconcileJob, job ID=5
 
 ---
 
@@ -104,12 +106,14 @@
 
 - **服务机**: 21.214.97.212 (eth1)
 - **中间件机**: 21.130.247.89
+- **SSH to 中间件**: `ssh -p 36000 21.130.247.89`（21.214.97.212 已加白名单，2026-07-29）
 - MySQL: 13306/13307/13308/13309
-- Redis: 16379(Sentinel)/16380(Cache)/16381(Business)
-- ES: 19200 (elastic/Xhs@2026#Elastic)
+- Redis: 16379(Sentinel master) / 16380(Cache, allkeys-lru) / 16381(Business, noeviction)
+- ES: 19200 (elastic/Xhs@2026#Elastic) — traceId 作为独立字段索引（Logstash grok 2026-07-29修复）
 - Nacos: 18848 (namespace=my-xhs)
 - RocketMQ NS: 9876;9877
-- XXL-Job Admin: 18080
+- XXL-Job Admin: 18080 (admin/123456)
+- Sentinel Dashboard: 8858 (sentinel/sentinel)
 - Prometheus: 19090
 - Grafana: 13000 (admin/Xhs@2026#Admin)
 - SkyWalking UI: 8080
@@ -151,3 +155,23 @@
 ```
 
 深度文档必须有：业务背景/架构决策/源码追踪/面试Q&A/生产实验/发散章节。
+
+---
+
+## Redis 连接注意事项
+
+- 应用层 `StringRedisTemplate` 通过 **Sentinel**（26379/26380/26381, master=mymaster）路由到 **16379**
+- **直接用 CLI 查 `redis-cli -p 16379` 可能查不到**——CLI 可能不在 PATH，优先用 Python `redis.Redis(port=16379)`
+- Sentinel master 地址：`python -c "import redis; r=redis.Redis(port=26379,password='...'); r.execute_command('SENTINEL','get-master-addr-by-name','mymaster')"` → `['21.130.247.89', '16379']`
+- 16380 = Cache（幂等标记等），16381 = Business（SSE路由/Ticket/聚合/未读）
+
+---
+
+## 关键踩坑记录
+
+1. **Spring Cloud 2023.0.1 LoadBalancer hashCode NPE**：所有有 Feign 客户端的模块都需要 URL override
+2. **notification 的 `@Profile("dev")` 测试控制器**：测试时需 `--spring.profiles.active=dev`，密码/Token 也依赖此 Profile
+3. **Sentinel 规则创建**：Dashboard API `POST /v2/flow/rule`，JSON 必须含 `app` 字段，DELETE 不支持 REST（规则随服务重启清理）
+4. **XXL-Job JobGroup 创建**：title 字段疑似 VARCHAR(8) 限制（中文超出报 Data too long），建议用简短名称
+5. **notification 无 Feign Outbound**：只消费 RocketMQ，不调用其他服务——L11 SkyWalking 跨服务不适用
+6. **RocketMQ NOTIFICATION_TOPIC**：测试可写 Java Producer（notification 模块已有 MQ 依赖），`mvn exec:java` 运行
