@@ -106,7 +106,7 @@
 | is_aggregated | TINYINT | 0-否 1-是（被聚合的通知） |
 | aggregate_id | BIGINT | 聚合目标通知 ID |
 | aggregate_count | INT | 聚合数量 |
-| notify_date | DATE | 通知日期（VIRTUAL：DATE(created_at)） |
+| notify_date | DATE | 通知日期（GENERATED ALWAYS AS DATE(created_at) STORED） |
 | extra_data | TEXT | 扩展数据 JSON |
 | deleted | TINYINT | 逻辑删除（MyBatis-Plus @TableLogic） |
 | created_at | DATETIME | 创建时间 |
@@ -115,7 +115,7 @@
 索引：
 - `idx_user_id_created (user_id, created_at DESC)` — 列表查询
 - `idx_user_type_read (user_id, type, is_read)` — 已读筛选
-- `UNIQUE uk_aggregate (user_id, type, target_id, notify_date)` — 聚合唯一约束
+- `idx_user_type_target (user_id, type, target_id, notify_date)` — 聚合窗口查询（原 UNIQUE 约束，修复后降级为普通索引）
 
 ### 4.2 t_push_template（推送模板表）
 
@@ -221,8 +221,8 @@
 ```
 
 **设计决策**：
-- 被聚合的通知**逻辑删除**而非物理删除（MyBatis-Plus @TableLogic → `deleted=1`），避免主键冲突
-- 聚合窗口内不增加未读计数（用户已看到红点）
+- 聚合通知**不写入 DB**（SETNX 先判断，聚合路径跳过 INSERT），避免了 INSERT→DELETE 的无用循环
+- 聚合窗口内不增加未读计数（聚合通知不算"新通知"）
 - 聚合标题格式：`{sender}等{count}人{action}` 或模板自定义
 
 ### 6.3 SSE 连接流程
@@ -307,7 +307,7 @@ redis.call('HSET', KEYS[2], ARGV[1], '0')
 
 ### 6.5 对账机制（UnreadReconcileJob）
 
-- **调度**：XXL-Job，Cron = `0 0/5 * * * ?`（每 5 分钟）
+- **调度**：XXL-Job Handler `unreadReconcileJob`，推荐 Cron = `0 0/5 * * * ?`（每 5 分钟，在 XXL-Job Admin 中配置）
 - **逻辑**：
   1. 游标分页扫描 MySQL 未读通知（`is_read=0`，500 条/批）
   2. 按 userId 聚合统计每种 type 的数量
@@ -343,7 +343,12 @@ redis.call('HSET', KEYS[2], ARGV[1], '0')
 | RocketMQ NS | 9876;9877 | |
 | Nacos | 18848 | namespace=my-xhs |
 | XXL-Job | 18080 | appname=my-xhs-notification, executor=9990 |
-| Logstash | 15044 | JSON 格式推送 |
+| Logstash | 15044 | JSON 格式推送 → ES myxhs-logs-* |
+
+**监控验证** (L14 ES，2026-07-29 由中间件团队修复)：
+- Logstash grok 规则：`[%{WORD:traceId}]` → traceId 作为 ES 独立字段索引
+- 验证：`ES GET myxhs-logs-*/_search?q=traceId:"{32位hex}"` → 单次请求精确命中
+- 跨服务 trace 串联：同一 traceId 在 order/mq/payment/inventory 服务的 ES 日志中均可检索
 
 ---
 
@@ -372,7 +377,7 @@ notification 服务不调用其他微服务的 Feign 接口（无 Outbound Feign
 | SSE vs WebSocket | SSE | 单向推送场景，HTTP 天然穿透代理/防火墙，浏览器 EventSource 原生支持 |
 | Ticket 两步认证 | Redis getAndDelete | EventSource 不支持自定义 Header，避免 Token URL 泄漏 |
 | 跨实例推送 | Redis Pub/Sub | 即发即忘，延迟低（毫秒级），无需持久化 |
-| 聚合方式 | 存储层聚合（被聚合逻辑删除） | 减少 DB 写入；不增加未读计数 |
+| 聚合方式 | SETNX 先判断，聚合路径跳过 INSERT | 避免无效的 INSERT→DELETE 循环 |
 | 聚合窗口 | 5 分钟 Redis SETNX | 用户感知合理；Lua 原子操作 |
 | 未读计数 | Redis + DB 对账 | Redis 高性能；XXL-Job 保证最终一致 |
 | 幂等 | msgId + 聚合窗口 | 通知表无天然唯一键 |

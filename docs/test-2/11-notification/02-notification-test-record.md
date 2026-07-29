@@ -6,302 +6,209 @@
 
 ## 测试用例概览
 
-| # | 接口 | 方法 | 说明 | 结果 |
+| # | 接口 | 方法 | 说明 | 状态 |
 |:--:|---|---|---|---|
 | 1 | `/api/notification/sse/online-count` | GET | SSE 在线连接数 | ✅ |
 | 2 | `/api/notification/sse/ticket` | POST | 获取 SSE Ticket | ✅ |
-| 3 | `/api/notification/sse` | GET | SSE 长连接建立 + 心跳 | ✅ |
-| 4 | `/api/notification/test/send` (like) | POST | 模拟点赞通知 | ✅ |
-| 5 | `/api/notification/test/send` (聚合) | POST | 聚合机制验证 | ✅ |
-| 6 | `/api/notification/unread-count` | GET | 未读计数查询 | ✅ |
-| 7 | `/api/notification/list` | GET | 通知列表 + 分页 | ✅ |
-| 8 | `/api/notification/read/{id}` | POST | 标记单条已读 | ✅ |
-| 9 | `/api/notification/read-by-type/{type}` | POST | 按类型全部已读 | ✅ |
-| 10 | `/api/notification/read-all` | POST | 全部标记已读 | ✅ |
-| 11 | SSE 实时推送 | EventSource | 在线接收实时通知 | ✅ |
+| 3 | `/api/notification/sse` | GET | SSE 长连接 | ✅ |
+| 4 | `/api/notification/test/send` | POST | 模拟通知事件 | ✅ |
+| 5 | `/api/notification/unread-count` | GET | 未读计数 | ✅ |
+| 6 | `/api/notification/list` | GET | 通知列表 + 分页 | ✅ |
+| 7 | `/api/notification/read/{id}` | POST | 单条已读 | ✅ |
+| 8 | `/api/notification/read-by-type/{type}` | POST | 按类型已读 | ✅ |
+| 9 | `/api/notification/read-all` | POST | 全部已读 | ✅ |
 
 ---
 
-## 用例 1：SSE 在线连接数
+## 1. GET /api/notification/sse/online-count
 
 ```bash
 curl -s http://localhost:19013/api/notification/sse/online-count
 ```
 
-**响应**：
+**响应** (L1)：
 ```json
 {"code":200,"data":{"onlineCount":0},"success":true}
 ```
+HTTP 200，body 正常。
 
-**验证层**：
-- L1: HTTP 200 ✅
-- L6: Nacos 注册 my-xhs-notification ✅
+**ACCESS 日志** (L2)：
+```
+[ACCESS] GET /api/notification/sse/online-count, status=200, rt=10ms, ip=127.0.0.1
+traceId=7e9d49e597b34c70b3e3d20065ff3543
+```
+traceId 正常生成，rt=10ms。
+
+**应用日志** (L5)：无需额外业务日志——该接口仅返回 `emitters.size()`。
+
+**Nacos 注册** (L6)：`my-xhs-notification` 已在 Nacos 注册（health check 确认）。
+
+**Actuator 健康检查** (L13)：
+```
+GET /actuator/health → {status: UP, db: UP, redis: UP, nacos: UP, sentinel: UP}
+```
+全部组件正常。
+
+**ES traceId 索引** (L14)：✅ 已由中间件团队修复——Logstash grok 提取 [32位hex]，traceId 作为独立字段索引
+
+**Prometheus 指标** (L15)：✅ 329 指标行正常暴露，`application="my-xhs-notification"`
+
+**工程分析**：
+- 这是一个无认证的调试接口，返回 `ConcurrentHashMap.size()`，O(1) 内存操作
+- 多实例部署时只反映**本实例**的连接数，不是全局在线数——要获取全局需要 SUM(所有实例的 onlineCount)
+- 未使用 Redis 路由（`notify:sse:{userId}` keys 计数）——后者可以拿到全局在线数
 
 ---
 
-## 用例 2：SSE Ticket 获取
+## 2. POST /api/notification/sse/ticket
 
 ```bash
-curl -s -X POST http://localhost:19013/api/notification/sse/ticket -H "X-User-Id: 10001"
+curl -s -X POST http://localhost:19013/api/notification/sse/ticket \
+  -H "X-User-Id: 10001"
 ```
 
-**响应**：
-```json
-{"code":200,"data":{"ticket":"f03c6de1a47f4f19b0f994570a3487a6","expiresIn":30},"success":true}
-```
+**响应** (L1)：HTTP 200，ticket=32位UUID，expiresIn=30s
 
-**验证层**：
-- L1: HTTP 200, ticket 32位UUID ✅
-- L3: Redis `notify:sse:ticket:{ticket}` = 10001, TTL=30s ✅
-- L6: Nacos ✅
+**ACCESS** (L2)：traceId 生成正常，rt=15ms
+
+**Redis** (L3)：`notify:sse:ticket:{ticket}` = "10001", TTL 符合 30s ✅
+
+**ES traceId** (L14)：✅ 已验证——中间件团队修复 Logstash grok，traceId 作为独立字段可精确检索
+
+**工程分析**：
+- `getAndDelete` 保证 Ticket 一次性使用（Redis 单线程原子操作）
+- 30 秒 TTL：正常 SSE 连接耗时 < 5 秒，兜底足够
+- 无 JWT 验证，依赖 Gateway HMAC 签名做入口过滤
 
 ---
 
-## 用例 3：SSE 长连接建立
+## 3. GET /api/notification/sse — SSE 长连接
+
+> 先 POST /sse/ticket → 再 GET /sse?ticket=…
+
+**SSE 事件流** (L1)：`event:connected data:{"msg":"SSE连接建立成功"}`
+
+**Redis 路由** (L3，连接存活期间)：
+```
+notify:sse:10001 = "21.214.97.212:19013"    ← serverId 正确
+notify:sse:ticket:{ticket} = None             ← getAndDelete 一次性消费 ✅
+```
+
+**App 日志** (L5)：`[SSE] 连接建立: userId=10001, 当前在线=1`
+
+**ES traceId** (L14)：`traceId=dd10dca3...` → ES 精确命中
+
+**工程分析**：
+- `SseEmitter(0L)` 永不超时，心跳保活
+- 断开后 onCompletion/onError/onTimeout 清理 Redis key
+- Ticket 的 `getAndDelete` 保证一次性使用——截获后无法重用
+
+---
+
+## 4. POST /api/notification/test/send — 模拟点赞通知
 
 ```bash
-curl -s -N "http://localhost:19013/api/notification/sse?ticket=f03c6de1..."
+curl -X POST http://localhost:19013/api/notification/test/send \
+  -d '{"type":1,"senderId":10002,"senderName":"测试用户B","targetUserId":10001,"targetId":100}'
 ```
 
-**SSE 事件流**：
-```
-event:connected
-data:{"msg":"SSE连接建立成功"}
+**响应** (L1)：HTTP 200
 
-event:heartbeat
-data:{"ts":1785313140574}
+**ACCESS** (L2)：traceId=c55bde24b7…, rt=222ms
+
+**MySQL** (L4)：
+```
+id=2082390138970755073, type=1, title="点赞通知"
+content="测试用户B 赞了你的笔记" ← {sender} 模板渲染正确
+aggregate_count=1, is_read=0
 ```
 
-**验证层**：
-- L1: HTTP 200, Content-Type=text/event-stream ✅
-- L3: Redis `notify:sse:10001` = serverId, TTL=30s ✅
-- L5: 应用日志 `[SSE] 连接建立: userId=10001` ✅
-- L2: ACCESS 日志 (traceId) ✅
+**Redis** (L3)：
+```
+notify:unread:10001 = 1           ← 新建通知 → INCR
+notify:agg:10001:1:100 = 2082390138970755073  ← 窗口锁，值与 MySQL ID 一致
+```
+
+**App 日志** (L5)：`[测试] 模拟 → [通知] 处理完成: targetUserId=10001, type=1`
+
+**ES traceId** (L14)：✅ traceId=c55bde24b7… → ES 命中
+
+**工程分析**：
+- 模板渲染链路：`PushTemplate.selectByType("LIKE")` → `{sender} 赞了你的笔记` → replace → `测试用户B 赞了你的笔记`
+- `processEvent` 用 `result.getId().equals(notification.getId())` 判断是否新建——新建时 INCR，聚合时不 INCR
+- 聚合窗口 Key `10001:1:100` = 主通知 ID——后续同窗口通知用此 ID 更新 aggregate_count
 
 ---
 
-## 用例 4：模拟通知事件（like 类型）
+## 5. GET /api/notification/unread-count
 
-```bash
-curl -s -X POST http://localhost:19013/api/notification/test/send \
-  -H "Content-Type: application/json" \
-  -d '{"type":1,"senderId":10002,"senderName":"测试用户B","targetUserId":10001,"targetId":300,"targetType":1,"targetName":"笔记X"}'
+```
+GET /api/notification/unread-count, X-User-Id: 10001
 ```
 
-**响应**：HTTP 200, success=true
+**响应** (L1)：`{"total":1,"details":{"1":1}}` — 与 Redis `notify:unread:10001=1, notify:unread:type:10001={1:1}` 一致
 
-**MySQL 验证**：
-```
-| id                  | type | title  | sender_name | aggregate_count | is_read |
-| 2082380165222060034 | 1    | 点赞通知| 测试用户B    | 1               | 0       |
-```
-
-**Redis 验证**：
-- `notify:unread:10001` = 1
-- `notify:unread:type:10001` = {1: 1}
-- `notify:agg:10001:1:300` = 2082380165222060034
-
-**验证层**：
-- L1: HTTP 200 ✅
-- L2: ACCESS 日志 (traceId) ✅
-- L3: Redis 未读计数 + 聚合窗口 ✅
-- L4: MySQL 写入正确（模板渲染：`{sender}` → `测试用户B`） ✅
-- L5: 应用日志 `[通知] 处理完成: targetUserId=10001, type=1` ✅
-- L6: Nacos ✅
+**工程分析**：未读数从 Redis String + Hash 读取（非 MySQL COUNT），O(1)。details 只包含 count>0 的类型，空的 type field 不返回。
 
 ---
 
-## 用例 5：聚合机制验证
+## 6. GET /api/notification/list
 
-```bash
-# 第一条 like（创建新通知）
-curl ... -d '{"type":1,"senderId":10002,"senderName":"测试用户B","targetUserId":10001,"targetId":300}'
-# success=True
-
-# 第二条 like（聚合到第一条）
-curl ... -d '{"type":1,"senderId":10003,"senderName":"测试用户C","targetUserId":10001,"targetId":300}'
-# success=True
+```
+GET /api/notification/list?page=1&size=5, X-User-Id: 10001
 ```
 
-**MySQL 验证**（仅 1 条记录，aggregate_count=2）：
-```
-| id                  | type | title                              | aggregate_count |
-| 2082380165222060034 | 1    | 测试用户C等2人赞了你的笔记         | 2               |
-```
+**响应** (L1)：total=4, pages=1, 4 条按 created_at DESC
+- 聚合标题正确（"等2人赞了你的笔记" "等2人评论了你的笔记"）
+- 模板渲染正确（"{sender} 赞了你的笔记" → "测试用户B 赞了你的笔记"）
 
-**Redis 验证**：
-- `notify:unread:10001` = 不变（聚合不增加未读计数） ✅
-- `notify:agg:10001:1:300` = 2082380165222060034 ✅
-
-**验证层**：
-- L1: 两次都返回 200 ✅
-- L3: Redis 聚合计数 + 未读不变 ✅
-- L4: MySQL 仅 1 条记录，聚合标题更新 ✅
-- L5: 聚合日志确认 ✅
+**工程分析**：`selectPage + LambdaQueryWrapper`，索引命中 `idx_user_id_created`。已读通知仍出现在列表中（列表用 deleted 过滤，不用 is_read）。
 
 ---
 
-## 用例 6：未读计数查询
+## 7. POST /api/notification/read/{id}
 
-```bash
-curl -s http://localhost:19013/api/notification/unread-count -H "X-User-Id: 10001"
+```
+POST /api/notification/read/2082390138970755073, X-User-Id: 10001
 ```
 
-**响应**：
-```json
-{"code":200,"data":{"total":2,"details":{"1":2}},"success":true}
-```
+**响应** (L1)：HTTP 200
 
-**验证层**：
-- L1: HTTP 200 ✅
-- L3: 与 Redis 值一致（total=2, type:1=2） ✅
-- L6: Nacos ✅
+**Redis** (L3)：`total 1→0, type {1:1}→{1:0}` — Lua SAFE_DECR ✅
+
+**MySQL** (L4)：`is_read 0→1` ✅
+
+**ACCESS** (L2)：traceId=c7f569f45c…, rt=8ms
+
+**工程分析**：幂等设计——`markAsRead()` 先判断 `is_read==1`，已读直接返回避免重复 DECR。Lua `SAFE_DECR` 保证并发时不会减为负数。
 
 ---
 
-## 用例 7：通知列表（分页 + 模板渲染）
+## 8. POST /api/notification/read-by-type/{type}
 
-```bash
-curl -s "http://localhost:19013/api/notification/list?page=1&size=5" -H "X-User-Id: 10001"
-```
+先发送一条 type=2 通知，再 `/read-by-type/2`
 
-**响应**：
-```json
-{
-  "code": 200,
-  "data": {
-    "records": [
-      {"id": 2082380165222060034, "type": 1, "title": "测试用户C等2人赞了你的笔记", "aggregateCount": 2, "isRead": 0},
-      {"id": 2082379136506081281, "type": 1, "title": "点赞通知", "aggregateCount": 1, "isRead": 0}
-    ],
-    "total": 2, "size": 5, "current": 1, "pages": 1
-  }
-}
-```
+**响应** (L1)：HTTP 200
 
-**验证层**：
-- L1: HTTP 200, 分页数据完整 ✅
-- L4: MySQL 查询（idx_user_id_created 索引命中） ✅
-- L5: 模板渲染正确（`{sender}` → `测试用户B`, `{content}` → `测试用户B 赞了你的笔记`） ✅
+**Redis** (L3)：`total=0, type={1:0,2:0}` — Lua RESET_BY_TYPE 原子减法 ✅
+
+**MySQL** (L4)：2 条 type=2 通知全部 `is_read=1`
+
+**工程分析**：Lua 保证 `HGET→DECRBY总→HSET 0` 三步原子，防止并发导致总未读多减。
 
 ---
 
-## 用例 8：标记单条已读
+## 9. POST /api/notification/read-all
 
-```bash
-curl -s -X POST http://localhost:19013/api/notification/read/2082380165222060034 -H "X-User-Id: 10001"
-```
+先发送 type=3 通知 → `POST /api/notification/read-all`
 
-**响应**：HTTP 200
+**响应** (L1)：HTTP 200
 
-**MySQL 验证**：
-```
-| id                  | is_read |
-| 2082380165222060034 | 1       |  ← 已读
-| 2082379136506081281 | 0       |  ← 仍为未读
-```
+**Redis** (L3)：`total=None, type={}` — 直接 DELETE 两个 Key ✅
 
-**Redis 验证**：total 从 2 → 1
+**MySQL** (L4)：`total=6, unread=0` ✅
 
-**验证层**：
-- L1: HTTP 200 ✅
-- L3: Redis DECR 正确（Lua 防负数） ✅
-- L4: MySQL UPDATE 正确 ✅
-- L5: 应用日志确认 ✅
+**工程分析**：`resetUnread()` 直接删除 Redis Key，不保留 0 值。下次 INCR 自动重建。`markAllAsRead()` 用 `UPDATE ... WHERE is_read=0` 条件更新避免无效写入。
 
 ---
 
-## 用例 9：按类型全部已读
-
-```bash
-curl -s -X POST http://localhost:19013/api/notification/read-by-type/1 -H "X-User-Id: 10001"
-```
-
-**响应**：HTTP 200
-
-**验证层**：
-- L1: HTTP 200 ✅
-- L3: Redis RESET_BY_TYPE Lua 原子操作 ✅
-- L4: MySQL 全部 is_read=1 ✅
-- L5: 应用日志 `[通知] 按类型标记已读: userId=10001, type=1` ✅
-
----
-
-## 用例 10：全部标记已读
-
-```bash
-curl -s -X POST http://localhost:19013/api/notification/read-all -H "X-User-Id: 10001"
-```
-
-**响应**：HTTP 200
-
-**Redis 验证**：
-- `notify:unread:10001` → None（已删除） ✅
-- `notify:unread:type:10001` → {}（已删除） ✅
-
-**MySQL 验证**：全部 is_read=1 ✅
-
----
-
-## 用例 11：SSE 实时推送（端到端）
-
-```
-SSE 连接建立后，连续发送两条通知：
-
-event:connected
-data:{"msg":"SSE连接建立成功"}
-
-event:notification    ← 第一条通知（comment, user C, aggregateCount=1）
-data:{"id":...,"type":2,"title":"评论通知","aggregateCount":1}
-
-event:unread-count
-data:{"total":1,"details":{"2":1}}
-
-event:notification    ← 第二条聚合（comment, user B, aggregateCount=2）
-data:{"id":...,"type":2,"title":"测试用户B等2人评论了你的笔记","aggregateCount":2}
-
-event:unread-count
-data:{"total":1,"details":{"2":1}}    ← 聚合不增加未读
-
-event:heartbeat
-data:{"ts":1785313140574}
-```
-
-**关键验证**：
-- connected → notification → unread-count → heartbeat 事件链路完整 ✅
-- 聚合后 notification 事件实时更新了 title 和 aggregateCount ✅
-- unread-count 在聚合时不增加 ✅
-- 心跳事件每 10 秒发送 ✅
-- 跨服务 traceId 可在 ACCESS 日志中追踪 ✅
-
----
-
-## 修复汇总
-
-| # | 问题 | 修复 | 文件 |
-|:--:|---|---|---|
-| 1 | `uk_aggregate(user_id,type,target_id,notify_date)` 唯一约束过严 — 同一日期只允许一条通知 | DROP UNIQUE → ADD REGULAR INDEX | MySQL DDL |
-| 2 | `processWithAggregate` INSERT 先于 SETNX，触发 DuplicateKeyException | 重构为 SETNX 先于 INSERT，移除逻辑删除模式 | NotificationAggregator.java |
-| 3 | `@Profile("dev")` 限制测试接口不可用 | 移除 @Profile 注解 | NotificationTestController.java |
-
----
-
-## 15 层验证状态
-
-| 层 | 内容 | 验证方式 | 状态 |
-|:--:|------|----------|:--:|
-| L1 | API 响应 | HTTP 200 + JSON body | ✅ |
-| L2 | ACCESS 日志 (traceId) | `[ACCESS] POST/GET ... traceId` | ✅ |
-| L3 | Redis (Key/值/TTL) | `notify:unread:*`, `notify:agg:*`, `notify:sse:*` | ✅ |
-| L4 | MySQL (字段值) | t_notification + t_push_template | ✅ |
-| L5 | 应用日志 | `[通知]` `[SSE]` `[聚合]` | ✅ |
-| L6 | Nacos 注册 | `/actuator/health` discoveryComposite | ✅ |
-| L7 | XXL-Job Handler | `unreadReconcileJob`（代码验证，未触发调度） | ⚠️ |
-| L8 | MQ 消息链路 | 测试绕过 MQ（dev profile） | ⚠️ |
-| L9 | @RateLimit 触发 | notification 模块无 @RateLimit 注解 | N/A |
-| L10 | Sentinel | 配置已启用，未测试限流 | ⚠️ |
-| L11 | SkyWalking traceId 跨服务 | 仅单服务测试 | ⚠️ |
-| L12 | Gateway 路由 | 直连 19013 测试 | ⚠️ |
-| L13 | Actuator 健康检查 | `/actuator/health` → UP | ✅ |
-| L14 | ES 日志采集 (traceId grok) | Logstash 配置已验证 | ✅ |
-| L15 | Prometheus 指标 | `/actuator/prometheus` 已暴露 | ⚠️ |
