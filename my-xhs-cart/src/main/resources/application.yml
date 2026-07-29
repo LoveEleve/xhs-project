@@ -79,6 +79,11 @@ spring:
           enabled: true
           max-connections: 200
           max-connections-per-route: 50
+      client:
+        config:
+          # 【修复】同机部署，直连 localhost 避免 Nacos→LoadBalancer hashCode NPE bug
+          my-xhs-product:
+            url: http://localhost:19006
   lifecycle:
     timeout-per-shutdown-phase: 30s
 

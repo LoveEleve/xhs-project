@@ -119,16 +119,22 @@ public class OrderController {
     public R<Object> createPayment(@RequestHeader("X-User-Id") Long userId,
                                    @Valid @RequestBody PayRequest request) {
         if ("remote".equals(payType)) {
-            // 调用独立支付服务
             PaymentFeignClient.PayCreateRequest payRequest = new PaymentFeignClient.PayCreateRequest();
             payRequest.setOrderId(request.getOrderId());
             payRequest.setUserId(userId);
             payRequest.setPayType(request.getPayType());
-            // amount 由支付服务通过 Feign 向订单服务查询（OrderController.getOrderPayAmount）
             return paymentFeignClient.pay(payRequest, userId);
         }
-        // 默认：Mock 模式
-        return R.ok(mockPayService.createPayment(userId, request));
+        // Mock 模式：可能成功或失败
+        MockPayService.PaymentResult result = mockPayService.createPayment(userId, request);
+        if (!result.success()) {
+            // 模拟支付失败 → 自动取消订单释放库存
+            log.info("[订单] Mock支付失败，自动取消订单: orderId={}, reason={}",
+                    result.orderId(), result.failReason());
+            orderService.onPaymentFailed(result.orderId());
+            return R.fail(400, "支付失败: " + result.failReason());
+        }
+        return R.ok(result.payment());
     }
 
     /**
@@ -163,10 +169,20 @@ public class OrderController {
 
     /**
      * 支付失败回调
+     * <p>
+     * 支付失败后自动取消订单，释放库存和优惠券。
+     * 用户在"我的订单"中看到状态为"已取消"，可以重新下单。
+     * </p>
      */
     @PostMapping("/pay-fail")
     public R<Void> notifyPayFail(@RequestParam("orderId") Long orderId) {
-        log.info("[订单回调] 收到支付失败通知: orderId={}", orderId);
+        log.info("[订单回调] 收到支付失败通知, 自动取消订单: orderId={}", orderId);
+        try {
+            // 自动取消订单 → 释放库存 + 退还优惠券
+            orderService.onPaymentFailed(orderId);
+        } catch (Exception e) {
+            log.error("[订单回调] 支付失败自动取消失败: orderId={}", orderId, e);
+        }
         return R.ok();
     }
 

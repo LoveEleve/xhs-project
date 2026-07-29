@@ -104,9 +104,17 @@ public class PaymentController {
     // ==================== 回调解析辅助方法 ====================
 
     private String extractPaymentNo(String callbackData, Integer payType) {
-        // Mock 实现：从回调数据中提取 paymentNo
-        // 支付宝格式：trade_no 字段
+        // 支付宝格式：out_trade_no 字段
         // 微信格式：out_trade_no 字段
+        // Mock 模式：尝试从 JSON body 中提取 out_trade_no
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            com.fasterxml.jackson.databind.JsonNode node = mapper.readTree(callbackData);
+            if (node.has("out_trade_no")) return node.get("out_trade_no").asText();
+            if (node.has("payment_no")) return node.get("payment_no").asText();
+        } catch (Exception e) {
+            log.warn("[支付回调] 解析回调数据失败: {}", e.getMessage());
+        }
         return "PAY_" + System.currentTimeMillis();
     }
 
@@ -123,7 +131,14 @@ public class PaymentController {
     }
 
     private String extractRefundNo(String callbackData, Integer payType) {
-        // Mock 实现：从退款回调数据中提取 refundNo
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            com.fasterxml.jackson.databind.JsonNode node = mapper.readTree(callbackData);
+            if (node.has("refund_no")) return node.get("refund_no").asText();
+            if (node.has("out_refund_no")) return node.get("out_refund_no").asText();
+        } catch (Exception e) {
+            log.warn("[退款回调] 解析回调数据失败: {}", e.getMessage());
+        }
         return "REFUND_" + System.currentTimeMillis();
     }
 

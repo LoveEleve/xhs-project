@@ -31,7 +31,6 @@
         <module>my-xhs-payment</module>
         <module>my-xhs-test</module>
         <module>my-xhs-benchmark</module>
-        <module>my-xhs-ai</module>
 
     </modules>
 

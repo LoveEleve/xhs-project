@@ -26,6 +26,7 @@ local qty = tonumber(quantity)
 
 -- 2. 删除预扣记录（确认扣减 = 预扣变为正式扣减）
 redis.call('HDEL', predeductKey, skuId)
+redis.call('HDEL', predeductKey, skuId .. ':bucket')
 
 -- 3. 如果预扣记录 Hash 为空，删除整个 Key
 local remaining = redis.call('HLEN', predeductKey)

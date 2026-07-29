@@ -5,6 +5,7 @@ import com.myxhs.common.response.R;
 import com.myxhs.inventory.dto.request.ConfirmDeductRequest;
 import com.myxhs.inventory.dto.request.InventoryInitRequest;
 import com.myxhs.inventory.dto.request.PreDeductRequest;
+import com.myxhs.inventory.dto.request.ReinitRequest;
 import com.myxhs.inventory.dto.request.ReleaseStockRequest;
 import com.myxhs.inventory.dto.TccDeductRequest;
 import com.myxhs.inventory.dto.response.StockVO;
@@ -86,7 +87,7 @@ public class InventoryController {
      */
     @PostMapping("/reinit")
     @RateLimit(prefix = "inventory:reinit", maxRequests = 2, windowSeconds = 60)
-    public R<Void> reinitStock(@Valid @RequestBody InventoryInitRequest request) {
+    public R<Void> reinitStock(@Valid @RequestBody ReinitRequest request) {
         int bucketCount = request.getBucketCount() != null ? request.getBucketCount() : defaultBucketCount;
         inventoryService.reinitStock(request.getSkuId(), bucketCount);
         return R.ok();

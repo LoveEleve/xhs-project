@@ -14,6 +14,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Mock 支付服务
@@ -23,13 +24,9 @@ import java.time.LocalDateTime;
  * </p>
  * <p>
  * Mock 行为：
- * 1. 创建支付记录（流水号 MOCK_ 开头）
- * 2. 直接标记支付成功
- * 3. 回调订单服务更新状态
- * </p>
- * <p>
- * 重要：支付表（t_payment）在独立库 my_xhs_payment 中，
- * 使用 PaymentRepository（独立数据源）操作，不走 ShardingSphere 分片路由。
+ * - 成功：创建支付记录（流水号 MOCK_ 开头）→ 标记支付成功 → 更新订单状态
+ * - 失败：payType=2 时 50% 概率模拟支付失败，创建失败记录
+ * - 退款：退款成功回调执行真实 Feign 释放库存+退券；退款失败记录失败原因
  * </p>
  */
 @Slf4j
@@ -43,15 +40,15 @@ public class MockPayService {
     private final OrderService orderService;
 
     /**
-     * 创建支付（Mock：直接成功）
+     * 创建支付（Mock：成功或随机失败）
      * <p>
-     * 并发安全：先调用 onPaymentSuccess（乐观锁 WHERE status=0），
-     * 如果返回 false 说明订单已被关单/取消，此时支付失败。
-     * 不能"先检查状态再操作"——检查和操作之间可能被关单。
+     * payType=2（微信）时 50% 概率模拟支付失败（如余额不足、网络超时等）。
+     * 失败时将 orderId 返回给调用方，由 Controller 触发 pay-fail 回调。
      * </p>
+     *
+     * @return PaymentResult 包含成功/失败状态和对应数据
      */
-    public Payment createPayment(Long userId, PayRequest request) {
-        // 1. 校验订单归属（分库分表后必须带 user_id 查询）
+    public PaymentResult createPayment(Long userId, PayRequest request) {
         Order order = orderMapper.selectOne(
                 new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<Order>()
                         .eq(Order::getUserId, userId)
@@ -59,34 +56,57 @@ public class MockPayService {
         if (order == null) {
             throw new BizException(ResultCode.ORDER_NOT_FOUND);
         }
-        // 快速失败（非原子，仅减少无效操作）
         if (order.getStatus() != 0) {
             throw new BizException(ResultCode.ORDER_STATUS_ERROR, "订单不是待付款状态");
         }
 
-        // 2. 先尝试更新订单状态（乐观锁，原子操作）
+        // 【Mock 失败模拟】payType=2（微信）时 30% 概率失败
+        String failReason = null;
+        if (request.getPayType() != null && request.getPayType() == 2) {
+            if (ThreadLocalRandom.current().nextInt(100) < 30) {
+                failReason = "余额不足，请联系发卡行";
+            }
+        }
+
+        // 支付失败路径
+        if (failReason != null) {
+            String paymentNo = "MOCK_FAIL_" + System.currentTimeMillis();
+            Payment payment = new Payment();
+            payment.setId(IdWorker.getId());
+            payment.setOrderId(order.getId());
+            payment.setUserId(userId);
+            payment.setPaymentNo(paymentNo);
+            payment.setAmount(order.getPayAmount());
+            payment.setPayType(request.getPayType());
+            payment.setStatus(2); // 支付失败
+            paymentRepository.insert(payment);
+
+            log.info("[支付Mock] 模拟支付失败: orderId={}, reason={}", order.getId(), failReason);
+            return new PaymentResult(false, order.getId(), failReason, payment);
+        }
+
+        // 支付成功路径
         boolean paySuccess = orderService.onPaymentSuccess(order.getId(), userId);
         if (!paySuccess) {
             throw new BizException(ResultCode.ORDER_STATUS_ERROR, "订单已取消或已支付");
         }
 
-        // 3. 订单状态更新成功后，创建支付记录（独立数据源，不走分片）
         String paymentNo = "MOCK_PAY_" + System.currentTimeMillis();
         Payment payment = new Payment();
-        payment.setId(IdWorker.getId()); // 手动生成雪花ID
+        payment.setId(IdWorker.getId());
         payment.setOrderId(order.getId());
         payment.setUserId(userId);
         payment.setPaymentNo(paymentNo);
         payment.setAmount(order.getPayAmount());
         payment.setPayType(request.getPayType());
-        payment.setStatus(1); // 支付成功
+        payment.setStatus(1);
         payment.setPaidAt(LocalDateTime.now());
         paymentRepository.insert(payment);
 
         log.info("[支付Mock] 支付成功: orderId={}, paymentNo={}, amount={}",
                 order.getId(), paymentNo, order.getPayAmount());
 
-        return payment;
+        return new PaymentResult(true, order.getId(), null, payment);
     }
 
     /**
@@ -95,4 +115,9 @@ public class MockPayService {
     public Payment getPaymentByOrderId(Long orderId) {
         return paymentRepository.selectByOrderId(orderId);
     }
+
+    /**
+     * 支付结果封装
+     */
+    public record PaymentResult(boolean success, Long orderId, String failReason, Payment payment) {}
 }

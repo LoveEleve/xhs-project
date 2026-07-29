@@ -153,12 +153,13 @@ public class OrderService {
                             .transactionPayload(payload)
                             .build();
 
-            // 构建事务消息
-            org.springframework.messaging.Message<String> msg = MessageBuilder.withPayload(payload)
-                    .setHeader("orderNo", orderNo)
-                    .setHeader("userId", userId.toString())
-                    .setHeader(org.apache.rocketmq.spring.support.RocketMQHeaders.KEYS, orderNo)
-                    .build();
+            // 构建事务消息（注入 traceId 保证全链路追踪）
+            org.springframework.messaging.Message<String> msg = MqTraceHelper.wrapWithTraceId(
+                    MessageBuilder.withPayload(payload)
+                            .setHeader("orderNo", orderNo)
+                            .setHeader("userId", userId.toString())
+                            .setHeader(org.apache.rocketmq.spring.support.RocketMQHeaders.KEYS, orderNo)
+                            .build());
 
             // 发送事务消息（半消息）
             // RocketMQ 收到半消息后回调 OrderTransactionListener.executeLocalTransaction()
@@ -811,6 +812,52 @@ public class OrderService {
     }
 
     /**
+     * 支付失败回调——自动取消订单
+     * <p>
+     * 通过映射表反查 userId，使用分片键加载订单。
+     * Event Sourcing 记录取消事件 → 释放库存 → 退还优惠券。
+     * </p>
+     */
+    public void onPaymentFailed(Long orderId) {
+        OrderNoMapping mapping = orderNoMappingRepository.selectByOrderId(orderId);
+        if (mapping == null) {
+            log.warn("[订单] 支付失败回调但映射表中找不到orderId: orderId={}", orderId);
+            return;
+        }
+        Long userId = mapping.getUserId();
+
+        Order order = orderMapper.selectOne(
+                new LambdaQueryWrapper<Order>()
+                        .eq(Order::getUserId, userId)
+                        .eq(Order::getId, orderId));
+        if (order == null) {
+            log.warn("[订单] 支付失败回调但订单不存在: orderId={}", orderId);
+            return;
+        }
+        if (order.getStatus() != 0) {
+            log.warn("[订单] 支付失败回调但订单状态不是待付款: orderId={}, status={}", orderId, order.getStatus());
+            return;
+        }
+
+        // Event Sourcing: 记录支付失败取消事件
+        orderEventService.appendEvent(order, OrderEventService.EVENT_CANCELLED,
+                Map.of("cancelReason", "支付失败", "cancelTime", LocalDateTime.now().toString()));
+
+        // 并行释放库存 + 退还优惠券
+        CompletableFuture<Void> releaseFuture = CompletableFuture.runAsync(() -> releaseInventory(orderId, userId));
+        CompletableFuture<Void> returnFuture = CompletableFuture.runAsync(() -> returnCouponIfUsed(order));
+        try {
+            CompletableFuture.allOf(releaseFuture, returnFuture).get(3, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.warn("[订单] 支付失败取消Feign并行调用超时/异常: orderId={}", orderId, e);
+        }
+
+        takeSnapshot(orderId, userId, "CANCELLED");
+        stringRedisTemplate.delete("order:info:" + orderId);
+        log.info("[订单] 支付失败已自动取消: orderId={}", orderId);
+    }
+
+    /**
      * 查询订单支付金额
      * <p>
      * 供支付服务校验支付金额与订单金额是否匹配。
@@ -821,7 +868,7 @@ public class OrderService {
      * <p>
      * 分库分表兼容：
      * 支付服务通过 Feign 调用时只有 orderId，没有 userId。
-     * 必须通过 t_order_no_mapping 映射表反查 userId，才能路由到正确的分片。
+     * 必须通过 t_order_no_mapping 映射表反查 userId��才能路由到正确的分片。
      * </p>
      */
     public BigDecimal getOrderPayAmount(Long orderId) {

@@ -91,6 +91,14 @@ spring:
           enabled: true
           max-connections: 200
           max-connections-per-route: 50
+      client:
+        config:
+          my-xhs-inventory:
+            url: http://localhost:19009
+          my-xhs-coupon:
+            url: http://localhost:19010
+          my-xhs-payment:
+            url: http://localhost:19012
   lifecycle:
     timeout-per-shutdown-phase: 30s
 

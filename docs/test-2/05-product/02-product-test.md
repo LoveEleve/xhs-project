@@ -204,13 +204,18 @@ SPU 创建是运营操作，不会高频——10 次/分钟对运营人员足够
 
 | 故障 | L1 Bloom | L2 Redis | L3 MySQL | 最终行为 |
 |------|:---:|:---:|:---:|------|
-| Bloom 加载中（首次部署） | 跳过（bloomFilterReady=false） | 正常 | 正常 | 降级但功能正常 |
-| Redis 不可用 | 正常 | 超时/异常 | 正常 | 每次走 DB（性能下降） |
-| Redis 空值缓存在（不存在 ID） | — | 命中 null cache | 不查 | 返回 null |
-| MySQL 不可用 | 正常 | 正常 try-catch | 抛异常 | 500 错误 |
+| Bloom 加载中（首次部署） | 跳过 | 正常 | 正常 | 降级，走 L2+L3 |
+| Redis 不可用 | 正常 | **抛 RedisUnavailableException** | — | **500 错误**（异常传播，不降级到 DB） |
+| Redis 可读写、空值缓存在 | — | 命中 null cache | 不查 | 返回 null |
+| MySQL 不可用 | 正常 | 正常 | 抛 DataAccessException | 500 错误 |
 | 逻辑过期 + 异步刷新失败 | 正常 | 返回旧值 | — | 旧数据可用，日志告警 |
+| evict 时 Redis 不可用 | — | delete 抛异常 | 已更新 | DB 新数据，缓存旧数据，30min 逻辑过期后自愈 |
 
-第 8 点的故障矩阵补到 1.1 期望表之前（在 §6 后面）。
+**Redis 不可用时为什么是 500 而不是降级到 DB？**
+
+`RedisOperator.get()` 在连接失败时抛出 `RedisUnavailableException`——`SpuService.getSpuDetail()` 没有 catch 这个异常。异常传播到 `GlobalExceptionHandler` → 500 错误。
+
+这不是设计缺陷——是保护 MySQL 的故意行为。如果 Redis 不可用时自动降级到 DB，所有请求瞬间打向 MySQL，DB 会被压死（缓存就是用来挡 DB 的）。快速失败（fail-fast）比 MySQL 雪崩更安全。
 
 ### 期望 vs 实际
 
@@ -538,6 +543,10 @@ SKU 详情通过两个路径访问：
 
 **`createSku` 缺少 `@RateLimit`**：对比 `createSpu` 有 `product:create 10/60s`，SKU 创建端点没有限流保护。SKU 创建频率通常比 SPU 高（一个 SPU 可能有多个 SKU 变体），缺少限流在高频批量化创建时有风险。
 
+**`stock` 字段是冗余字段**：源码 Javadoc 明确标注 "实际库存由库存服务管理"。product 模块的 stock 是快照值——下单扣库存时 inventory 模块是权威源，product 的 stock 仅用于商品详情页的展示。
+
+**SKU 创建的 @Transactional 边界**：`createSku` 的 `@Transactional` 覆盖 `spuMapper.selectById` + `skuMapper.insert`，但不覆盖 `spuService.evictSpuCache`（Redis 操作在事务外）。如果 insert 成功但 evict 失败 → DB 已有新 SKU，但 SPU 缓存中 SKU 列表是旧的 → 下次 SPU GET 读到旧列表。逻辑过期（30min）后自愈。
+
 ### 期望 vs 实际
 
 | 验证项 | 期望 | 实际 | 结果 |
@@ -587,11 +596,45 @@ skuMapper.selectList(where spuId AND status=ON_SHELF) → 1 次 SQL
 
 批量查询使用 MyBatis-Plus 的 `selectBatchIds`——底层生成 `WHERE id IN (...)`，一次 SQL 替代 N 次循环单查。SKU 列表只返回上架 SKU（`status=1`），天然过滤下架规格。
 
+### 中间件验证
+
+**MySQL**：3 条查询均走 DB（SKU 无缓存层）✅。`selectBatchIds` + `selectList` 均生成标准 SQL。
+
+**Redis**：SKU 没有独立的 Redis Key——验证 SKU 详情不做缓存：
+
+```
+myxhs:product:sku:2081544572120371202 → null（不存在任何 SKU 缓存 Key）
+```
+
+只有 `myxhs:product:spu:*` 格式的 SPU 缓存 Key。
+
+### 服务日志
+
+```
+[ACCESS] GET /api/product/sku/2081544572120371202 → 200
+[ACCESS] GET /api/product/sku/batch?skuIds=2081544572120371202 → 200  
+[ACCESS] GET /api/product/sku/list/2081302094884671490 → 200
+```
+
+所有请求正常 200，无异常日志。SKU 详情、批量查询、列表三个端点均无缓存日志——验证了"SKU 无独立缓存层"的设计。
+
 ### 工程设计分析
 
 **批量查询为什么不存在死锁风险？**
 
 counter 模块的 `batchUpsert` 需要排序防死锁——因为 `INSERT ON DUPLICATE KEY UPDATE` 会加行锁，多个事务交叉加锁可能死锁。SKU 批量查询是纯 `SELECT`——不涉及行锁，不需要排序。
+
+**空列表保护**：`batchGetSkuDetails` 有 `if (skuIds == null || skuIds.isEmpty()) return List.of()`——防护了空参数导致的无效 SQL。
+
+**三种查询路径的分工**：
+
+| 路径 | 是否缓存 | 适用场景 | SQL 方式 |
+|------|:---:|------|------|
+| `GET /sku/{id}` | ❌ | 详情页（罕见，通常走 SPU 内联） | `selectById` |
+| `GET /sku/batch` | ❌ | 购物车列表（高频） | `selectBatchIds`（WHERE IN） |
+| `GET /sku/list/{spuId}` | ❌（但随 SPU 缓存间接返回） | 商品详情页内联 | `selectList(where spuId)` |
+
+购物车批量查询是 SKU 的唯一高频独立查询——用 `selectBatchIds` 的 `WHERE IN` 效率足够，不需要额外缓存层。
 
 **SKU 列表的 status 过滤**
 
@@ -605,7 +648,92 @@ counter 模块的 `batchUpsert` 需要排序防死锁——因为 `INSERT ON DUP
 | 批量查询 → 含 SKU | 1 result | batchCount=1 | ✅ |
 | SKU 列表 → 按 SPU 过滤 | 1 result | skuCount=1 | ✅ |
 | 批量查询 SQL 为 1 次 | WHERE IN | selectBatchIds | ✅ |
+| Redis SKU 无独立缓存 | null | null | ✅ |
+| 空列表保护 | no null args | `skuIds.isEmpty() → List.of()` | ✅ |
 
 ---
+
+## 3.1 分类树查询（一次全查 + 内存构建 + Redis 2h 缓存）
+
+### curl 请求与响应
+
+```
+GET /api/product/category/tree
+→ 200  {
+  "data": [
+    { "name":"服饰", "children": [ { "name":"女装", "children": [...] }, ... ] },
+    { "name":"电子产品", ... },
+    { "name":"家居生活", ... },
+    { "name":"食品饮料", ... }
+  ]
+}
+// 4 个一级分类，6 个二级分类，树形嵌套
+```
+
+### 中间件验证
+
+| 时刻 | Redis | 
+|------|------|
+| 首次 GET 前 | null（未缓存） |
+| 首次 GET 后 | TTL=7200s (2.0h)，Jackson `@class` 序列化完整树结构 |
+| 第二次 GET | 命中 Redis（无 DB 查询日志） |
+
+**缓存结构**：Redis 存储的是 Jackson 序列化的完整 `List<CategoryTreeVO>`——含 `@class` 类型信息，树结构完整嵌入，不依赖 DB。
+
+### 服务日志
+
+```
+[INFO] [分类] 缓存未命中, 查询 DB 构建分类树
+```
+
+首次查询触发 "查询 DB 构建分类树"。第二次查询无日志（Redis 命中，debug 级不输出）。
+
+### 代码路径分析
+
+```java
+// CategoryService.getCategoryTree():
+// 1. L2: Redis
+List<CategoryTreeVO> cached = redisOperator.get("myxhs:product:category:tree");
+if (cached != null) return cached;  // Redis 命中
+
+// 2. L3: MySQL → 内存构建
+List<CategoryTreeVO> tree = buildCategoryTree();
+//   → categoryMapper.selectList(where status=1, order by sort)
+//   → all.stream().collect(Collectors.groupingBy(Category::getParentId))
+//   → buildChildren(parentMap, 0L) 递归构建
+
+// 3. 回填 L2
+redisOperator.set(CATEGORY_TREE_REDIS_KEY, tree, 2, TimeUnit.HOURS);
+return tree;
+```
+
+### 工程设计分析
+
+**为什么一次全查而不是逐层查询？**
+
+分类表通常 < 1000 行。逐层查（查根 → 查子 → 查孙）产生 N+1 问题。一次全查后内存分组构建，时间复杂度 O(n)（扫描一遍 + HashMap 分组），远小于 N+1 的 DB 往返。
+
+**为什么 TTL 是 2h 而不是 30min？**
+
+分类是商品系统中变更最慢的数据——新增分类是运营低频操作，按天/月为单位。2h TTL 是"几乎不过期"的保守选择。如果需要立即生效，运维可以手动 DEL Redis Key 强制重建。
+
+**Jackson `@class` 序列化**：`RedisOperator.set()` 使用 `RedisTemplate<String, Object>`——Jackson 默认开启 `DefaultTyping`，序列化时会在 JSON 中嵌入 `@class` 字段和 `java.util.ArrayList` 等容器类型信息。好处是反序列化时无需指定目标类型（`get()` 自动返回正确类型），代价是缓存体积更大（每个节点多 ~100 字节类型信息）。
+
+**分类树没有布隆过滤器**：分类树是单个 Key 的全量数据——不是按 ID 查询的路由，不需要布隆过滤器做前置拦截。如果分类表为空，返回空列表——不是 null，调用方无需额外的 null 判断。
+
+### 期望 vs 实际
+
+| 验证项 | 期望 | 实际 | 结果 |
+|--------|------|------|:--:|
+| 分类树返回 4 个一级分类 | 4 | 4 | ✅ |
+| 二级分类总数 | 6 | 6 | ✅ |
+| Redis 缓存 TTL | 7200s (2h) | 7200s | ✅ |
+| 首次查走 DB | 缓存未命中日志 | INFO "查询 DB 构建分类树" | ✅ |
+| 第二次命中 Redis | 无 DB 查询 | 无新增 "查询 DB" 日志 | ✅ |
+| 清除后重建 | TTL 重置 | 7200s | ✅ |
+
+---
+
+_更多用例待补充_
 
 _更多用例待补充_
