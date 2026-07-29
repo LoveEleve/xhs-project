@@ -1,7 +1,7 @@
 # my-xhs 模块梳理交接文档
 
 > 更新时间：2026-07-29
-> 当前进度：10/16 模块完成
+> 当前进度：11/16 模块完成
 
 ---
 
@@ -45,13 +45,17 @@
 - 核心：JdbcTemplate + 策略模式 + Feign双向回调
 - 修复：extractPaymentNo/refundNo JSON解析 + mvn clean package
 
+### 11-notification — 通知服务 ✅
+- 架构文档 + curl 测试（10/10 11用例）+ 深度 3 篇
+- 核心：SSE长连接 + Redis Pub/Sub跨实例推送 + 5min窗口聚合 + 未读计数+Lua防负数 + XXL-Job对账
+- 修复：uk_aggregate唯一约束过严 + processWithAggregate重构为SETNX-first
+
 ---
 
 ## 待梳理模块
 
 | 编号 | 模块 | 端口 | 关键特征 |
 |:--:|------|:--:|------|
-| 11 | notification | 19013 | SSE 长连接 |
 | 12 | im | 19014 | 即时通讯 |
 | 13 | home BFF | 19015 | 聚合层，Feign 调所有服务 |
 | 14 | search | 19016 | Elasticsearch 8.12 |
@@ -68,7 +72,8 @@
 | order → inventory | — | ✅ URL override |
 | order → coupon | — | ✅ URL override |
 | order → payment | — | ✅ URL override |
-| payment → order | — | ⚠️ 待验证（callback 测试期间未报错但未确认 URL override） |
+| payment → order | — | ⚠️ 待验证 |
+| notification → * | — | N/A（仅消费 MQ，无 Outbound Feign） |
 | home → 所有服务 | — | 待处理 |
 
 **Feign URL override 修复方式**：Spring Cloud 2023.0.1 + Nacos 2.3.0 的 LoadBalancer hashCode NPE bug，修复为 `spring.cloud.openfeign.client.config.{service}.url=http://localhost:{port}`。
@@ -89,6 +94,8 @@
 | payment | extractPaymentNo JSON解析 | PaymentController.java |
 | payment | extractRefundNo JSON解析 | PaymentController.java |
 | payment | Optionals启动失败 | mvn clean package |
+| notification | uk_aggregate唯一约束过严 | DROP UNIQUE → REGULAR INDEX |
+| notification | processWithAggregate INSERT先于SETNX | 重构为SETNX-first |
 | cart | Feign URL override | application.yml 1行 |
 
 ---

@@ -92,74 +92,80 @@ public class NotificationAggregator {
                 notification.getType() + ":" +
                 notification.getTargetId();
 
-        // 先插入 DB（无论是否聚合都需要一个 ID）
-        notification.setAggregateCount(1);
-        notification.setIsRead(0);
-        notificationMapper.insert(notification);
-
-        // Lua 原子操作：SETNX 窗口锁 + 写入通知 ID
+        // Lua 原子操作：SETNX 窗口锁（先用临时值写入，后续替换为真实 ID）
         DefaultRedisScript<String> script = new DefaultRedisScript<>(AGGREGATE_SETNX_SCRIPT, String.class);
         String result = stringRedisTemplate.execute(script,
                 Collections.singletonList(aggregateKey),
-                String.valueOf(notification.getId()),
+                "PENDING",
                 String.valueOf(AGGREGATE_WINDOW.getSeconds()));
 
         if ("1".equals(result)) {
-            // 窗口内第一条通知 → 已插入，直接返回
+            // 窗口内第一条通知 → INSERT DB 获取 ID → 用真实 ID 替换 Redis 临时值
+            notification.setAggregateCount(1);
+            notification.setIsRead(0);
+            notificationMapper.insert(notification);
+
+            stringRedisTemplate.opsForValue().set(aggregateKey,
+                    String.valueOf(notification.getId()), AGGREGATE_WINDOW);
+
             log.debug("[聚合] 新建通知: userId={}, type={}, targetId={}, id={}",
                     notification.getUserId(), notification.getType(),
                     notification.getTargetId(), notification.getId());
             return notification;
-        } else {
-            // 窗口内后续通知 → 聚合到主通知
-            // 当前通知已插入 DB，需要逻辑删除（避免重复展示）
-            // 为什么用逻辑删除而不是物理删除？
-            // 物理删除(deleteById)后如果进程崩溃，恢复逻辑(重新insert)可能因主键冲突失败。
-            // 逻辑删除(set isDeleted=1)是幂等操作，不会出现主键冲突。
-            // 同时查询通知列表时 MyBatis-Plus 的逻辑删除功能会自动过滤 isDeleted=1 的记录。
-            notificationMapper.deleteById(notification.getId()); // MyBatis-Plus逻辑删除：UPDATE SET deleted=1
-
-            if (result == null || result.isEmpty()) {
-                // 极端情况：Lua 返回空，取消逻辑删除作为独立通知处理
-                notification.setDeleted(0);
-                notification.setAggregateCount(1);
-                notification.setIsRead(0);
-                notificationMapper.updateById(notification);
-                return notification;
-            }
-
-            Long mainId = Long.parseLong(result);
-
-            // 原子递增聚合计数 + 查询新值（修复 incrementAggregateCount 返回值误用）
-            int affected = notificationMapper.incrementAggregateCount(mainId);
-            if (affected <= 0) {
-                // 主通知不存在（异常），取消逻辑删除恢复当前通知
-                notification.setDeleted(0);
-                notification.setAggregateCount(1);
-                notification.setIsRead(0);
-                notificationMapper.updateById(notification);
-                return notification;
-            }
-            Integer newCount = notificationMapper.getAggregateCount(mainId);
-            if (newCount == null) newCount = 1;
-
-            // 更新聚合标题
-            String aggregateTitle = buildAggregateTitle(
-                    notification.getType(),
-                    notification.getSenderName(),
-                    newCount);
-            notificationMapper.updateAggregateTitle(mainId, aggregateTitle);
-
-            // 构建返回对象
-            Notification mainNotification = notificationMapper.selectById(mainId);
-            if (mainNotification == null) {
-                mainNotification = notification;
-            }
-
-            log.debug("[聚合] 合并通知: mainId={}, newCount={}, sender={}",
-                    mainId, newCount, notification.getSenderName());
-            return mainNotification;
         }
+
+        // 窗口内后续通知 → 聚合到主通知
+        if (result == null || result.isEmpty()) {
+            // 极端情况：Lua 返回空，走独立通知路径
+            notification.setAggregateCount(1);
+            notification.setIsRead(0);
+            notificationMapper.insert(notification);
+            return notification;
+        }
+
+        // Redis 返回的是主通知 ID（或 "PENDING" 表示正在写入）
+        if ("PENDING".equals(result)) {
+            // 主通知正在写入，等待并重读
+            try { Thread.sleep(100); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+            result = stringRedisTemplate.opsForValue().get(aggregateKey);
+            if (result == null || "PENDING".equals(result)) {
+                notification.setAggregateCount(1);
+                notification.setIsRead(0);
+                notificationMapper.insert(notification);
+                return notification;
+            }
+        }
+
+        Long mainId = Long.parseLong(result);
+
+        // 原子递增聚合计数 + 查询新值
+        int affected = notificationMapper.incrementAggregateCount(mainId);
+        if (affected <= 0) {
+            // 主通知不存在（异常），将当前通知作为独立通知写入
+            notification.setAggregateCount(1);
+            notification.setIsRead(0);
+            notificationMapper.insert(notification);
+            return notification;
+        }
+        Integer newCount = notificationMapper.getAggregateCount(mainId);
+        if (newCount == null) newCount = 1;
+
+        // 更新聚合标题
+        String aggregateTitle = buildAggregateTitle(
+                notification.getType(),
+                notification.getSenderName(),
+                newCount);
+        notificationMapper.updateAggregateTitle(mainId, aggregateTitle);
+
+        // 构建返回对象
+        Notification mainNotification = notificationMapper.selectById(mainId);
+        if (mainNotification == null) {
+            mainNotification = notification;
+        }
+
+        log.debug("[聚合] 合并通知: mainId={}, newCount={}, sender={}",
+                mainId, newCount, notification.getSenderName());
+        return mainNotification;
     }
 
     /**
