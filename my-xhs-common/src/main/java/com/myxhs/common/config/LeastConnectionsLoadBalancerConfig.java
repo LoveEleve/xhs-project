@@ -32,6 +32,9 @@ public class LeastConnectionsLoadBalancerConfig {
             Environment environment,
             LoadBalancerClientFactory factory) {
         String name = environment.getProperty(LoadBalancerClientFactory.PROPERTY_NAME);
+        if (name == null) {
+            name = "default";
+        }
         return new LeastConnectionsLoadBalancer(
                 factory.getLazyProvider(name, ServiceInstanceListSupplier.class), name);
     }

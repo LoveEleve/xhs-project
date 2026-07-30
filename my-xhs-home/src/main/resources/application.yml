@@ -100,6 +100,26 @@ spring:
           enabled: true
           max-connections: 200
           max-connections-per-route: 50
+      client:
+        config:
+          my-xhs-user:
+            url: http://localhost:19001
+          my-xhs-content:
+            url: http://localhost:19002
+          my-xhs-analytics:
+            url: http://localhost:19003
+          my-xhs-counter:
+            url: http://localhost:19004
+          my-xhs-product:
+            url: http://localhost:19006
+          my-xhs-cart:
+            url: http://localhost:19008
+          my-xhs-inventory:
+            url: http://localhost:19009
+          my-xhs-coupon:
+            url: http://localhost:19010
+          my-xhs-notification:
+            url: http://localhost:19013
   lifecycle:
     timeout-per-shutdown-phase: 30s
 
@@ -109,7 +129,7 @@ rocketmq:
   consumer:
     group: home-consumer-group
 
-# Feign 客户端配置（通过 Nacos 服务发现调用）
+# Feign 客户端配置
 feign:
   client:
     config:

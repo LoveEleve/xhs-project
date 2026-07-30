@@ -212,6 +212,16 @@ spring:
             response-timeout: 5000   # 5s（WebSocket 建立连接）
             connect-timeout: 2000
             rate-limit-qps: 100
+
+        # 推荐服务（复用 search 服务）
+        - id: recommend-service
+          uri: lb://my-xhs-search
+          predicates:
+            - Path=/api/recommend/**
+          metadata:
+            response-timeout: 3000
+            connect-timeout: 1000
+            rate-limit-qps: 100
   data:
     redis:
       # 【Nacos 配置】Redis 密码已迁移至 Nacos Config（my-xhs-redis.yaml），本地值为 fallback

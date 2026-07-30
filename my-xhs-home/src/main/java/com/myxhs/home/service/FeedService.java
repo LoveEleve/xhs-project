@@ -105,7 +105,8 @@ public class FeedService {
         Double minScore = merged.get(merged.size() - 1).getScore();
 
         // ========== 第 2 步：CompletableFuture 并行聚合 ==========
-        return aggregateFeed(userId, noteIds, minScore, size);
+        boolean hasMoreFromRedis = merged.size() >= size;
+        return aggregateFeed(userId, noteIds, minScore, size, hasMoreFromRedis);
     }
 
     /**
@@ -116,7 +117,7 @@ public class FeedService {
      * 第 2 层（依赖第 1 层的 noteIds → authorIds）：作者信息 + 计数
      * </p>
      */
-    private FeedVO aggregateFeed(Long userId, List<Long> noteIds, Double minScore, int requestSize) {
+    private FeedVO aggregateFeed(Long userId, List<Long> noteIds, Double minScore, int requestSize, boolean hasMoreFromRedis) {
         // ---- 第 1 层并行 ----
 
         // 1a. 批量获取笔记详情（逐个调用，后续可优化为批量接口）
@@ -127,17 +128,26 @@ public class FeedService {
         String bizIds = noteIds.stream().map(String::valueOf).collect(Collectors.joining(","));
         CompletableFuture<Map<Long, Boolean>> likesFuture = CompletableFuture
                 .supplyAsync(() -> {
-                    R<Map<Long, Boolean>> r = analyticsFeignClient.batchCheckLikeStatus(userId, 1, bizIds);
-                    return r != null && r.isSuccess() && r.getData() != null ? r.getData() : Collections.emptyMap();
+                    try {
+                        R<Map<Long, Boolean>> r = analyticsFeignClient.batchCheckLikeStatus(userId, 1, bizIds);
+                        return r != null && r.isSuccess() && r.getData() != null ? r.getData() : Collections.emptyMap();
+                    } catch (Exception e) {
+                        log.warn("[Feed] 批量查询点赞状态失败", e);
+                        return Collections.emptyMap();
+                    }
                 }, aggregatorPool);
 
         // 1c. 获取未读通知数
         CompletableFuture<Integer> unreadFuture = CompletableFuture
                 .supplyAsync(() -> {
-                    R<Map<String, Object>> r = notificationFeignClient.getUnreadCount(userId);
-                    if (r != null && r.isSuccess() && r.getData() != null) {
-                        Object total = r.getData().get("total");
-                        return total != null ? ((Number) total).intValue() : 0;
+                    try {
+                        R<Map<String, Object>> r = notificationFeignClient.getUnreadCount(userId);
+                        if (r != null && r.isSuccess() && r.getData() != null) {
+                            Object total = r.getData().get("total");
+                            return total != null ? ((Number) total).intValue() : 0;
+                        }
+                    } catch (Exception e) {
+                        log.warn("[Feed] 获取未读通知数失败", e);
                     }
                     return 0;
                 }, aggregatorPool);
@@ -223,7 +233,7 @@ public class FeedService {
         return FeedVO.builder()
                 .notes(cards)
                 .nextCursor(minScore != null ? formatCursor(minScore) : null)
-                .hasMore(cards.size() >= requestSize)
+                .hasMore(hasMoreFromRedis)
                 .unreadCount(unreadCount)
                 .build();
     }

@@ -1,7 +1,7 @@
 # my-xhs 模块梳理交接文档
 
 > 更新时间：2026-07-29
-> 当前进度：11/16 模块完成
+> 当前进度：16/16 模块完成
 
 ---
 
@@ -52,21 +52,31 @@
 - 修复：uk_aggregate唯一约束→普通索引 + processWithAggregate重构为SETNX-first
 - XXL-Job: JobGroup=5(appname=my-xhs-notification), handler=unreadReconcileJob, job ID=5
 
+### 12-im — 即时通讯服务 ✅
+- 架构文档 + curl 测试（9 用例）+ 深度 4 篇（跨实例路由/一致性Hash/离线消息/WebSocket认证）
+- 修复：Feign URL override + LoadBalancer null 兜底
+- 发现：无效 Ticket 返回 HTTP 200 非 401；L14 ES traceId → 已修复（LOGSTASH appender 缺 includeMdcKeyName）
+
+### 13-home — 首页 BFF ✅
+- 架构文档 + curl 测试（7 用例）+ 深度 1 篇（推拉混合 Feed 模型）
+- 修复：Feign URL override ×9 + LoadBalancer null 兜底 + likesFuture/unreadFuture try-catch + hasMore 判定修正
+- 发现：hasMore 误报（已修）
+
+### 14-search — 搜索服务 ✅
+- 架构文档 + curl 测试（11 用例）+ 深度 3 篇（ES全文搜索/推荐Pipeline/热搜滑动窗口/索引同步）
+- 修复：ES _id 排序导致 all shards failed（已移除 _id tiebreaker）
+- 发现：中文参数需 URL encode（Tomcat URIEncoding 未配 UTF-8）
+
+### 15-common — 公共模块 ✅
+- 架构文档（无 curl 测试，JAR 库）
+
+### 16-gateway — API 网关 ✅
+- 架构文档 + curl 测试（7 用例）
+- 修复：新增 recommend-service 路由 + micrometer-registry-prometheus 依赖
+- 发现：recommend 路由缺失（已修）；Prometheus 0 行（已修）
 ---
 
-## 待梳理模块
-
-| 编号 | 模块 | 端口 | 关键特征 |
-|:--:|------|:--:|------|
-| 12 | im | 19014 | 即时通讯 |
-| 13 | home BFF | 19015 | 聚合层，Feign 调所有服务 |
-| 14 | search | 19016 | Elasticsearch 8.12 |
-| 15 | common | — | 公共模块 |
-| 16 | gateway | 19000 | HMAC 签名 |
-
----
-
-## 跨模块 Feign 调用现状
+## 修复汇总
 
 | 调用方 | 被调用方 | 修复状态 |
 |------|------|:--:|
@@ -76,7 +86,7 @@
 | order → payment | — | ✅ URL override |
 | payment → order | — | ⚠️ 待验证 |
 | notification → * | — | N/A（仅消费 MQ，无 Outbound Feign） |
-| home → 所有服务 | — | 待处理 |
+| home → 所有服务 | — | ✅ URL override |
 
 **Feign URL override 修复方式**：Spring Cloud 2023.0.1 + Nacos 2.3.0 的 LoadBalancer hashCode NPE bug，修复为 `spring.cloud.openfeign.client.config.{service}.url=http://localhost:{port}`。
 
@@ -99,6 +109,8 @@
 | notification | uk_aggregate唯一约束过严 | DROP UNIQUE → REGULAR INDEX |
 | notification | processWithAggregate INSERT先于SETNX | 重构为SETNX-first |
 | cart | Feign URL override | application.yml 1行 |
+| home | Feign URL override ×9 | application.yml |
+| home | LoadBalancer name null 兜底 | LeastConnectionsLoadBalancerConfig.java +1行 |
 
 ---
 
