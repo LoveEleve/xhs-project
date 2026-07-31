@@ -203,7 +203,7 @@ public class ProductSearchService extends AbstractSearchService {
             items.add(vo);
 
             if (hit.sort() != null && !hit.sort().isEmpty()) {
-                lastSearchAfter = JSON.toJSONString(hit.sort());
+                lastSearchAfter = serializeSearchAfter(hit.sort());
             }
         }
 

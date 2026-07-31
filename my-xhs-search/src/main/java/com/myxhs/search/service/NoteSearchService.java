@@ -200,7 +200,7 @@ public class NoteSearchService extends AbstractSearchService {
 
             // 记录最后一条的 sort values（用于下一页 Search After）
             if (hit.sort() != null && !hit.sort().isEmpty()) {
-                lastSearchAfter = JSON.toJSONString(hit.sort());
+                lastSearchAfter = serializeSearchAfter(hit.sort());
             }
         }
 

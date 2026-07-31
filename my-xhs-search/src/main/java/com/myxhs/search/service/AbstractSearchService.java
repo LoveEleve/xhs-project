@@ -27,6 +27,38 @@ import java.util.stream.Collectors;
 public abstract class AbstractSearchService {
 
     /**
+     * 序列化 Search After 游标（提取 FieldValue 实际值）
+     * <p>
+     * 修复：直接 JSON.toJSONString(hit.sort()) 会把 FieldValue 对象整体序列化
+     * （如 {"any":false,"double":true,"long":false,...}），
+     * 与 parseSearchAfter 期望的数字/字符串数组不匹配，导致翻页返回空。
+     * 必须提取 FieldValue 的实际值（double/long/string）后再序列化。
+     * </p>
+     */
+    protected String serializeSearchAfter(List<FieldValue> sortValues) {
+        if (sortValues == null || sortValues.isEmpty()) {
+            return null;
+        }
+        List<Object> values = sortValues.stream()
+                .map(this::extractFieldValue)
+                .collect(Collectors.toList());
+        return JSON.toJSONString(values);
+    }
+
+    /**
+     * 提取 FieldValue 的实际值
+     */
+    private Object extractFieldValue(FieldValue fv) {
+        if (fv == null) return null;
+        if (fv.isDouble()) return fv.doubleValue();
+        if (fv.isLong()) return fv.longValue();
+        if (fv.isString()) return fv.stringValue();
+        if (fv.isBoolean()) return fv.booleanValue();
+        if (fv.isNull()) return null;
+        return fv.toString();
+    }
+
+    /**
      * 解析 Search After 游标
      * <p>
      * 关键：区分 double 和 long 类型的 FieldValue。
