@@ -25,7 +25,6 @@ import java.util.Map;
 public class ReadWriteRoutingDataSourceConfig {
 
     @Bean
-    @Primary
     public DataSource masterDataSource(
             @Value("${spring.datasource.master.jdbc-url}") String masterUrl,
             @Value("${spring.datasource.master.username}") String masterUsername,
@@ -65,6 +64,7 @@ public class ReadWriteRoutingDataSourceConfig {
     }
 
     @Bean
+    @Primary
     public DataSource routingDataSource(DataSource masterDataSource, DataSource slaveDataSource) {
         ReadWriteRoutingDataSource routingDataSource = new ReadWriteRoutingDataSource();
 
