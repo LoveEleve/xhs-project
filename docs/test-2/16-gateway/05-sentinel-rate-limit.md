@@ -149,7 +149,29 @@ A: 当前本地规则在启动时重新加载（代码硬编码），不丢失�
 
 ## 生产实验
 
-当前 Gateway 规则未实际触发限流（正常 QPS 远低于阈值）。限流响应格式已验证：`{"code":429,"message":"请求过于频繁，请稍后再试","data":null}`。
+### 限流实测（2026-07-31）
+
+```
+并发 150 个请求打 user 路由（Redis RequestRateLimiter: replenish=50, burst=100）
+结果: 200 × 100 + 429 × 50 ✅
+（前 100 个消耗桶内令牌，后 50 个被拒——与 burstCapacity=100 精确吻合）
+```
+
+限流响应：`{"code":429,"message":"请求过于频繁，请稍后再试","data":null}`
+
+### 流量染色透传实测（2026-07-31）
+
+```
+带 X-Gray-Tag:gray / X-Api-Version:v2 / X-Pressure-Test:true 请求
+Gateway 日志:
+  [Gateway-染色] 拒绝外部IP伪造压测标记（127.0.0.1 非内网）✅
+  [Gateway-灰度] 灰度流量路由, grayTag=gray ✅
+  [Gateway-版本] API版本路由, apiVersion=v2 ✅
+内网 IP（10.0.0.5）压测标记 → 放行 ✅
+traceId: gateway=9d89e9e4... = user 服务日志 9d89e9e4...（跨服务透传）✅
+```
+
+Sentinel 规则（1000 QPS 级别）未实际触发——正常流量远低于阈值。
 
 ---
 

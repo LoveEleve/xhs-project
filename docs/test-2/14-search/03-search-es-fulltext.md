@@ -192,6 +192,18 @@ A: from/size 在深度翻页时性能恶化（ES 需要取 from+size 条再丢�
 修复前：所有搜索返回 500（`search_phase_execution_exception: all shards failed`）
 修复后：搜索正常返回，排序稳定。
 
+### Search After 翻页实测（2026-07-31）
+
+```
+ES 插入 5 条 status=1 测试笔记（noteId 90001-90005）
+第 1 页 size=2: [90001, 90004], searchAfter=[2.8552473,90004]
+第 2 页: [90002, 90005]
+第 3 页: [90003]
+3 页翻完 5 条，无重复 ✅
+```
+
+**修复记录**：原实现 `JSON.toJSONString(hit.sort())` 将 FieldValue 对象整体序列化（`{"any":false,"double":true,...}`），解析端无法还原 → 翻页返回空。新增 `serializeSearchAfter()` 提取实际值（double/long/string）后再序列化。
+
 ### 响应时间（单次测试）
 
 商品搜索 `took=6~69ms`（冷/热缓存差异）。ES 查询在缓存预热后稳定在 10ms 以内。

@@ -210,16 +210,26 @@ A: 全量重建期间 Canal 仍然在增量同步。全量重建写入的是重�
 
 ## 生产实验
 
-已验证：
-- ES note_index 存在 7 条文档 ✅
-- ES product_index 存在 1 条文档 ✅
-- 增量补偿 Job 代码逻辑已审查 ✅
-- 全量重建 Job 代码逻辑已审查 ✅
+### 增量同步实测（2026-07-31，Canal 修复后）
 
-未验证（需 Canal + RocketMQ 配合）：
-- Canal 消息消费 → 索引同步
-- ExternalGte 防乱序效果
-- 消费失败 → 补偿 Job 恢复
+```
+1. UPDATE t_note SET title='Canal修复验证-1785482601' WHERE id=2080205090016251906
+2. 10 秒内 ES note_index/_doc/2080205090016251906 title 同步 ✅
+3. UPDATE t_note SET status=-1 → ES status=-1（软删）✅
+4. 恢复数据，ES 同步回原值 ✅
+```
+
+**环境问题记录**：Canal 1.1.7 曾因 JDK 17 不兼容导致 binlog decoder 静默罢工（服务在跑但不下发事件）。中间件切换 Kona JDK 8 后恢复（见 docs/canal-issue.md）。
+
+### 全量重建
+
+- POST /api/search/index/rebuild 接口存在（无权限校验）
+- 全量重建 Job 代码逻辑已审查
+
+### 未实测
+
+- ExternalGte 防乱序效果（需构造乱序消息）
+- 消费失败 → 补偿 Job 恢复（需模拟 Consumer 故障）
 
 ---
 

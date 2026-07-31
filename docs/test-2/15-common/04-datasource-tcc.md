@@ -123,6 +123,31 @@ try {
 
 ---
 
+## 生产实验
+
+### 读写分离实测（2026-07-31）
+
+用 MySQL general log 实证（双库开启 general_log，触发查询后对比）：
+
+```
+SELECT t_chat_user_relation → 出现在从库 13310 ✅（主库无）
+INSERT/UPDATE t_chat_message → 出现在主库 13306 ✅（从库无）
+```
+
+**修复记录**：SQL 分析路由原本失效（`isReadOperation()` 无调用方 + `routingDataSource` 无 `@Primary`）。新增 `ReadWriteRoutingInterceptor`（Executor 层拦截）并修正 `@Primary` 后恢复。
+
+### TCC 实测（2026-07-31，sku_id=1）
+
+| 场景 | 结果 |
+|---|---|
+| Try（5件） | ✅ available 97→92, freezing 0→5, fence status=1 |
+| Confirm | ✅ freezing 5→0, fence status 1→2 |
+| 重复 Confirm | ✅ 不重复扣减（幂等） |
+| 空回滚（Cancel 先于 Try） | ✅ fence 直接 status=3 |
+| 悬挂（Try 后到） | ✅ 返回 false 拒绝，库存不变 |
+
+---
+
 ## 面试 Q&A
 
 **Q: 读写分离的主从延迟怎么处理？**
