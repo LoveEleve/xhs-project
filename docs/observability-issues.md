@@ -21,18 +21,26 @@
   ✅ SpringMVC | GET:/api/home/user/{targetUserId} | Entry
 ```
 
-## 遗留缺口（需中间件确认插件支持）
+## 遗留缺口（需中间件团队解决——SkyWalking 插件生态）
 
 ### 缺口 1：Feign 跨服务调用无 Exit span ❌
-- 项目 OpenFeign **feign-core 13.2.1**
-- SkyWalking 9.6.0 feign 插件最高支持 **11.x**（netflix feign v11）
-- Apache HC5 同步客户端（CloseableHttpClient）不被 apm-httpclient-5.x 覆盖（仅异步+Minimal）
-- 结果：home 聚合的 Feign 下游调用（user/content 等）无 span，跨服务链路不完整
+**项目侧事实**：
+- OpenFeign **feign-core 13.2.1**（SkyWalking 9.6.0 feign 插件最高支持 11.x）
+- home 配置 `spring.cloud.sentinel.feign.sentinel.enabled: true`（Sentinel Feign 包装）
+- fat jar 无 httpclient5（未用 Apache HC5，Feign 用内置 JDK 客户端）
+- agent 日志：`feign.Client$Default ... completely`（插件增强成功）
+- traceId 实证：home 聚合请求只有 1 个 SpringMVC Entry span，无 Feign Exit span
+
+**需中间件确认**：SkyWalking 对 OpenFeign 13.x + Sentinel Feign 包装的插件支持情况；是否有对应新插件（如 feign 12/13.x 插件）可下载替换。
 
 ### 缺口 2：Gateway（WebFlux）入口无 span ❌
-- spring-cloud-gateway-4.x 插件在 optional-plugins（未激活）
-- 激活后有 witness 失败（LocalResponseCacheAutoConfiguration.responseCacheSizeWeigher 不存在）
-- 疑似 Spring Cloud Gateway 版本与插件不匹配
+**项目侧事实**：
+- gateway 用 Spring Cloud Gateway（WebFlux）
+- spring-cloud-gateway-4.x 插件在 optional-plugins（已尝试激活）
+- 激活后 witness 失败：`LocalResponseCacheAutoConfiguration.responseCacheSizeWeigher does not exist`
+- 疑似 Spring Cloud Gateway 版本与插件 witness 不匹配
+
+**需中间件确认**：gateway 插件匹配的 Spring Cloud Gateway 版本；是否有新版插件。
 
 ## 已确认正常
 - Prometheus 16/16 UP
