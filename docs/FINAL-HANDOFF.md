@@ -9,9 +9,9 @@
 
 | 模块 | 端口 | 架构文档 | curl 测试 | 深度文档 | 状态 |
 |:--:|---|:--:|:--:|:--:|:--:|
-| 01-user | 19001 | ✅ | ✅ | 13 篇 | ✅ |
-| 02-content | 19002 | ✅ | ✅ | 13 篇 | ✅ |
-| 03-analytics | 19003 | ✅ | ✅ | 8 篇 | ✅ |
+| 01-user | 19001 | ✅ | ✅ | — | ✅ |
+| 02-content | 19002 | ✅ | ✅ | 11 篇 | ✅ |
+| 03-analytics | 19003 | ✅ | ✅ | 9 篇 | ✅ |
 | 04-counter | 19004 | ✅ | ✅ | 5 篇 | ✅ |
 | 05-product | 19006 | ✅ | ✅ | 5 篇 | ✅ |
 | 06-cart | 19008 | ✅ | ✅ | 6 篇 | ✅ |
@@ -26,7 +26,8 @@
 | 15-common | — | ✅ | — | 5 篇 | ✅ |
 | 16-gateway | 19000 | ✅ | ✅ | 3 篇 | ✅ |
 
-文档位置：`docs/test-2/{NN}-{module}/`（01 架构文档 / 02 测试记录 / 03+ 深度文档）
+文档位置：`docs/test-2/{NN}-{module}/`（01 架构文档 / 02 测试记录 / 03+ 深度文档；common 无测试记录，深度从 02 起）
+注：深度文档数量以实际目录文件为准（2026-08-01 核对）。
 
 ---
 
@@ -99,7 +100,7 @@ agent 插件改动：
 
 | 问题 | 状态 | 处理 |
 |---|---|---|
-| Gateway 转发（route 级）链路 | ❌ SCG 4.1.2 无 `responseCacheSizeWeigher`（4.2+ 才有），gateway-4.x 插件 witness 盲区 | 对方代报 apache/skywalking-java issue；本地编译插件待定 |
+| Gateway 转发（route 级）链路 | ❌ SCG 4.1.2 无 `responseCacheSizeWeigher`（4.2+ 才有），gateway-4.x 插件 witness 盲区。**入口已恢复**（webflux-6 兜底，`[Entry] spring-webflux` 实证），缺的是转发 Exit + sw8 传播 | 对方代报 apache/skywalking-java issue；本地编译插件待定 |
 | 时区不统一 | ⚠️ 业务机 CST / OAP UTC（time_bucket 按 UTC） | 查询/告警注意时区换算；建议统一 |
 | payment→order Feign | ⚠️ 待验证 | HANDOFF.md 既有项 |
 
@@ -107,6 +108,7 @@ agent 插件改动：
 1. queryBasicTraces 返回 segmentId，**traceId 在 traceIds 字段**
 2. Redisson 噪音占满分页 → 缩小时间窗口（1 分钟级）+ pageSize 2000+
 3. 查询窗口用 **UTC**（OAP 按 UTC 存 time_bucket）
+4. agent 日志在 `/tmp/sw-logs/{模块名}/skywalking-api.log`（启动参数 -Dskywalking.logging.dir）
 
 ---
 
@@ -122,7 +124,7 @@ agent 插件改动：
 | MySQL | 13306/13307/13308/13309 | root / Xhs@2026#MySQL |
 | Redis | 16379(master)/16380/16381 | Xhs@2026#Redis |
 | ES 业务 | 19200 | elastic / Xhs@2026#Elastic |
-| ES SkyWalking | **19201** | 见 OAP 环境变量 |
+| ES SkyWalking | **19201** | 凭据在 OAP 环境变量 SW_STORAGE_ES_USERNAME/PASSWORD |
 | Nacos | 18848 (namespace=my-xhs) | |
 | RocketMQ | 9876;9877 | |
 | XXL-Job | 18080 | admin/123456 |
@@ -130,7 +132,9 @@ agent 插件改动：
 | Prometheus | 19090 | |
 | Grafana | 13000 | admin/Xhs@2026#Admin |
 | SkyWalking OAP | 8080 (gRPC 11800) | |
-| Canal | 8080（Kona JDK 8 运行） | canal / Canal@2026#Sync |
+| Canal | 默认 11111（TCP server） | canal / Canal@2026#Sync |
+
+**SSH 到中间件机**：`ssh -p 36000 21.130.247.89`（服务机 21.214.97.212 已加白名单）
 
 ### 5.3 Canal 状态（2026-07-31 修复）
 - 根因：Canal 1.1.7 + JDK 17 不兼容 → binlog decoder 静默罢工
