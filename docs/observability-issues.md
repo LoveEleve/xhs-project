@@ -1,37 +1,39 @@
 # 可观测性问题清单 — 给中间件团队
 
 > 验证日期：2026-07-31
-> 状态：**基本闭环**，遗留 gateway 转发盲区（2026-08-01）
+> 状态：**全部闭环**（2026-08-01）
 
 ---
 
-## 已解决 ✅
+## 全部已解决 ✅
 
-### SkyWalking HTTP 链路
-- 根因：时区差 8h + 无业务流量 + springmvc 3/4/5/6 共存冲突 + Redisson 噪音占满分页
-- 修复：移走 v3/4/5 插件 + `SW_MOUNT_FOLDERS=plugins,activations,bootstrap-plugins`（jdk-http 兜底）+ webflux-6 插件移入
-- **验证（完整跨服务链路 22 span）**：
+### SkyWalking 全链路（含 refs 跨进程/跨线程引用）
+- 根因：时区差 8h + 无业务流量 + springmvc 3/4/5/6 共存冲突 + Redisson 噪音占满分页 + refs 解包字段号误判
+- 修复：移走 v3/4/5 插件 + `SW_MOUNT_FOLDERS=plugins,activations,bootstrap-plugins` + webflux-6 插件移入
+- **最终实证（22 span，4 服务贯通，refs 完整）**：
 ```
-traceId: 3696c8ed7b034096be6f2a345387e8cc.243.17855657430750015
+traceId: 3696c8ed7b034096be6f2a345387e8cc.240.17855678610420037
   [Entry] SpringMVC my-xhs-home GET:/api/home/user/{targetUserId}
-  [Exit]  Feign    my-xhs-home /api/user/10001/info        ← home→user
-  [Entry] SpringMVC my-xhs-user GET:/api/user/{userId}/info
-  [Exit]  Feign    my-xhs-home /api/counter/batch-get      ← home→counter
-  [Entry] SpringMVC my-xhs-counter POST:/api/counter/batch-get
-  [Exit]  Feign    my-xhs-home /api/note/user/10001        ← home→content
-  [Entry] SpringMVC my-xhs-content GET:/api/note/user/{userId}
-  + Lettuce/MySQL/HikariCP/JdkThreading 完整调用链
+  [Exit]  Feign    my-xhs-home /api/user/10001/info   ←home→user
+  [Entry] SpringMVC my-xhs-user GET:/api/user/{userId}/info  ←CROSS_PROCESS refs ✅
+  [Exit]  Feign    my-xhs-home /api/counter/batch-get ←home→counter
+  [Entry] SpringMVC my-xhs-counter POST:/api/counter/batch-get ←CROSS_PROCESS ✅
+  [Exit]  Feign    my-xhs-home /api/note/user/10001   ←home→content
+  [Entry] SpringMVC my-xhs-content GET:/api/note/user/{userId} ←CROSS_PROCESS ✅
+  + JdkThreading SwRunnableWrapper ←CROSS_THREAD ✅（线程传播）
+  + SwCallableWrapper ←CROSS_THREAD ✅（mybatis 线程）
+  + Lettuce/MySQL/HikariCP 完整调用链
 ```
+
+### Gateway 入口（webflux 兜底）
+- `apm-spring-webflux-6.x-plugin` 移入 plugins → `[Entry] spring-webflux my-xhs-gateway` ✅
+
+### 遗留：Gateway 转发（route 级）链路
+- SCG 4.1.2 无 `responseCacheSizeWeigher`（4.2+ 才有），gateway-4.x 插件 witness 盲区
+- 对方已代报 apache/skywalking-java issue（B-1 方案）
 
 ### Prometheus / Grafana / Logstash→ES
 - Prometheus 16/16 UP、Grafana 4 面板 + ES 日志、traceId 精确检索
-
-## 遗留：Gateway 转发链路 ❌（中间件确认的 witness 盲区）
-
-- SCG 4.1.2 的 `LocalResponseCacheAutoConfiguration` **无 `responseCacheSizeWeigher` 方法**（4.2+ 才有）
-- gateway-4.x 插件按 4.2/4.3 编译，witness 硬性 AND 不满足 → 插件整体不激活
-- 结果：gateway 入口有 webflux span，但**转发 Exit + sw8 传播缺失**
-- 处理：对方代报 apache/skywalking-java issue，或出针对 4.1.x 的本地编译插件
 
 ## 已确认正常
 - Prometheus 16/16 UP
