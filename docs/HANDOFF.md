@@ -1,6 +1,6 @@
 # my-xhs 模块梳理交接文档
 
-> 更新时间：2026-07-29
+> 更新时间：2026-08-01
 > 当前进度：16/16 模块完成
 
 ---
@@ -58,20 +58,21 @@
 - 发现：无效 Ticket 返回 HTTP 200 非 401；L14 ES traceId → 已修复（LOGSTASH appender 缺 includeMdcKeyName）
 
 ### 13-home — 首页 BFF ✅
-- 架构文档 + curl 测试（7 用例）+ 深度 1 篇（推拉混合 Feed 模型）
+- 架构文档 + curl 测试（7 用例）+ 深度 3 篇（推拉混合 Feed 模型/2层并行聚合+动态超时/MQ写扩散+断点续推）
 - 修复：Feign URL override ×9 + LoadBalancer null 兜底 + likesFuture/unreadFuture try-catch + hasMore 判定修正
 - 发现：hasMore 误报（已修）
 
 ### 14-search — 搜索服务 ✅
-- 架构文档 + curl 测试（11 用例）+ 深度 3 篇（ES全文搜索/推荐Pipeline/热搜滑动窗口/索引同步）
-- 修复：ES _id 排序导致 all shards failed（已移除 _id tiebreaker）
+- 架构文档 + curl 测试（11 用例）+ 深度 4 篇（ES全文搜索/推荐Pipeline/热搜滑动窗口/索引同步）
+- 修复：ES _id 排序导致 all shards failed（已移除 _id tiebreaker）+ Search After 序列化（serializeSearchAfter）
 - 发现：中文参数需 URL encode（Tomcat URIEncoding 未配 UTF-8）
 
 ### 15-common — 公共模块 ✅
-- 架构文档（无 curl 测试，JAR 库）
+- 架构文档 + 深度 5 篇（TraceId全链路/注解AOP/读写分离+TCC/号段ID/Zone多活）
+- 修复：读写分离 SQL 分析路由失效（ReadWriteRoutingInterceptor + @Primary 修正）
 
 ### 16-gateway — API 网关 ✅
-- 架构文档 + curl 测试（7 用例）
+- 架构文档 + curl 测试（7 用例）+ 深度 3 篇（HMAC签名/JWT+过滤器链/Sentinel限流）
 - 修复：新增 recommend-service 路由 + micrometer-registry-prometheus 依赖
 - 发现：recommend 路由缺失（已修）；Prometheus 0 行（已修）
 ---
@@ -111,6 +112,13 @@
 | cart | Feign URL override | application.yml 1行 |
 | home | Feign URL override ×9 | application.yml |
 | home | LoadBalancer name null 兜底 | LeastConnectionsLoadBalancerConfig.java +1行 |
+| common | 读写分离 SQL 分析路由失效 | 新建 ReadWriteRoutingInterceptor.java |
+| common | routingDataSource 无 @Primary | ReadWriteRoutingDataSourceConfig.java |
+| search | ES _id 排序 → all shards failed | NoteSearchService/ProductSearchService |
+| search | Search After FieldValue 序列化 | AbstractSearchService.java serializeSearchAfter |
+| gateway | recommend 路由缺失 | application.yml |
+| gateway | Prometheus 缺 micrometer 依赖 | pom.xml |
+| 15 模块 | LOGSTASH appender 缺 includeMdcKeyName | logback-spring.xml |
 
 ---
 
@@ -121,15 +129,18 @@
 - **SSH to 中间件**: `ssh -p 36000 21.130.247.89`（21.214.97.212 已加白名单，2026-07-29）
 - MySQL: 13306/13307/13308/13309
 - Redis: 16379(Sentinel master) / 16380(Cache, allkeys-lru) / 16381(Business, noeviction)
-- ES: 19200 (elastic/Xhs@2026#Elastic) — traceId 作为独立字段索引（Logstash grok 2026-07-29修复）
+- ES: 19200 (elastic/Xhs@2026#Elastic) — traceId 作为独立字段索引（logback includeMdcKeyName 修复）
+- **ES SkyWalking: 19201**（凭据在 OAP 环境变量 SW_STORAGE_ES_*）
 - Nacos: 18848 (namespace=my-xhs)
 - RocketMQ NS: 9876;9877
 - XXL-Job Admin: 18080 (admin/123456)
 - Sentinel Dashboard: 8858 (sentinel/sentinel)
 - Prometheus: 19090
 - Grafana: 13000 (admin/Xhs@2026#Admin)
-- SkyWalking UI: 8080
-- Logstash→ES: myxhs-logs-YYYY.MM.DD (traceId grok已启用)
+- SkyWalking: UI 8080 / gRPC 11800 / OAP 9.7.0 / Agent 9.6.0
+- Logstash→ES: myxhs-logs-YYYY.MM.DD
+- Canal: 默认 11111（Kona JDK 8 运行）
+- **时区注意**: 业务机 CST / OAP 按 UTC 存 time_bucket，SkyWalking 查询用 UTC 窗口
 
 ---
 

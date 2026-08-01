@@ -92,7 +92,7 @@ agent 插件改动：
   备份：/tmp/springmvc-bak/
 ```
 
-**启动脚本**：`/tmp/restart-all-v3.sh`（15 服务一键重启）
+**启动脚本**：`/data/workspace/my-xhs/scripts/restart-all-skywalking.sh`（15 服务一键重启，含 SkyWalking agent 参数）
 
 ---
 
