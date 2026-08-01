@@ -1,46 +1,37 @@
 # 可观测性问题清单 — 给中间件团队
 
 > 验证日期：2026-07-31
-> 状态：**主链路闭环**，遗留 2 个插件覆盖缺口（2026-08-01）
+> 状态：**基本闭环**，遗留 gateway 转发盲区（2026-08-01）
 
 ---
 
-## 问题 1：SkyWalking HTTP 链路 — 已解决 ✅
+## 已解决 ✅
 
-**根因**：
-1. 时区差 8 小时（业务机 CST / OAP UTC），UI 查错时间段
-2. 无真实业务 HTTP 流量（只有 Redisson/定时任务/actuator）
-3. springmvc 3/4/5/6.x 同系列插件共存时 v6 未注册（移走 v3/v4/v5 后激活）
-4. queryBasicTraces 列表被 Redisson 噪音占满分页（缩小窗口+加大 pageSize 可翻到）
-
-**验证（traceId 实证）**：
+### SkyWalking HTTP 链路
+- 根因：时区差 8h + 无业务流量 + springmvc 3/4/5/6 共存冲突 + Redisson 噪音占满分页
+- 修复：移走 v3/4/5 插件 + `SW_MOUNT_FOLDERS=plugins,activations,bootstrap-plugins`（jdk-http 兜底）+ webflux-6 插件移入
+- **验证（完整跨服务链路 22 span）**：
 ```
-82e94fc00b0f43b8bc1e93a37e64f78d.153.17855002004280015（user）
-  ✅ SpringMVC | GET:/api/user/{userId}/info | Entry
-40e6df72ba9441c88adac783c92fd7a3.207.17855551599440001（home 聚合）
-  ✅ SpringMVC | GET:/api/home/user/{targetUserId} | Entry
+traceId: 3696c8ed7b034096be6f2a345387e8cc.243.17855657430750015
+  [Entry] SpringMVC my-xhs-home GET:/api/home/user/{targetUserId}
+  [Exit]  Feign    my-xhs-home /api/user/10001/info        ← home→user
+  [Entry] SpringMVC my-xhs-user GET:/api/user/{userId}/info
+  [Exit]  Feign    my-xhs-home /api/counter/batch-get      ← home→counter
+  [Entry] SpringMVC my-xhs-counter POST:/api/counter/batch-get
+  [Exit]  Feign    my-xhs-home /api/note/user/10001        ← home→content
+  [Entry] SpringMVC my-xhs-content GET:/api/note/user/{userId}
+  + Lettuce/MySQL/HikariCP/JdkThreading 完整调用链
 ```
 
-## 遗留缺口（需中间件团队解决——SkyWalking 插件生态）
+### Prometheus / Grafana / Logstash→ES
+- Prometheus 16/16 UP、Grafana 4 面板 + ES 日志、traceId 精确检索
 
-### 缺口 1：Feign 跨服务调用无 Exit span ❌
-**项目侧事实**：
-- OpenFeign **feign-core 13.2.1**（SkyWalking 9.6.0 feign 插件最高支持 11.x）
-- home 配置 `spring.cloud.sentinel.feign.sentinel.enabled: true`（Sentinel Feign 包装）
-- fat jar 无 httpclient5（未用 Apache HC5，Feign 用内置 JDK 客户端）
-- agent 日志：`feign.Client$Default ... completely`（插件增强成功）
-- traceId 实证：home 聚合请求只有 1 个 SpringMVC Entry span，无 Feign Exit span
+## 遗留：Gateway 转发链路 ❌（中间件确认的 witness 盲区）
 
-**需中间件确认**：SkyWalking 对 OpenFeign 13.x + Sentinel Feign 包装的插件支持情况；是否有对应新插件（如 feign 12/13.x 插件）可下载替换。
-
-### 缺口 2：Gateway（WebFlux）入口无 span ❌
-**项目侧事实**：
-- gateway 用 Spring Cloud Gateway（WebFlux）
-- spring-cloud-gateway-4.x 插件在 optional-plugins（已尝试激活）
-- 激活后 witness 失败：`LocalResponseCacheAutoConfiguration.responseCacheSizeWeigher does not exist`
-- 疑似 Spring Cloud Gateway 版本与插件 witness 不匹配
-
-**需中间件确认**：gateway 插件匹配的 Spring Cloud Gateway 版本；是否有新版插件。
+- SCG 4.1.2 的 `LocalResponseCacheAutoConfiguration` **无 `responseCacheSizeWeigher` 方法**（4.2+ 才有）
+- gateway-4.x 插件按 4.2/4.3 编译，witness 硬性 AND 不满足 → 插件整体不激活
+- 结果：gateway 入口有 webflux span，但**转发 Exit + sw8 传播缺失**
+- 处理：对方代报 apache/skywalking-java issue，或出针对 4.1.x 的本地编译插件
 
 ## 已确认正常
 - Prometheus 16/16 UP
