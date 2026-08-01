@@ -1,7 +1,7 @@
 # 可观测性问题清单 — 给中间件团队
 
 > 验证日期：2026-07-31
-> 状态：**全部闭环**（2026-08-01）
+> 状态：**主链路闭环**，遗留 2 个插件覆盖缺口（2026-08-01）
 
 ---
 
@@ -11,24 +11,35 @@
 1. 时区差 8 小时（业务机 CST / OAP UTC），UI 查错时间段
 2. 无真实业务 HTTP 流量（只有 Redisson/定时任务/actuator）
 3. springmvc 3/4/5/6.x 同系列插件共存时 v6 未注册（移走 v3/v4/v5 后激活）
+4. queryBasicTraces 列表被 Redisson 噪音占满分页（缩小窗口+加大 pageSize 可翻到）
 
 **验证（traceId 实证）**：
 ```
-82e94fc00b0f43b8bc1e93a37e64f78d.153.17855002004280015
-  ✅ SpringMVC | my-xhs-user | GET:/api/user/{userId}/info | Entry
-  ✅ Lettuce   | my-xhs-user | Lettuce/GET                  | Exit
+82e94fc00b0f43b8bc1e93a37e64f78d.153.17855002004280015（user）
+  ✅ SpringMVC | GET:/api/user/{userId}/info | Entry
+40e6df72ba9441c88adac783c92fd7a3.207.17855551599440001（home 聚合）
+  ✅ SpringMVC | GET:/api/home/user/{targetUserId} | Entry
 ```
 
-**agent 配置**：9.6.0 + springmvc-annotation-6.x（plugins 目录，与 OAP 9.7.0 兼容）
-**服务名**：-Dskywalking.agent.service_name（15 服务已配）
+## 遗留缺口（需中间件确认插件支持）
 
-## 问题 2：Prometheus 自身抓取 DOWN — 已解决 ✅
+### 缺口 1：Feign 跨服务调用无 Exit span ❌
+- 项目 OpenFeign **feign-core 13.2.1**
+- SkyWalking 9.6.0 feign 插件最高支持 **11.x**（netflix feign v11）
+- Apache HC5 同步客户端（CloseableHttpClient）不被 apm-httpclient-5.x 覆盖（仅异步+Minimal）
+- 结果：home 聚合的 Feign 下游调用（user/content 等）无 span，跨服务链路不完整
 
-prometheus.yml 自监控 target 改为 127.0.0.1:19090 后 16/16 UP。
+### 缺口 2：Gateway（WebFlux）入口无 span ❌
+- spring-cloud-gateway-4.x 插件在 optional-plugins（未激活）
+- 激活后有 witness 失败（LocalResponseCacheAutoConfiguration.responseCacheSizeWeigher 不存在）
+- 疑似 Spring Cloud Gateway 版本与插件不匹配
 
-## 问题 3：Kibana 未部署 — 已用 Grafana 替代 ✅
-
-Grafana Elasticsearch-Logs 数据源补 ES 密码，日志可查（含 traceId 精确检索）。
+## 已确认正常
+- Prometheus 16/16 UP
+- Grafana 4 面板 + ES 日志（traceId 精确检索）
+- Logstash→ES traceId
+- SkyWalking：HTTP 入口 / Redis / DB / 定时任务 span ✅
+- agent 9.6.0 + OAP 9.7.0 兼容 ✅
 
 ---
 
