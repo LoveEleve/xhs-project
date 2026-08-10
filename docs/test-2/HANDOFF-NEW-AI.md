@@ -94,11 +94,67 @@ docs/test-2/
 | 时间戳碰撞 | C-05 !isBefore同毫秒跳过 | 检查事件时间戳是否单调 |
 | switch-case返回语义不一致 | 折扣券case 2返回折后价vs case 1/3返回减免 | 检查所有分支返回值语义 |
 
+### 2.4 本会话关键教训（新AI必须内化）
+
+| # | 教训 | 实例 |
+|:--:|------|------|
+| 1 | **按微服务模块拆分，不按业务链** | 初始按7链拆分→遗漏inventory/counter/home/search四个独立服务(41端点) |
+| 2 | **审查必须对照链1逐维度** | 单看product architecture 63行觉得"比user简单所以OK"→实际缺Controller表+数据流+RedisKey清单 |
+| 3 | **格式全对≠代码没问题** | 链1-5全部7章模板通过→代码深审发现46项实际缺陷 |
+| 4 | **grep-only审查=假审查** | grep统计章节数全绿→用户两次"不要糊弄我"纠正→逐行Read发现内容问题 |
+| 5 | **修复方案需两轮验证** | fix-plan.md初版3处方案错误(调不存在Bean/加不必要API/依赖不存在代码)→用户纠正执行前对照代码验证 |
+| 6 | **INTERNAL_TOKEN不能改空默认** | adminToken改了空默认(fail-closed)是正确的，但INTERNAL_TOKEN空默认会导致全部Feign调用403 |
+| 7 | **多Agent并行写文档产生系统性缺陷** | 分析文档空洞(1行/0节占位符)、端点文件缺章节、重复文件——单Agent顺序写更可靠 |
+| 8 | **"内部端点"≠不列出** | MQ Consumer是内部触发逻辑(不独立列)，但独立REST服务(如inventory有10个@Mapping端点)必须完全制档 |
+
 ---
 
-## 三、配置统一标准（部署时必须）
+## 三、环境速查
 
-### 3.1 全局配置值
+### 3.1 微服务端口 + 特殊JVM参数
+
+| 服务 | 端口 | 特殊JVM参数 | 原因 |
+|------|:--:|------|------|
+| gateway | 19000 | — | 唯一入口 |
+| user | 19001 | — | |
+| content | 19002 | — | |
+| analytics | 19003 | **`-Dmanagement.admin-token=my-xhs-admin-token-2026`** | 缺参数启不来/端点403 |
+| counter | 19004 | — | |
+| order | 19005 | — | |
+| product | 19006 | — | |
+| coupon | 19007 | — | |
+| cart | 19008 | — | |
+| payment | 19009 | — | pay.type=mock(默认) |
+| inventory | 19010 | — | |
+| notification | 19013 | **`--spring.profiles.active=dev`** | 缺参数T09 404 |
+| im | 19014 | **`-Djwt.secret=MyXhs@2026#JwtSecretKey!ForTokenSign`** (≥256位) | 缺参数W01 500 |
+| home | 19015 | — | |
+| search | 19016 | — | |
+
+### 3.2 中间件端口
+
+```
+MySQL:    3306(Master) 3307(Slave,GTID)
+Redis:    6379(Master) 6380(Slave) 26379(Sentinel)
+RocketMQ: 9876(NS) 11911(Broker) 18081(Dashboard)
+ES:       19200(业务,IK) 19201(SkyWalking存储)
+Nacos:    18848  |  Sentinel Dashboard: 8858  |  XXL-Job: 18080
+SkyWalking:11800(gRPC) 12800(OAP-HTTP) 8080(UI)
+Prometheus:19090 | Grafana: 13000 | VictoriaMetrics: 8428
+Logstash: 15044(tcp) 15045(beats) | Kibana: 15601
+```
+
+### 3.3 测试数据
+
+| 数据 | 值 | 用途 |
+|------|------|------|
+| 测试用户 | chaintest_u1 / Test@123456 | 链1注册 |
+| 第二用户 | chaintest_u2 / Test@123456 | block/关注测试 |
+| Token获取 | `cat /tmp/test_token.txt` (30min过期) | 链1 U03登录 |
+| ADMIN_TOKEN | `my-xhs-admin-token-2026`(环境变量注入) | 管理端点 |
+| INTERNAL_TOKEN | `my-xhs-internal-token-2026` | 内部端点 |
+
+### 3.4 全局配置值
 
 | 配置 | 值 | 位置 |
 |------|------|------|
@@ -108,7 +164,7 @@ docs/test-2/
 | delayLevel | `${order.close.delay-level:16}` (16=30min, 5=1min测试) | OrderService |
 | flatMessage | `false` | canal.properties |
 
-### 3.2 部署后验证清单
+### 3.5 部署后验证清单
 
 ```bash
 # 1. Nacos 15服务
