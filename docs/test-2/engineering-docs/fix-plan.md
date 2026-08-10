@@ -64,41 +64,47 @@ versionCheckScript.execute(versionKey, newVersion);
 
 ---
 
-### 3. Content P0-5: FollowService 双计数key体系统一
+### 3. Content P0-5: FollowService 双计数 key 体系分离
 
-**问题**: analytics维护`myxhs:counter:user_following:{userId}`, counter维护`myxhs:counter:2:{userId}:7`
-两套key独立更新→UserProfileAgg读analytics、计数器查询读counter→数据不一致(最多1小时)
+**问题**: analytics 维护 `myxhs:counter:user_following:{userId}`(Lua直接INCR/DECR) 
+vs counter 维护 `myxhs:counter:2:{userId}:7`(MQ异步)
+→ 一小时对账同步间歇期, 读取 analytics key 和 counter 服务返回不一致数据
 
-**方案**: follow/unfollow后不再独立维护analytics侧计数key, 统一从counter服务读取
+**方案**: `getFollowerCount/getFollowingCount` 改为从 counter 服务读取
 
 **涉及文件**:
-- `FollowService.java:82,99` — 删除Lua中的counter key更新行
-- `FollowService.java:434` — 删除syncCountersToCounterModule调用(或改为trigger counter refresh)
-- `UserProfileAggService.java:140` — 粉丝/关注数改为从counter服务查询
+- `FollowService.java:363-372` — getFollowerCount/getFollowingCount 改为 Feign → counter 服务
+- 保留Lua侧的分析本地key: 作为快速缓存在已存在的无鉴权接口中使用(不删)
+- 新增: counter 服务的 counterController 提供 Feign 接口
 
-**风险**: 需要counter服务提供批量查询接口(当前已有`batch-get`)
-**验证**: 关注→立即查两个入口→确认数值一致(不再依赖1小时对账)
+**备选(更低风险)**: 
+- 不改读路径, 改为 follow/unfollow 之后立即同步计数器到 counter 服务
+- 加 `@XxlJob("followCounterImmediateSync")` 每 30 秒执行一次(缩小1小时窗口)
+
+**风险**: 改为从 counter Feign 调用→新增微服务依赖→性能影响(per follow/unfollow)
+**建议**: 采用备选方案——保留 analytics 本地 key + 频繁同步至 counter 服务
 
 ---
 
 ### 4. Content P0-9: NOTE_DELETE 无人消费
 
-**问题**: `NoteService.publishNote`发送`SOCIAL_TOPIC:NOTE_DELETE`但全项目无消费者
-→已删除笔记ID残留inbox/outbox ZSet达7天→Feed分页污染
+**问题**: `NoteService` 发送 `SOCIAL_TOPIC:NOTE_DELETE` 但全项目无消费者
+→ 已删除笔记留在作者发件箱 → 新关注者通过 outbox 拉取可见
 
-**方案**: 在home服务新增`NoteDeleteConsumer`
+**方案**: 在 home 服务新增 `NoteDeleteConsumer`, 仅清理作者发件箱 ZREM
 
 **涉及文件**:
-- 新建 `home/consumer/NoteDeleteConsumer.java` — 监听`SOCIAL_TOPIC:NOTE_DELETE`
-- `NoteDeleteConsumer`逻辑:
+- 新建 `home/consumer/NoteDeleteConsumer.java` — 监听 `SOCIAL_TOPIC:NOTE_DELETE`
+- `NoteDeleteConsumer` 逻辑:
   ```
-  for each follower:
-    ZREM myxhs:feed:inbox:{followerId} noteId
-  ZREM myxhs:feed:outbox:{authorId} noteId
+  ZREM myxhs:feed:outbox:{authorId} noteId  // 防止新关注者拉取
+  // 粉丝 inbox 残留靠 7 天 TTL 自然过期, FeedCleanupJob 辅助清理
   ```
 
-**风险**: 大V有海量粉丝时ZREM开销大→需异步批量处理+限流
-**验证**: 创建笔记→确认Feed可见→删除笔记→等5秒→Feed不再出现
+**为什么不清 inbox**: DELETE 消费者没有关注列表, 无法遍历所有粉丝做 ZREM
+**inbox 残留处理**: 粉丝读 Feed 遇到已删笔记→`getNoteDetail` 返回 NOT_FOUND → 前端隐藏
+**风险**: 大V outbox 删除有短暂窗口期(未消费即被删除) — 可接受(比永久残留好)
+**验证**: 创建笔记→确认 Feed 可见→删除笔记→等 5 秒→新用户拉取该大V Feed→不含已删笔记
 
 ---
 
@@ -107,27 +113,27 @@ versionCheckScript.execute(versionKey, newVersion);
 **问题**: 关单先赢(status 0→4)→支付回调`appendEvent`抛异常→支付单已标记成功(钱已扣)
 订单已取消→**无自动退款**
 
-**方案**: `onPaymentSuccess`捕获并发冲突异常→调支付服务发起自动退款
+**方案**: `onPaymentSuccess`捕获并发冲突异常→不抛异常(防payment侧无限重试)→记录告警+交由对账链路处理退款
 
 **涉及文件**:
-- `OrderService.java:561-589` — onPaymentSuccess增加并发冲突处理
-- `PaymentService.java` — 已有refund方法,可直接调用
+- `OrderService.java:561-589` — onPaymentSuccess增加并发冲突捕获
 
-**修复伪代码**:
+**修复**:
 ```java
 try {
     orderEventService.appendEvent(orderId, OrderEventType.ORDER_PAID);
     orderMapper.setPaidAt(orderId, now);
 } catch (IllegalStateException | IllegalArgumentException e) {
-    // 并发: 订单已被关单/取消→发起自动退款
-    log.warn("[支付] 订单状态已变(关单/取消), 发起自动退款: orderId={}", orderId);
-    paymentFeignClient.refund(orderId, payAmount);  // 使用已有退款接口
-    return;
+    // 并发: 关单先赢→支付已成功(钱已扣)但订单已取消
+    // 不抛异常: 抛异常→payment侧误判"通知失败"→无限重试→P0-6循环
+    log.error("[支付] 竞态: 支付成功但订单已取消, 需人工/对账退款: orderId={}", orderId, e);
+    return;  // 静默返回, 由 PaymentNotifyCompensateJob+P0-6修复后的补偿链路处理
 }
 ```
 
-**风险**: 退款Feign失败→需发补偿消息ORDER_COMPENSATION_TOPIC兜底
-**验证**: Mock pay.create并发→确认自动退款触发+退款状态正确
+**关键**: `return`而非`throw` — 不抛异常避免payment侧触发P0-6无限循环
+**退款路径**: P0-6修复后→补偿任务检测支付成功+订单已取消→触发退款
+**验证**: Mock pay.create并发+延时关单→确认日志记录竞态+无无限重试
 
 ---
 
@@ -136,51 +142,37 @@ try {
 **问题**: PaymentNotifyCompensateJob每2分钟扫描`paid_at < now-5min`→调用`notifyPaySuccess`
 →OrderService.getOrderPayAmount不校验状态(对已支付/已取消都返回金额)→永远判定"待支付"→无限循环
 
-**方案**:
-- 补偿任务持久化"已通知"标记(Redis SET `myxhs:payment:notified:{orderId}` TTL 1h)
-- OrderService增加真正的状态查询接口`isOrderPendingPayment(orderId)`
+**方案**: 补偿任务持久化"已通知"标记(Redis SET `myxhs:payment:notified:{orderId}` TTL 1h)
+→无需新增 API 端点(notifyPaySuccess 本身幂等,多次调用无害)
 
 **涉及文件**:
 - `PaymentNotifyCompensateJob.java:87-93` — 增加已通知检查
 - `RefundNotifyCompensateJob.java:82-91` — 同上
-- `OrderService.java` — 新增`isOrderPendingPayment`方法
 
-**修复**: 
+**修复伪代码**:
 ```java
-// 补偿任务
+// 每条记录处理前
 String notifiedKey = "myxhs:payment:notified:" + record.orderId();
 if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(notifiedKey))) continue;
-
-R<Boolean> pending = orderFeignClient.isOrderPendingPayment(record.orderId());
-if (pending.isSuccess() && !pending.getData()) continue;
 
 orderFeignClient.notifyPaySuccess(record.orderId(), record.paymentNo());
 stringRedisTemplate.opsForValue().set(notifiedKey, "1", Duration.ofHours(1));
 ```
 
-**风险**: Redis不可用时已通知标记丢失→重复通知→幂等消费端兜底 ✅
-**验证**: 监控日志确认补偿任务不再对同一订单重复调用
+**风险**: Redis不可用时`hasKey`返回false→重复通知→notifyPaySuccess幂等(乐观锁WHERE status=0)→无害 ✅
+**验证**: 日志确认补偿任务对同一订单仅通知一次
 
 ---
 
 ### 7. Order P0-2(补充): 重复支付 — Order状态校验
 
-**问题**: P0-2已修(支付成功key去TTL), 但order状态校验链仍缺失
-pay时应Feign调order确认订单仍待支付(status=0)
+**问题**: P0-2已修(支付成功key去TTL), 但order状态校验仍缺失
 
-**涉及文件**:
-- `PaymentService.java:135-138` — pay时增加order状态验证
+**方案**: pay时通过已有`getOrderPayAmount`+检查返回金额>0间接验证订单存在
+（更完整的修复：需要Order侧新增`isOrderPendingPayment`端点,优先级低→标注为后续优化）
 
-**修复**:
-```java
-// pay方法中,在statusKey检查之后
-R<Boolean> canPay = orderFeignClient.isOrderPendingPayment(orderId);
-if (canPay == null || !canPay.isSuccess() || !canPay.getData()) {
-    throw new BizException("订单状态不允许支付");
-}
-```
-
-**风险**: 与P0-6共用新的`isOrderPendingPayment`接口→先修P0-6再修此
+**风险**: 当前修复(去TTL)已覆盖主要重复支付面, 此补充为增强防御
+**前置依赖**: 无(独立优化,不阻塞其他P0)
 
 ---
 

@@ -13,7 +13,9 @@ import org.springframework.stereotype.Component;
 import com.myxhs.notification.dto.NotificationType;
 
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.Collections;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -44,7 +46,12 @@ public class NotificationAggregator {
     private final PushTemplateMapper pushTemplateMapper;
 
     private static final String AGGREGATE_WINDOW_KEY = "myxhs:notification:agg:";
-    private static final Duration AGGREGATE_WINDOW = Duration.ofMinutes(5);
+    // 聚合窗口=当天剩余秒数(对齐DB唯一索引notify_date按天聚合)
+    private static Duration getAggregateWindow() {
+        LocalDateTime endOfDay = LocalDate.now().plusDays(1).atStartOfDay();
+        long seconds = ChronoUnit.SECONDS.between(LocalDateTime.now(), endOfDay);
+        return Duration.ofSeconds(Math.max(seconds, 60)); // 最短保留60秒
+    }
 
     /**
      * 模板本地缓存（避免每次聚合都查 DB）
@@ -99,7 +106,7 @@ public class NotificationAggregator {
         String result = stringRedisTemplate.execute(AGGREGATE_REDIS_SCRIPT,
                 Collections.singletonList(aggregateKey),
                 "PENDING",
-                String.valueOf(AGGREGATE_WINDOW.getSeconds()));
+                String.valueOf(getAggregateWindow().getSeconds()));
 
         if ("1".equals(result)) {
             // 窗口内第一条通知 → INSERT DB 获取 ID → 用真实 ID 替换 Redis 临时值
@@ -108,7 +115,7 @@ public class NotificationAggregator {
             notificationMapper.insert(notification);
 
             stringRedisTemplate.opsForValue().set(aggregateKey,
-                    String.valueOf(notification.getId()), AGGREGATE_WINDOW);
+                    String.valueOf(notification.getId()), getAggregateWindow());
 
             log.debug("[聚合] 新建通知: userId={}, type={}, targetId={}, id={}",
                     notification.getUserId(), notification.getType(),

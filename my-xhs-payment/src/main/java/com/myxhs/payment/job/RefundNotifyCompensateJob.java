@@ -116,6 +116,12 @@ public class RefundNotifyCompensateJob {
                     continue;
                 }
 
+                String notifiedKey = "myxhs:payment:refund:notified:" + refund.orderId;
+                if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(notifiedKey))) {
+                    log.debug("[补偿任务] 退款订单 {} 已通知过，跳过", refund.orderId);
+                    continue;
+                }
+
                 // 通过 Feign 查询订单支付金额，间接判断订单是否仍为"已支付"状态：
                 // - 返回成功且 data 非空：订单仍为待支付（只有待支付订单才返回支付金额）
                 //   但对于退款场景，订单应该是"已支付"状态而非"待支付"

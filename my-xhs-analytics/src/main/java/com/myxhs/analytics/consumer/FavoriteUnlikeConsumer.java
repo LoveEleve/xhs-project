@@ -65,18 +65,18 @@ public class FavoriteUnlikeConsumer implements RocketMQListener<MessageExt> {
         try {
             String message = new String(msg.getBody(), StandardCharsets.UTF_8);
             FavoriteEvent event = objectMapper.readValue(message, FavoriteEvent.class);
+            String versionKey = null;
 
-            // 原子版本号防乱序：Lua GET+比较+SET，含 userId 维度避免跨用户覆盖
+            // 原子版本号防乱序：Lua GET+compare+SET 原子操作
             if (event.getActionTime() != null) {
-                String versionKey = VERSION_PREFIX + event.getUserId() + ":" + event.getNoteId();
+                versionKey = VERSION_PREFIX + event.getUserId() + ":" + event.getNoteId();
                 Long passed = stringRedisTemplate.execute(versionCheckScript,
                         java.util.List.of(versionKey),
                         String.valueOf(event.getActionTime()),
                         String.valueOf(VERSION_TTL_HOURS * 3600));
                 if (passed == null || passed == 0) {
-                    log.debug("[FavoriteUnlike] 跳过旧事件: userId={}, noteId={}, action={}, actionTime={}",
-                            event.getUserId(), event.getNoteId(),
-                            event.getAction(), event.getActionTime());
+                    log.debug("[FavoriteUnlike] 跳过旧事件: userId={}, noteId={}, actionTime={}",
+                            event.getUserId(), event.getNoteId(), event.getActionTime());
                     return;
                 }
             }
@@ -86,9 +86,12 @@ public class FavoriteUnlikeConsumer implements RocketMQListener<MessageExt> {
             } else {
                 handleUnfavorite(event);
             }
-            // 版本已在 Lua 脚本中原子写入，此处不再重复 set
         } catch (Exception e) {
             log.error("[FavoriteUnlike] 消费失败: {}", new String(msg.getBody(), StandardCharsets.UTF_8), e);
+            // 业务失败→删除版本号(Lua已SET),让MQ重试可重新处理
+            if (versionKey != null) {
+                try { stringRedisTemplate.delete(versionKey); } catch (Exception ignored) {}
+            }
             throw new RuntimeException("FavoriteUnlike消费失败，触发重试", e);
         } finally {
             MqTraceHelper.clearTraceId();

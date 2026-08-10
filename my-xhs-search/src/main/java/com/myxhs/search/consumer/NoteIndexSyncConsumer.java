@@ -250,7 +250,9 @@ public class NoteIndexSyncConsumer implements RocketMQListener<MessageExt> {
     }
 
     private long extractVersion(JSONObject event) {
-        Long ts = event.getLong("binlogTimestamp");
+        Long es = event.getLong("es"); // Canal 全局序列号（小整数，严格递增—防版本冲突）
+        if (es != null && es > 0) return es;
+        Long ts = event.getLong("binlogTimestamp"); // 兼容旧格式
         if (ts != null) return ts;
         ts = event.getLong("eventTimestamp");
         if (ts != null) return ts;

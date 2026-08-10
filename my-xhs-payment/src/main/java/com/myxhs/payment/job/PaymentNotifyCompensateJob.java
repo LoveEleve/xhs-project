@@ -118,6 +118,13 @@ public class PaymentNotifyCompensateJob {
                     continue;
                 }
 
+                // 已通知检查: 防无限循环(notifyPaySuccess本身幂等,但有标记后跳过更高效)
+                String notifiedKey = "myxhs:payment:notified:" + orderId;
+                if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(notifiedKey))) {
+                    log.debug("[补偿任务] 订单 {} 已通知过，跳过", orderId);
+                    continue;
+                }
+
                 // 通过 Feign 查询订单支付金额，间接判断订单状态：
                 // - 返回成功且 data 非空：订单仍为待支付（只有待支付订单才返回支付金额）→ 需要补偿
                 // - 返回成功但 data 为空/null：订单已不是待支付（已支付/已取消/已关闭）→ 无需补偿
@@ -137,6 +144,7 @@ public class PaymentNotifyCompensateJob {
                         if (notifyResult != null && notifyResult.isSuccess()) {
                             log.info("[补偿任务] 订单 {} 通知成功", orderId);
                             stringRedisTemplate.delete(countKey);
+                            stringRedisTemplate.opsForValue().set(notifiedKey, "1", Duration.ofHours(1));
                             compensated++;
                         } else {
                             log.warn("[补偿任务] 订单 {} 通知失败: {}", orderId,

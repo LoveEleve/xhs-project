@@ -591,9 +591,16 @@ public class OrderService {
         }
 
         // Event Sourcing: 追加支付事件并更新状态
-        orderEventService.appendEvent(order, OrderEventService.EVENT_PAID,
-                Map.of("paidTime", LocalDateTime.now().toString()));
-        orderMapper.setPaidAt(orderId, userId);
+        try {
+            orderEventService.appendEvent(order, OrderEventService.EVENT_PAID,
+                    Map.of("paidTime", LocalDateTime.now().toString()));
+            orderMapper.setPaidAt(orderId, userId);
+        } catch (IllegalStateException | IllegalArgumentException e) {
+            // 并发: 关单/取消先赢→支付已成功(钱已扣)但订单状态已变
+            // 不抛异常: 抛异常→payment侧误判通知失败→P0-6无限重试
+            log.error("[订单] 支付回调竞态(订单状态已变): orderId={}, status={}", orderId, order.getStatus(), e);
+            return false;
+        }
 
         // 确认库存扣减（预扣 → 正式扣减，异步不阻塞主链路，失败由补偿+对账兜底）
         confirmInventoryDeduct(orderId, order.getOrderNo(), userId);
