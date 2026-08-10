@@ -3,7 +3,6 @@ package com.myxhs.counter.controller;
 import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
 import com.myxhs.counter.dto.CounterBatchRequest;
-import com.myxhs.counter.dto.CounterRequest;
 import com.myxhs.counter.service.CounterService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,8 +14,8 @@ import java.util.Map;
 /**
  * 计数控制器
  * <p>
- * 提供计数增减和查询接口。
- * 增减接口为内部调用（其他服务通过 MQ 或 Feign 调用），查询接口公开。
+ * 计数写入统一通过 MQ 事件驱动（CounterEventConsumer），无需 HTTP 写入端点。
+ * 提供查询和手动对账接口。
  * </p>
  */
 @Slf4j
@@ -27,35 +26,20 @@ public class CounterController {
 
     private final CounterService counterService;
 
-    /**
-     * 计数 +1（内部调用）
-     */
-    @PostMapping("/increment")
-    @RateLimit(windowSeconds = 60, maxRequests = 500, prefix = "counter:increment",
-            message = "计数递增请求过于频繁，请稍后重试")
-    public R<Void> increment(@RequestBody @Valid CounterRequest request) {
-        counterService.increment(request.getTargetType(), request.getTargetId(), request.getCountType());
-        return R.ok();
-    }
+    /** 管理接口令牌（配置化管理，不再硬编码） */
+    @org.springframework.beans.factory.annotation.Value("${myxhs.admin.token}")
+    private String adminToken;
 
-    /**
-     * 计数 -1（内部调用）
-     */
-    @PostMapping("/decrement")
-    @RateLimit(windowSeconds = 60, maxRequests = 500, prefix = "counter:decrement",
-            message = "计数递减请求过于频繁，请稍后重试")
-    public R<Void> decrement(@RequestBody @Valid CounterRequest request) {
-        boolean success = counterService.decrement(request.getTargetType(), request.getTargetId(), request.getCountType());
-        if (!success) {
-            return R.fail("计数已为 0，无法继续减少");
-        }
-        return R.ok();
+    private boolean isAdminCall(String headerValue) {
+        return adminToken != null && !adminToken.isEmpty() && adminToken.equals(headerValue);
     }
 
     /**
      * 查询单个计数（公开）
      */
     @GetMapping("/get")
+    @RateLimit(windowSeconds = 1, maxRequests = 50, prefix = "myxhs:counter:get",
+            message = "查询过于频繁")
     public R<Long> getCount(
             @RequestParam("targetType") Integer targetType,
             @RequestParam("targetId") Long targetId,
@@ -77,12 +61,16 @@ public class CounterController {
     }
 
     /**
-     * 手动触发对账修复（管理接口）
+     * 手动触发对账修复（管理接口，需 X-Admin-Call 校验）
      */
     @PostMapping("/reconcile")
-    @RateLimit(windowSeconds = 60, maxRequests = 2, prefix = "counter:reconcile",
+    @RateLimit(windowSeconds = 60, maxRequests = 2, prefix = "myxhs:counter:reconcile",
             message = "对账修复请求过于频繁，每分钟最多 2 次")
-    public R<Integer> reconcile() {
+    public R<Integer> reconcile(
+            @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
+        if (!isAdminCall(adminCall)) {
+            return R.fail(403, "无权访问管理接口");
+        }
         int fixedCount = counterService.reconcile();
         return R.ok(fixedCount);
     }

@@ -27,6 +27,7 @@ import java.util.concurrent.ExecutorService;
 @RestController
 @RequestMapping("/api/home")
 @RequiredArgsConstructor
+@org.springframework.validation.annotation.Validated
 public class HomeController {
 
     private final FeedService feedService;

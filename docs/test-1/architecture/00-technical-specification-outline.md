@@ -1050,10 +1050,10 @@ CREATE TABLE t_chat_user_relation (
 
 | Topic | Tag | 生产者 | 消费者 | 消息类型 | 说明 |
 |-------|-----|-------|--------|---------|------|
-| SOCIAL_TOPIC | FOLLOW | social | social, counter, notification | 普通 | 关注事件 |
+| SOCIAL_TOPIC | FOLLOW | social(当前未启用) | social, notification | 普通 | 关注事件（当前同步写入，MQ路径预留） |
 | SOCIAL_TOPIC | LIKE | social | counter, notification | 普通 | 点赞事件 |
 | SOCIAL_TOPIC | FAVORITE | social | counter | 普通 | 收藏事件 |
-| NOTE_TOPIC | COMMENT | note | note, counter, notification | 顺序 | 评论事件 |
+| NOTE_TOPIC | COMMENT | note | note, notification | 顺序 | 评论事件（counter通过SOCIAL_TOPIC:COMMENT更新） |
 | NOTE_TOPIC | PUBLISH | note | search, social(Feed) | 普通 | 笔记发布 |
 | ORDER_TOPIC | CREATE | order | inventory, coupon | 事务 | 订单创建 |
 | ORDER_TOPIC | CANCEL | order | inventory, coupon | 事务 | 订单取消 |

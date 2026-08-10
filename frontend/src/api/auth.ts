@@ -1,0 +1,21 @@
+import client from './client';
+import type { ApiResponse, LoginRequest, RegisterRequest, TokenResponse, UserInfoResponse, AddressVO, AddressRequest } from '../types';
+
+export const login = (data: LoginRequest) => client.post<ApiResponse<TokenResponse>>('/user/auth/login', data);
+export const register = (data: RegisterRequest) => client.post<ApiResponse<null>>('/user/auth/register', data);
+export const getCaptcha = () => client.get<ApiResponse<{ captchaKey: string; captchaImage: string }>>('/user/auth/captcha');
+export const refreshToken = () => client.post<ApiResponse<TokenResponse>>('/user/auth/refresh');
+export const logout = () => client.post<ApiResponse<null>>('/user/auth/logout');
+export const getUserInfo = () => client.get<ApiResponse<UserInfoResponse>>('/user/me');
+export const updateUserInfo = (data: Partial<UserInfoResponse>) => client.put<ApiResponse<null>>('/user/me', data);
+export const changePassword = (data: { oldPwd: string; newPwd: string }) => client.put<ApiResponse<null>>('/user/me/password', data);
+export const getAddressList = () => client.get<ApiResponse<AddressVO[]>>('/user/address/list');
+export const getDefaultAddress = () => client.get<ApiResponse<AddressVO>>('/user/address/default');
+export const getAddress = (id: number) => client.get<ApiResponse<AddressVO>>(`/user/address/${id}`);
+export const addAddress = (data: AddressRequest) => client.post<ApiResponse<null>>('/user/address', data);
+export const updateAddress = (id: number, data: AddressRequest) => client.put<ApiResponse<null>>(`/user/address/${id}`, data);
+export const deleteAddress = (id: number) => client.delete<ApiResponse<null>>(`/user/address/${id}`);
+export const setDefaultAddress = (id: number) => client.put<ApiResponse<null>>(`/user/address/${id}/default`);
+export const blockUser = (targetUserId: number) => client.post<ApiResponse<null>>(`/user/block/${targetUserId}`);
+export const unblockUser = (targetUserId: number) => client.delete<ApiResponse<null>>(`/user/block/${targetUserId}`);
+export const getBlockList = () => client.get<ApiResponse<unknown[]>>('/user/block/list');

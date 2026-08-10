@@ -5,7 +5,6 @@ import com.myxhs.common.shutdown.GracefulShutdownHook;
 import com.myxhs.counter.dto.CounterFlushDTO;
 import com.myxhs.counter.mapper.CounterMapper;
 import jakarta.annotation.PreDestroy;
-import jdk.internal.vm.annotation.Contended;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -36,7 +35,6 @@ import java.util.stream.Collectors;
  * 避免 flush 期间 add 写入的数据被 clear 丢失。
  * </p>
  */
-@Contended
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -84,8 +82,26 @@ public class CounterBuffer implements GracefulShutdownHook {
     public void add(int targetType, long targetId, int countType, long delta) {
         String key = targetType + ":" + targetId + ":" + countType;
 
-        // 合并同 Key 增减：computeIfAbsent 保证线程安全
-        buffer.computeIfAbsent(key, k -> new AtomicLong(0)).addAndGet(delta);
+        // 跨代写防护：compute 在旧 buffer 上执行后 buffer 被 doFlush 交换 → 撤销并重试到新 buffer
+        while (true) {
+            ConcurrentHashMap<String, AtomicLong> current = buffer;
+            current.compute(key, (k, v) -> {
+                if (v == null) v = new AtomicLong(0);
+                v.addAndGet(delta);
+                return v;
+            });
+            // buffer 未被交换 → 写入成功，退出
+            if (current == buffer) break;
+            // buffer 已被交换 → 撤销旧 buffer 上的写入，重试到新 buffer
+            current.compute(key, (k, v) -> {
+                if (v != null) {
+                    v.addAndGet(-delta);
+                    if (v.get() == 0) return null;
+                    return v;
+                }
+                return null;
+            });
+        }
 
         // 检查是否触发满量刷盘
         if (bufferSize.incrementAndGet() >= MAX_BUFFER_SIZE) {

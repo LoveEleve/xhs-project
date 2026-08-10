@@ -41,8 +41,8 @@ public class LikeService {
     private final StringRedisTemplate stringRedisTemplate;
     private final RocketMQTemplate rocketMQTemplate;
     private final ObjectMapper objectMapper;
-    private final org.springframework.data.redis.core.script.DefaultRedisScript<Long> likeAtomicScript;
-    private final org.springframework.data.redis.core.script.DefaultRedisScript<Long> unlikeAtomicScript;
+    private final org.springframework.data.redis.core.script.DefaultRedisScript<Long> likeForwardAtomicScript;
+    private final org.springframework.data.redis.core.script.DefaultRedisScript<Long> unlikeForwardAtomicScript;
 
     /** 业务类型：笔记 */
     private static final int BIZ_TYPE_NOTE = 1;
@@ -67,15 +67,13 @@ public class LikeService {
     public void like(Long userId, LikeRequest request) {
         String likeKey = buildLikeKey(request.getBizType(), request.getBizId());
         boolean isNoteType = request.getBizType() == BIZ_TYPE_NOTE;
-        String userLikeKey = isNoteType ? RedisKeyConstants.LIKE_SET + "user:" + userId + ":note" : "noop";
+        String userLikeKey = isNoteType ? RedisKeyConstants.LIKE_SET + "user:" + userId + ":note" : null;
 
-        // Lua 原子操作：SADD 正向索引 + SADD 反向索引（一次原子完成）
+        // 单 Key Lua 原子操作：SADD 正向索引（Redis Cluster 兼容，不跨 slot）
         Long added = stringRedisTemplate.execute(
-                likeAtomicScript,
-                java.util.List.of(likeKey, userLikeKey),
-                String.valueOf(userId),
-                String.valueOf(request.getBizId()),
-                isNoteType ? "1" : "0"
+                likeForwardAtomicScript,
+                java.util.List.of(likeKey),
+                String.valueOf(userId)
         );
 
         if (added == null || added == 0) {
@@ -83,31 +81,43 @@ public class LikeService {
             return;
         }
 
+        // 反向索引单独维护（非原子但幂等，crash 由对账修复）
+        if (isNoteType) {
+            try {
+                stringRedisTemplate.opsForSet().add(userLikeKey, String.valueOf(request.getBizId()));
+            } catch (Exception e) {
+                log.warn("[点赞] 反向索引写入失败（对账修复）: userId={}, bizId={}", userId, request.getBizId(), e);
+            }
+        }
+
         log.info("[点赞] 点赞成功: userId={}, bizType={}, bizId={}", userId, request.getBizType(), request.getBizId());
 
-        // MQ 同步落库（失败则回滚 Redis）
-        if (!sendLikeEventSync(userId, request.getBizType(), request.getBizId(), "LIKE")) {
-            // MQ 发送失败，回滚 Redis 操作（Lua 脚本保证原子回滚）
-            rollbackLikeLua(likeKey, userLikeKey, String.valueOf(userId),
-                    String.valueOf(request.getBizId()), isNoteType);
-            log.error("[点赞] MQ发送失败已回滚Redis: userId={}, bizType={}, bizId={}",
-                    userId, request.getBizType(), request.getBizId());
-            throw new com.myxhs.common.exception.BizException(
-                    com.myxhs.common.response.ResultCode.INTERNAL_ERROR, "点赞失败，请重试");
+        // MQ 同步落库——失败不回滚Redis(防Broker已消费但回滚导致Redis/DB不一致)
+        // 消费者双重幂等(versionCheck + SADD)兜底, MQ真正未送达时用户重试即可
+        try {
+            sendLikeEventSync(userId, request.getBizType(), request.getBizId(), "LIKE");
+        } catch (Exception e) {
+            log.error("[点赞] MQ发送异常(Redis不回滚,靠消费端幂等): userId={}, bizType={}, bizId={}",
+                    userId, request.getBizType(), request.getBizId(), e);
         }
     }
 
     /**
      * 回滚点赞 Redis 操作（MQ 发送失败时调用）
+     * 使用单 Key 正向 Lua + 非原子反向索引（Cluster 兼容）
      */
     private void rollbackLikeLua(String likeKey, String userLikeKey, String member, String reverseMember, boolean isNoteType) {
         try {
+            // 回滚正向索引（member=userId）
             stringRedisTemplate.execute(
-                    unlikeAtomicScript,
-                    java.util.List.of(likeKey, userLikeKey),
-                    member, reverseMember,
-                    isNoteType ? "1" : "0"
+                    unlikeForwardAtomicScript,
+                    java.util.List.of(likeKey),
+                    member
             );
+            // 回滚反向索引（member=bizId/noteId，非原子但幂等）
+            if (isNoteType) {
+                stringRedisTemplate.opsForSet().remove(userLikeKey, reverseMember);
+            }
         } catch (Exception e) {
             log.error("[点赞] 回滚Redis失败: likeKey={}, userLikeKey={}", likeKey, userLikeKey, e);
         }
@@ -129,15 +139,13 @@ public class LikeService {
     public void unlike(Long userId, LikeRequest request) {
         String likeKey = buildLikeKey(request.getBizType(), request.getBizId());
         boolean isNoteType = request.getBizType() == BIZ_TYPE_NOTE;
-        String userLikeKey = isNoteType ? RedisKeyConstants.LIKE_SET + "user:" + userId + ":note" : "noop";
+        String userLikeKey = isNoteType ? RedisKeyConstants.LIKE_SET + "user:" + userId + ":note" : null;
 
-        // Lua 原子操作：SREM 正向索引 + SREM 反向索引
+        // 单 Key Lua 原子操作：SREM 正向索引（Redis Cluster 兼容）
         Long removed = stringRedisTemplate.execute(
-                unlikeAtomicScript,
-                java.util.List.of(likeKey, userLikeKey),
-                String.valueOf(userId),
-                String.valueOf(request.getBizId()),
-                isNoteType ? "1" : "0"
+                unlikeForwardAtomicScript,
+                java.util.List.of(likeKey),
+                String.valueOf(userId)
         );
 
         if (removed == null || removed == 0) {
@@ -145,16 +153,29 @@ public class LikeService {
             return;
         }
 
+        // 反向索引单独维护（非原子但幂等，crash 由对账修复）
+        if (isNoteType) {
+            try {
+                stringRedisTemplate.opsForSet().remove(userLikeKey, String.valueOf(request.getBizId()));
+            } catch (Exception e) {
+                log.warn("[点赞] 反向索引移除失败（对账修复）: userId={}, bizId={}", userId, request.getBizId(), e);
+            }
+        }
+
         log.info("[点赞] 取消点赞成功: userId={}, bizType={}, bizId={}", userId, request.getBizType(), request.getBizId());
 
         // MQ 同步删除（失败则回滚 Redis）
         if (!sendLikeEventSync(userId, request.getBizType(), request.getBizId(), "UNLIKE")) {
-            // MQ 发送失败，回滚 Redis 操作（Lua 脚本保证原子回滚）
-            stringRedisTemplate.execute(likeAtomicScript,
-                    java.util.List.of(likeKey, userLikeKey),
-                    String.valueOf(userId),
-                    String.valueOf(request.getBizId()),
-                    isNoteType ? "1" : "0");
+            // MQ 发送失败，回滚 Redis 操作（SADD 正向 + 反向索引）
+            try {
+                stringRedisTemplate.opsForSet().add(likeKey, String.valueOf(userId));
+                if (isNoteType) {
+                    stringRedisTemplate.opsForSet().add(userLikeKey, String.valueOf(request.getBizId()));
+                }
+            } catch (Exception rollbackEx) {
+                log.error("[点赞] MQ失败+Redis回滚也失败: userId={}, bizType={}, bizId={}",
+                        userId, request.getBizType(), request.getBizId(), rollbackEx);
+            }
             log.error("[点赞] MQ发送失败已回滚Redis: userId={}, bizType={}, bizId={}",
                     userId, request.getBizType(), request.getBizId());
             throw new com.myxhs.common.exception.BizException(

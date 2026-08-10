@@ -17,7 +17,7 @@ import java.util.Map;
 /**
  * SSE 跨实例推送 Redis Pub/Sub 消费者
  * <p>
- * 订阅 Redis Channel（notify:sse:channel），收到跨实例推送消息后：
+ * 订阅 Redis Channel（myxhs:notification:sse:channel），收到跨实例推送消息后：
  * 1. 解析消息中的 userId 和 event 类型
  * 2. 检查目标用户是否在本实例在线
  * 3. 在线则推送给本实例的 SseEmitter
@@ -38,7 +38,7 @@ public class SseCrossInstanceSubscriber implements MessageListener {
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
 
-    private static final String NOTIFY_SSE_CHANNEL = "notify:sse:channel";
+    private static final String NOTIFY_SSE_CHANNEL = "myxhs:notification:sse:channel";
 
     private RedisMessageListenerContainer container;
 
@@ -71,12 +71,12 @@ public class SseCrossInstanceSubscriber implements MessageListener {
     public void onMessage(Message message, byte[] pattern) {
         try {
             String body = new String(message.getBody());
-            @SuppressWarnings("unchecked")
-            Map<String, Object> msgMap = objectMapper.readValue(body, Map.class);
+            // 使用 ObjectNode 提取字段，避免 Map<String,Object> 反序列化导致 Long→Integer 类型丢失
+            com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(body);
 
-            Long userId = toLong(msgMap.get("userId"));
-            String eventName = (String) msgMap.get("event");
-            Object data = msgMap.get("data");
+            Long userId = toLong(root.path("userId"));
+            String eventName = root.path("event").asText();
+            String dataJson = root.path("data").toString(); // 保留原始 JSON，避免类型转换
 
             if (userId == null || eventName == null) {
                 log.warn("[SSE] 跨实例消息格式异常: body={}", body);
@@ -84,7 +84,7 @@ public class SseCrossInstanceSubscriber implements MessageListener {
             }
 
             // 委托给 SseEmitterManager 处理（只有目标用户在本实例在线时才推送）
-            sseEmitterManager.handleCrossInstanceMessage(userId, eventName, data);
+            sseEmitterManager.handleCrossInstanceMessageJson(userId, eventName, dataJson);
 
         } catch (Exception e) {
             log.error("[SSE] 跨实例消息处理异常", e);

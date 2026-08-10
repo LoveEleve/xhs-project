@@ -42,8 +42,8 @@ public class OnlineRouteService {
     @Value("${im.websocket.heartbeat-interval:30000}")
     private long heartbeatInterval;
 
-    private static final String ROUTE_KEY_PREFIX = "im:route:";
-    private static final String ONLINE_KEY_PREFIX = "im:online:";
+    private static final String ROUTE_KEY_PREFIX = "myxhs:im:route:";
+    private static final String ONLINE_KEY_PREFIX = "myxhs:im:online:";
 
     /**
      * Lua 脚本：原子性地"检查 serverId 匹配后再删除"

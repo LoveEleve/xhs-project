@@ -65,7 +65,8 @@ public class OrderTransactionListener implements RocketMQLocalTransactionListene
                     context.getTotalAmount(),
                     context.getDiscountAmount(),
                     context.getPayAmount(),
-                    context.getTransactionPayload()
+                    context.getTransactionPayload(),
+                    context.getSkuMap()
             );
 
             // 将 orderId 回写到 context（供后续使用）
@@ -149,5 +150,7 @@ public class OrderTransactionListener implements RocketMQLocalTransactionListene
         private String transactionPayload;
         /** 本地事务执行后回写 */
         private Long orderId;
+        /** SKU 详情 Map（skuId → SkuInfoDTO），避免事务内再调 Feign */
+        private java.util.Map<Long, com.myxhs.order.dto.SkuInfoDTO> skuMap;
     }
 }

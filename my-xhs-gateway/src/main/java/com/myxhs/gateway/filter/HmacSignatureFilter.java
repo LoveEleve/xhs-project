@@ -158,20 +158,40 @@ public class HmacSignatureFilter implements GlobalFilter, Ordered {
             log.error("[Gateway-HMAC] Redis nonce去重异常, nonce={}, path={}", nonce, path, e);
         }
 
-        // 5. 重新计算 HMAC-SHA256 签名
+        // 5. 获取 per-session HMAC 密钥（从 GatewayAuthFilter 注入的 X-User-Id 取 userId）
+        // 【设计改进】不再用全局 hmacSecretKey（配置文件硬编码，前端知道=签名失效），
+        // 改为登录时生成 per-session secret 存 Redis，前端从登录响应获取，gateway 从 Redis 取验签。
+        String userId = request.getHeaders().getFirst("X-User-Id");
+        if (userId == null) {
+            log.info("[Gateway-HMAC] 签名校验失败, 缺少 X-User-Id, path={}", path);
+            return forbidden(exchange, "签名校验失败：缺少用户身份");
+        }
+        String perUserSecret = stringRedisTemplate.opsForValue().get(
+                "myxhs:user:hmac:secret:" + userId);
+        if (perUserSecret == null) {
+            log.info("[Gateway-HMAC] 签名校验失败, HMAC密钥已过期, userId={}, path={}", userId, path);
+            return forbidden(exchange, "签名校验失败：HMAC 密钥已过期，请重新登录");
+        }
+        // RedisOperator 用 RedisTemplate（Jackson 序列化）存 String，Redis 里带引号 "xxx"，
+        // strip 引号后才是原始 secret（与登录响应返回的 hmacSecret 一致）
+        if (perUserSecret.length() >= 2 && perUserSecret.startsWith("\"") && perUserSecret.endsWith("\"")) {
+            perUserSecret = perUserSecret.substring(1, perUserSecret.length() - 1);
+        }
+
+        // 6. 重新计算 HMAC-SHA256 签名（用 per-session secret）
         String method = request.getMethod().name();
         String signStr = method + path + timestamp + nonce;
-        String expectedSignature = hmacSha256(signStr, hmacSecretKey);
+        String expectedSignature = hmacSha256(signStr, perUserSecret);
 
         if (expectedSignature == null || !MessageDigest.isEqual(
                 expectedSignature.getBytes(StandardCharsets.UTF_8),
                 signature.getBytes(StandardCharsets.UTF_8))) {
-            log.debug("[Gateway-HMAC] 签名校验失败, 签名不匹配, method={}, path={}, timestamp={}, nonce={}",
-                    method, path, timestamp, nonce);
+            log.debug("[Gateway-HMAC] 签名校验失败, 签名不匹配, method={}, path={}, timestamp={}, nonce={}, userId={}",
+                    method, path, timestamp, nonce, userId);
             return forbidden(exchange, "签名校验失败：签名不匹配");
         }
 
-        log.debug("[Gateway-HMAC] 签名校验通过, path={}, nonce={}", path, nonce);
+        log.debug("[Gateway-HMAC] 签名校验通过, path={}, nonce={}, userId={}", path, nonce, userId);
         return chain.filter(exchange);
     }
 

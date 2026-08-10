@@ -74,13 +74,13 @@ public class ProductAggService {
                 .supplyAsync(() -> {
                     try {
                         Map<String, Object> query = new HashMap<>();
-                        query.put("targetType", 2); // 2=商品
+                        query.put("targetType", 4); // 4=商品
                         query.put("targetId", spuId);
-                        query.put("countTypes", List.of(2, 4)); // 2=收藏 4=浏览
+                        query.put("countTypes", List.of(2, 5)); // 2=收藏 5=浏览
                         Map<String, Object> request = Map.of("queries", List.of(query));
                         R<Map<String, Map<String, Long>>> r = counterFeignClient.batchGetCounts(request);
                         if (r != null && r.isSuccess() && r.getData() != null) {
-                            String key = "2:" + spuId;
+                            String key = "4:" + spuId;  // counter 返回格式 targetType:targetId
                             return r.getData().getOrDefault(key, Collections.emptyMap());
                         }
                     } catch (Exception e) {

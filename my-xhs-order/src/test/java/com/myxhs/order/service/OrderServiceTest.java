@@ -122,14 +122,14 @@ class OrderServiceTest {
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
         // 幂等键设置成功
         when(valueOperations.setIfAbsent(
-                startsWith("order:idempotent:"), eq("1"), eq(24L), eq(TimeUnit.HOURS)))
+                startsWith("myxhs:order:idempotent:"), eq("1"), eq(24L), eq(TimeUnit.HOURS)))
                 .thenReturn(true);
         // 分布式锁获取失败
         when(valueOperations.setIfAbsent(
-                startsWith("order:create:lock:"), anyString(), eq(10L), eq(TimeUnit.SECONDS)))
+                startsWith("myxhs:order:create:lock:"), anyString(), eq(10L), eq(TimeUnit.SECONDS)))
                 .thenReturn(false);
         // 释放幂等键
-        when(stringRedisTemplate.delete(startsWith("order:idempotent:"))).thenReturn(true);
+        when(stringRedisTemplate.delete(startsWith("myxhs:order:idempotent:"))).thenReturn(true);
 
         OrderCreateRequest request = buildCreateRequest("biz-002");
         assertThatThrownBy(() -> orderService.createOrder(USER_ID, request))
@@ -143,11 +143,11 @@ class OrderServiceTest {
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
         // 幂等键成功
         when(valueOperations.setIfAbsent(
-                startsWith("order:idempotent:"), eq("1"), eq(24L), eq(TimeUnit.HOURS)))
+                startsWith("myxhs:order:idempotent:"), eq("1"), eq(24L), eq(TimeUnit.HOURS)))
                 .thenReturn(true);
         // 分布式锁成功
         when(valueOperations.setIfAbsent(
-                startsWith("order:create:lock:"), anyString(), eq(10L), eq(TimeUnit.SECONDS)))
+                startsWith("myxhs:order:create:lock:"), anyString(), eq(10L), eq(TimeUnit.SECONDS)))
                 .thenReturn(true);
         // Redis INCR（订单号序列号）
         when(valueOperations.increment(startsWith("order:seq:"))).thenReturn(1L);
@@ -156,7 +156,7 @@ class OrderServiceTest {
         when(stringRedisTemplate.execute(any(DefaultRedisScript.class), anyList(), anyString()))
                 .thenReturn(1L);
         // 删除幂等键
-        when(stringRedisTemplate.delete(startsWith("order:idempotent:"))).thenReturn(true);
+        when(stringRedisTemplate.delete(startsWith("myxhs:order:idempotent:"))).thenReturn(true);
 
         // 事务消息发送返回非 SEND_OK
         TransactionSendResult sendResult = new TransactionSendResult();
@@ -229,7 +229,7 @@ class OrderServiceTest {
     void getOrderByOrderNo_notFound() {
         when(orderNoMappingRepository.selectByOrderNo("ORD-NOT-FOUND")).thenReturn(null);
 
-        assertThatThrownBy(() -> orderService.getOrderByOrderNo("ORD-NOT-FOUND"))
+        assertThatThrownBy(() -> orderService.getOrderByOrderNo(1L, "ORD-NOT-FOUND"))
                 .isInstanceOf(BizException.class)
                 .hasMessageContaining("订单不存在");
     }
@@ -248,7 +248,7 @@ class OrderServiceTest {
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenReturn(Collections.emptyList());
 
-        OrderVO vo = orderService.getOrderByOrderNo("ORD20250101000000001");
+        OrderVO vo = orderService.getOrderByOrderNo(1L, "ORD20250101000000001");
         assertThat(vo).isNotNull();
         assertThat(vo.getOrderId()).isEqualTo(ORDER_ID);
     }
@@ -293,7 +293,7 @@ class OrderServiceTest {
         // 快照写入成功
         when(snapshotMapper.insert((OrderSnapshot) any())).thenReturn(1);
         // 删除缓存
-        when(stringRedisTemplate.delete(startsWith("order:info:"))).thenReturn(true);
+        when(stringRedisTemplate.delete(startsWith("myxhs:order:info:"))).thenReturn(true);
 
         assertThatCode(() -> orderService.cancelOrder(USER_ID, ORDER_ID))
                 .doesNotThrowAnyException();
@@ -328,7 +328,7 @@ class OrderServiceTest {
                 .thenReturn(Collections.emptyList());
         doNothing().when(orderEventService).appendEvent(eq(order), eq(OrderEventService.EVENT_COMPLETED), anyMap());
         when(snapshotMapper.insert((OrderSnapshot) any())).thenReturn(1);
-        when(stringRedisTemplate.delete(startsWith("order:info:"))).thenReturn(true);
+        when(stringRedisTemplate.delete(startsWith("myxhs:order:info:"))).thenReturn(true);
 
         assertThatCode(() -> orderService.confirmReceive(USER_ID, ORDER_ID))
                 .doesNotThrowAnyException();
@@ -356,7 +356,7 @@ class OrderServiceTest {
                 .thenReturn(Collections.emptyList());
         doNothing().when(orderEventService).appendEvent(any(Order.class), eq(OrderEventService.EVENT_PAID), anyMap());
         when(snapshotMapper.insert((OrderSnapshot) any())).thenReturn(1);
-        when(stringRedisTemplate.delete(startsWith("order:info:"))).thenReturn(true);
+        when(stringRedisTemplate.delete(startsWith("myxhs:order:info:"))).thenReturn(true);
 
         boolean result = orderService.onPaymentSuccess(ORDER_ID, USER_ID);
         assertThat(result).isTrue();
@@ -385,7 +385,7 @@ class OrderServiceTest {
                 .thenReturn(Collections.emptyList());
         doNothing().when(orderEventService).appendEvent(any(Order.class), eq(OrderEventService.EVENT_PAID), anyMap());
         when(snapshotMapper.insert((OrderSnapshot) any())).thenReturn(1);
-        when(stringRedisTemplate.delete(startsWith("order:info:"))).thenReturn(true);
+        when(stringRedisTemplate.delete(startsWith("myxhs:order:info:"))).thenReturn(true);
 
         boolean result = orderService.onPaymentSuccess(ORDER_ID, null);
         assertThat(result).isTrue();
@@ -425,7 +425,7 @@ class OrderServiceTest {
         doNothing().when(orderEventService).appendEvent(eq(order), eq(OrderEventService.EVENT_TIMEOUT_CANCELLED), anyMap());
         when(inventoryFeignClient.releaseStock(anyMap())).thenReturn(R.ok());
         when(snapshotMapper.insert((OrderSnapshot) any())).thenReturn(1);
-        when(stringRedisTemplate.delete(startsWith("order:info:"))).thenReturn(true);
+        when(stringRedisTemplate.delete(startsWith("myxhs:order:info:"))).thenReturn(true);
 
         orderService.closeTimeoutOrder(ORDER_ID, USER_ID);
 
@@ -451,7 +451,7 @@ class OrderServiceTest {
         doNothing().when(orderEventService).appendEvent(eq(order), eq(OrderEventService.EVENT_REFUNDED), anyMap());
         when(inventoryFeignClient.releaseStock(anyMap())).thenReturn(R.ok());
         when(snapshotMapper.insert((OrderSnapshot) any())).thenReturn(1);
-        when(stringRedisTemplate.delete(startsWith("order:info:"))).thenReturn(true);
+        when(stringRedisTemplate.delete(startsWith("myxhs:order:info:"))).thenReturn(true);
 
         assertThatCode(() -> orderService.onRefundSuccess(ORDER_ID))
                 .doesNotThrowAnyException();

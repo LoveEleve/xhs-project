@@ -18,6 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 /**
@@ -61,7 +62,7 @@ public class NotificationService {
         Notification result = aggregator.processWithAggregate(notification);
 
         // 3. 更新未读计数（只有新建通知才增加计数，聚合更新不增加）
-        if (result.getId().equals(notification.getId())) {
+        if (Objects.equals(result.getId(), notification.getId())) {
             // 新建的通知 → 未读 +1
             unreadCountService.incrementUnread(event.getTargetUserId(), event.getType());
         }

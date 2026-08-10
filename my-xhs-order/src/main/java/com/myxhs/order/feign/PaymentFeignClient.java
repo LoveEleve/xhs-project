@@ -15,7 +15,8 @@ import java.math.BigDecimal;
  * 3. 发起退款：POST /api/payment/refund
  * </p>
  */
-@FeignClient(name = "my-xhs-payment", contextId = "paymentFeignClient",
+@FeignClient(name = "my-xhs-payment",
+        configuration = InternalCallFeignConfig.class,
         fallbackFactory = PaymentFeignFallbackFactory.class)
 public interface PaymentFeignClient {
 

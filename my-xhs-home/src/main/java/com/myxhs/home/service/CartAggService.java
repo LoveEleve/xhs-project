@@ -5,7 +5,6 @@ import com.myxhs.home.dto.CartAggVO;
 import com.myxhs.home.feign.CartFeignClient;
 import com.myxhs.home.feign.CouponFeignClient;
 import com.myxhs.home.feign.InventoryFeignClient;
-import com.myxhs.home.feign.ProductFeignClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -40,7 +39,6 @@ public class CartAggService {
     private final CartFeignClient cartFeignClient;
     private final InventoryFeignClient inventoryFeignClient;
     private final CouponFeignClient couponFeignClient;
-    private final ProductFeignClient productFeignClient;
     private final ExecutorService aggregatorPool;
     private final ExecutorService batchFeignPool;
 
@@ -183,8 +181,8 @@ public class CartAggService {
             result.add(CartAggVO.CartItemAggVO.builder()
                     .skuId(skuId)
                     .spuId(item.get("spuId") != null ? ((Number) item.get("spuId")).longValue() : null)
-                    .skuName((String) item.get("skuName"))
-                    .skuImage((String) item.get("skuImage"))
+                    .skuName((String) item.get("name"))      // C-14: CartItemVO 字段名是 name（修复前用 skuName 永远 null）
+                    .skuImage((String) item.get("image"))    // C-14: CartItemVO 字段名是 image（修复前用 skuImage 永远 null）
                     .price(price)
                     .quantity(quantity)
                     .checked(item.get("checked") != null ? (Boolean) item.get("checked") : false)

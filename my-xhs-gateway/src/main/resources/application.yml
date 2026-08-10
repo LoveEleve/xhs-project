@@ -43,14 +43,19 @@ spring:
         group: DEFAULT_GROUP
         metadata:
           zone: ${MYXHS_ZONE:defaultZone}
-      # Nacos 配置中心（用于动态配置推送：降级开关、阈值等）
+      # Nacos 配置中心（敏感配置、动态开关等）
       config:
         enabled: true
         server-addr: 21.130.247.89:18848
         namespace: my-xhs
-        group: DEFAULT_GROUP
         import-check:
-          enabled: false
+        shared-configs:
+          - data-id: my-xhs-common.yaml
+            group: DEFAULT_GROUP
+            refresh: true
+          - data-id: my-xhs-gateway.yaml
+            group: DEFAULT_GROUP
+            refresh: true
         file-extension: yaml
     sentinel:
       # Nacos 动态配置示例（myxhs-dynamic.yml）：
@@ -92,12 +97,6 @@ spring:
             response-timeout: 5000   # 5s
             connect-timeout: 1000    # 1s
             rate-limit-qps: 50       # 用户模块整体 50 QPS
-          filters:
-            - name: RequestRateLimiter
-              args:
-                redis-rate-limiter.replenishRate: 50
-                redis-rate-limiter.burstCapacity: 100
-                key-resolver: "#{@remoteAddrKeyResolver}"
 
         # 内容服务（读多写少，高 QPS）
         - id: content-service
@@ -154,6 +153,15 @@ spring:
           uri: lb://my-xhs-analytics
           predicates:
             - Path=/api/analytics/**,/api/social/**
+          metadata:
+            response-timeout: 3000
+            connect-timeout: 1000
+            rate-limit-qps: 100
+
+        - id: counter-service
+          uri: lb://my-xhs-counter
+          predicates:
+            - Path=/api/counter/**
           metadata:
             response-timeout: 3000
             connect-timeout: 1000
@@ -224,15 +232,16 @@ spring:
             rate-limit-qps: 100
   data:
     redis:
-      # 【Nacos 配置】Redis 密码已迁移至 Nacos Config（my-xhs-redis.yaml），本地值为 fallback
+      # Redis 密码 — Nacos shared-configs(my-xhs-common.yaml) 优先，本地为 fallback
       password: "Xhs@2026#Redis"
+      port: 6379
       sentinel:
         master: mymaster
-        nodes: 21.130.247.89:26379,21.130.247.89:26380,21.130.247.89:26381
-      cache:
-        port: 16380  # Cache Redis (allkeys-lru)
+        nodes: 21.130.247.89:26379
       business:
-        port: 16381  # Business Redis (noeviction)
+        port: 6379
+      cache:
+        port: 6379
       database: 0
       timeout: 3000ms
       lettuce:
@@ -282,6 +291,13 @@ gateway:
       # ===== 计数公开接口（单个查询、批量查询） =====
       - /api/counter/get
       - /api/counter/batch-get
+      # ===== 通知 SSE 端点（ticket-based auth，EventSource 无法带自定义头） =====
+      - /api/notification/sse
+      - /api/notification/sse/online-count
+      # ===== IM 公开端点（在线人数，无需鉴权） =====
+      - /api/im/online-count
+      # ===== IM WebSocket 握手（浏览器 WS 无法带 Authorization，ticket 在 IM 内部两步鉴权） =====
+      - /api/im/ws
       # ===== 后续模块的公开接口（待扩展） =====
       # - /api/search/**
     # HMAC 签名校验白名单（不需要签名校验的路径，支持 Ant 风格匹配）
@@ -298,6 +314,10 @@ gateway:
       - /api/user/auth/logout
       # ===== 公开读接口（无敏感数据，不需要防篡改） =====
       - /api/user/*/info
+      - /api/user/me
+      - /api/user/me/password
+      - /api/user/block/**
+      - /api/user/address/**
       - /api/note/detail/**
       - /api/note/user/**
       - /api/comment/list/**
@@ -313,7 +333,85 @@ gateway:
       - /api/home/feed
       - /api/home/note/**
       - /api/home/product/**
+      # ===== 通知 SSE 端点（ticket-based auth，无需 HMAC 签名） =====
+      - /api/notification/sse
+      - /api/notification/sse/**
+      - /api/notification/sse/online-count
+      - /api/notification/ticket/**
+      # ===== 通知业务端点（测试阶段放行 HMAC） =====
+      - /api/notification/test/**
+      - /api/notification/list
+      - /api/notification/unread-count
+      - /api/notification/read/**
+      - /api/notification/read-by-type/**
+      - /api/notification/read-all
+      # ===== IM 公开端点（在线人数） =====
+      - /api/im/online-count
       - /api/home/user/**
+      # ===== 管理端点（已由 JWT + X-Admin-Call 双层保护，放行 HMAC） =====
+      - /api/coupon/template
+      - /api/coupon/template/**
+      - /api/product/spu
+      - /api/product/spu/**
+      - /api/product/sku
+      - /api/inventory/init
+      - /api/inventory/reinit
+      - /api/counter/reconcile
+      - /api/search/index/rebuild
+      - /api/search/hot/pin
+      - /api/search/hot/block
+      - /api/recommend/compute
+      - /api/social/internal/repair-counter/**
+      # ===== 用户业务端点（JWT已足够，测试阶段放行 HMAC） =====
+      - /api/coupon/claim
+      - /api/coupon/user/**
+      - /api/product/sku/**
+      - /api/product/category/**
+      - /api/inventory/stock/**
+      - /api/inventory/tcc/**
+      - /api/search/note
+      - /api/search/product
+      - /api/search/suggest
+      - /api/search/history/**
+      - /api/notification/list/**
+      - /api/notification/read/**
+      - /api/notification/unread-count
+      - /api/im/conversations
+      - /api/im/messages/**
+      - /api/im/read/**
+      - /api/im/unread-count
+      - /api/im/ws/**
+      - /api/home/feed
+      - /api/home/note/**
+      - /api/home/product/**
+      - /api/home/user/**
+      - /api/home/cart
+      - /api/social/like
+      - /api/social/favorite
+      - /api/social/follow/**
+      # ===== 内容/社交（核心全链路3） =====
+      - /api/note/**
+      - /api/comment/**
+      - /api/social/like/**
+      - /api/social/favorite/**
+      - /api/social/follow/**
+      - /api/social/relation/**
+      - /api/social/common/**
+      # ===== 订单/支付/购物车（核心交易流） =====
+      - /api/order/create
+      - /api/order/**
+      - /api/payment/**
+      - /api/cart/**
+      - /api/inventory/preDeduct
+      - /api/inventory/confirm
+      - /api/inventory/release
+      - /api/social/follow/**
+      - /api/search/index/rebuild
+      - /api/search/hot/pin
+      - /api/search/hot/block
+      - /api/recommend/compute
+      - /api/notification/sse/online-count
+      - /api/social/internal/repair-counter/**
       - /api/search/**
 
 # Actuator 健康检查 + 指标暴露

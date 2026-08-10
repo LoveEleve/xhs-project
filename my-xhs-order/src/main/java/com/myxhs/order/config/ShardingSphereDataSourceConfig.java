@@ -91,7 +91,11 @@ public class ShardingSphereDataSourceConfig {
         // 1. 环境变量
         String envWorkerId = System.getenv("WORKER_ID");
         if (envWorkerId != null && !envWorkerId.isEmpty()) {
-            return Integer.parseInt(envWorkerId);
+            try {
+                return Integer.parseInt(envWorkerId);
+            } catch (NumberFormatException nfe) {
+                throw new RuntimeException("无效 WORKER_ID 环境变量: " + envWorkerId, nfe);
+            }
         }
 
         // 2. 系统属性

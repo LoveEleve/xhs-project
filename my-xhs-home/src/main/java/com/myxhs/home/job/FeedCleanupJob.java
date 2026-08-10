@@ -56,6 +56,7 @@ public class FeedCleanupJob {
         try (Cursor<String> cursor = stringRedisTemplate.scan(ScanOptions.scanOptions()
                 .match(pattern).count(100).build())) {
             while (cursor.hasNext()) {
+            int count = 0;
                 String key = cursor.next();
 
                 // 1. 删除过期数据
@@ -73,7 +74,7 @@ public class FeedCleanupJob {
                     cleaned += (int) (card - inboxMaxSize);
                 }
 
-                Thread.sleep(50);
+                if (++count % 100 == 0) Thread.sleep(50);
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -85,13 +86,14 @@ public class FeedCleanupJob {
         try (Cursor<String> cursor = stringRedisTemplate.scan(ScanOptions.scanOptions()
                 .match(outboxPattern).count(100).build())) {
             while (cursor.hasNext()) {
+            int count = 0;
                 String key = cursor.next();
                 Long removed = stringRedisTemplate.opsForZSet()
                         .removeRangeByScore(key, 0, cutoffTime);
                 if (removed != null && removed > 0) {
                     cleaned += removed.intValue();
                 }
-                Thread.sleep(50);
+                if (++count % 100 == 0) Thread.sleep(50);
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

@@ -33,26 +33,43 @@ public class CategoryService {
 
     private static final String CATEGORY_TREE_REDIS_KEY = "myxhs:product:category:tree";
 
+    /** 最大递归深度（防止循环 parentId 引用导致 StackOverflow） */
+    private static final int MAX_DEPTH = 10;
+
     /**
      * 获取三级分类树
      * <p>
-     * 查询链路：Redis(L2, 2h) → MySQL(L3)
+     * 查询链路：Redis(L2, 2h) → MySQL(L3)。空树不缓存。
+     * 当前版本只读——无分类写 API 和缓存失效机制，DB 修改分类后最长 2h 生效。
      * </p>
      */
     public List<CategoryTreeVO> getCategoryTree() {
-        // 1. L2: Redis
-        List<CategoryTreeVO> redisCached = redisOperator.get(CATEGORY_TREE_REDIS_KEY);
+        // 1. L2: Redis（不可用时降级直查 DB）
+        List<CategoryTreeVO> redisCached = null;
+        try {
+            redisCached = redisOperator.get(CATEGORY_TREE_REDIS_KEY);
+        } catch (Exception e) {
+            log.warn("[分类] Redis 不可用，降级直查 DB", e);
+        }
         if (redisCached != null) {
             log.debug("[分类] L2 Redis 命中");
             return redisCached;
         }
 
-        // 3. L3: MySQL
+        // 2. L3: MySQL
         log.info("[分类] 缓存未命中, 查询 DB 构建分类树");
         List<CategoryTreeVO> tree = buildCategoryTree();
 
-        // 回填缓存
-        redisOperator.set(CATEGORY_TREE_REDIS_KEY, tree, 2, TimeUnit.HOURS);
+        // 空树不缓存，防止数据清空后缓存空结果阻塞恢复
+        if (!tree.isEmpty()) {
+            try {
+                redisOperator.set(CATEGORY_TREE_REDIS_KEY, tree, 2, TimeUnit.HOURS);
+            } catch (Exception e) {
+                log.warn("[分类] Redis 回填失败(降级, DB数据仍正常返回)", e);
+            }
+        } else {
+            log.warn("[分类] 构建分类树为空，跳过缓存（数据可能被清空或初始化未完成）");
+        }
 
         return tree;
     }
@@ -65,10 +82,10 @@ public class CategoryService {
      * </p>
      */
     private List<CategoryTreeVO> buildCategoryTree() {
-        // 一次查出所有启用的分类
+        // 一次查出所有启用的分类（使用枚举常量替代硬编码数字）
         List<Category> allCategories = categoryMapper.selectList(
                 new LambdaQueryWrapper<Category>()
-                        .eq(Category::getStatus, 1)
+                        .eq(Category::getStatus, 1)  // 1=启用（分类状态，非商品上下架语义）
                         .orderByAsc(Category::getSort)
                         .orderByAsc(Category::getId));
 
@@ -76,18 +93,26 @@ public class CategoryService {
             return Collections.emptyList();
         }
 
-        // 按 parentId 分组
+        // 按 parentId 分组（parentId 为 null 的数据视为一级分类，防御 DB 脏数据 NPE）
         Map<Long, List<Category>> parentMap = allCategories.stream()
-                .collect(Collectors.groupingBy(Category::getParentId));
+                .collect(Collectors.groupingBy(c -> c.getParentId() != null ? c.getParentId() : 0L));
 
         // 递归构建树（从一级分类开始，parentId=0）
         return buildChildren(parentMap, 0L);
     }
 
     /**
-     * 递归构建子分类列表
+     * 递归构建子分类列表（带深度保护防循环引用 StackOverflow）
      */
     private List<CategoryTreeVO> buildChildren(Map<Long, List<Category>> parentMap, Long parentId) {
+        return buildChildren(parentMap, parentId, 0);
+    }
+
+    private List<CategoryTreeVO> buildChildren(Map<Long, List<Category>> parentMap, Long parentId, int depth) {
+        if (depth >= MAX_DEPTH) {
+            log.warn("[分类] 递归深度达到上限 {}, 停止构建, parentId={}", MAX_DEPTH, parentId);
+            return Collections.emptyList();
+        }
         List<Category> children = parentMap.get(parentId);
         if (children == null || children.isEmpty()) {
             return Collections.emptyList();
@@ -102,7 +127,7 @@ public class CategoryService {
             vo.setLevel(category.getLevel());
             vo.setSort(category.getSort());
             vo.setIcon(category.getIcon());
-            vo.setChildren(buildChildren(parentMap, category.getId()));
+            vo.setChildren(buildChildren(parentMap, category.getId(), depth + 1));
             result.add(vo);
         }
         return result;

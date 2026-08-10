@@ -1,6 +1,7 @@
 package com.myxhs.im.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
 import com.myxhs.common.util.JwtUtil;
 import com.myxhs.im.dto.ConversationVO;
@@ -35,13 +36,14 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/im")
 @RequiredArgsConstructor
+@org.springframework.validation.annotation.Validated
 public class ImController {
 
     private final ChatService chatService;
     private final ImWebSocketHandler webSocketHandler;
     private final OnlineRouteService onlineRouteService;
 
-    @org.springframework.beans.factory.annotation.Value("${jwt.secret:MyXhs@2026#JwtSecretKey!ForTokenSign}")
+    @org.springframework.beans.factory.annotation.Value("${jwt.secret:${IM_JWT_SECRET:}}")
     private String jwtSecret;
 
     private static final DateTimeFormatter DT_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -69,6 +71,7 @@ public class ImController {
             @RequestHeader("X-User-Id") Long userId,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
+        size = Math.min(size, 50);
 
         Page<ChatUserRelation> pageResult = chatService.getConversationList(userId, page, size);
 
@@ -98,6 +101,7 @@ public class ImController {
             @PathVariable Long peerId,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "50") int size) {
+        size = Math.min(size, 100);
 
         Page<ChatMessage> pageResult = chatService.getMessageHistory(userId, peerId, page, size);
 
@@ -123,6 +127,7 @@ public class ImController {
      * 标记与某人的消息全部已读
      */
     @PostMapping("/read/{peerId}")
+    @RateLimit(prefix = "im:read", maxRequests = 20, windowSeconds = 60, perUser = true)
     public R<Void> markAllRead(
             @RequestHeader("X-User-Id") Long userId,
             @PathVariable Long peerId) {
@@ -143,9 +148,19 @@ public class ImController {
      * 获取在线状态
      */
     @GetMapping("/online-count")
-    public R<Map<String, Object>> getOnlineCount() {
+    public R<Map<String, Object>> getOnlineCount(
+            @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
+        if (!isAdminCall(adminCall)) return R.fail(403, "无权访问管理接口");
         return R.ok(Map.of(
                 "localOnline", webSocketHandler.getOnlineCount(),
                 "serverId", onlineRouteService.getServerId()));
+    }
+
+    /** 管理接口令牌（配置化管理，不再硬编码） */
+    @org.springframework.beans.factory.annotation.Value("${myxhs.admin.token}")
+    private String adminToken;
+
+    private boolean isAdminCall(String v) {
+        return adminToken != null && !adminToken.isEmpty() && adminToken.equals(v);
     }
 }

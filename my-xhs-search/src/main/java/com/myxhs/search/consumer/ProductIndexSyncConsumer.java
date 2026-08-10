@@ -6,6 +6,7 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.myxhs.common.trace.MqTraceHelper;
+import com.myxhs.search.feign.ProductFeignClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.common.message.MessageExt;
@@ -19,6 +20,7 @@ import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -54,6 +56,7 @@ public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
 
     private final ElasticsearchClient esClient;
     private final StringRedisTemplate stringRedisTemplate;
+    private final ProductFeignClient productFeignClient;
 
     /**
      * 追踪当前正在处理的 spuId，用于在 catch 块中记录失败的 docId 到 Redis。
@@ -182,24 +185,57 @@ public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
     }
 
     /**
-     * 从 Canal 行数据构建 ES 文档并索引
+     * 从 product 服务获取 SPU 完整信息并索引（修复 CC1）
      * <p>
-     * 使用 ExternalGte 版本类型：允许相同版本号写入（同一毫秒内多次变更），
-     * 但拒绝更低版本号写入（防止乱序旧消息覆盖新数据）。
+     * t_spu 表缺少 category_name/brand_name/price/sales 字段，
+     * 改为通过 Feign 调用 product 服务获取 SpuDetailVO，从 SKU 列表提取价格，从 Category 提取分类名。
+     * Feign 不可用时跳过不阻塞 Canal 消费（下次重试）。
      * </p>
      */
     private void indexProductFromCanal(Long spuId, JSONObject row, long version) throws Exception {
+        String name = row.getString("name");
+        Long categoryId = row.getLong("category_id");
+        Integer status = row.getIntValue("status", 1);
+        String createdAt = row.getString("created_at");
+
+        String categoryName = null;
+        String price = null;
+        String image = null;
+
+        // 通过 Feign 获取补全字段（product 宕机时跳过，Canal 下次重试）
+        try {
+            com.myxhs.common.response.R<Map<String, Object>> r = productFeignClient.getSpuDetail(spuId);
+            if (r != null && r.isSuccess() && r.getData() != null) {
+                Map<String, Object> spu = r.getData();
+                categoryName = (String) spu.get("categoryName");
+                // 从 SKU 列表取最低售价
+                @SuppressWarnings("unchecked")
+                List<Map<String, Object>> skuList = (List<Map<String, Object>>) spu.get("skuList");
+                if (skuList != null && !skuList.isEmpty()) {
+                    price = String.valueOf(skuList.get(0).get("price"));
+                }
+                // 从图片列表取第一张
+                @SuppressWarnings("unchecked")
+                List<String> images = (List<String>) spu.get("images");
+                if (images != null && !images.isEmpty()) {
+                    image = images.get(0);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[商品索引同步] product 服务不可用，索引字段将不完整（非阻塞）: spuId={}", spuId, e);
+        }
+
         Map<String, Object> doc = new HashMap<>();
         doc.put("spuId", spuId);
-        doc.put("name", row.getString("name"));
-        doc.put("categoryId", row.getLong("category_id"));
-        doc.put("categoryName", row.getString("category_name"));
-        doc.put("brandName", row.getString("brand_name"));
-        doc.put("price", row.getBigDecimal("price"));
-        doc.put("image", row.getString("main_image"));
-        doc.put("sales", row.getIntValue("sales", 0));
-        doc.put("status", row.getIntValue("status", 1));
-        doc.put("createdAt", row.getString("created_at"));
+        doc.put("name", name);
+        doc.put("categoryId", categoryId);
+        doc.put("categoryName", categoryName);
+        doc.put("brandName", null);     // t_spu 无品牌表，暂无品牌名
+        doc.put("price", price);
+        doc.put("image", image);
+        doc.put("sales", 0);            // product 模块无销量统计
+        doc.put("status", status);
+        doc.put("createdAt", createdAt);
 
         String jsonDoc = JSON.toJSONString(doc);
 

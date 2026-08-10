@@ -95,6 +95,7 @@ public class LocalMessageRetryJob {
             new LambdaQueryWrapper<LocalMessage>()
                 .in(LocalMessage::getStatus, 0, 2)
                 .le(LocalMessage::getNextRetryTime, LocalDateTime.now())
+                .orderByAsc(LocalMessage::getNextRetryTime)
                 .last("LIMIT " + BATCH_SIZE)
         );
 

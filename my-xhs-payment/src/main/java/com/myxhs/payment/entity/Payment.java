@@ -39,7 +39,7 @@ public class Payment implements Serializable {
     /** 用户ID */
     private Long userId;
 
-    /** 支付流水号（格式：PAY_时间戳_随机数） */
+    /** 支付流水号（格式：PAY_日期_流水号 (如 PAY20260516000001，Redis INCR)） */
     private String paymentNo;
 
     /** 支付金额 */

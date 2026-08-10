@@ -98,6 +98,12 @@ public class BusinessMetrics {
 
     // ==================== MQ 指标 ====================
 
+    /** 记录 MQ 消费结果（成功/失败） */
+    public void recordMqConsume(String topic, String consumerGroup, boolean success) {
+        counter("mq.consume.total", "topic", topic, "consumerGroup", consumerGroup,
+                "result", success ? "success" : "fail").increment();
+    }
+
     /** 记录 DLQ 死信消息 */
     public void recordDlqMessage(String consumerGroup, String topic) {
         counter("myxhs.mq.dlq.total", "consumerGroup", consumerGroup, "topic", topic).increment();

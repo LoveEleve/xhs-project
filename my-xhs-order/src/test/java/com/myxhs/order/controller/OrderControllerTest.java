@@ -65,9 +65,18 @@ class OrderControllerTest {
 
     @BeforeEach
     void setUp() {
-        OrderController controller = new OrderController(orderService, mockPayService, paymentFeignClient);
+        OrderController controller = new OrderController(orderService,
+                new org.springframework.beans.factory.ObjectProvider<MockPayService>() {
+                    @Override public MockPayService getObject() { return mockPayService; }
+                    @Override public MockPayService getObject(Object... args) { return mockPayService; }
+                    @Override public MockPayService getIfAvailable() { return mockPayService; }
+                    @Override public MockPayService getIfUnique() { return mockPayService; }
+                    @Override public java.util.stream.Stream<MockPayService> stream() { return java.util.stream.Stream.of(mockPayService); }
+                    @Override public java.util.stream.Stream<MockPayService> orderedStream() { return java.util.stream.Stream.of(mockPayService); }
+                }, paymentFeignClient);
         // 设置 pay.type=mock（默认行为）
         ReflectionTestUtils.setField(controller, "payType", "mock");
+        ReflectionTestUtils.setField(controller, "internalToken", "test-token");
 
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())
@@ -191,7 +200,7 @@ class OrderControllerTest {
     @Test
     @DisplayName("GET /api/order/by-order-no/{orderNo} - 查询成功")
     void getOrderByOrderNo_success() throws Exception {
-        when(orderService.getOrderByOrderNo("ORD20250101000000001"))
+        when(orderService.getOrderByOrderNo(1L, "ORD20250101000000001"))
                 .thenReturn(buildOrderVO());
 
         mockMvc.perform(get("/api/order/by-order-no/{orderNo}", "ORD20250101000000001"))
@@ -203,7 +212,7 @@ class OrderControllerTest {
     @Test
     @DisplayName("GET /api/order/by-order-no/{orderNo} - 订单不存在")
     void getOrderByOrderNo_notFound() throws Exception {
-        when(orderService.getOrderByOrderNo("ORD-NOT-EXIST"))
+        when(orderService.getOrderByOrderNo(1L, "ORD-NOT-EXIST"))
                 .thenThrow(new BizException(ResultCode.ORDER_NOT_FOUND, "订单不存在"));
 
         mockMvc.perform(get("/api/order/by-order-no/{orderNo}", "ORD-NOT-EXIST"))
@@ -259,7 +268,7 @@ class OrderControllerTest {
     void createPayment_success() throws Exception {
         Payment payment = buildPayment();
         when(mockPayService.createPayment(eq(USER_ID), any(PayRequest.class)))
-                .thenReturn(payment);
+                .thenReturn(new MockPayService.PaymentResult(true, ORDER_ID, null, payment));
 
         PayRequest payRequest = new PayRequest();
         payRequest.setOrderId(ORDER_ID);

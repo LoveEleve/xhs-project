@@ -39,15 +39,31 @@ public class OrderCloseConsumer implements RocketMQListener<MessageExt> {
     public void onMessage(MessageExt msg) {
         MqTraceHelper.restoreTraceId(msg);
         try {
-            String body = new String(msg.getBody());
-            Long orderId = Long.parseLong(body.trim());
+            byte[] bodyBytes = msg.getBody();
+            if (bodyBytes == null) {
+                log.warn("[订单关单] 消息体为空: msgId={}", msg.getMsgId());
+                return;
+            }
+            String body = new String(bodyBytes, java.nio.charset.StandardCharsets.UTF_8);
+            Long orderId;
+            try {
+                orderId = Long.parseLong(body.trim());
+            } catch (NumberFormatException e) {
+                log.error("[订单关单] 无效orderId: body={}", body, e);
+                return; // 无法解析的消息不重试
+            }
 
             // 从消息属性中获取 userId（发送时写入）
             String userIdStr = msg.getUserProperty("userId");
-            Long userId;
+            Long userId = null;
             if (userIdStr != null) {
-                userId = Long.parseLong(userIdStr);
-            } else {
+                try {
+                    userId = Long.parseLong(userIdStr);
+                } catch (NumberFormatException e) {
+                    log.warn("[订单关单] 无效userId: userIdStr={}", userIdStr);
+                }
+            }
+            if (userId == null) {
                 // 兜底：通过映射表查询
                 OrderNoMapping mapping = orderNoMappingRepository.selectByOrderId(orderId);
                 if (mapping == null) {

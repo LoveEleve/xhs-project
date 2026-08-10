@@ -46,6 +46,9 @@ public class InventoryReconcileJob {
 
     private static String totalKey(Long skuId) { return String.format(TOTAL_KEY_TPL, skuId); }
 
+    /** 分桶对账 Lua 脚本（原子求和+对比设置） */
+    private final org.springframework.data.redis.core.script.DefaultRedisScript<Long> reconcileBucketsScript;
+
     /**
      * 库存对账修复（XXL-Job Handler）
      * <p>
@@ -67,7 +70,7 @@ public class InventoryReconcileJob {
      *
      * @return 修复的记录数
      */
-    private int doReconcile() {
+    public int doReconcile() {
         log.info("[库存对账] 开始执行...");
         long startTime = System.currentTimeMillis();
         int repairCount = 0;
@@ -85,13 +88,20 @@ public class InventoryReconcileJob {
                 continue;
             }
 
-            int redisTotal = Integer.parseInt(redisTotalStr);
+            int redisTotal;
+            try {
+                redisTotal = Integer.parseInt(redisTotalStr);
+            } catch (NumberFormatException e) {
+                log.warn("[库存对账] 跳过脏数据(total非数字): skuId={}, value={}", inventory.getSkuId(), redisTotalStr);
+                continue;
+            }
             int mysqlAvailable = inventory.getAvailableStock();
 
             if (redisTotal != mysqlAvailable) {
                 int oldAvailable = mysqlAvailable;
-                inventory.setAvailableStock(redisTotal);
-                inventoryMapper.updateById(inventory);
+                // 目标 UPDATE 只更新 available_stock：不用 updateById 全字段盲写
+                // （selectList 快照的 locked_stock 可能是旧值，盲写会回滚并发 L2 的 locked 变更 → 幻影锁复活）
+                inventoryMapper.updateAvailableStockOnly(inventory.getSkuId(), redisTotal);
                 repairCount++;
                 log.info("[库存对账] 修复: skuId={}, mysql: {}→{} (以Redis为准)",
                         inventory.getSkuId(), oldAvailable, redisTotal);
@@ -111,30 +121,34 @@ public class InventoryReconcileJob {
     /**
      * 【M9】分桶完整性对账：各桶库存之和 == 总库存
      * 不一致时以分桶之和为准修正总库存。
+     * <p>
+     * 【原子化修复】使用 Lua 脚本在单个原子执行单位内完成求和+对比+设置，
+     * 替代 Java 侧"读 total → 循环 GET 各桶 → SET"的非原子序列——
+     * 读后发生的 preDeduct/release 会被盲 SET 覆盖（幻影回滚在途预扣）。
+     * </p>
      */
     private void reconcileBuckets(Long skuId) {
         String countStr = stringRedisTemplate.opsForValue()
                 .get("inventory:bucket:count:" + skuId);
         if (countStr == null) return;
-        int bucketCount = Integer.parseInt(countStr);
-
-        int bucketTotal = 0;
-        for (int i = 0; i < bucketCount; i++) {
-            String val = stringRedisTemplate.opsForValue()
-                    .get(String.format("inventory:{%d}:bucket:", skuId) + i);
-            bucketTotal += (val != null ? Integer.parseInt(val) : 0);
+        int bucketCount;
+        try {
+            bucketCount = Integer.parseInt(countStr);
+        } catch (NumberFormatException e) {
+            log.warn("[库存对账] 跳过脏数据(bucketCount非数字): skuId={}, value={}", skuId, countStr);
+            return;
         }
 
-        String totalVal = stringRedisTemplate.opsForValue()
-                .get(String.format("inventory:{%d}:total", skuId));
-        int total = totalVal != null ? Integer.parseInt(totalVal) : 0;
+        // 构建 KEYS：[totalKey, bucket:0, bucket:1, ..., bucket:N-1]
+        List<String> keys = new java.util.ArrayList<>(1 + bucketCount);
+        keys.add(String.format("inventory:{%d}:total", skuId));
+        for (int i = 0; i < bucketCount; i++) {
+            keys.add(String.format("inventory:{%d}:bucket:", skuId) + i);
+        }
 
-        if (bucketTotal != total) {
-            log.warn("[库存对账] 分桶总量不一致: skuId={}, bucketSum={}, total={}",
-                    skuId, bucketTotal, total);
-            stringRedisTemplate.opsForValue().set(
-                    String.format("inventory:{%d}:total", skuId),
-                    String.valueOf(bucketTotal));
+        Long fixed = stringRedisTemplate.execute(reconcileBucketsScript, keys);
+        if (fixed != null && fixed == 1) {
+            log.warn("[库存对账] 分桶总量不一致已修正(原子Lua): skuId={}", skuId);
         }
     }
 }

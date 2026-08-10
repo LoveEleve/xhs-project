@@ -51,6 +51,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class CartService {
 
+    /** 事件序列号 — 保证同服务实例内事件时间戳严格递增，防同毫秒 C-05 误判跳过 */
+    private static final java.util.concurrent.atomic.AtomicLong EVENT_SEQ = new java.util.concurrent.atomic.AtomicLong(0);
+
     private final StringRedisTemplate stringRedisTemplate;
     private final RocketMQTemplate rocketMQTemplate;
     private final ProductFeignClient productFeignClient;
@@ -58,12 +61,22 @@ public class CartService {
     private final DefaultRedisScript<Long> cartAddScript;
     private final DefaultRedisScript<Long> cartRemoveScript;
     private final DefaultRedisScript<Long> cartCheckAllScript;
+    private final DefaultRedisScript<Long> cartUpdateQuantityScript;
+    private final DefaultRedisScript<Long> cartMergeItemScript;
+    private final DefaultRedisScript<Long> cartCheckItemScript;
+
+    /** 商品上架状态码（对应 ProductStatus.ON_SHELF） */
+    private static final int PRODUCT_STATUS_ON_SHELF = 1;
 
     /** 购物车商品数量上限（品种数） */
     private static final int MAX_CART_SIZE = 50;
 
     /** 单品数量上限 */
     private static final int MAX_ITEM_QUANTITY = 99;
+
+    /** 购物车数据 TTL（30 天，C-13: 修复前无过期，违背注释"7天"承诺） */
+    private static final long CART_TTL_DAYS = 30;
+    private static final java.time.Duration CART_TTL = java.time.Duration.ofDays(CART_TTL_DAYS);
 
     /**
      * Redis Key 前缀
@@ -130,36 +143,37 @@ public class CartService {
                 userId, request.getSkuId(), request.getQuantity(), result);
 
         // MQ 异步持久化（Lua 脚本外执行，MQ 失败不影响购物车操作）
+        refreshTTL(userId);
         sendCartSyncEvent(userId, request.getSkuId(), result.intValue(), 1, "ADD");
     }
 
     // ==================== 修改数量 ====================
 
     /**
-     * 修改购物车商品数量
+     * 修改购物车商品数量（C-02 修复：Lua 原子化 HEXISTS + HSET）
      * <p>
-     * 为什么修改数量不用 Lua？
-     * 修改数量只涉及 1 个 Redis 命令（HSET），本身就是原子的。
-     * 前置的 HEXISTS 检查即使并发也不会产生脏数据（最多多返回一次"商品不存在"）。
+     * 修复前：hasKey + HSET 两步操作非原子，并发删除后 HSET 会使已删商品"复活"。
+     * 修复后：Lua 脚本内 HEXISTS 先校验，若商品已被并发删除则返回 0 抛异常。
      * </p>
      */
     public void updateQuantity(Long userId, CartUpdateQuantityRequest request) {
         String itemsKey = itemsKey(userId);
         String skuIdStr = String.valueOf(request.getSkuId());
 
-        // 校验商品是否在购物车中
-        Boolean exists = stringRedisTemplate.opsForHash().hasKey(itemsKey, skuIdStr);
-        if (Boolean.FALSE.equals(exists)) {
+        // Lua 原子检查+设置：HEXISTS 先校验，避免并发删除后复活
+        Long result = stringRedisTemplate.execute(
+                cartUpdateQuantityScript,
+                List.of(itemsKey),
+                skuIdStr, String.valueOf(request.getQuantity()));
+
+        if (result == null || result == 0) {
             throw new BizException(ResultCode.CART_ITEM_NOT_FOUND);
         }
-
-        // 直接设置新数量（HSET 原子操作）
-        stringRedisTemplate.opsForHash().put(itemsKey, skuIdStr, String.valueOf(request.getQuantity()));
 
         log.info("[购物车] 修改数量: userId={}, skuId={}, newQuantity={}",
                 userId, request.getSkuId(), request.getQuantity());
 
-        // MQ 异步持久化
+        refreshTTL(userId);
         sendCartSyncEvent(userId, request.getSkuId(), request.getQuantity(), null, "UPDATE");
     }
 
@@ -191,40 +205,40 @@ public class CartService {
                 userId, skuId, result);
 
         // MQ 异步持久化
+        refreshTTL(userId);
         sendCartSyncEvent(userId, skuId, 0, 0, "DELETE");
     }
 
     // ==================== 勾选/取消勾选 ====================
 
     /**
-     * 勾选/取消勾选单个商品
+     * 勾选/取消勾选单个商品（Lua 脚本原子操作）
      * <p>
-     * 为什么勾选不用 Lua？
-     * SADD/SREM 本身是原子操作，且勾选状态不影响购物车核心数据（items Hash）。
-     * 即使并发勾选，最终状态也是正确的（幂等操作）。
+     * 修复前：hasKey + SADD/SREM 非原子序列 — 并发 removeFromCart 在 hasKey 和 SADD
+     * 之间删除商品后，SADD 会在 checked Set 中创建幽灵条目（Check Set 有但 Items Hash 无）。
+     * 修复后：Lua 脚本内 HEXISTS + SADD/SREM 原子化，彻底消除 TOCTOU 窗口。
      * </p>
      */
     public void checkItem(Long userId, CartCheckRequest request) {
+        String itemsKey = itemsKey(userId);
         String checkedKey = checkedKey(userId);
         String skuIdStr = String.valueOf(request.getSkuId());
 
-        // 校验商品是否在购物车中
-        String itemsKey = itemsKey(userId);
-        Boolean exists = stringRedisTemplate.opsForHash().hasKey(itemsKey, skuIdStr);
-        if (Boolean.FALSE.equals(exists)) {
-            throw new BizException(ResultCode.CART_ITEM_NOT_FOUND);
-        }
+        // Lua 原子校验 + 操作：HEXISTS 验证 → SADD/SREM（单次原子执行）
+        Long result = stringRedisTemplate.execute(
+                cartCheckItemScript,
+                List.of(itemsKey, checkedKey),
+                skuIdStr, request.getChecked() ? "1" : "0");
 
-        if (Boolean.TRUE.equals(request.getChecked())) {
-            stringRedisTemplate.opsForSet().add(checkedKey, skuIdStr);
-        } else {
-            stringRedisTemplate.opsForSet().remove(checkedKey, skuIdStr);
+        if (result == null || result == 0) {
+            throw new BizException(ResultCode.CART_ITEM_NOT_FOUND);
         }
 
         log.info("[购物车] 勾选变更: userId={}, skuId={}, checked={}",
                 userId, request.getSkuId(), request.getChecked());
 
         // MQ 异步持久化
+        refreshTTL(userId);
         sendCartSyncEvent(userId, request.getSkuId(), null,
                 request.getChecked() ? 1 : 0, "CHECK");
     }
@@ -253,6 +267,10 @@ public class CartService {
 
         log.info("[购物车] 全选变更: userId={}, checked={}, selectedCount={}",
                 userId, checked, result != null ? result : 0);
+
+        // C-11: 发送 CHECK_ALL 事件同步勾选状态到 MySQL
+        refreshTTL(userId);
+        sendCartSyncEvent(userId, null, null, checked ? 1 : 0, "CHECK_ALL");
     }
 
     // ==================== 购物车列表 ====================
@@ -303,7 +321,7 @@ public class CartService {
                     .checkedCount(0)
                     .checkedAmount(BigDecimal.ZERO)
                     .totalCount(0)
-                    .allChecked(true)
+                    .allChecked(false)  // C-24: 空购物车不应显示"全选"
                     .build();
         }
 
@@ -329,10 +347,15 @@ public class CartService {
             }
         }
 
-        // 3. 批量查询 SKU 详情（Feign 调 Product 服务）
-        List<Long> skuIds = itemsMap.keySet().stream()
-                .map(k -> Long.parseLong(k.toString()))
-                .collect(Collectors.toList());
+        // 3. 批量查询 SKU 详情（Feign 调 Product 服务）；脏数据 key 防御性跳过
+        List<Long> skuIds = new ArrayList<>();
+        for (Object k : itemsMap.keySet()) {
+            try {
+                skuIds.add(Long.parseLong(k.toString()));
+            } catch (NumberFormatException e) {
+                log.warn("[购物车] 跳过脏数据key(skuId非数字): userId={}, key={}", userId, k);
+            }
+        }
         Map<Long, ProductFeignClient.SkuDTO> skuMap = batchGetSkuInfo(skuIds);
 
         // 4. 组装 CartItemVO
@@ -342,8 +365,16 @@ public class CartService {
 
         for (Map.Entry<Object, Object> entry : itemsMap.entrySet()) {
             String skuIdStr = entry.getKey().toString();
-            int quantity = Integer.parseInt(entry.getValue().toString());
-            Long skuId = Long.parseLong(skuIdStr);
+            int quantity;
+            Long skuId;
+            try {
+                quantity = Integer.parseInt(entry.getValue().toString());
+                skuId = Long.parseLong(skuIdStr);
+            } catch (NumberFormatException e) {
+                log.warn("[购物车] 跳过脏数据(数量/skuId非数字): userId={}, key={}, value={}",
+                        userId, skuIdStr, entry.getValue());
+                continue;
+            }
             boolean isChecked = checkedSet.contains(skuIdStr);
 
             ProductFeignClient.SkuDTO sku = skuMap.get(skuId);
@@ -363,10 +394,12 @@ public class CartService {
                         .specs(sku.getSpecs());
 
                 // 判断商品是否有效
-                if (sku.getStatus() == null || sku.getStatus() != 1) {
+                // 注：product 批量接口已过滤 status=ON_SHELF，下架商品不会返回此处分支。
+                // 保留此检查作为防御层——若 product 侧行为变更，cart 仍能正确处理。
+                // 注2：不再检查 sku.getStock()——product 的 stock 是创建时冗余占位值（从不更新），
+                // 真实库存校验由 inventory 服务在下单/扣减时执行。
+                if (sku.getStatus() == null || sku.getStatus() != PRODUCT_STATUS_ON_SHELF) {
                     builder.valid(false).invalidReason("商品已下架");
-                } else if (sku.getStock() != null && sku.getStock() <= 0) {
-                    builder.valid(false).invalidReason("库存不足");
                 } else {
                     builder.valid(true);
                     valid = true;
@@ -414,7 +447,7 @@ public class CartService {
      * 合并策略：
      * - 同一 SKU：取较大数量（但不超过 99）
      * - 新 SKU：直接加入（但总数不超过 50）
-     * - 合并后匿名购物车由前端清除（或 7 天过期自动清除）
+     * - 合并后匿名购物车由前端清除（C-13: 30 天无操作自动过期）
      * </p>
      * <p>
      * 幂等性保证：
@@ -431,39 +464,43 @@ public class CartService {
         String checkedKey = checkedKey(userId);
         String sortKey = sortKey(userId);
 
-        Long currentSize = stringRedisTemplate.opsForHash().size(itemsKey);
-        int currentSizeInt = currentSize != null ? currentSize.intValue() : 0;
-
         for (CartMergeRequest.MergeItem item : request.getItems()) {
             if (item.getSkuId() == null || item.getQuantity() == null || item.getQuantity() <= 0) {
                 continue;
             }
 
             String skuIdStr = String.valueOf(item.getSkuId());
-            Boolean exists = stringRedisTemplate.opsForHash().hasKey(itemsKey, skuIdStr);
 
-            if (Boolean.TRUE.equals(exists)) {
-                // 已存在：取较大数量（幂等合并）
-                Object currentQtyObj = stringRedisTemplate.opsForHash().get(itemsKey, skuIdStr);
-                int currentQty = currentQtyObj != null ? Integer.parseInt(currentQtyObj.toString()) : 0;
-                int mergedQty = Math.min(Math.max(currentQty, item.getQuantity()), MAX_ITEM_QUANTITY);
-                stringRedisTemplate.opsForHash().put(itemsKey, skuIdStr, String.valueOf(mergedQty));
-            } else {
-                // 新商品：检查总数上限
-                if (currentSizeInt >= MAX_CART_SIZE) {
-                    log.warn("[购物车] 合并跳过（已满）: userId={}, skuId={}", userId, item.getSkuId());
-                    continue;
-                }
-                int qty = Math.min(item.getQuantity(), MAX_ITEM_QUANTITY);
-                stringRedisTemplate.opsForHash().put(itemsKey, skuIdStr, String.valueOf(qty));
-                currentSizeInt++;
+            // 统一 Lua 脚本原子处理：HEXISTS→已有项 HGET+max()+HSET / 新项 HLEN+HSET+SADD+ZADD NX
+            // 替代原 hasKey→get→put 非原子路径：并发删除后 put 会复活已删商品
+            Long mergeResult = stringRedisTemplate.execute(
+                    cartMergeItemScript,
+                    List.of(itemsKey, checkedKey, sortKey),
+                    skuIdStr, String.valueOf(item.getQuantity()),
+                    String.valueOf(MAX_CART_SIZE),
+                    String.valueOf(MAX_ITEM_QUANTITY),
+                    String.valueOf(System.currentTimeMillis()));
+
+            if (mergeResult == null || Long.valueOf(0).equals(mergeResult)) {
+                log.warn("[购物车] 合并跳过（已满或上限触发）: userId={}, skuId={}", userId, item.getSkuId());
+                continue;
             }
 
-            // 默认选中 + 记录排序（NX 语义：已存在的不更新时间）
-            stringRedisTemplate.opsForSet().add(checkedKey, skuIdStr);
-            stringRedisTemplate.opsForZSet().addIfAbsent(sortKey, skuIdStr, System.currentTimeMillis());
+            // Lua 返回值 >= 10000 表示已有商品（实际数量 = 返回值 - 10000），
+            // 已有商品 Lua 不触碰 checked Set，因此发 UPDATE 事件（checked=null 不改 MySQL 勾选状态），
+            // 避免统一发 ADD+checked=1 强制覆盖 MySQL 勾选状态与 Redis 不一致
+            if (mergeResult >= 10000) {
+                int actualQty = (int) (mergeResult - 10000);
+                sendCartSyncEvent(userId, item.getSkuId(), actualQty, null, "UPDATE");
+            } else {
+                int actualQty = mergeResult.intValue();
+                // 新商品：Lua 已 SADD 到 checked Set（默认勾选），发 ADD 事件对齐
+                sendCartSyncEvent(userId, item.getSkuId(), actualQty, 1, "ADD");
+            }
         }
 
+        // 合并写入后刷新 TTL（与其他写路径一致，防止长期活跃用户购物车过期）
+        refreshTTL(userId);
         log.info("[购物车] 匿名购物车合并完成: userId={}, 合并{}项", userId, request.getItems().size());
     }
 
@@ -541,6 +578,16 @@ public class CartService {
     }
 
     /**
+     * C-13: 刷新购物车三结构的 TTL
+     * 每次写操作后延长过期时间，30 天无操作自动清除。
+     */
+    private void refreshTTL(Long userId) {
+        stringRedisTemplate.expire(itemsKey(userId), CART_TTL);
+        stringRedisTemplate.expire(checkedKey(userId), CART_TTL);
+        stringRedisTemplate.expire(sortKey(userId), CART_TTL);
+    }
+
+    /**
      * 发送购物车同步事件到 MQ（异步持久化到 MySQL）
      * <p>
      * 设计决策：MQ 发送失败不影响购物车操作
@@ -558,6 +605,9 @@ public class CartService {
                     .checked(checked)
                     .action(action)
                     .build();
+            // 用单调递增序列号保证同毫秒事件不被 C-05 误判跳过
+            event.setTimestamp(java.time.Instant.ofEpochMilli(System.currentTimeMillis())
+                    .plusNanos(EVENT_SEQ.incrementAndGet()));
 
             String payload = objectMapper.writeValueAsString(event);
             rocketMQTemplate.asyncSend(

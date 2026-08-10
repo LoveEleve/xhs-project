@@ -33,6 +33,9 @@ public class InventoryDeductEvent extends AbstractDomainEvent<InventoryDeductEve
     /** 操作类型：PRE_DEDUCT / CONFIRM / RELEASE */
     private String action;
 
+    /** 事件发生时间戳（毫秒），用于消费端乱序防护 */
+    private Long eventTime;
+
     @Override
     public String getEventType() {
         return "INVENTORY_DEDUCT";

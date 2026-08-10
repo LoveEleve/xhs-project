@@ -1,6 +1,7 @@
 package com.myxhs.notification.dto;
 
 import lombok.AllArgsConstructor;
+import jakarta.validation.constraints.NotNull;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -18,6 +19,7 @@ import lombok.NoArgsConstructor;
 public class NotificationEventDTO {
 
     /** 事件类型：1-点赞 2-评论 3-关注 4-系统通知 5-订单通知 */
+    @NotNull(message = "事件类型不能为空")
     private Integer type;
 
     /** 发送者ID */
@@ -30,6 +32,7 @@ public class NotificationEventDTO {
     private String senderAvatar;
 
     /** 接收者ID */
+    @NotNull(message = "接收者ID不能为空")
     private Long targetUserId;
 
     /** 关联目标ID（笔记ID/商品ID/订单ID） */

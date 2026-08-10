@@ -18,6 +18,7 @@ import java.net.InetAddress;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 /**
  * SSE 连接管理器
@@ -52,11 +53,11 @@ public class SseEmitterManager {
     /** userId → SseEmitter（本机管理的连接） */
     private final ConcurrentHashMap<Long, SseEmitter> emitters = new ConcurrentHashMap<>();
 
-    private static final String SSE_KEY_PREFIX = "notify:sse:";
+    private static final String SSE_KEY_PREFIX = "myxhs:notification:sse:";
     private static final Duration SSE_TTL = Duration.ofSeconds(30);
 
     /** Redis Pub/Sub Channel：跨实例 SSE 推送 */
-    private static final String NOTIFY_SSE_CHANNEL = "notify:sse:channel";
+    private static final String NOTIFY_SSE_CHANNEL = "myxhs:notification:sse:channel";
 
     /** 服务实例标识（IP:Port） */
     private volatile String serverId;
@@ -69,7 +70,7 @@ public class SseEmitterManager {
      * </p>
      */
     public SseEmitter createConnection(Long userId) {
-        SseEmitter emitter = new SseEmitter(0L); // 永不超时
+        SseEmitter emitter = new SseEmitter(TimeUnit.MINUTES.toMillis(30)); // 30分钟超时兜底
 
         // 原子替换：put 返回旧值，保证同一 userId 不会并发创建两个有效连接
         // ConcurrentHashMap.put 是线程安全的，不需要额外加锁
@@ -181,6 +182,24 @@ public class SseEmitterManager {
             return; // 用户不在本实例，忽略
         }
         pushToLocalUser(userId, emitter, eventName, data);
+    }
+
+    /**
+     * 处理跨实例推送（接收原始 JSON 字符串，避免 Map 反序列化导致 Long→Integer 类型丢失）
+     */
+    public void handleCrossInstanceMessageJson(Long userId, String eventName, String dataJson) {
+        SseEmitter emitter = emitters.get(userId);
+        if (emitter == null) return;
+        try {
+            emitter.send(SseEmitter.event()
+                    .name(eventName)
+                    .data(dataJson, MediaType.APPLICATION_JSON));
+        } catch (Exception e) {
+            if (emitters.remove(userId, emitter)) {
+                stringRedisTemplate.delete(SSE_KEY_PREFIX + userId);
+            }
+            log.warn("[SSE] 跨实例推送失败: userId={}, event={}", userId, eventName);
+        }
     }
 
     /**

@@ -13,8 +13,12 @@ import org.springframework.beans.factory.ObjectFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.http.HttpMessageConverters;
 import org.springframework.cloud.openfeign.support.SpringDecoder;
+import feign.RequestInterceptor;
+import feign.RequestTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 
 import java.io.IOException;
 import java.lang.reflect.ParameterizedType;
@@ -81,6 +85,7 @@ public class FeignUnifiedConfig {
      * </p>
      */
     @Bean
+    @Primary
     public SpringDecoder feignSpringDecoder(ObjectFactory<HttpMessageConverters> messageConverters) {
         return new SpringDecoder(messageConverters);
     }

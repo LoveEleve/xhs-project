@@ -6,16 +6,16 @@ LOG_DIR="$BASE_DIR/logs"
 PIDS_DIR="$BASE_DIR/pids"
 mkdir -p "$LOG_DIR" "$PIDS_DIR"
 
-JAVA_OPTS_BASE="-javaagent:/data/workspace/my-xhs/skywalking-agent/skywalking-agent.jar -Dskywalking.agent.service_name=SW_PLACEHOLDER -Dskywalking.collector.backend_service=21.130.247.89:11800 -Xms512m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
-JAVA_OPTS_GW="-javaagent:/data/workspace/my-xhs/skywalking-agent/skywalking-agent.jar -Dskywalking.agent.service_name=SW_PLACEHOLDER -Dskywalking.collector.backend_service=21.130.247.89:11800 -Xms256m -Xmx256m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
-JAVA_OPTS_HEAVY="-javaagent:/data/workspace/my-xhs/skywalking-agent/skywalking-agent.jar -Dskywalking.agent.service_name=SW_PLACEHOLDER -Dskywalking.collector.backend_service=21.130.247.89:11800 -Xms1024m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
+JAVA_OPTS_BASE="-javaagent:/data/workspace/my-xhs/skywalking-agent-9.6.0/skywalking-agent.jar -Dskywalking.agent.service_name=SW_PLACEHOLDER -Dskywalking.collector.backend_service=21.130.247.89:11800 -Xms512m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
+JAVA_OPTS_GW="-javaagent:/data/workspace/my-xhs/skywalking-agent-9.6.0/skywalking-agent.jar -Dskywalking.agent.service_name=SW_PLACEHOLDER -Dskywalking.collector.backend_service=21.130.247.89:11800 -Xms256m -Xmx256m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
+JAVA_OPTS_HEAVY="-javaagent:/data/workspace/my-xhs/skywalking-agent-9.6.0/skywalking-agent.jar -Dskywalking.agent.service_name=SW_PLACEHOLDER -Dskywalking.collector.backend_service=21.130.247.89:11800 -Xms1024m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
 
 echo "=== 启动所有 my-xhs 微服务 ==="
 
 start_service() {
     local MODULE=$1
     local PORT=$2
-    local JAVA_OPTS=$3
+    local JAVA_OPTS=${3:-$JAVA_OPTS_BASE}  # 默认 512MB，HEAVY 服务可覆盖为 1024MB
     
     local JAR="$BASE_DIR/$MODULE/target/$MODULE-1.0-SNAPSHOT.jar"
     local LOG="$LOG_DIR/$MODULE.log"

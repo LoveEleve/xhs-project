@@ -73,6 +73,17 @@ public class RedisScriptConfig {
     }
 
     /**
+     * 取消收藏原子 Lua 脚本：ZSCORE 检查 + ZREM，防止并发 favorite→ZREM→ZADD 覆盖
+     */
+    @Bean
+    public DefaultRedisScript<Long> unfavoriteAtomicScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/unfavorite_atomic.lua")));
+        script.setResultType(Long.class);
+        return script;
+    }
+
+    /**
      * 点赞原子 Lua 脚本
      * 原子操作：SADD 正向索引 + SADD 反向索引，防止中间状态不一致
      */
@@ -92,6 +103,29 @@ public class RedisScriptConfig {
     public DefaultRedisScript<Long> unlikeAtomicScript() {
         DefaultRedisScript<Long> script = new DefaultRedisScript<>();
         script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/unlike_atomic.lua")));
+        script.setResultType(Long.class);
+        return script;
+    }
+
+    /**
+     * 点赞正向索引原子 Lua 脚本（单 Key，Redis Cluster 兼容）
+     * 仅操作正向索引，反向索引由调用方单独处理
+     */
+    @Bean
+    public DefaultRedisScript<Long> likeForwardAtomicScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/like_forward_atomic.lua")));
+        script.setResultType(Long.class);
+        return script;
+    }
+
+    /**
+     * 取消点赞正向索引原子 Lua 脚本（单 Key，Redis Cluster 兼容）
+     */
+    @Bean
+    public DefaultRedisScript<Long> unlikeForwardAtomicScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/unlike_forward_atomic.lua")));
         script.setResultType(Long.class);
         return script;
     }

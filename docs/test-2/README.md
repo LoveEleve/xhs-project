@@ -1,23 +1,59 @@
-# my-xhs 模块功能梳理
+# my-xhs 全链路测试
 
-按模块逐一分析：接口清单、内部架构、数据模型、中间件集成。
-每个模块一个子文件夹，后续可追加 curl 测试记录等文档。
+> 交接文档：[HANDOFF-20260808.md](HANDOFF-20260808.md)（v7 FINAL，106/155）
+> 测试方法论：[methodology/TEST-METHODOLOGY.md](methodology/TEST-METHODOLOGY.md)（v2.0 分层验证 L1→L4）
+> 执行计划：[plans/FULL-CHAIN-RETEST-PLAN.md](plans/FULL-CHAIN-RETEST-PLAN.md)（七链逐端点 curl + 155端点覆盖映射）
+> 执行记录：[execution/](execution/)（按服务子目录，旧版归档至 `_archive/`）
+> 业务分析：[service-analysis/](service-analysis/)（16服务代码审查文档，120+文件）
+> 旧版交接：[HANDOFF-20260807-FINAL.md](HANDOFF-20260807-FINAL.md)（已被取代）
 
-| 编号 | 模块 | 端口 | 数据库 | 状态 |
-|------|------|------|--------|------|
-| 01 | [用户模块](01-user/) | 19001 | my_xhs_user (13306) | 完成 |
-| 02 | [内容模块](02-content/) | 19002 | my_xhs_content (13307) | 完成 |
-| 03 | [数据分析](03-analytics/) | 19003 | my_xhs_analytics (13306) | 完成 |
-| 04 | [计数服务](04-counter/) | 19004 | 同 content | 完成 |
-| 05 | [商品服务](05-product/) | 19006 | my_xhs_product (13307) | 完成 |
-| 06 | [购物车](06-cart/) | 19008 | my_xhs_cart (13307) | 完成 |
-| 07 | [库存服务](07-inventory/) | 19009 | my_xhs_inventory (13308) | 完成 |
-| 08 | [优惠券](08-coupon/) | 19010 | my_xhs_coupon (13307) | 完成 |
-| 09 | [订单服务](09-order/) | 19011 | my_xhs_order (13308, 分库分表) | 完成 |
-| 10 | [支付服务](10-payment/) | 19012 | my_xhs_payment (13308) | 完成 |
-| 11 | [通知服务](11-notification/) | 19013 | my_xhs_notification (13309) | 完成 |
-| 12 | [即时通讯](12-im/) | 19014 | my_xhs_im (13309) | 完成 |
-| 13 | [首页 BFF](13-home/) | 19015 | 无 (聚合层) | 完成 |
-| 14 | [搜索服务](14-search/) | 19016 | Elasticsearch 8.12 | 完成 |
-| 15 | [公共模块](15-common/) | — | — | 完成 |
-| 16 | [Gateway](16-gateway/) | 19000 | 无 | 完成 |
+---
+
+## 新 AI 阅读顺序
+
+```
+1. HANDOFF-20260808.md          ← 先读：基础设施 + 覆盖表 + §八 极简启动
+2. methodology/TEST-METHODOLOGY.md  ← 二读：分层验证模型(L1→L4) + 9透镜
+3. plans/FULL-CHAIN-RETEST-PLAN.md  ← 三读：逐端点 curl 命令 + 七层验证
+4. execution/README.md          ← 执行索引(进度+文件清单)
+5. execution/pitfalls.md        ← 踩坑速查(22项+17条预防)
+```
+
+---
+
+## 快速启动
+
+```bash
+# 1. 确认 16 服务
+ps aux | grep "my-xhs-" | grep java | grep -v grep | wc -l  # 应≈16
+
+# 2. XXL-Job（jobGroup=1）
+curl -c /tmp/xxl_cookie -s -X POST "http://21.130.247.89:18080/xxl-job-admin/login" \
+  -d "userName=admin&password=123456"
+
+# 3. JWT（注意：testuser密码已失效，用 mytestuser）
+curl -s http://localhost:19000/api/user/auth/captcha > /tmp/cap.json
+KEY=$(python3 -c "import json; print(json.load(open('/tmp/cap.json'))['data']['captchaKey'])")
+CODE=$(grep "$KEY" /tmp/r_user.log | tail -1 | grep -oP 'code=\K\w+')
+TOKEN=$(curl -s http://localhost:19000/api/user/auth/login \
+  -H 'Content-Type: application/json' \
+  -d "{\"username\":\"mytestuser\",\"password\":\"Test@123456\",\"captchaKey\":\"$KEY\",\"captchaCode\":\"$CODE\"}" \
+  | python3 -c "import json,sys; print(json.load(sys.stdin)['data']['accessToken'])")
+echo "$TOKEN" > /tmp/test_token.txt
+```
+
+## 基础设施速查
+
+| 工具 | 地址 | 凭据/说明 |
+|------|------|------|
+| Gateway | localhost:19000 | JWT `cat /tmp/test_token.txt` |
+| MySQL | 21.130.247.89:13306-13309 | root/Xhs@2026#MySQL（远程无CREATE权限） |
+| Redis | 21.130.247.89:**16379** | Xhs@2026#Redis（Sentinel主节点，非16381） |
+| ES | 21.130.247.89:19200 | elastic/Xhs@2026#Elastic |
+| Nacos | 21.130.247.89:18848 | nacos/nacos |
+| XXL-Job | 21.130.247.89:18080 | admin/123456（jobGroup=1） |
+| SkyWalking | 21.130.247.89:8080 | — |
+| Prometheus | 21.130.247.89:19090 | — |
+| Kibana | 21.130.247.89:15601 | elastic/Xhs@2026#Elastic |
+| Admin Token | Header: X-Admin-Call | `my-xhs-admin-token-2026` |
+| Test User | mytestuser / Test@123456 | ID: 2085927845755985922 |

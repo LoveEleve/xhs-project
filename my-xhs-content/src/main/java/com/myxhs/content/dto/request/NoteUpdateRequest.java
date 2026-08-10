@@ -23,9 +23,11 @@ public class NoteUpdateRequest {
     private List<String> images;
 
     /** 视频URL */
+    @Size(max = 512, message = "视频URL最长512字符")
     private String videoUrl;
 
     /** 封面图URL */
+    @Size(max = 512, message = "封面URL最长512字符")
     private String coverUrl;
 
     /** 话题ID列表 */

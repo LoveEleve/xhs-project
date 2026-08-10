@@ -18,7 +18,22 @@ import java.util.Map;
 public class InventoryFeignFallbackFactory implements FallbackFactory<InventoryFeignClient> {
     @Override
     public InventoryFeignClient create(Throwable cause) {
-        log.error("[降级] InventoryFeignClient 不可用，库存释放失败需补偿: {}", cause.getMessage());
-        return request -> R.fail(503, "库存服务不可用");
+        log.error("[降级] InventoryFeignClient 不可用，库存操作失败需补偿: {}", cause.getMessage());
+        return new InventoryFeignClient() {
+            @Override
+            public R<Map<String, Object>> queryStock(Long skuId) {
+                return R.fail(503, "库存服务不可用");
+            }
+
+            @Override
+            public R<Void> releaseStock(Map<String, Object> request) {
+                return R.fail(503, "库存服务不可用");
+            }
+
+            @Override
+            public R<Void> confirmDeduct(Map<String, Object> request) {
+                return R.fail(503, "库存服务不可用");
+            }
+        };
     }
 }

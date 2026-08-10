@@ -7,9 +7,11 @@ import com.myxhs.content.mapper.LocalMessageMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -36,15 +38,29 @@ public class FeedMessageRetryJob {
     private final LocalMessageMapper localMessageMapper;
     private final RocketMQTemplate rocketMQTemplate;
     private final ObjectMapper objectMapper;
+    private final StringRedisTemplate stringRedisTemplate;
 
+    private static final String PUSH_PROGRESS_PREFIX = "myxhs:feed:push:progress:";
+
+    /** 分布式锁 Key — 防止多实例并发执行补偿任务 */
+    private static final String RETRY_LOCK_KEY = "lock:feed:retry";
+    private static final String COMPENSATE_LOCK_KEY = "lock:feed:compensate";
+
+    private static final int RETRY_LOCK_TTL_SECONDS = 55;
     private static final int RETRY_DELAY_SECONDS = 60;
     private static final int MAX_RETRY = 3;
-    private static final int SCAN_LIMIT = 100;
-    private static final int PUSH_COMPENSATE_SCAN_LIMIT = 50;
+    private static final int SCAN_LIMIT = 500;
+    private static final int PUSH_COMPENSATE_SCAN_LIMIT = 100;
     private static final int PUSH_COMPENSATE_DELAY_SECONDS = 120;
 
     @Scheduled(fixedRate = 30000)
     public void retryFailedMessages() {
+        // 分布式锁：防止多实例并发执行
+        String lockValue = java.util.UUID.randomUUID().toString();
+        Boolean locked = stringRedisTemplate.opsForValue()
+                .setIfAbsent(RETRY_LOCK_KEY, lockValue, Duration.ofSeconds(RETRY_LOCK_TTL_SECONDS));
+        if (Boolean.FALSE.equals(locked)) return;
+
         try {
             int sent = 0;
             int failed = 0;
@@ -53,18 +69,32 @@ public class FeedMessageRetryJob {
             List<LocalMessage> messages = localMessageMapper.selectPending(cutoffTime, MAX_RETRY, SCAN_LIMIT);
 
             for (LocalMessage msg : messages) {
+                final Long msgId = msg.getId();
                 try {
                     NotePublishEvent event = objectMapper.readValue(msg.getBody(), NotePublishEvent.class);
-                    rocketMQTemplate.syncSend(msg.getTopic(), event, 3000);
-
-                    localMessageMapper.markSent(msg.getId());
+                    // 补丁 localMsgId：body 序列化时 localMsgId 为 null，对齐 compensateIncompletePush
+                    if (event.getLocalMsgId() == null) {
+                        event.setLocalMsgId(msgId);
+                    }
+                    // asyncSend + 回调
+                    rocketMQTemplate.asyncSend(msg.getTopic(), event,
+                            new org.apache.rocketmq.client.producer.SendCallback() {
+                                @Override
+                                public void onSuccess(org.apache.rocketmq.client.producer.SendResult result) {
+                                    localMessageMapper.markSent(msgId);
+                                    log.info("[Feed补偿] 补发成功: localMsgId={}", msgId);
+                                }
+                                @Override
+                                public void onException(Throwable e) {
+                                    localMessageMapper.incrementRetry(msgId, MAX_RETRY);
+                                    log.warn("[Feed补偿] 补发失败: localMsgId={}, retryCount={}", msgId, msg.getRetryCount() + 1);
+                                }
+                            });
                     sent++;
-                    log.info("[Feed补偿] 补发成功: localMsgId={}", msg.getId());
-
                 } catch (Exception e) {
                     localMessageMapper.incrementRetry(msg.getId(), MAX_RETRY);
                     failed++;
-                    log.warn("[Feed补偿] 补发失败: localMsgId={}, retryCount={}", msg.getId(), msg.getRetryCount());
+                    log.warn("[Feed补偿] 补发异常: localMsgId={}", msgId, e);
                 }
             }
 
@@ -74,6 +104,9 @@ public class FeedMessageRetryJob {
 
         } catch (Exception e) {
             log.error("[Feed补偿] 执行异常", e);
+        } finally {
+            // 安全释放锁：比对 value 防止误删其他实例的锁
+            releaseLock(RETRY_LOCK_KEY, lockValue);
         }
     }
 
@@ -91,6 +124,12 @@ public class FeedMessageRetryJob {
      */
     @Scheduled(fixedRate = 60000)
     public void compensateIncompletePush() {
+        // 分布式锁：防止多实例并发执行补偿任务
+        String lockValue = java.util.UUID.randomUUID().toString();
+        Boolean locked = stringRedisTemplate.opsForValue()
+                .setIfAbsent(COMPENSATE_LOCK_KEY, lockValue, Duration.ofSeconds(55));
+        if (Boolean.FALSE.equals(locked)) return;
+
         try {
             int resent = 0;
             int failed = 0;
@@ -102,18 +141,42 @@ public class FeedMessageRetryJob {
 
             for (LocalMessage msg : messages) {
                 try {
+                    // 1. 检查 Redis 推送进度——已完成则跳过
+                    String progressKey = PUSH_PROGRESS_PREFIX + msg.getId();
+                    Object status = stringRedisTemplate.opsForHash().get(progressKey, "status");
+                    if ("completed".equals(status)) {
+                        localMessageMapper.updatePushProgress(msg.getId(), 2, msg.getPushCursor() != null ? msg.getPushCursor() : 0);
+                        skipped++;
+                        continue;
+                    }
+
+                    // 2. Redis 不可用或 key 不存在时，MySQL 兜底——push_status=2 则跳过
+                    if (status == null && msg.getPushStatus() != null && msg.getPushStatus() == 2) {
+                        log.info("[Feed推送补偿] Redis缺失但MySQL已标记完成，跳过: localMsgId={}", msg.getId());
+                        skipped++;
+                        continue;
+                    }
+
                     NotePublishEvent event = objectMapper.readValue(msg.getBody(), NotePublishEvent.class);
                     // 确保 localMsgId 已设置，FeedPushConsumer 需要它进行断点恢复
                     if (event.getLocalMsgId() == null) {
                         event.setLocalMsgId(msg.getId());
                     }
-                    rocketMQTemplate.syncSend(msg.getTopic(), event, 3000);
-
-                    // 标记推送中（幂等：Consumer 从 Redis 断点恢复，重复推送无副作用）
-                    localMessageMapper.updatePushProgress(msg.getId(), 1, msg.getPushCursor() != null ? msg.getPushCursor() : 0);
+                    final Long currentMsgId = msg.getId();
+                    rocketMQTemplate.asyncSend(msg.getTopic(), event,
+                            new org.apache.rocketmq.client.producer.SendCallback() {
+                                @Override
+                                public void onSuccess(org.apache.rocketmq.client.producer.SendResult result) {
+                                    localMessageMapper.updatePushStatus(currentMsgId, 1);
+                                    log.info("[Feed推送补偿] 重新投递成功: localMsgId={}, noteId={}", currentMsgId, event.getNoteId());
+                                }
+                                @Override
+                                public void onException(Throwable e) {
+                                    log.warn("[Feed推送补偿] 重新投递失败: localMsgId={}", currentMsgId, e);
+                                }
+                            });
                     resent++;
-                    log.info("[Feed推送补偿] 重新投递: localMsgId={}, noteId={}, pushStatus={}, pushCursor={}",
-                            msg.getId(), event.getNoteId(), msg.getPushStatus(), msg.getPushCursor());
+                    log.info("[Feed推送补偿] 重新投递: localMsgId={}, noteId={}", msg.getId(), event.getNoteId());
 
                 } catch (Exception e) {
                     failed++;
@@ -127,6 +190,18 @@ public class FeedMessageRetryJob {
 
         } catch (Exception e) {
             log.error("[Feed推送补偿] 执行异常", e);
+        } finally {
+            releaseLock(COMPENSATE_LOCK_KEY, lockValue);
         }
+    }
+
+    /**
+     * 安全释放分布式锁（Lua 原子比对 value，防止误删其他实例的锁）
+     */
+    private void releaseLock(String key, String expectedValue) {
+        String luaScript = "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
+        stringRedisTemplate.execute(
+                new org.springframework.data.redis.core.script.DefaultRedisScript<>(luaScript, Long.class),
+                java.util.Collections.singletonList(key), expectedValue);
     }
 }

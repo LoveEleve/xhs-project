@@ -6,6 +6,10 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Update;
 
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
+
 /**
  * 库存 Mapper
  */
@@ -51,7 +55,7 @@ public interface InventoryMapper extends BaseMapper<Inventory> {
      */
     @Update("UPDATE t_inventory SET available_stock = available_stock - #{qty}, " +
             "freezing_stock = freezing_stock + #{qty}, updated_at = NOW() " +
-            "WHERE sku_id = #{skuId} AND available_stock >= #{qty}")
+            "WHERE sku_id = #{skuId} AND available_stock >= #{qty} AND deleted = 0")
     int tryFreeze(@Param("skuId") Long skuId, @Param("qty") Integer qty);
 
     /**
@@ -59,7 +63,7 @@ public interface InventoryMapper extends BaseMapper<Inventory> {
      * @return affected rows
      */
     @Update("UPDATE t_inventory SET freezing_stock = freezing_stock - #{qty}, " +
-            "updated_at = NOW() WHERE sku_id = #{skuId} AND freezing_stock >= #{qty}")
+            "updated_at = NOW() WHERE sku_id = #{skuId} AND freezing_stock >= #{qty} AND deleted = 0")
     int confirmFreeze(@Param("skuId") Long skuId, @Param("qty") Integer qty);
 
     /**
@@ -68,6 +72,98 @@ public interface InventoryMapper extends BaseMapper<Inventory> {
      */
     @Update("UPDATE t_inventory SET available_stock = available_stock + #{qty}, " +
             "freezing_stock = freezing_stock - #{qty}, updated_at = NOW() " +
-            "WHERE sku_id = #{skuId} AND freezing_stock >= #{qty}")
+            "WHERE sku_id = #{skuId} AND freezing_stock >= #{qty} AND deleted = 0")
     int cancelFreeze(@Param("skuId") Long skuId, @Param("qty") Integer qty);
+
+    /**
+     * 对账专用：仅更新 available_stock（不触碰 locked_stock/freezing_stock），
+     * 避免 updateById 全字段盲写把并发 L2 的 locked_stock 变更回滚（幻影锁复活）
+     */
+    @Update("UPDATE t_inventory SET available_stock = #{available} WHERE sku_id = #{skuId} AND deleted = 0")
+    int updateAvailableStockOnly(@Param("skuId") Long skuId, @Param("available") int available);
+
+    // ==================== TCC 冻结明细（xid 维度） ====================
+
+    /**
+     * 写入冻结明细（Try 阶段，重复 Try 由 fence 幂等拦截，此处 ON DUPLICATE 防御并发）
+     */
+    @org.apache.ibatis.annotations.Insert("INSERT INTO t_tcc_freeze_detail (xid, branch_id, sku_id, quantity, status, created_at) " +
+            "VALUES (#{xid}, #{branchId}, #{skuId}, #{quantity}, 1, NOW(3)) " +
+            "ON DUPLICATE KEY UPDATE quantity = VALUES(quantity), status = 1")
+    int insertFreezeDetail(@Param("xid") String xid, @Param("branchId") Long branchId,
+            @Param("skuId") Long skuId, @Param("quantity") int quantity);
+
+    /**
+     * 冻结明细状态转换（乐观锁：仅允许从指定前状态转换，防并发双 Confirm/Cancel）
+     */
+    @Update("UPDATE t_tcc_freeze_detail SET status = #{toStatus} " +
+            "WHERE xid = #{xid} AND branch_id = #{branchId} AND sku_id = #{skuId} AND status = #{fromStatus}")
+    int updateFreezeDetailStatus(@Param("xid") String xid, @Param("branchId") Long branchId,
+            @Param("skuId") Long skuId, @Param("fromStatus") int fromStatus, @Param("toStatus") int toStatus);
+
+    /**
+     * 查询超时的冻结明细（status=1 且创建时间早于阈值），供超时 Job 按 xid 逐个取消
+     */
+    @org.apache.ibatis.annotations.Select("SELECT * FROM t_tcc_freeze_detail WHERE status = 1 " +
+            "AND created_at < #{cutoff} ORDER BY created_at ASC LIMIT #{limit}")
+    List<java.util.Map<String, Object>> selectExpiredFreezeDetails(@Param("cutoff") LocalDateTime cutoff,
+            @Param("limit") int limit);
+
+    /**
+     * 存储库存事件 Outbox 记录
+     */
+    @org.apache.ibatis.annotations.Insert("INSERT INTO t_inventory_outbox (order_id, sku_id, quantity, action, status, created_at) " +
+            "VALUES (#{orderId}, #{skuId}, #{quantity}, #{action}, 0, NOW()) " +
+            "ON DUPLICATE KEY UPDATE quantity = VALUES(quantity), action = VALUES(action), status = 0, created_at = NOW()")
+    int insertOutboxEvent(@Param("orderId") Long orderId, @Param("skuId") Long skuId,
+            @Param("quantity") int quantity, @Param("action") String action);
+
+    /**
+     * 查询待发送的 Outbox 事件
+     */
+    @org.apache.ibatis.annotations.Select("SELECT * FROM t_inventory_outbox WHERE status = 0 " +
+            "AND created_at < #{cutoff} ORDER BY id ASC LIMIT #{limit}")
+    List<java.util.Map<String, Object>> selectPendingOutbox(@Param("cutoff") LocalDateTime cutoff, @Param("limit") int limit);
+
+    /**
+     * 标记 Outbox 事件已发送
+     */
+    @org.apache.ibatis.annotations.Update("UPDATE t_inventory_outbox SET status = 1 WHERE order_id = #{orderId} AND sku_id = #{skuId}")
+    int markOutboxSent(@Param("orderId") Long orderId, @Param("skuId") Long skuId);
+
+    /**
+     * 取消 Outbox 事件（syncSend 失败且已回滚 Redis 时调用，
+     * 防止 OutboxSenderJob 补发已回滚的事件导致 MySQL 幻影扣减）
+     */
+    @org.apache.ibatis.annotations.Delete("DELETE FROM t_inventory_outbox WHERE order_id = #{orderId} AND sku_id = #{skuId} AND status = 0")
+    int cancelOutboxEvent(@Param("orderId") Long orderId, @Param("skuId") Long skuId);
+
+    /**
+     * 写入补偿记录（回滚失败时需要人工/自动重试）
+     */
+    @org.apache.ibatis.annotations.Insert("INSERT INTO t_inventory_compensation (order_id, sku_id, quantity, fail_reason, created_at) " +
+            "VALUES (#{orderId}, #{skuId}, #{quantity}, #{reason}, NOW())")
+    int insertCompensation(@Param("orderId") Long orderId, @Param("skuId") Long skuId,
+            @Param("quantity") int quantity, @Param("reason") String reason);
+
+    /**
+     * 查询待处理的补偿记录
+     */
+    @org.apache.ibatis.annotations.Select("SELECT * FROM t_inventory_compensation WHERE status = 0 " +
+            "AND retry_count < #{maxRetry} AND created_at < #{cutoff} ORDER BY id ASC LIMIT #{limit}")
+    List<java.util.Map<String, Object>> selectPendingCompensation(@Param("cutoff") LocalDateTime cutoff,
+            @Param("maxRetry") int maxRetry, @Param("limit") int limit);
+
+    /**
+     * 标记补偿记录已处理
+     */
+    @org.apache.ibatis.annotations.Update("UPDATE t_inventory_compensation SET status = 1 WHERE id = #{id}")
+    int markCompensationResolved(@Param("id") Long id);
+
+    /**
+     * 增加补偿重试次数
+     */
+    @org.apache.ibatis.annotations.Update("UPDATE t_inventory_compensation SET retry_count = retry_count + 1, " +
+            "status = CASE WHEN retry_count + 1 >= #{maxRetry} THEN 2 ELSE 0 END WHERE id = #{id}")
+    int incrementCompensationRetry(@Param("id") Long id, @Param("maxRetry") int maxRetry);
 }

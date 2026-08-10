@@ -5,7 +5,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 
 import java.util.Collections;
 
@@ -47,18 +46,5 @@ public class PaymentConfig {
         script.setScriptText(PAYMENT_TIMEOUT_SCRIPT);
         script.setResultType(Long.class);
         return script;
-    }
-
-    /**
-     * 定时任务线程池（用于支付超时检查、退款超时检查等）
-     */
-    @Bean
-    public ThreadPoolTaskScheduler paymentTaskScheduler() {
-        ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
-        scheduler.setPoolSize(2);
-        scheduler.setThreadNamePrefix("payment-scheduler-");
-        scheduler.setAwaitTerminationSeconds(60);
-        scheduler.setWaitForTasksToCompleteOnShutdown(true);
-        return scheduler;
     }
 }

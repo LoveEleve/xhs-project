@@ -52,13 +52,11 @@ class CounterServiceTest {
     private CounterMapper counterMapper;
 
     @Mock
-    private com.myxhs.common.cache.RedisOperator redisOperator;
-
     private CounterService counterService;
 
     @BeforeEach
     void setUp() {
-        counterService = new CounterService(redisOperator, stringRedisTemplate, counterBuffer, counterMapper);
+        counterService = new CounterService(stringRedisTemplate, counterBuffer, counterMapper);
     }
 
     // ==================== 计数 +1 ====================

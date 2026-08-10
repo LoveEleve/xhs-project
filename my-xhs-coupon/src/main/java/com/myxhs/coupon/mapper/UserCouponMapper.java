@@ -44,7 +44,7 @@ public interface UserCouponMapper extends BaseMapper<UserCoupon> {
      * @return 本批次实际更新的行数
      */
     @Update("UPDATE t_user_coupon uc " +
-            "INNER JOIN t_coupon_template ct ON uc.coupon_id = ct.id " +
+            "INNER JOIN t_coupon_template ct ON uc.coupon_id = ct.id AND ct.deleted = 0 " +
             "SET uc.status = 2 " +
             "WHERE uc.status = 0 AND ct.valid_end < NOW() " +
             "LIMIT #{batchSize}")

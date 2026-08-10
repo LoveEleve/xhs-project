@@ -36,7 +36,7 @@ public class CommentController {
      * </p>
      */
     @PostMapping
-    @RateLimit(windowSeconds = 60, maxRequests = 10, perUser = true, prefix = "comment:create",
+    @RateLimit(windowSeconds = 60, maxRequests = 10, perUser = true, prefix = "myxhs:comment:create",
             message = "评论过于频繁，请稍后重试")
     public R<Map<String, Long>> createComment(
             @RequestHeader("X-User-Id") Long userId,

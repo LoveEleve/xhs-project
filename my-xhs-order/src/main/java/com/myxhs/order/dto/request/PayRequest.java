@@ -14,5 +14,7 @@ public class PayRequest {
 
     /** 支付方式：1-支付宝(Mock) 2-微信(Mock) */
     @NotNull(message = "支付方式不能为空")
+    @jakarta.validation.constraints.Min(value = 1, message = "支付方式最小值为1")
+    @jakarta.validation.constraints.Max(value = 99, message = "支付方式最大值为99")
     private Integer payType;
 }

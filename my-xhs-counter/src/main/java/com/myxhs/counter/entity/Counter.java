@@ -17,7 +17,7 @@ import lombok.EqualsAndHashCode;
 @TableName("t_counter")
 public class Counter extends BaseEntity {
 
-    /** 目标类型：1-笔记 2-用户 */
+    /** 目标类型：1-笔记 2-用户 3-评论 4-商品 */
     private Integer targetType;
 
     /** 目标ID */

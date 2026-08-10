@@ -86,7 +86,7 @@ class NoteServiceTest {
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
         noteService = new NoteService(
-                noteMapper, localMessageMapper, dfaFilter, idGeneratorUtil,
+                noteMapper, commentMapper, localMessageMapper, dfaFilter, idGeneratorUtil,
                 cacheHelper, objectMapper, rocketMQTemplate, businessMetrics
         );
     }

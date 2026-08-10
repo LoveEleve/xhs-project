@@ -25,10 +25,17 @@ public interface OrderMapper extends BaseMapper<Order> {
     /**
      * 取消订单（乐观锁 + 分片键路由）
      */
-    @Update("UPDATE t_order SET status = #{status}, cancelled_at = #{cancelledAt}, updated_at = NOW() " +
-            "WHERE id = #{id} AND user_id = #{userId} AND status = 0 AND deleted = 0")
-    int cancelOrder(@Param("id") Long id, @Param("userId") Long userId,
-                    @Param("status") int status, @Param("cancelledAt") LocalDateTime cancelledAt);
+    @Update("UPDATE t_order SET cancelled_at = NOW() WHERE id = #{id} AND user_id = #{userId} AND status = 4 AND deleted = 0")
+    int setCancelledAt(@Param("id") Long id, @Param("userId") Long userId);
+
+    @Update("UPDATE t_order SET paid_at = NOW() WHERE id = #{id} AND user_id = #{userId} AND status = 1 AND deleted = 0")
+    int setPaidAt(@Param("id") Long id, @Param("userId") Long userId);
+
+    @Update("UPDATE t_order SET delivered_at = NOW() WHERE id = #{id} AND user_id = #{userId} AND status = 2 AND deleted = 0")
+    int setDeliveredAt(@Param("id") Long id, @Param("userId") Long userId);
+
+    @Update("UPDATE t_order SET completed_at = NOW() WHERE id = #{id} AND user_id = #{userId} AND status = 3 AND deleted = 0")
+    int setCompletedAt(@Param("id") Long id, @Param("userId") Long userId);
 
     /**
      * 标记已支付（乐观锁 + 分片键路由）

@@ -3,8 +3,8 @@
 -- 退券时回退库存 + 减少用户领取次数
 --
 -- 【修复M15】Key 格式使用 {templateId} 作为 hash tag，保证两个 KEYS 在 Cluster 下同 slot
--- KEYS[1] = coupon:{templateId}:stock             (String: 券库存)
--- KEYS[2] = coupon:{templateId}:claimed:userId    (String: 用户已领次数)
+-- KEYS[1] = myxhs:coupon:{templateId}:stock             (String: 券库存)
+-- KEYS[2] = myxhs:coupon:{templateId}:claimed:userId    (String: 用户已领次数)
 --
 -- 返回值：
 --   1  : 退还成功

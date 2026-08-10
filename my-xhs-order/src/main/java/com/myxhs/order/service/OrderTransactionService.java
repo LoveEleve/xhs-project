@@ -1,5 +1,6 @@
 package com.myxhs.order.service;
 
+import com.myxhs.order.dto.SkuInfoDTO;
 import com.myxhs.order.dto.request.OrderCreateRequest;
 import com.myxhs.order.entity.LocalMessage;
 import com.myxhs.order.entity.Order;
@@ -14,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.Map;
 
 /**
  * 订单事务服务（独立类，解决同类内部调用 @Transactional 不生效的问题）
@@ -50,7 +52,8 @@ public class OrderTransactionService {
     public Order executeLocalTransaction(Long userId, OrderCreateRequest request,
                                          String orderNo, BigDecimal totalAmount,
                                          BigDecimal discountAmount, BigDecimal payAmount,
-                                         String transactionPayload) {
+                                         String transactionPayload,
+                                         Map<Long, SkuInfoDTO> skuMap) {
         // 1. 创建订单主表
         Order order = new Order();
         order.setUserId(userId);
@@ -69,19 +72,20 @@ public class OrderTransactionService {
         // 2. 记录 Event Sourcing 事件（与订单创建同事务）
         orderEventService.appendEvent(order, OrderEventService.EVENT_CREATED, null);
 
-        // 3. 创建订单明细
+        // 3. 创建订单明细（使用真实 SKU 数据，不再 Mock）
         for (OrderCreateRequest.SkuItem skuItem : request.getSkuItems()) {
+            SkuInfoDTO sku = skuMap.get(skuItem.getSkuId());
             OrderItem item = new OrderItem();
             item.setOrderId(order.getId());
-            item.setUserId(userId); // 分片键冗余存储
+            item.setUserId(userId);
             item.setSkuId(skuItem.getSkuId());
-            item.setSpuId(skuItem.getSkuId()); // Mock: spuId = skuId
-            item.setSkuName("Mock商品-" + skuItem.getSkuId());
-            item.setSkuImage("https://img.mock.com/sku/" + skuItem.getSkuId() + ".jpg");
-            item.setPrice(new BigDecimal("99.00")); // Mock 单价
+            item.setSpuId(sku != null ? sku.getSpuId() : skuItem.getSkuId());
+            item.setSkuName(sku != null ? sku.getName() : "SKU-" + skuItem.getSkuId());
+            item.setSkuImage(null); // product SkuVO 不含 image 字段
+            item.setPrice(sku != null ? sku.getPrice() : BigDecimal.ZERO);
             item.setQuantity(skuItem.getQuantity());
-            item.setTotalAmount(new BigDecimal("99.00").multiply(
-                    BigDecimal.valueOf(skuItem.getQuantity())));
+            item.setTotalAmount((sku != null ? sku.getPrice() : BigDecimal.ZERO)
+                    .multiply(BigDecimal.valueOf(skuItem.getQuantity())));
             orderItemMapper.insert(item);
         }
 
@@ -95,6 +99,7 @@ public class OrderTransactionService {
         message.setPayload(transactionPayload);
         message.setStatus(0); // 待处理
         message.setRetryCount(0);
+        message.setNextRetryTime(LocalDateTime.now()); // 初始补发时间: 立即, 防NULL导致SQL不匹配
         localMessageMapper.insert(message);
 
         return order;

@@ -27,7 +27,8 @@ public class CreateTemplateRequest {
     @DecimalMin(value = "0.01", message = "优惠值必须大于0")
     private BigDecimal discountValue;
 
-    /** 最低消费金额 */
+    /** 最低消费金额（可为0表示无门槛） */
+    @DecimalMin(value = "0.00", message = "最低消费金额不能为负数")
     private BigDecimal minAmount;
 
     /** 发放总量 */
@@ -43,9 +44,11 @@ public class CreateTemplateRequest {
 
     /** 有效期开始 */
     @NotNull(message = "有效期开始时间不能为空")
+    @FutureOrPresent(message = "有效期开始不能为过去时间")
     private LocalDateTime validStart;
 
     /** 有效期结束 */
     @NotNull(message = "有效期结束时间不能为空")
+    @FutureOrPresent(message = "有效期结束不能为过去时间")
     private LocalDateTime validEnd;
 }

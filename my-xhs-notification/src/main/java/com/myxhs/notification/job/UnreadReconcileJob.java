@@ -59,19 +59,21 @@ public class UnreadReconcileJob {
      */
     private int[] doReconcile() {
         int batchSize = 500;
-        long lastUserId = 0;
+        long lastId = 0;
         int totalFixed = 0;
         int totalChecked = 0;
         int queryLimit = batchSize * 10; // SQL LIMIT，按通知条数而非用户数
 
         while (true) {
-            final long queryAfter = lastUserId;
+            final long cursor = lastId;
+            // 【修复: 坑51】改用 id 作为游标而非 userId——userId 游标会在 LIMIT 切割边界 userId 时
+            // 跳过该 userId 的剩余记录，导致对账数据不完整
             List<Notification> batch = notificationMapper.selectList(
                     new LambdaQueryWrapper<Notification>()
                             .eq(Notification::getIsRead, 0)
-                            .gt(Notification::getUserId, queryAfter)
-                            .select(Notification::getUserId, Notification::getType)
-                            .orderByAsc(Notification::getUserId)
+                            .gt(Notification::getId, cursor)
+                            .select(Notification::getId, Notification::getUserId, Notification::getType)
+                            .orderByAsc(Notification::getId)
                             .last("LIMIT " + queryLimit));
 
             if (batch.isEmpty()) {
@@ -97,9 +99,12 @@ public class UnreadReconcileJob {
                     log.info("[对账] 修复: userId={}, redis={}, db={}",
                             userId, redisCount.getTotal(), dbTotal);
                 }
-                lastUserId = Math.max(lastUserId, userId);
             }
 
+            // 更新游标：取本批次最后一条通知的 id
+            if (!batch.isEmpty()) {
+                lastId = batch.get(batch.size() - 1).getId();
+            }
             totalChecked += userTypeCountMap.size();
 
             // 修复退出条件：检查通知条数而非用户数

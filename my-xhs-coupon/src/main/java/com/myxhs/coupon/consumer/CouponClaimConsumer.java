@@ -13,6 +13,7 @@ import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Component;
 
 /**
@@ -46,28 +47,30 @@ public class CouponClaimConsumer implements RocketMQListener<MessageExt> {
     private static final long IDEMPOTENT_TTL_SECONDS = 86400; // 24 小时
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void onMessage(MessageExt msg) {
         MqTraceHelper.restoreTraceId(msg);
+        String msgId = msg.getMsgId();
         try {
-            String msgId = msg.getMsgId();
 
             // 1. 统一幂等检查
             if (!idempotentHelper.isFirstProcess(BIZ_TYPE, msgId, IDEMPOTENT_TTL_SECONDS)) {
                 return;
             }
 
-            String body = new String(msg.getBody());
+            String body = new String(msg.getBody(), java.nio.charset.StandardCharsets.UTF_8);
             CouponService.CouponClaimEvent event = objectMapper.readValue(body, CouponService.CouponClaimEvent.class);
 
             log.info("[优惠券MQ] 收到领券消息: userId={}, templateId={}, msgId={}",
                     event.userId(), event.templateId(), msgId);
 
-            // 2. 写入用户券表（claimNo=msgId 保证幂等唯一）
+            // 2. 写入用户券表（claimNo 优先，msgId 兜底——兼容 Outbox 重发）
+            String claimNo = event.claimNo() != null ? event.claimNo() : msgId;
             UserCoupon userCoupon = new UserCoupon();
             userCoupon.setUserId(event.userId());
             userCoupon.setCouponId(event.templateId());
-            userCoupon.setClaimNo(msgId);
-            userCoupon.setStatus(0); // 未使用
+            userCoupon.setClaimNo(claimNo);
+            userCoupon.setStatus(0);
 
             try {
                 userCouponMapper.insert(userCoupon);
@@ -85,7 +88,12 @@ public class CouponClaimConsumer implements RocketMQListener<MessageExt> {
                     event.userId(), event.templateId(), userCoupon.getId());
 
         } catch (Exception e) {
-            // insert 或 decrementRemainCount 失败时不设置 SETNX，MQ 重试可重新执行完整流程
+            // 清除幂等标记——失败时记录告警但不吞掉原异常，让 MQ 仍可重试
+            try {
+                idempotentHelper.removeMark(BIZ_TYPE, msgId);
+            } catch (Exception markEx) {
+                log.error("[优惠券MQ] 清除幂等标记失败(msgId可能已被TTL过期或Redis不可用): msgId={}", msgId, markEx);
+            }
             log.error("[优惠券MQ] 消费失败: msgId={}", msg.getMsgId(), e);
             throw new RuntimeException("领券消费失败", e);
         } finally {

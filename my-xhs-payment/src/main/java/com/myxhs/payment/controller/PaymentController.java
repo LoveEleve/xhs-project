@@ -27,18 +27,35 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/payment")
 @RequiredArgsConstructor
+@org.springframework.validation.annotation.Validated
 public class PaymentController {
 
     private final PaymentService paymentService;
+
+    /** 内部调用令牌（配置化管理，不再硬编码；生产环境应为第三方签名验签） */
+    @org.springframework.beans.factory.annotation.Value("${myxhs.internal.token}")
+    private String internalToken;
+    private boolean isInternalCall(String v) { return internalToken != null && !internalToken.isEmpty() && internalToken.equals(v); }
+
+    /** 管理接口令牌（配置化管理，不再硬编码） */
+    @org.springframework.beans.factory.annotation.Value("${myxhs.admin.token}")
+    private String adminToken;
+    private boolean isAdminCall(String v) { return adminToken != null && !adminToken.isEmpty() && adminToken.equals(v); }
 
     /**
      * 发起支付
      */
     @PostMapping("/pay")
-    @RateLimit(prefix = "payment:pay", maxRequests = 10, windowSeconds = 60, perUser = true,
+    @RateLimit(prefix = "myxhs:payment:pay", maxRequests = 10, windowSeconds = 60, perUser = true,
                message = "支付频率过高，请稍后再试")
     public R<PaymentVO> pay(@Valid @RequestBody PayCreateRequest request,
-                            @RequestHeader("X-User-Id") Long userId) {
+                            @RequestHeader("X-User-Id") Long userId,
+                            @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
+        // 仅允许内部调用（order服务 Feign）或有 admin 权限的调用
+        if (!isInternalCall(internalCall)) {
+            log.warn("[支付] 非内部调用被拒绝: userId={}, orderId={}", userId, request.getOrderId());
+            return R.fail(403, "支付请通过订单服务发起");
+        }
         request.setUserId(userId);
         return paymentService.pay(request);
     }
@@ -54,7 +71,12 @@ public class PaymentController {
      */
     @PostMapping("/callback/{payType}")
     public String payCallback(@PathVariable Integer payType,
-                              @RequestBody String callbackData) {
+                              @RequestBody String callbackData,
+                              @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
+        if (!isInternalCall(internalCall)) {
+            log.warn("[支付回调] 非内部调用被拒绝: payType={}", payType);
+            return "fail";
+        }
         log.info("[支付回调] 收到回调: payType={}, data={}", payType, callbackData);
         // 解析回调数据（不同支付渠道格式不同）
         // Mock 实现：简化解析逻辑
@@ -72,6 +94,8 @@ public class PaymentController {
      * 发起退款
      */
     @PostMapping("/refund")
+    @RateLimit(prefix = "myxhs:payment:refund", maxRequests = 5, windowSeconds = 60, perUser = true,
+               message = "退款频率过高，请稍后再试")
     public R<Void> refund(@Valid @RequestBody RefundRequest request,
                           @RequestHeader("X-User-Id") Long userId) {
         request.setUserId(userId);
@@ -83,7 +107,12 @@ public class PaymentController {
      */
     @PostMapping("/refund-callback/{payType}")
     public String refundCallback(@PathVariable Integer payType,
-                                 @RequestBody String callbackData) {
+                                 @RequestBody String callbackData,
+                                 @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
+        if (!isInternalCall(internalCall)) {
+            log.warn("[退款回调] 非内部调用被拒绝: payType={}", payType);
+            return "fail";
+        }
         log.info("[退款回调] 收到回调: payType={}, data={}", payType, callbackData);
         String refundNo = extractRefundNo(callbackData, payType);
         boolean success = extractRefundResult(callbackData, payType);
@@ -97,7 +126,10 @@ public class PaymentController {
      * 查询支付状态
      */
     @GetMapping("/status/{orderId}")
-    public R<PaymentVO> getPaymentStatus(@PathVariable Long orderId) {
+    public R<PaymentVO> getPaymentStatus(@PathVariable Long orderId,
+            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+        // 用户面应走 /api/order/pay/status/{orderId}（有归属校验），
+        // 此端点主要为 order 服务内部 Feign 调用
         return paymentService.getPaymentStatus(orderId);
     }
 

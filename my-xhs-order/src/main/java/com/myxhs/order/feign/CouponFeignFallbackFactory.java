@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.openfeign.FallbackFactory;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.util.Map;
 
 /**
@@ -18,7 +19,25 @@ import java.util.Map;
 public class CouponFeignFallbackFactory implements FallbackFactory<CouponFeignClient> {
     @Override
     public CouponFeignClient create(Throwable cause) {
-        log.error("[降级] CouponFeignClient 不可用，退券失败需补偿: {}", cause.getMessage());
-        return (userId, request) -> R.fail(503, "优惠券服务不可用");
+        log.error("[降级] CouponFeignClient 不可用: {}", cause.getMessage());
+        return new CouponFeignClient() {
+            @Override
+            public R<java.math.BigDecimal> getCouponDiscount(Long userId, Long userCouponId, java.math.BigDecimal orderAmount) {
+                log.error("[降级] 查询券折扣失败");
+                return R.fail(503, "优惠券服务不可用");
+            }
+
+            @Override
+            public R<java.math.BigDecimal> useCoupon(Long userId, Map<String, Object> request) {
+                log.error("[降级] 核销优惠券失败");
+                return R.fail(503, "优惠券服务不可用");
+            }
+
+            @Override
+            public R<Void> returnCoupon(Long userId, Map<String, Object> request) {
+                log.error("[降级] 退还优惠券失败");
+                return R.fail(503, "优惠券服务不可用");
+            }
+        };
     }
 }

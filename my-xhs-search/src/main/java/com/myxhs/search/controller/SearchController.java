@@ -25,6 +25,7 @@ import java.util.concurrent.ExecutorService;
 @RestController
 @RequestMapping("/api/search")
 @RequiredArgsConstructor
+@org.springframework.validation.annotation.Validated
 public class SearchController {
 
     private final NoteSearchService noteSearchService;
@@ -114,12 +115,23 @@ public class SearchController {
         return R.ok();
     }
 
+    /** 管理接口令牌（配置化管理，不再硬编码） */
+    @org.springframework.beans.factory.annotation.Value("${myxhs.admin.token}")
+    private String adminToken;
+
+    private boolean isAdminCall(String headerValue) {
+        return adminToken != null && !adminToken.isEmpty() && adminToken.equals(headerValue);
+    }
+
     /**
      * 手动触发全量索引重建（管理员接口）
      */
     @PostMapping("/index/rebuild")
-    public R<String> rebuildIndex(@RequestHeader("X-User-Id") Long userId) {
-        // 生产环境应校验管理员权限，这里简化处理
+    public R<String> rebuildIndex(@RequestHeader("X-User-Id") Long userId,
+                                  @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
+        if (!isAdminCall(adminCall)) {
+            return R.fail(403, "仅管理员可执行此操作");
+        }
         indexRebuildJob.manualRebuild();
         return R.ok("索引重建任务已启动");
     }
@@ -150,7 +162,11 @@ public class SearchController {
      * 人工置顶热搜词（管理员接口）
      */
     @PutMapping("/hot/pin")
-    public R<Void> pinKeyword(@RequestParam String keyword) {
+    public R<Void> pinKeyword(@RequestParam String keyword,
+                              @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
+        if (!isAdminCall(adminCall)) {
+            return R.fail(403, "仅管理员可执行此操作");
+        }
         hotSearchService.pinKeyword(keyword);
         return R.ok();
     }
@@ -159,7 +175,11 @@ public class SearchController {
      * 取消置顶
      */
     @DeleteMapping("/hot/pin")
-    public R<Void> unpinKeyword(@RequestParam String keyword) {
+    public R<Void> unpinKeyword(@RequestParam String keyword,
+                                @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
+        if (!isAdminCall(adminCall)) {
+            return R.fail(403, "仅管理员可执行此操作");
+        }
         hotSearchService.unpinKeyword(keyword);
         return R.ok();
     }
@@ -168,7 +188,11 @@ public class SearchController {
      * 人工屏蔽热搜词（管理员接口）
      */
     @PutMapping("/hot/block")
-    public R<Void> blockKeyword(@RequestParam String keyword) {
+    public R<Void> blockKeyword(@RequestParam String keyword,
+                                @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
+        if (!isAdminCall(adminCall)) {
+            return R.fail(403, "仅管理员可执行此操作");
+        }
         hotSearchService.blockKeyword(keyword);
         return R.ok();
     }
@@ -177,7 +201,11 @@ public class SearchController {
      * 取消屏蔽
      */
     @DeleteMapping("/hot/block")
-    public R<Void> unblockKeyword(@RequestParam String keyword) {
+    public R<Void> unblockKeyword(@RequestParam String keyword,
+                                  @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
+        if (!isAdminCall(adminCall)) {
+            return R.fail(403, "仅管理员可执行此操作");
+        }
         hotSearchService.unblockKeyword(keyword);
         return R.ok();
     }

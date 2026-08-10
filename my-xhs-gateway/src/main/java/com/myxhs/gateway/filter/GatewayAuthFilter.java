@@ -121,12 +121,16 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
         }
 
         // 6. 鉴权通过，注入 X-User-Id 和 X-Trace-Id Header
-        String userId = claims.getSubject();
-        log.info("[Gateway] 鉴权通过, userId={}, path={}, method={}, traceId={}", userId, path, method, traceId);
+        // C-07: 使用 set() 覆盖而非 header() 追加，防止客户端伪造 X-User-Id
+        final String uid = claims.getSubject();
+        log.info("[Gateway] 鉴权通过, userId={}, path={}, method={}, traceId={}", uid, path, method, traceId);
 
+        final String finalTraceId = traceId;
         ServerHttpRequest mutatedRequest = exchange.getRequest().mutate()
-                .header(USER_ID_HEADER, userId)
-                .header(TRACE_ID_HEADER, traceId)
+                .headers(h -> {
+                    h.set(USER_ID_HEADER, uid);
+                    h.set(TRACE_ID_HEADER, finalTraceId);
+                })
                 .build();
 
         ServerWebExchange mutatedExchange = exchange.mutate()

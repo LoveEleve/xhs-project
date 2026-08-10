@@ -7,8 +7,10 @@ import com.myxhs.common.constants.RedisKeyConstants;
 import com.myxhs.common.exception.BizException;
 import com.myxhs.common.id.IdGeneratorUtil;
 import com.myxhs.common.response.ResultCode;
+import com.myxhs.common.trace.MqTraceHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.springframework.data.redis.core.DefaultTypedTuple;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
@@ -49,6 +51,7 @@ public class FollowService {
     private final DefaultRedisScript<Long> unfollowTargetScript;
     private final FollowMapper followMapper;
     private final IdGeneratorUtil idGeneratorUtil;
+    private final RocketMQTemplate rocketMQTemplate;
 
     /** 关注列表/粉丝列表最大返回条数 */
     private static final int MAX_PAGE_SIZE = 50;
@@ -122,6 +125,9 @@ public class FollowService {
             // 后续通过对账任务修复不一致
             log.error("[关注] MySQL落库失败（不影响关注结果）: userId={}, targetUserId={}", userId, targetUserId, e);
         }
+
+        // 4. 【修复R10】发送 MQ 更新 counter 服务关注/粉丝计数
+        sendFollowCounterEvent(userId, targetUserId, "FOLLOW");
     }
 
     // ==================== 取关用户 ====================
@@ -175,6 +181,9 @@ public class FollowService {
         } catch (Exception e) {
             log.error("[关注] MySQL删除失败（不影响取关结果）: userId={}, targetUserId={}", userId, targetUserId, e);
         }
+
+        // 4. 【修复R10】发送 MQ 更新 counter 服务关注/粉丝计数
+        sendFollowCounterEvent(userId, targetUserId, "UNFOLLOW");
     }
 
     // ==================== 关注列表 ====================
@@ -317,7 +326,7 @@ public class FollowService {
         String myKey = RedisKeyConstants.FOLLOW_LIST + userId;
         String targetKey = RedisKeyConstants.FOLLOW_LIST + targetUserId;
 
-        // 【m19】使用 ZINTER 服务端求交集，避免 5000×2 数据拉回内存
+        // 【m19】使用 ZINTER 服务端求交集，返回完整交集后客户端 limit——大V注意内存
         Set<String> common = stringRedisTemplate.opsForZSet()
                 .intersect(myKey, targetKey);
         if (common == null || common.isEmpty()) {
@@ -419,6 +428,13 @@ public class FollowService {
         return "计数一致，无需修复";
     }
 
+    public void syncCountersToCounterModule(Long userId) {
+        long follow = getFollowingCount(userId);
+        long follower = getFollowerCount(userId);
+        stringRedisTemplate.opsForValue().set(RedisKeyConstants.COUNTER + "2:" + userId + ":7", String.valueOf(follow));
+        stringRedisTemplate.opsForValue().set(RedisKeyConstants.COUNTER + "2:" + userId + ":6", String.valueOf(follower));
+    }
+
     /**
      * Redis ↔ MySQL 关系全量对账修复
      * <p>
@@ -436,14 +452,16 @@ public class FollowService {
     public String repairUserRelationships(Long userId) {
         String followingKey = RedisKeyConstants.FOLLOW_LIST + userId;
 
-        // 1. 获取 Redis ZSet 中所有关注目标
-        Set<String> redisFollowing = stringRedisTemplate.opsForZSet()
-                .range(followingKey, 0, -1);
-        java.util.Set<Long> redisSet;
-        if (redisFollowing == null || redisFollowing.isEmpty()) {
-            redisSet = java.util.Collections.emptySet();
-        } else {
-            redisSet = redisFollowing.stream().map(Long::valueOf).collect(java.util.stream.Collectors.toSet());
+        // 1. 获取 Redis ZSet 中所有关注目标及其 score（关注时间戳）
+        Set<ZSetOperations.TypedTuple<String>> redisFollowing = stringRedisTemplate.opsForZSet()
+                .rangeWithScores(followingKey, 0, -1);
+        java.util.Map<Long, Double> redisScoreMap = new java.util.LinkedHashMap<>();
+        if (redisFollowing != null) {
+            for (ZSetOperations.TypedTuple<String> t : redisFollowing) {
+                if (t.getValue() != null) {
+                    redisScoreMap.put(Long.valueOf(t.getValue()), t.getScore());
+                }
+            }
         }
 
         // 2. 获取 MySQL 中所有关注目标
@@ -453,12 +471,19 @@ public class FollowService {
         int inserted = 0;
         int deleted = 0;
 
-        // 3. Redis 有、MySQL 无 → INSERT 补上
-        for (Long targetId : redisSet) {
+        // 3. Redis 有、MySQL 无 → INSERT 补上（用 ZSet score 作为 createdAt）
+        for (java.util.Map.Entry<Long, Double> entry : redisScoreMap.entrySet()) {
+            Long targetId = entry.getKey();
             if (!mysqlSet.contains(targetId)) {
                 Follow follow = new Follow();
                 follow.setUserId(userId);
                 follow.setFollowUserId(targetId);
+                if (entry.getValue() != null) {
+                    follow.setCreatedAt(LocalDateTime.ofInstant(
+                            Instant.ofEpochMilli(entry.getValue().longValue()), ZoneId.systemDefault()));
+                } else {
+                    follow.setCreatedAt(LocalDateTime.now());
+                }
                 followMapper.insert(follow);
                 inserted++;
                 log.info("[关注对账] 补缺失关系: userId={}, targetUserId={}", userId, targetId);
@@ -467,7 +492,7 @@ public class FollowService {
 
         // 4. MySQL 有、Redis 无 → DELETE 清理
         for (Long targetId : mysqlSet) {
-            if (!redisSet.contains(targetId)) {
+            if (!redisScoreMap.containsKey(targetId)) {
                 followMapper.deleteByUserIdAndFollowUserId(userId, targetId);
                 deleted++;
                 log.info("[关注对账] 清理孤儿行: userId={}, targetUserId={}", userId, targetId);
@@ -475,8 +500,90 @@ public class FollowService {
         }
 
         if (inserted > 0 || deleted > 0) {
-            return String.format("关系修复: 补插入%d条, 清孤儿行%d条", inserted, deleted);
+            return String.format("关系修复: 关注侧补插入%d条, 清孤儿行%d条", inserted, deleted);
         }
         return "关系一致，无需修复";
+    }
+
+    /**
+     * 粉丝侧关系对账（修复 FOLLOW_FANS 一致性）
+     * <p>Step B 失败时粉丝 ZSet 成员可能缺失——以 ZSet 为准补/删 MySQL</p>
+     */
+    public String repairFollowerRelationships(Long userId) {
+        String followerKey = RedisKeyConstants.FOLLOW_FANS + userId;
+
+        Set<ZSetOperations.TypedTuple<String>> redisFollowers = stringRedisTemplate.opsForZSet()
+                .rangeWithScores(followerKey, 0, -1);
+        java.util.Map<Long, Double> redisScoreMap = new java.util.LinkedHashMap<>();
+        if (redisFollowers != null) {
+            for (ZSetOperations.TypedTuple<String> t : redisFollowers) {
+                if (t.getValue() != null) {
+                    redisScoreMap.put(Long.valueOf(t.getValue()), t.getScore());
+                }
+            }
+        }
+
+        java.util.List<Long> mysqlIds = followMapper.selectFollowerUserIdsByUserId(userId);
+        java.util.Set<Long> mysqlSet = new java.util.HashSet<>(mysqlIds);
+
+        int inserted = 0, deleted = 0;
+        for (java.util.Map.Entry<Long, Double> entry : redisScoreMap.entrySet()) {
+            Long followerId = entry.getKey();
+            if (!mysqlSet.contains(followerId)) {
+                Follow follow = new Follow();
+                follow.setUserId(followerId);
+                follow.setFollowUserId(userId);
+                if (entry.getValue() != null) {
+                    follow.setCreatedAt(LocalDateTime.ofInstant(
+                            Instant.ofEpochMilli(entry.getValue().longValue()), ZoneId.systemDefault()));
+                } else {
+                    follow.setCreatedAt(LocalDateTime.now());
+                }
+                followMapper.insert(follow);
+                inserted++;
+            }
+        }
+        for (Long followerId : mysqlSet) {
+            if (!redisScoreMap.containsKey(followerId)) {
+                followMapper.deleteByUserIdAndFollowUserId(followerId, userId);
+                deleted++;
+            }
+        }
+        return inserted > 0 || deleted > 0
+                ? String.format("粉丝侧修复: 补插入%d条, 清孤儿行%d条", inserted, deleted)
+                : "粉丝侧一致，无需修复";
+    }
+
+    /**
+     * 【修复R10】发送关注/取关计数事件到 counter 服务
+     * <p>
+     * FOLLOW: follower FOLLOWING+1, followee FOLLOWER+1
+     * UNFOLLOW: follower FOLLOWING-1, followee FOLLOWER-1
+     * 使用 syncSend 确保关注操作返回前 MQ 已确认接收（不影响关注本身的 Lua 结果）。
+     * </p>
+     */
+    private void sendFollowCounterEvent(Long followerUserId, Long followeeUserId, String action) {
+        try {
+            Map<String, Object> event = new HashMap<>();
+            event.put("followerUserId", followerUserId);
+            event.put("followeeUserId", followeeUserId);
+            event.put("action", action);
+            org.apache.rocketmq.client.producer.SendResult sendResult = rocketMQTemplate.syncSend(
+                    "SOCIAL_TOPIC:" + action,
+                    MqTraceHelper.wrapWithTraceContext(
+                            org.springframework.messaging.support.MessageBuilder.withPayload(event).build()),
+                    3000);
+            if (sendResult.getSendStatus() != org.apache.rocketmq.client.producer.SendStatus.SEND_OK) {
+                log.warn("[关注计数] MQ发送状态异常: follower={}, followee={}, action={}, status={}",
+                        followerUserId, followeeUserId, action, sendResult.getSendStatus());
+                return;
+            }
+            log.debug("[关注计数] MQ发送成功: follower={}, followee={}, action={}",
+                    followerUserId, followeeUserId, action);
+        } catch (Exception e) {
+            // syncSend 失败不影响关注操作本体的结果，由凌晨对账兜底
+            log.error("[关注计数] MQ发送失败: follower={}, followee={}, action={}",
+                    followerUserId, followeeUserId, action, e);
+        }
     }
 }

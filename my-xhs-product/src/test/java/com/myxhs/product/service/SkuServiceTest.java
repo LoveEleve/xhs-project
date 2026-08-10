@@ -51,27 +51,41 @@ class SkuServiceTest {
     @Test
     @DisplayName("创建SKU成功")
     void createSkuSuccess() {
-        Spu spu = new Spu();
-        spu.setId(SPU_ID);
-        spu.setName("测试SPU");
-        when(spuMapper.selectById(SPU_ID)).thenReturn(spu);
-        when(idGeneratorUtil.nextId()).thenReturn(SKU_ID);
-        when(skuMapper.insert(any(Sku.class))).thenReturn(1);
-        doNothing().when(spuService).evictSpuCache(SPU_ID);
+        try (org.mockito.MockedStatic<org.springframework.transaction.support.TransactionSynchronizationManager> mockedTs =
+                     org.mockito.Mockito.mockStatic(
+                             org.springframework.transaction.support.TransactionSynchronizationManager.class)) {
+            // 捕获注册的同步器并立即执行 afterCommit（模拟事务提交触发缓存清除）
+            mockedTs.when(() -> org.springframework.transaction.support.TransactionSynchronizationManager
+                            .registerSynchronization(any()))
+                    .thenAnswer(invocation -> {
+                        org.springframework.transaction.support.TransactionSynchronization sync =
+                                invocation.getArgument(0);
+                        sync.afterCommit();
+                        return null;
+                    });
 
-        SkuCreateRequest request = new SkuCreateRequest();
-        request.setSpuId(SPU_ID);
-        request.setName("测试SKU");
-        request.setPrice(new BigDecimal("99.00"));
-        request.setOriginalPrice(new BigDecimal("199.00"));
-        request.setStock(100);
-        request.setSpecs("{\"颜色\":\"红色\"}");
+            Spu spu = new Spu();
+            spu.setId(SPU_ID);
+            spu.setName("测试SPU");
+            when(spuMapper.selectById(SPU_ID)).thenReturn(spu);
+            when(idGeneratorUtil.nextId()).thenReturn(SKU_ID);
+            when(skuMapper.insert(any(Sku.class))).thenReturn(1);
+            doNothing().when(spuService).evictSpuCache(SPU_ID);
 
-        Long skuId = skuService.createSku(request);
+            SkuCreateRequest request = new SkuCreateRequest();
+            request.setSpuId(SPU_ID);
+            request.setName("测试SKU");
+            request.setPrice(new BigDecimal("99.00"));
+            request.setOriginalPrice(new BigDecimal("199.00"));
+            request.setStock(100);
+            request.setSpecs("{\"颜色\":\"红色\"}");
 
-        assertThat(skuId).isEqualTo(SKU_ID);
-        verify(skuMapper).insert(any(Sku.class));
-        verify(spuService).evictSpuCache(SPU_ID);
+            Long skuId = skuService.createSku(request);
+
+            assertThat(skuId).isEqualTo(SKU_ID);
+            verify(skuMapper).insert(any(Sku.class));
+            verify(spuService).evictSpuCache(SPU_ID);
+        }
     }
 
     @Test
@@ -94,7 +108,6 @@ class SkuServiceTest {
         assertThat(vo.getId()).isEqualTo(SKU_ID);
         assertThat(vo.getName()).isEqualTo("测试SKU");
         assertThat(vo.getPrice()).isEqualByComparingTo("99.00");
-        assertThat(vo.getStock()).isEqualTo(100);
     }
 
     @Test

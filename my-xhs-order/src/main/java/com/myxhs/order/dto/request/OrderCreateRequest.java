@@ -37,6 +37,7 @@ public class OrderCreateRequest {
         private Long skuId;
 
         @NotNull(message = "数量不能为空")
-        private Integer quantity;
+        @jakarta.validation.constraints.Min(value = 1, message = "数量最少为1")
+    private Integer quantity;
     }
 }

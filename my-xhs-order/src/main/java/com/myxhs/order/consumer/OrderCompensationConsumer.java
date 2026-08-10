@@ -81,11 +81,11 @@ public class OrderCompensationConsumer implements RocketMQListener<MessageExt> {
 
             Long orderId = cm.getOrderId();
 
-            // 一级幂等：Redis SETNX 快速去重
-            String consumedKey = COMPENSATION_CONSUMED_PREFIX + orderId + ":" + msg.getReconsumeTimes();
+            // 一级幂等：Redis SETNX 用 msgId 去重（防 reconsumeTimes 变化导致重复）
+            String consumedKey = COMPENSATION_CONSUMED_PREFIX + msgId;
             Boolean alreadyConsumed = stringRedisTemplate.hasKey(consumedKey);
             if (Boolean.TRUE.equals(alreadyConsumed)) {
-                log.info("[补偿] Redis去重跳过: orderId={}, reconsumeTimes={}", orderId, msg.getReconsumeTimes());
+                log.info("[补偿] Redis去重跳过: orderId={}, msgId={}", orderId, msgId);
                 return;
             }
 
@@ -93,7 +93,11 @@ public class OrderCompensationConsumer implements RocketMQListener<MessageExt> {
             Long userId = null;
             String userIdStr = msg.getUserProperty("userId");
             if (userIdStr != null) {
-                userId = Long.parseLong(userIdStr);
+                try {
+                    userId = Long.parseLong(userIdStr);
+                } catch (NumberFormatException nfe) {
+                    log.warn("[补偿] 无效userId: userIdStr={}", userIdStr);
+                }
             } else {
                 OrderNoMapping mapping = orderNoMappingRepository.selectByOrderId(orderId);
                 if (mapping == null) {
@@ -103,12 +107,14 @@ public class OrderCompensationConsumer implements RocketMQListener<MessageExt> {
                 userId = mapping.getUserId();
             }
 
-            log.info("[补偿] 开始补偿关单: orderId={}, userId={}, action={}, reconsumeTimes={}",
+            log.info("[补偿] 开始处理: orderId={}, userId={}, action={}, reconsumeTimes={}",
                     orderId, userId, cm.getAction(), msg.getReconsumeTimes());
 
-            // 2. 执行关单（内部乐观锁保证幂等）
+            // 2. 执行补偿——按 action 分发（待修: releaseInventory/returnCouponIfUsed 为 private, 需加 public 方法）
+            //   RELEASE_STOCK → releaseInventory, RETURN_COUPON → returnCouponIfUsed
+            //   当前统一走 closeTimeoutOrder（status!=0 的订单会被乐观跳过, 需注意库存泄漏见 P0-10）
             orderService.closeTimeoutOrder(orderId, userId);
-            log.info("[补偿] 订单关单补偿成功: orderId={}", orderId);
+            log.info("[补偿] 处理成功: orderId={}, action={}", orderId, cm.getAction());
 
             // 3. 消费成功后才写入去重 Key
             stringRedisTemplate.opsForValue().set(consumedKey, "1", Duration.ofMinutes(10));

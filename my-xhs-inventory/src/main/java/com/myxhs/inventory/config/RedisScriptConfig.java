@@ -54,4 +54,15 @@ public class RedisScriptConfig {
         script.setResultType(Long.class);
         return script;
     }
+
+    /**
+     * 分桶完整性对账 Lua 脚本（原子求和+对比设置，替代 Java 非原子 GET 循环+SET）
+     */
+    @Bean
+    public DefaultRedisScript<Long> reconcileBucketsScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/reconcile_buckets.lua")));
+        script.setResultType(Long.class);
+        return script;
+    }
 }

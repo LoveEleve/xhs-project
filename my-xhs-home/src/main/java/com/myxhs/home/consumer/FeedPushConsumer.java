@@ -2,6 +2,7 @@ package com.myxhs.home.consumer;
 
 import com.alibaba.fastjson2.JSON;
 import com.myxhs.common.constants.RedisKeyConstants;
+import com.myxhs.common.metrics.BusinessMetrics;
 import com.myxhs.common.trace.MqTraceHelper;
 import com.myxhs.home.feign.AnalyticsFeignClient;
 import lombok.RequiredArgsConstructor;
@@ -47,6 +48,7 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
 
     private final StringRedisTemplate stringRedisTemplate;
     private final AnalyticsFeignClient analyticsFeignClient;
+    private final BusinessMetrics businessMetrics;
 
     @Value("${home.feed.big-v-threshold:100000}")
     private long bigVThreshold;
@@ -66,9 +68,17 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
             String body = new String(msg.getBody(), StandardCharsets.UTF_8);
             Map<String, Object> event = JSON.parseObject(body, Map.class);
 
-            Long noteId = ((Number) event.get("noteId")).longValue();
-            Long authorId = ((Number) event.get("authorId")).longValue();
-            Long publishTime = ((Number) event.get("publishTime")).longValue();
+            Object noteIdObj = event.get("noteId");
+            Object authorIdObj = event.get("authorId");
+            Object publishTimeObj = event.get("publishTime");
+            if (noteIdObj == null || authorIdObj == null || publishTimeObj == null) {
+                log.warn("[Feed推送] 消息字段缺失: noteId={}, authorId={}, publishTime={}",
+                        noteIdObj, authorIdObj, publishTimeObj);
+                return;
+            }
+            Long noteId = ((Number) noteIdObj).longValue();
+            Long authorId = ((Number) authorIdObj).longValue();
+            Long publishTime = ((Number) publishTimeObj).longValue();
             Long localMsgId = event.get("localMsgId") != null
                     ? ((Number) event.get("localMsgId")).longValue() : null;
 
@@ -86,8 +96,11 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
                 pushToFollowers(authorId, noteId, publishTime, localMsgId);
             }
 
+            businessMetrics.recordMqConsume("FEED_TOPIC", "feed-push-consumer-group", true);
+
         } catch (Exception e) {
             log.error("[Feed推送] 处理失败: msgId={}", msg.getMsgId(), e);
+            businessMetrics.recordMqConsume("FEED_TOPIC", "feed-push-consumer-group", false);
             throw new RuntimeException("Feed推送失败", e);
         } finally {
             MqTraceHelper.clearTraceId();
@@ -120,15 +133,26 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
         int pushed = 0;
         int expireSeconds = inboxMaxDays * 24 * 3600;
 
+        // 超大粉丝量保护：超过阈值写发件箱走拉模式，避免阻塞 MQ 消费线程
+        if (totalFollowers > 50000) {
+            log.warn("[Feed推送] 粉丝量过大({}), 写入发件箱走拉模式: authorId={}, noteId={}",
+                    totalFollowers, authorId, noteId);
+            String outboxKey = RedisKeyConstants.FEED_OUTBOX + authorId;
+            stringRedisTemplate.opsForZSet().add(outboxKey, String.valueOf(noteId), publishTime);
+            stringRedisTemplate.expire(outboxKey, Duration.ofDays(inboxMaxDays));
+            return;
+        }
+
         byte[] noteIdBytes = String.valueOf(noteId).getBytes();
 
         // 断点恢复：检查是否有之前的推送进度
         long startCursor = 0;
         if (localMsgId != null) {
             String progressKey = PUSH_PROGRESS_PREFIX + localMsgId;
-            String progressStr = stringRedisTemplate.opsForValue().get(progressKey);
-            if (progressStr != null) {
-                startCursor = Long.parseLong(progressStr);
+            // 统一使用 hash 类型读取进度，避免 string/hash 混用导致 WRONGTYPE
+            Object progressObj = stringRedisTemplate.opsForHash().get(progressKey, "cursor");
+            if (progressObj != null) {
+                startCursor = Long.parseLong(progressObj.toString());
                 log.info("[Feed推送] 断点续推: authorId={}, noteId={}, localMsgId={}, resumeFrom={}",
                         authorId, noteId, localMsgId, startCursor);
             }
@@ -165,8 +189,8 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
             // 每批完成后更新进度到 Redis（支持断点��推）
             if (localMsgId != null) {
                 String progressKey = PUSH_PROGRESS_PREFIX + localMsgId;
-                stringRedisTemplate.opsForValue().set(progressKey, String.valueOf(cursor),
-                        Duration.ofHours(1));
+                stringRedisTemplate.opsForHash().put(progressKey, "cursor", String.valueOf(cursor));
+                stringRedisTemplate.expire(progressKey, Duration.ofHours(1));
             }
 
             if (followerIds.size() < batchSize) {

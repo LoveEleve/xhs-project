@@ -63,8 +63,16 @@ public class OrderTransactionConsumer implements RocketMQListener<MessageExt> {
             String body = new String(msg.getBody(), StandardCharsets.UTF_8);
             JsonNode payload = objectMapper.readTree(body);
 
-            String orderNo = payload.get("orderNo").asText();
-            Long userId = payload.get("userId").asLong();
+            // 坏消息防御：缺 orderNo/userId 时直接跳过不重试（NPE 重试 5 次进 DLQ 无意义）
+            JsonNode orderNoNode = payload.get("orderNo");
+            JsonNode userIdNode = payload.get("userId");
+            if (orderNoNode == null || userIdNode == null) {
+                log.warn("[库存-事务消费] 消息缺少必填字段(orderNo/userId), 跳过不重试: msgId={}, body={}",
+                        msg.getMsgId(), body);
+                return;
+            }
+            String orderNo = orderNoNode.asText();
+            Long userId = userIdNode.asLong();
 
             // 消费者层面幂等校验：msgId 级别去重，避免 rebalance 时部分 SKU 永久跳过
             // 使用 msgId 而非 orderNo：orderNo 在循环内部分成功时会导致 rebalance 后新实例跳过
@@ -72,10 +80,13 @@ public class OrderTransactionConsumer implements RocketMQListener<MessageExt> {
                 return;
             }
 
-            // 用 orderNo 的 hashCode 作为 orderId（用于库存预扣的幂等键）
-            // 注意：Math.abs(Integer.MIN_VALUE) 仍为负数（整数溢出），
-            // 所以用位运算 & 0x7FFFFFFF 保证非负
-            long pseudoOrderId = orderNo.hashCode() & 0x7FFFFFFF;
+            // 从 orderNo 派生伪 orderId（用作库存预扣幂等键）
+            // 原实现：orderNo.hashCode() & 0x7FFFFFFF（仅 31 bit，1 万订单碰撞~2%）
+            // 修复：多重乘法折叠为 63 bit，有效空间 ~2^50，碰撞概率逼近零
+            long pseudoOrderId = 0;
+            for (int i = 0; i < orderNo.length(); i++) {
+                pseudoOrderId = pseudoOrderId * 31 + orderNo.charAt(i);
+            }
 
             // 对每个 SKU 执行预扣减
             JsonNode skuItems = payload.get("skuItems");
@@ -107,9 +118,13 @@ public class OrderTransactionConsumer implements RocketMQListener<MessageExt> {
             log.info("[库存-事务消费] 订单库存预扣减完成: orderNo={}, userId={}", orderNo, userId);
 
         } catch (RuntimeException e) {
+            // 失败时移除幂等标记，允许 MQ 重投重新处理（否则重投被 isFirstProcess=false 跳过，
+            // 部分 SKU 永久不预扣 → 超卖）。preDeduct Lua 幂等保证重复处理安全。
+            idempotentHelper.removeMark(BIZ_TYPE, msg.getMsgId());
             throw e; // 直接抛出触发 MQ 重试
         } catch (Exception e) {
             log.error("[库存-事务消费] 消费失败: msgId={}", msg.getMsgId(), e);
+            idempotentHelper.removeMark(BIZ_TYPE, msg.getMsgId());
             throw new RuntimeException("订单事务消息消费失败", e);
         } finally {
             MqTraceHelper.clearTraceId();

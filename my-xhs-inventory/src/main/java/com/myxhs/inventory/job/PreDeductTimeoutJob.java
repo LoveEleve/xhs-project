@@ -4,8 +4,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
-import org.springframework.data.redis.core.Cursor;
-import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -41,8 +39,11 @@ public class PreDeductTimeoutJob {
     private final StringRedisTemplate stringRedisTemplate;
     private final DefaultRedisScript<Long> releaseScript;
     private final RedissonClient redissonClient;
+    private final org.apache.rocketmq.spring.core.RocketMQTemplate rocketMQTemplate;
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
-    private static final String PREDEDUCT_KEY_PATTERN = "inventory:prededuct:*";
+    private static final String PREDEDUCT_KEY_PREFIX = "inventory:prededuct:";
+    private static final String PREDEDUCT_INDEX_KEY = "inventory:prededuct:index";
     private static final String TOTAL_KEY_TPL = "inventory:{%d}:total";
     private static final String BUCKET_KEY_TPL = "inventory:{%d}:bucket:";
 
@@ -58,12 +59,12 @@ public class PreDeductTimeoutJob {
      * leaseTime=240s（4分钟），小于调度间隔 5 分钟，保证下一轮不会被锁阻塞。
      * </p>
      */
-    @Scheduled(fixedRate = 300000)
+    @Scheduled(fixedRate = 60_000) // 每 1 分钟（测试环境快速验证）
     public void releaseExpiredPreDeductions() {
         RLock lock = redissonClient.getLock(LOCK_KEY);
         boolean acquired = false;
         try {
-            acquired = lock.tryLock(0, 240, TimeUnit.SECONDS);
+            acquired = lock.tryLock(0, 40, TimeUnit.SECONDS);
             if (!acquired) {
                 log.debug("[预扣超时] 其他实例正在执行，跳过本轮");
                 return;
@@ -82,29 +83,33 @@ public class PreDeductTimeoutJob {
 
     /**
      * 实际的扫描和回退逻辑
+     * <p>
+     * 使用 ZSet 二级索引（inventory:prededuct:index, score=过期时间戳ms）
+     * ZRANGEBYSCORE 直接查询即将过期的预扣记录，替代全库 SCAN（O(N) → O(logN+M)）。
+     * </p>
      */
     private void doReleaseExpiredPreDeductions() {
         log.debug("[预扣超时] 开始扫描...");
         int releaseCount = 0;
 
         try {
-            ScanOptions options = ScanOptions.scanOptions()
-                    .match(PREDEDUCT_KEY_PATTERN)
-                    .count(100)
-                    .build();
+            // 查询 60 秒内即将过期的预扣记录（主动提前回退）
+            long cutoffMs = System.currentTimeMillis() + 60000;
+            java.util.Set<String> expiringOrderIds = stringRedisTemplate.opsForZSet()
+                    .rangeByScore(PREDEDUCT_INDEX_KEY, 0, cutoffMs);
 
-            try (Cursor<String> cursor = stringRedisTemplate.scan(options)) {
-                while (cursor.hasNext()) {
-                    String key = cursor.next();
-                    Long ttl = stringRedisTemplate.getExpire(key, TimeUnit.SECONDS);
+            if (expiringOrderIds == null || expiringOrderIds.isEmpty()) {
+                return;
+            }
 
-                    // TTL <= 0 表示已过期（但还未被 Redis 惰性删除）或没有设置过期时间
-                    // TTL = -2 表示 Key 不存在（已被删除）
-                    // TTL = -1 表示没有过期时间（异常情况）
-                    if (ttl != null && ttl <= 0) {
-                        releaseCount += releasePreDeduct(key);
-                    }
+            for (String orderIdStr : expiringOrderIds) {
+                String key = PREDEDUCT_KEY_PREFIX + orderIdStr;
+                int released = releasePreDeduct(key);
+                if (released == 0) {
+                    // 预扣记录已不存在（惰性过期/已释放/已确认），清理索引中的陈旧 member
+                    stringRedisTemplate.opsForZSet().remove(PREDEDUCT_INDEX_KEY, orderIdStr);
                 }
+                releaseCount += released;
             }
 
             if (releaseCount > 0) {
@@ -134,6 +139,15 @@ public class PreDeductTimeoutJob {
             return 0;
         }
 
+        // 从 key 提取 orderId（inventory:prededuct:{orderId}），用于 MQ RELEASE 事件
+        Long orderId;
+        try {
+            orderId = Long.parseLong(predeductKey.substring(predeductKey.lastIndexOf(':') + 1));
+        } catch (NumberFormatException e) {
+            log.warn("[预扣超时] key 格式异常无法提取 orderId, 跳过: {}", predeductKey);
+            return 0;
+        }
+
         int count = 0;
 
         for (Map.Entry<Object, Object> entry : entries.entrySet()) {
@@ -143,29 +157,79 @@ public class PreDeductTimeoutJob {
                 continue;
             }
 
-            Long skuId = Long.parseLong(fieldName);
+            Long skuId;
+            int quantity;
+            try {
+                skuId = Long.parseLong(fieldName);
+                quantity = Integer.parseInt(entry.getValue().toString());
+            } catch (NumberFormatException e) {
+                log.warn("[预扣超时] 跳过脏数据(skuId/数量非数字): key={}, field={}, value={}",
+                        predeductKey, fieldName, entry.getValue());
+                continue;
+            }
 
             // 获取来源桶号（release.lua 需要桶 Key 作为 KEYS[3]）
             Object bucketNoObj = stringRedisTemplate.opsForHash().get(predeductKey, fieldName + ":bucket");
-            int bucketNo = bucketNoObj != null ? Integer.parseInt(bucketNoObj.toString()) : 0;
+            int bucketNo = 0;
+            if (bucketNoObj != null) {
+                try {
+                    bucketNo = Integer.parseInt(bucketNoObj.toString());
+                } catch (NumberFormatException e) {
+                    log.warn("[预扣超时] 桶号脏数据按0处理: key={}, field={}", predeductKey, fieldName);
+                }
+            }
 
             String totalKeyStr = totalKey(skuId);
             String bucketKeyStr = bucketKey(skuId, bucketNo);
 
-            // 使用 release.lua 原子回退（传入 totalKey + predeductKey + bucketKey）
+            // 使用 release.lua 原子回退（传入 totalKey + predeductKey + bucketKey + indexKey）
             Long result = stringRedisTemplate.execute(
                     releaseScript,
-                    List.of(totalKeyStr, predeductKey, bucketKeyStr),
-                    fieldName
+                    List.of(totalKeyStr, predeductKey, bucketKeyStr, PREDEDUCT_INDEX_KEY),
+                    fieldName, String.valueOf(orderId)
             );
 
             if (result != null && result > 0) {
                 log.info("[预扣超时] 回退库存: predeductKey={}, skuId={}, qty={}, bucket={}",
                         predeductKey, skuId, result, bucketNo);
                 count++;
+                // Redis 回退成功后发 RELEASE MQ 事件，解锁 MySQL locked_stock
+                sendReleaseEvent(orderId, skuId, quantity);
             }
         }
 
         return count;
+    }
+
+    /**
+     * 发送 RELEASE 事件到 MQ，解锁 MySQL locked_stock（与 order 服务取消订单的释放链路一致）
+     */
+    private void sendReleaseEvent(Long orderId, Long skuId, int quantity) {
+        try {
+            com.myxhs.inventory.dto.event.InventoryDeductEvent event =
+                    com.myxhs.inventory.dto.event.InventoryDeductEvent.builder()
+                            .orderId(orderId)
+                            .skuId(skuId)
+                            .quantity(quantity)
+                            .action("RELEASE")
+                            .eventTime(System.currentTimeMillis())
+                            .build();
+            rocketMQTemplate.asyncSend("INVENTORY_TOPIC:RELEASE",
+                    org.springframework.messaging.support.MessageBuilder.withPayload(
+                            objectMapper.writeValueAsString(event)).build(),
+                    new org.apache.rocketmq.client.producer.SendCallback() {
+                        @Override
+                        public void onSuccess(org.apache.rocketmq.client.producer.SendResult sendResult) {
+                            log.debug("[预扣超时] RELEASE事件发送成功: orderId={}, skuId={}", orderId, skuId);
+                        }
+                        @Override
+                        public void onException(Throwable e) {
+                            log.error("[预扣超时] RELEASE事件发送失败(MySQL locked等待对账修复): orderId={}, skuId={}",
+                                    orderId, skuId, e);
+                        }
+                    });
+        } catch (Exception e) {
+            log.error("[预扣超时] RELEASE事件序列化失败: orderId={}, skuId={}", orderId, skuId, e);
+        }
     }
 }

@@ -29,8 +29,8 @@ public class UnreadCountService {
 
     private final StringRedisTemplate stringRedisTemplate;
 
-    private static final String UNREAD_TOTAL_KEY = "notify:unread:";
-    private static final String UNREAD_TYPE_KEY = "notify:unread:type:";
+    private static final String UNREAD_TOTAL_KEY = "myxhs:notification:unread:";
+    private static final String UNREAD_TYPE_KEY = "myxhs:notification:unread:type:";
 
     /**
      * Lua 脚本：DECR 后不小于 0
@@ -49,6 +49,23 @@ public class UnreadCountService {
             "local count = redis.call('HGET', KEYS[1], ARGV[1]) " +
                     "if count == false or tonumber(count) <= 0 then return 0 end " +
                     "return redis.call('HINCRBY', KEYS[1], ARGV[1], -1)";
+
+    /**
+     * Lua 脚本：原子 INCR total + HINCRBY type
+     * 两个 Redis 操作在同一个 Lua 脚本中原子执行，避免中间状态不一致
+     */
+    private static final String ATOMIC_INCR_SCRIPT =
+            "redis.call('INCR', KEYS[1]) " +
+            "return redis.call('HINCRBY', KEYS[2], ARGV[1], 1)";
+
+    private static final DefaultRedisScript<Long> ATOMIC_INCR_REDIS_SCRIPT =
+            new DefaultRedisScript<>(ATOMIC_INCR_SCRIPT, Long.class);
+
+    private static final DefaultRedisScript<Long> SAFE_DECR_REDIS_SCRIPT =
+            new DefaultRedisScript<>(SAFE_DECR_SCRIPT, Long.class);
+
+    private static final DefaultRedisScript<Long> SAFE_HDECR_REDIS_SCRIPT =
+            new DefaultRedisScript<>(SAFE_HDECR_SCRIPT, Long.class);
 
     /**
      * Lua 脚本：原子性按类型重置未读计数
@@ -74,11 +91,10 @@ public class UnreadCountService {
      * 增加未读计数（新通知到达时调用）
      */
     public void incrementUnread(Long userId, Integer type) {
-        // 总未读 +1
-        stringRedisTemplate.opsForValue().increment(UNREAD_TOTAL_KEY + userId);
-        // 分类未读 +1
-        stringRedisTemplate.opsForHash().increment(
-                UNREAD_TYPE_KEY + userId, String.valueOf(type), 1);
+        // 原子操作：total +1 + type hash +1（Lua 脚本保证同步）
+        stringRedisTemplate.execute(ATOMIC_INCR_REDIS_SCRIPT,
+                List.of(UNREAD_TOTAL_KEY + userId, UNREAD_TYPE_KEY + userId),
+                String.valueOf(type));
     }
 
     /**
@@ -88,14 +104,9 @@ public class UnreadCountService {
      * </p>
      */
     public void decrementUnread(Long userId, Integer type) {
-        // 总未读 -1（Lua 安全 DECR）
-        DefaultRedisScript<Long> script = new DefaultRedisScript<>(SAFE_DECR_SCRIPT, Long.class);
-        stringRedisTemplate.execute(script, Collections.singletonList(UNREAD_TOTAL_KEY + userId));
-
-        // 分类未读 -1（Lua 安全 HDECR）
+        stringRedisTemplate.execute(SAFE_DECR_REDIS_SCRIPT, Collections.singletonList(UNREAD_TOTAL_KEY + userId));
         if (type != null) {
-            DefaultRedisScript<Long> hScript = new DefaultRedisScript<>(SAFE_HDECR_SCRIPT, Long.class);
-            stringRedisTemplate.execute(hScript,
+            stringRedisTemplate.execute(SAFE_HDECR_REDIS_SCRIPT,
                     Collections.singletonList(UNREAD_TYPE_KEY + userId),
                     String.valueOf(type));
         }
@@ -125,16 +136,27 @@ public class UnreadCountService {
     public UnreadCountVO getUnreadCount(Long userId) {
         // 总未读
         String totalStr = stringRedisTemplate.opsForValue().get(UNREAD_TOTAL_KEY + userId);
-        int total = totalStr != null ? Math.max(0, Integer.parseInt(totalStr)) : 0;
+        int total = 0;
+        if (totalStr != null) {
+            try {
+                total = Math.max(0, Integer.parseInt(totalStr));
+            } catch (NumberFormatException e) {
+                log.warn("[未读数] Redis脏值: totalStr={}", totalStr, e);
+            }
+        }
 
         // 分类未读
         Map<Object, Object> entries = stringRedisTemplate.opsForHash()
                 .entries(UNREAD_TYPE_KEY + userId);
         Map<Integer, Integer> details = new HashMap<>();
         entries.forEach((k, v) -> {
-            int count = Math.max(0, Integer.parseInt(v.toString()));
-            if (count > 0) {
-                details.put(Integer.parseInt(k.toString()), count);
+            try {
+                int count = Math.max(0, Integer.parseInt(v.toString()));
+                if (count > 0) {
+                    details.put(Integer.parseInt(k.toString()), count);
+                }
+            } catch (NumberFormatException e) {
+                log.warn("[未读数] Redis脏值: k={}, v={}", k, v);
             }
         });
 

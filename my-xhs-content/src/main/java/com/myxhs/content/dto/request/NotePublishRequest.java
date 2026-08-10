@@ -1,5 +1,7 @@
 package com.myxhs.content.dto.request;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
@@ -26,9 +28,11 @@ public class NotePublishRequest {
     private List<String> images;
 
     /** 视频URL */
+    @Size(max = 512, message = "视频URL最长512字符")
     private String videoUrl;
 
     /** 封面图URL */
+    @Size(max = 512, message = "封面URL最长512字符")
     private String coverUrl;
 
     /** 话题ID列表 */
@@ -38,5 +42,7 @@ public class NotePublishRequest {
     private List<String> tags;
 
     /** 笔记类型：0-图文 1-视频，默认0 */
+    @Min(value = 0, message = "笔记类型不合法")
+    @Max(value = 1, message = "笔记类型不合法")
     private Integer noteType = 0;
 }

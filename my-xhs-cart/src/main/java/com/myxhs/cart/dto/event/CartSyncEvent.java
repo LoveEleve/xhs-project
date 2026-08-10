@@ -30,7 +30,7 @@ public class CartSyncEvent extends AbstractDomainEvent<CartSyncEvent> {
     /** 是否选中 */
     private Integer checked;
 
-    /** 操作类型：ADD / UPDATE / DELETE / CHECK */
+    /** 操作类型：ADD / UPDATE / DELETE / CHECK / CHECK_ALL / CLEAR */
     private String action;
 
     @Override

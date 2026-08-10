@@ -16,9 +16,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -79,10 +76,11 @@ public class FeedService {
 
         // ========== 第 1 步：从 Redis 获取笔记 ID 列表 ==========
 
-        // 1a. 从收件箱拉取（推模式笔记）
+        // 1a. 从收件箱拉取（推模式笔记）— Redis 7 开区间 (lastScore 避免跳过同分记录
         String inboxKey = RedisKeyConstants.FEED_INBOX + userId;
+        double minScore = lastScore > 0 ? Double.longBitsToDouble(Double.doubleToLongBits(lastScore) - 1) : 0;
         Set<ZSetOperations.TypedTuple<String>> inboxTuples = stringRedisTemplate.opsForZSet()
-                .reverseRangeByScoreWithScores(inboxKey, 0, lastScore - 0.001, 0, size);
+                .reverseRangeByScoreWithScores(inboxKey, minScore, 0, 0, size);
 
         // 1b. 获取用户关注的大V列表，从大V发件箱拉取
         List<ZSetOperations.TypedTuple<String>> bigVTuples = pullBigVOutbox(userId, lastScore, size);
@@ -125,7 +123,9 @@ public class FeedService {
                 .supplyAsync(() -> batchGetNoteDetails(noteIds), aggregatorPool);
 
         // 1b. 批量查询点赞状态
-        String bizIds = noteIds.stream().map(String::valueOf).collect(Collectors.joining(","));
+        // 限制单次查询 ID 数防止 URL 超长
+        List<Long> cappedIds = noteIds.size() > 50 ? noteIds.subList(0, 50) : noteIds;
+        String bizIds = cappedIds.stream().map(String::valueOf).collect(Collectors.joining(","));
         CompletableFuture<Map<Long, Boolean>> likesFuture = CompletableFuture
                 .supplyAsync(() -> {
                     try {
@@ -296,7 +296,7 @@ public class FeedService {
      */
     private List<Long> getFollowingBigVIds(Long userId) {
         String followingKey = RedisKeyConstants.FOLLOW_LIST + userId;
-        Set<String> followingIds = stringRedisTemplate.opsForZSet().reverseRange(followingKey, 0, 499);
+        Set<String> followingIds = stringRedisTemplate.opsForZSet().reverseRange(followingKey, 0, -1);
         if (followingIds == null || followingIds.isEmpty()) {
             return Collections.emptyList();
         }
@@ -336,7 +336,9 @@ public class FeedService {
 
         return Stream.concat(stream1, stream2)
                 .filter(t -> t.getScore() != null)
-                .sorted((a, b) -> Double.compare(b.getScore(), a.getScore())) // 降序
+                .collect(Collectors.toMap(t -> t.getValue(), t -> t, (a, b) -> a.getScore() > b.getScore() ? a : b)) // 去重：同 noteId 保留高分
+                .values().stream()
+                .sorted((a, b) -> Double.compare(b.getScore(), a.getScore()))
                 .limit(size)
                 .collect(Collectors.toList());
     }

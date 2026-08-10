@@ -1,6 +1,7 @@
 package com.myxhs.notification.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.exception.BizException;
 import com.myxhs.common.response.R;
 import com.myxhs.common.response.ResultCode;
@@ -24,6 +25,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/notification")
 @RequiredArgsConstructor
+@org.springframework.validation.annotation.Validated
 public class NotificationController {
 
     private final NotificationService notificationService;
@@ -71,6 +73,7 @@ public class NotificationController {
             @RequestParam(required = false) Integer type,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
+        size = Math.min(size, 50);
         return R.ok(notificationService.getNotificationList(userId, type, page, size));
     }
 
@@ -90,6 +93,7 @@ public class NotificationController {
      * 标记单条已读
      */
     @PostMapping("/read/{id}")
+    @RateLimit(prefix = "myxhs:notification:read", maxRequests = 30, windowSeconds = 60, perUser = true)
     public R<Void> markAsRead(@RequestHeader("X-User-Id") Long userId,
                               @PathVariable Long id) {
         notificationService.markAsRead(userId, id);
@@ -100,6 +104,7 @@ public class NotificationController {
      * 按类型全部标记已读
      */
     @PostMapping("/read-by-type/{type}")
+    @RateLimit(prefix = "myxhs:notification:readByType", maxRequests = 10, windowSeconds = 60, perUser = true)
     public R<Void> markAllReadByType(@RequestHeader("X-User-Id") Long userId,
                                      @PathVariable Integer type) {
         notificationService.markAllReadByType(userId, type);
@@ -110,6 +115,7 @@ public class NotificationController {
      * 全部标记已读
      */
     @PostMapping("/read-all")
+    @RateLimit(prefix = "myxhs:notification:readAll", maxRequests = 5, windowSeconds = 60, perUser = true)
     public R<Void> markAllAsRead(@RequestHeader("X-User-Id") Long userId) {
         notificationService.markAllAsRead(userId);
         return R.ok();
@@ -121,7 +127,17 @@ public class NotificationController {
      * 获取 SSE 在线连接数（运维/调试用）
      */
     @GetMapping("/sse/online-count")
-    public R<Map<String, Object>> getOnlineCount() {
+    public R<Map<String, Object>> getOnlineCount(
+            @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
+        if (!isAdminCall(adminCall)) return R.fail(403, "无权访问管理接口");
         return R.ok(Map.of("onlineCount", sseEmitterManager.getOnlineCount()));
+    }
+
+    /** 管理接口令牌（配置化管理，不再硬编码） */
+    @org.springframework.beans.factory.annotation.Value("${myxhs.admin.token}")
+    private String adminToken;
+
+    private boolean isAdminCall(String v) {
+        return adminToken != null && !adminToken.isEmpty() && adminToken.equals(v);
     }
 }

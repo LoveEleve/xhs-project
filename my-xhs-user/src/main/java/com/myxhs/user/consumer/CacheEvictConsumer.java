@@ -24,8 +24,8 @@ import java.nio.charset.StandardCharsets;
  * 由调用方发送 MQ 消息到此 Topic。
  * </p>
  * <p>
- * 重试策略：RocketMQ 内置重试机制（最多 16 次，指数退避），
- * 超过重试次数进死信队列，运维人工介入。
+     * 重试策略：RocketMQ 内置重试机制（最多 3 次），
+     * 超过重试次数进死信队列，运维人工介入。
  * </p>
  */
 @Slf4j
@@ -34,7 +34,6 @@ import java.nio.charset.StandardCharsets;
 @RocketMQMessageListener(
         topic = CacheEvictMessage.TOPIC,
         consumerGroup = "user-cache-evict-consumer-group",
-        selectorExpression = "user-service",
         maxReconsumeTimes = 3
 )
 public class CacheEvictConsumer implements RocketMQListener<MessageExt> {
@@ -46,17 +45,24 @@ public class CacheEvictConsumer implements RocketMQListener<MessageExt> {
         MqTraceHelper.restoreTraceId(msg);
         try {
             String body = new String(msg.getBody(), StandardCharsets.UTF_8);
-            CacheEvictMessage evictMsg = JSON.parseObject(body, CacheEvictMessage.class);
+            String cacheKey;
 
-            if (evictMsg == null || evictMsg.getKey() == null) {
+            // 兼容两种格式：CacheHelper 发纯 key，未来可升级为 JSON
+            if (body.startsWith("{")) {
+                CacheEvictMessage evictMsg = JSON.parseObject(body, CacheEvictMessage.class);
+                cacheKey = evictMsg != null ? evictMsg.getKey() : null;
+            } else {
+                cacheKey = body;
+            }
+
+            if (cacheKey == null || cacheKey.isEmpty()) {
                 log.warn("[缓存兜底] 消息格式异常，跳过: mqMsgId={}", msg.getMsgId());
                 return;
             }
 
             // 删除缓存
-            redisOperator.delete(evictMsg.getKey());
-            log.info("[缓存兜底] 删除成功: key={}, source={}, retryCount={}",
-                    evictMsg.getKey(), evictMsg.getSource(), evictMsg.getRetryCount());
+            redisOperator.delete(cacheKey);
+            log.info("[缓存兜底] 删除成功: key={}, retryCount={}", cacheKey, msg.getReconsumeTimes());
 
         } catch (Exception e) {
             // 抛出异常触发 RocketMQ 重试（指数退避，最多 16 次）

@@ -8,6 +8,7 @@ import com.myxhs.common.response.R;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import jakarta.validation.constraints.Min;
 
 import java.util.List;
 import java.util.Map;
@@ -80,7 +81,7 @@ public class FavoriteController {
     @GetMapping("/list")
     public R<Map<String, Object>> getFavoriteList(
             @RequestHeader("X-User-Id") Long userId,
-            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "1") @Min(1) int page,
             @RequestParam(defaultValue = "20") int size) {
         List<Long> noteIds = favoriteService.getFavoriteList(userId, page, size);
         long total = favoriteService.getFavoriteCount(userId);

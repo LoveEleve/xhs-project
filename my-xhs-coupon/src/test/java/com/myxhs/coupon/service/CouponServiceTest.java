@@ -79,6 +79,8 @@ class CouponServiceTest {
         couponService = new CouponService(
                 stringRedisTemplate, rocketMQTemplate,
                 templateMapper, userCouponMapper,
+                mock(com.myxhs.coupon.mapper.CouponOutboxMapper.class),
+                mock(com.myxhs.common.id.IdGeneratorUtil.class),
                 objectMapper,
                 claimCouponScript, returnCouponScript,
                 validators
@@ -114,7 +116,7 @@ class CouponServiceTest {
     @DisplayName("领券 - 成功领取优惠券")
     void claimCouponSuccess() {
         // 缓存未命中，走 MySQL
-        when(valueOperations.get(startsWith("coupon:template:"))).thenReturn(null);
+        when(valueOperations.get(startsWith("myxhs:coupon:template:"))).thenReturn(null);
         when(templateMapper.selectById(TEMPLATE_ID)).thenReturn(buildTemplate());
 
         // Lua 脚本返回 1（成功）
@@ -142,7 +144,7 @@ class CouponServiceTest {
     @Test
     @DisplayName("领券 - 重复领取抛异常")
     void claimDuplicatePrevention() {
-        when(valueOperations.get(startsWith("coupon:template:"))).thenReturn(null);
+        when(valueOperations.get(startsWith("myxhs:coupon:template:"))).thenReturn(null);
         when(templateMapper.selectById(TEMPLATE_ID)).thenReturn(buildTemplate());
 
         // Lua 脚本返回 -2（已达限领上限）
@@ -185,7 +187,7 @@ class CouponServiceTest {
     @DisplayName("查询优惠券模板 - 根据ID返回正确数据")
     void getTemplateSuccess() {
         // 缓存未命中
-        when(valueOperations.get("coupon:template:" + TEMPLATE_ID)).thenReturn(null);
+        when(valueOperations.get("myxhs:coupon:template:" + TEMPLATE_ID)).thenReturn(null);
         when(templateMapper.selectById(TEMPLATE_ID)).thenReturn(buildTemplate());
 
         CouponTemplate result = couponService.getTemplate(TEMPLATE_ID);

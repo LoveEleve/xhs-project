@@ -3,6 +3,7 @@ package com.myxhs.analytics.service;
 import com.myxhs.analytics.dto.event.FavoriteEvent;
 import com.myxhs.common.constants.RedisKeyConstants;
 import com.myxhs.common.trace.MqTraceHelper;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,6 +38,7 @@ public class FavoriteService {
     private final RocketMQTemplate rocketMQTemplate;
     private final ObjectMapper objectMapper;
     private final DefaultRedisScript<Long> favoriteAtomicScript;
+    private final DefaultRedisScript<Long> unfavoriteAtomicScript;
 
     /** 收藏列表最大返回条数 */
     private static final int MAX_PAGE_SIZE = 50;
@@ -67,8 +69,12 @@ public class FavoriteService {
 
         log.info("[收藏] 收藏成功: userId={}, noteId={}", userId, noteId);
 
-        // MQ 异步落库 + 通知计数服务
-        sendFavoriteEvent(userId, noteId, "FAVORITE", currentTime);
+        // MQ 同步落库——失败不回滚Redis(防Broker已消费但回滚导致Redis/DB不一致)
+        try {
+            sendFavoriteEvent(userId, noteId, "FAVORITE", currentTime);
+        } catch (Exception e) {
+            log.error("[收藏] MQ发送异常(Redis不回滚): userId={}, noteId={}", userId, noteId, e);
+        }
     }
 
     // ==================== 取消收藏 ====================
@@ -82,17 +88,29 @@ public class FavoriteService {
     public void unfavorite(Long userId, Long noteId) {
         String key = RedisKeyConstants.FAVORITE_SET + userId;
 
-        // 1. ZREM 移除收藏（返回移除的元素数量）
-        Long removed = stringRedisTemplate.opsForZSet().remove(key, String.valueOf(noteId));
+        // 先读取原始 score（用于 MQ 失败回滚时恢复原始收藏时间）
+        Double originalScore = stringRedisTemplate.opsForZSet().score(key, String.valueOf(noteId));
+
+        // Lua 原子 ZSCORE+ZREM：防止并发 favorite 写入新 score 后 ZREM→ZADD 覆盖
+        Long removed = stringRedisTemplate.execute(
+                unfavoriteAtomicScript,
+                Collections.singletonList(key),
+                String.valueOf(noteId));
         if (removed == null || removed == 0) {
-            // 未收藏，幂等返回
-            return;
+            return; // 未收藏，幂等返回
         }
 
         log.info("[收藏] 取消收藏成功: userId={}, noteId={}", userId, noteId);
 
-        // 2. MQ 异步删除 + 通知计数服务
-        sendFavoriteEvent(userId, noteId, "UNFAVORITE", 0);
+        // MQ 同步删除 + 通知计数服务（失败则回滚 Redis，用原始 score 恢复）
+        if (!sendFavoriteEvent(userId, noteId, "UNFAVORITE", 0)) {
+            // 回滚 ZADD 恢复（使用原始 score 而非当前时间，避免排序跳变）
+            long rollbackScore = originalScore != null ? originalScore.longValue() : System.currentTimeMillis();
+            stringRedisTemplate.opsForZSet().add(key, String.valueOf(noteId), rollbackScore);
+            log.error("[收藏] MQ发送失败已回滚Redis(score={}): userId={}, noteId={}", rollbackScore, userId, noteId);
+            throw new com.myxhs.common.exception.BizException(
+                    com.myxhs.common.response.ResultCode.INTERNAL_ERROR, "取消收藏失败，请重试");
+        }
     }
 
     // ==================== 查询收藏状态 ====================
@@ -156,36 +174,39 @@ public class FavoriteService {
     // ==================== 私有方法 ====================
 
     /**
-     * 发送收藏/取消收藏事件到 MQ
+     * 同步发送收藏/取消收藏事件到 MQ
      * <p>
      * Topic: SOCIAL_TOPIC
      * Tag: FAVORITE / UNFAVORITE
      * 消息体: JSON 格式的 FavoriteEvent
      * </p>
+     *
+     * @return true=发送成功, false=发送失败
      */
-    private void sendFavoriteEvent(Long userId, Long noteId, String action, long timestamp) {
+    private boolean sendFavoriteEvent(Long userId, Long noteId, String action, long timestamp) {
         try {
             FavoriteEvent event = FavoriteEvent.builder()
                     .userId(userId).noteId(noteId).action(action).actionTime(timestamp)
                     .build();
             String payload = objectMapper.writeValueAsString(event);
-            rocketMQTemplate.asyncSend(
+            org.apache.rocketmq.client.producer.SendResult sendResult = rocketMQTemplate.syncSend(
                     "SOCIAL_TOPIC:" + action,
                     MqTraceHelper.wrapWithTraceId(MessageBuilder.withPayload(payload).build()),
-                    new org.apache.rocketmq.client.producer.SendCallback() {
-                        @Override
-                        public void onSuccess(org.apache.rocketmq.client.producer.SendResult sendResult) {
-                            log.debug("[收藏] MQ发送成功: {}, msgId={}", payload, sendResult.getMsgId());
-                        }
-
-                        @Override
-                        public void onException(Throwable e) {
-                            log.error("[收藏] MQ发送失败: {}", payload, e);
-                        }
-                    }
-            );
+                    3000); // 超时 3 秒
+            if (sendResult.getSendStatus() == org.apache.rocketmq.client.producer.SendStatus.SEND_OK) {
+                log.debug("[收藏] MQ发送成功: {}", payload);
+                return true;
+            } else {
+                log.error("[收藏] MQ发送状态异常: action={}, userId={}, noteId={}, status={}",
+                        action, userId, noteId, sendResult.getSendStatus());
+                return false;
+            }
+        } catch (JsonProcessingException e) {
+            log.error("[收藏] 事件序列化失败: userId={}, noteId={}", userId, noteId, e);
+            return false;
         } catch (Exception e) {
             log.error("[收藏] MQ发送异常: userId={}, noteId={}, action={}", userId, noteId, action, e);
+            return false;
         }
     }
 }

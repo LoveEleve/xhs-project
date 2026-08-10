@@ -10,8 +10,10 @@
 -- 建议使用 {skuId} 作为 hash tag：inventory:{skuId}:total / inventory:{skuId}:bucket:N / inventory:{skuId}:prededuct:{orderId}
 --
 -- KEYS[1] = inventory:{skuId}:total             (String: 总可用库存)
--- KEYS[2] = inventory:{skuId}:prededuct:{orderId}  (Hash: 预扣记录)
+-- KEYS[2] = inventory:prededuct:{orderId}  (Hash: 预扣记录)
 -- KEYS[3..N+2] = inventory:{skuId}:bucket:0 ~ inventory:{skuId}:bucket:(N-1) (String: 各桶库存)
+-- KEYS[N+3] = inventory:prededuct:index    (ZSet: 预扣索引, member=orderId, score=过期时间戳ms)
+--                                             供超时回退 Job ZRANGEBYSCORE 查询，替代全库 SCAN
 --
 -- ARGV[1] = skuId
 -- ARGV[2] = orderId
@@ -28,6 +30,7 @@
 
 local totalKey = KEYS[1]
 local predeductKey = KEYS[2]
+local indexKey = KEYS[#KEYS]  -- 最后一个 KEY 固定为索引 ZSet
 
 local skuId = ARGV[1]
 local orderId = ARGV[2]
@@ -53,6 +56,10 @@ if tonumber(totalStock) < quantity then
     return 0  -- 库存不足
 end
 
+-- 计算过期时间戳（毫秒），用于 ZSet 索引 score
+local time = redis.call('TIME')
+local expireAtMs = time[1] * 1000 + expireSeconds * 1000
+
 -- 3. 计算路由桶号（桶 Key 从 KEYS[3] 开始）
 local routeBucket = userId % bucketCount
 local routeKeyIdx = 3 + routeBucket  -- KEYS 数组下标（Lua 从 1 开始）
@@ -65,6 +72,7 @@ if routeStock >= quantity then
     redis.call('HSET', predeductKey, skuId, quantity)
     redis.call('HSET', predeductKey, skuId .. ':bucket', routeBucket)
     redis.call('EXPIRE', predeductKey, expireSeconds)
+    redis.call('ZADD', indexKey, expireAtMs, orderId)
     return 1  -- 成功（路由桶扣减）
 end
 
@@ -79,6 +87,7 @@ for offset = 1, bucketCount - 1 do
         redis.call('HSET', predeductKey, skuId, quantity)
         redis.call('HSET', predeductKey, skuId .. ':bucket', i)
         redis.call('EXPIRE', predeductKey, expireSeconds)
+        redis.call('ZADD', indexKey, expireAtMs, orderId)
         return 1  -- 成功（从其他桶扣减）
     end
 end

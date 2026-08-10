@@ -1,9 +1,9 @@
 -- 加入购物车 Lua 脚本
 -- 原子操作：检查上限 + HINCRBY 累加 + 截断上限 + SADD 选中 + ZADD 排序
 --
--- KEYS[1] = cart:items:{userId}    (Hash)
--- KEYS[2] = cart:checked:{userId}  (Set)
--- KEYS[3] = cart:sort:{userId}     (ZSet)
+-- KEYS[1] = myxhs:cart:{userId}:items    (Hash)
+-- KEYS[2] = myxhs:cart:{userId}:checked  (Set)
+-- KEYS[3] = myxhs:cart:{userId}:sort     (ZSet)
 --
 -- ARGV[1] = skuId
 -- ARGV[2] = quantity (增加的数量)
@@ -46,8 +46,10 @@ if newQuantity > maxItemQuantity then
     newQuantity = maxItemQuantity
 end
 
--- 5. 默认选中
-redis.call('SADD', checkedKey, skuId)
+-- 5. 新商品默认选中（已存在商品保持原有勾选状态，与 merge 语义对齐）
+if exists == 0 then
+    redis.call('SADD', checkedKey, skuId)
+end
 
 -- 6. 记录加购时间（仅新商品记录，NX 语义）
 if exists == 0 then

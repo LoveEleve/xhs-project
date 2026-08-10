@@ -1,7 +1,7 @@
 # ============================================================
 # ShardingSphere-JDBC 分库分表配置
 # ============================================================
-# 架构：同一 MySQL 实例（13306）上 4 个 database × 4 张分表/库 = 16 张逻辑表
+# 架构：同一 MySQL 实例（3306）上 4 个 database × 4 张分表/库 = 16 张逻辑表
 # 分片键：user_id
 # 库路由：user_id % 4 → ds0(my_xhs_order_0) ~ ds3(my_xhs_order_3)
 # 表路由：(user_id / 4) % 4 → t_xxx_0 ~ t_xxx_3
@@ -14,7 +14,7 @@ dataSources:
   ds0:
     dataSourceClassName: com.zaxxer.hikari.HikariDataSource
     driverClassName: com.mysql.cj.jdbc.Driver
-    jdbcUrl: jdbc:mysql://21.130.247.89:13308/my_xhs_order_0?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    jdbcUrl: jdbc:mysql://21.130.247.89:3306/my_xhs_order_0?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
     username: root
     password: "Xhs@2026#MySQL"
     connectionTimeoutMilliseconds: 10000
@@ -28,7 +28,7 @@ dataSources:
   ds1:
     dataSourceClassName: com.zaxxer.hikari.HikariDataSource
     driverClassName: com.mysql.cj.jdbc.Driver
-    jdbcUrl: jdbc:mysql://21.130.247.89:13308/my_xhs_order_1?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    jdbcUrl: jdbc:mysql://21.130.247.89:3306/my_xhs_order_1?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
     username: root
     password: "Xhs@2026#MySQL"
     connectionTimeoutMilliseconds: 10000
@@ -42,7 +42,7 @@ dataSources:
   ds2:
     dataSourceClassName: com.zaxxer.hikari.HikariDataSource
     driverClassName: com.mysql.cj.jdbc.Driver
-    jdbcUrl: jdbc:mysql://21.130.247.89:13308/my_xhs_order_2?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    jdbcUrl: jdbc:mysql://21.130.247.89:3306/my_xhs_order_2?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
     username: root
     password: "Xhs@2026#MySQL"
     connectionTimeoutMilliseconds: 10000
@@ -56,7 +56,7 @@ dataSources:
   ds3:
     dataSourceClassName: com.zaxxer.hikari.HikariDataSource
     driverClassName: com.mysql.cj.jdbc.Driver
-    jdbcUrl: jdbc:mysql://21.130.247.89:13308/my_xhs_order_3?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    jdbcUrl: jdbc:mysql://21.130.247.89:3306/my_xhs_order_3?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
     username: root
     password: "Xhs@2026#MySQL"
     connectionTimeoutMilliseconds: 10000

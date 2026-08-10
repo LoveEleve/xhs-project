@@ -20,8 +20,9 @@ import java.math.BigDecimal;
  * - 重试：默认不重试（幂等接口才适合重试）
  * </p>
  */
-@FeignClient(name = "my-xhs-order", contextId = "orderFeignClient",
-        fallbackFactory = OrderFeignFallbackFactory.class)
+@FeignClient(name = "my-xhs-order",
+        fallbackFactory = OrderFeignFallbackFactory.class,
+        configuration = InternalCallFeignConfig.class)
 public interface OrderFeignClient {
 
     /**

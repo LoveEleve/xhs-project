@@ -3,6 +3,8 @@ package com.myxhs.analytics.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.annotation.FieldFill;
+import com.baomidou.mybatisplus.annotation.TableField;
 import lombok.Data;
 
 import java.io.Serializable;
@@ -32,5 +34,7 @@ public class Favorite implements Serializable {
     private Long noteId;
 
     /** 创建时间 */
+    // createdAt依赖DB DEFAULT CURRENT_TIMESTAMP，未继承BaseEntity故无@TableField(fill=INSERT)
+    @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 }

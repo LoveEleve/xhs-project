@@ -9,6 +9,7 @@ import com.myxhs.common.exception.BizException;
 import com.myxhs.common.id.IdGeneratorUtil;
 import com.myxhs.common.response.PageResult;
 import com.myxhs.common.response.ResultCode;
+import com.myxhs.common.trace.MqTraceHelper;
 import com.myxhs.content.dto.request.CommentCreateRequest;
 import com.myxhs.content.dto.response.CommentVO;
 import com.myxhs.content.entity.Comment;
@@ -20,6 +21,7 @@ import com.myxhs.content.mapper.NoteMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
+import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -146,6 +148,9 @@ public class CommentService {
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.COMMENT_LIST + noteId);
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.COMMENT_COUNT + noteId);
 
+                // 【修复R1】评论计数增量：发送 MQ 事件让 counter 服务更新笔记评论数
+                sendCommentCounterEvent(noteId, "COMMENT", 1);
+
                 // 【修复m17】排除自己评论自己的通知
                 if (senderId.equals(noteAuthorUserId)) {
                     return;
@@ -161,7 +166,9 @@ public class CommentService {
                 notification.put("content", contentPreview);
                 notification.put("targetName", noteTitle);
                 try {
-                    rocketMQTemplate.asyncSend("NOTIFICATION_TOPIC", notification,
+                    rocketMQTemplate.asyncSend("NOTIFICATION_TOPIC",
+                            MqTraceHelper.wrapWithTraceContext(
+                                    org.springframework.messaging.support.MessageBuilder.withPayload(notification).build()),
                             new org.apache.rocketmq.client.producer.SendCallback() {
                                 @Override
                                 public void onSuccess(org.apache.rocketmq.client.producer.SendResult sendResult) {
@@ -209,27 +216,29 @@ public class CommentService {
             throw new BizException(ResultCode.FORBIDDEN, "无权删除该评论");
         }
 
-        // 3. 逻辑删除评论
-        commentMapper.deleteById(commentId);
-        log.info("[评论] 删除成功: commentId={}, userId={}", commentId, userId);
-
-        // 4. 如果是一级评论，级联删除所有子评论
+        // 3. 级联删除子评论（先删子再删父；用 delete 返回值替代 selectCount 避免 TOCTOU）
+        int childDeleted = 0;
         if (comment.getParentId() == 0) {
             LambdaQueryWrapper<Comment> childWrapper = new LambdaQueryWrapper<Comment>()
                     .eq(Comment::getParentId, commentId);
-            int deleted = commentMapper.delete(childWrapper);
-            if (deleted > 0) {
-                log.info("[评论] 级联删除子评论: parentId={}, count={}", commentId, deleted);
-            }
+            childDeleted = commentMapper.delete(childWrapper);
         }
 
-        // 5. 事务提交后清除缓存
+        // 4. 逻辑删除父评论
+        commentMapper.deleteById(commentId);
+        log.info("[评论] 删除成功: commentId={}, userId={}, 级联删除{}条子评论", commentId, userId, childDeleted);
+
+        // 5. 事务提交后清除缓存 + 发送 counter 事件
+        // totalDeleted = 父评论(1) + 实际删除的子评论数
+        final long totalDeleted = 1 + childDeleted;
         final Long noteId = comment.getNoteId();
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.COMMENT_LIST + noteId);
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.COMMENT_COUNT + noteId);
+                // 发送单条 UNCOMMENT 事件（带计数），避免循环发送 N 条独立 MQ
+                sendCommentCounterEvent(noteId, "UNCOMMENT", totalDeleted);
             }
         });
     }
@@ -250,7 +259,7 @@ public class CommentService {
      * @return 一级评论列表（每条一级评论预加载前3条子评论）
      */
     public List<CommentVO> getCommentList(Long noteId, Long lastId, int pageSize) {
-        pageSize = Math.min(pageSize, MAX_PAGE_SIZE);
+        pageSize = Math.max(1, Math.min(pageSize, MAX_PAGE_SIZE));
 
         // 1. 游标分页查询一级评论
         LambdaQueryWrapper<Comment> wrapper = new LambdaQueryWrapper<Comment>()
@@ -291,18 +300,26 @@ public class CommentService {
         Map<Long, List<Comment>> childrenMap = allChildren.stream()
                 .collect(Collectors.groupingBy(Comment::getParentId));
 
-        // 3. 组装 VO
+        // 3. 预计算需要精确计数的 parentId（children.size() >= maxChildPerParent）
+        List<Long> needExactCountIds = rootComments.stream()
+                .map(Comment::getId)
+                .filter(id -> childrenMap.getOrDefault(id, Collections.emptyList()).size() >= maxChildPerParent)
+                .collect(Collectors.toList());
+
+        // 批量聚合 COUNT（一次 SQL 替换 N 次循环 COUNT）
+        Map<Long, Long> exactCountMap = Collections.emptyMap();
+        if (!needExactCountIds.isEmpty()) {
+            exactCountMap = commentMapper.batchCountByParentIds(needExactCountIds);
+        }
+
+        // 4. 组装 VO
+        final Map<Long, Long> countMap = exactCountMap;
         return rootComments.stream().map(root -> {
             CommentVO vo = toCommentVO(root);
 
             List<Comment> children = childrenMap.getOrDefault(root.getId(), Collections.emptyList());
-            // 子评论总数：如果查出的条数 == maxChildPerParent，说明可能还有更多，需要精确查询
-            // 否则直接用 children.size() 作为总数（避免额外 COUNT 查询）
             if (children.size() >= maxChildPerParent) {
-                // 有更多子评论，查询精确总数
-                long exactCount = commentMapper.selectCount(
-                        new LambdaQueryWrapper<Comment>().eq(Comment::getParentId, root.getId()));
-                vo.setChildCount(exactCount);
+                vo.setChildCount(countMap.getOrDefault(root.getId(), (long) children.size()));
             } else {
                 vo.setChildCount((long) children.size());
             }
@@ -327,7 +344,7 @@ public class CommentService {
      * @return 子评论列表
      */
     public List<CommentVO> getChildComments(Long parentId, Long lastId, int pageSize) {
-        pageSize = Math.min(pageSize, MAX_PAGE_SIZE);
+        pageSize = Math.max(1, Math.min(pageSize, MAX_PAGE_SIZE));
 
         LambdaQueryWrapper<Comment> wrapper = new LambdaQueryWrapper<Comment>()
                 .eq(Comment::getParentId, parentId);
@@ -367,8 +384,8 @@ public class CommentService {
      * 获取笔记的一级评论列表（传统分页，用于后台管理等场景）
      */
     public PageResult<CommentVO> getCommentPage(Long noteId, int pageNum, int pageSize) {
-        pageSize = Math.min(pageSize, MAX_PAGE_SIZE);
-        Page<Comment> page = new Page<>(pageNum, pageSize);
+        pageSize = Math.max(1, Math.min(pageSize, MAX_PAGE_SIZE));
+        Page<Comment> page = new Page<>(Math.max(1, pageNum), pageSize);
 
         LambdaQueryWrapper<Comment> wrapper = new LambdaQueryWrapper<Comment>()
                 .eq(Comment::getNoteId, noteId)
@@ -385,6 +402,39 @@ public class CommentService {
     }
 
     // ==================== 私有方法 ====================
+
+    /**
+     * 【修复R1】发送评论计数事件到 MQ（SOCIAL_TOPIC:COMMENT/UNCOMMENT）
+     * <p>
+     * CounterEventConsumer 消费此事件，更新 counter 服务的笔记评论计数 (countType=3)。
+     * 使用 asyncSend 避免阻塞评论发表事务的 afterCommit 回调。
+     * </p>
+     */
+    private void sendCommentCounterEvent(Long noteId, String action, long count) {
+        try {
+            Map<String, Object> event = new HashMap<>();
+            event.put("noteId", noteId);
+            if (count > 0) {
+                event.put("count", count);
+            }
+            rocketMQTemplate.asyncSend(
+                    "SOCIAL_TOPIC:" + action,
+                    MqTraceHelper.wrapWithTraceContext(MessageBuilder.withPayload(event).build()),
+                    new org.apache.rocketmq.client.producer.SendCallback() {
+                        @Override
+                        public void onSuccess(org.apache.rocketmq.client.producer.SendResult sendResult) {
+                            log.debug("[评论计数] MQ发送成功: noteId={}, action={}, count={}", noteId, action, count);
+                        }
+                        @Override
+                        public void onException(Throwable e) {
+                            log.warn("[评论计数] MQ发送失败: noteId={}, action={}, count={}", noteId, action, count, e);
+                        }
+                    });
+        } catch (Exception e) {
+            // asyncSend 时序列化失败是代码级错误
+            log.error("[评论计数] 事件序列化失败: noteId={}, action={}", noteId, action, e);
+        }
+    }
 
     /**
      * Comment → CommentVO

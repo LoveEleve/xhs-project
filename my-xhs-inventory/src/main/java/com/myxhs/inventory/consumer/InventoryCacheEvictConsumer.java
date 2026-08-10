@@ -83,6 +83,21 @@ public class InventoryCacheEvictConsumer implements RocketMQListener<MessageExt>
     /** Canal 版本号 Key 的过期时间（7天，防止无限增长） */
     private static final long CANAL_VERSION_TTL_SECONDS = 7 * 24 * 3600;
 
+    /** 版本号检查 Lua 脚本（静态常量复用 SHA1 缓存，避免每次消费新建对象） */
+    private static final org.springframework.data.redis.core.script.DefaultRedisScript<Long> VERSION_CHECK_SCRIPT;
+    static {
+        VERSION_CHECK_SCRIPT = new org.springframework.data.redis.core.script.DefaultRedisScript<>(
+                "local currentVersion = tonumber(redis.call('GET', KEYS[1]) or '0') " +
+                "local newVersion = tonumber(ARGV[1]) " +
+                "if newVersion > currentVersion then " +
+                "    redis.call('SETEX', KEYS[1], tonumber(ARGV[2]), tostring(newVersion)) " +
+                "    return 1 " +
+                "else " +
+                "    return 0 " +
+                "end",
+                Long.class);
+    }
+
     private static String totalKey(Long skuId) { return String.format(TOTAL_KEY_PREFIX, skuId); }
 
     @Override
@@ -123,6 +138,11 @@ public class InventoryCacheEvictConsumer implements RocketMQListener<MessageExt>
     private void handleCanalMessage(JSONObject canalMsg, String msgId, int reconsumeTimes) {
         String table = canalMsg.getString("table");
         String type = canalMsg.getString("type");
+        if (type == null || type.isEmpty()) {
+            log.warn("[库存缓存失效] Canal 消息缺少 type 字段, 跳过: msgId={}", msgId);
+            return;
+        }
+
         JSONArray dataArray = canalMsg.getJSONArray("data");
 
         // 只处理 t_inventory 表
@@ -151,7 +171,18 @@ public class InventoryCacheEvictConsumer implements RocketMQListener<MessageExt>
             }
 
             switch (type) {
-                case "INSERT", "UPDATE" -> evictCache(skuId, canalVersion, type);
+                case "INSERT" -> evictCache(skuId, canalVersion, type);
+                case "UPDATE" -> {
+                    // 【L2 回声保护】本模块是 L1(Redis) 权威架构：
+                    // preDeduct/release 先写 Redis（权威），L2 Consumer 再异步写 MySQL。
+                    // L2 的 MySQL UPDATE 是 L1 操作的回声而非独立变更——此时 Redis 已有更新的数据，
+                    // 删除缓存会导致：(1)后续 preDeduct 报"未初始化"库存链路崩坏；
+                    // (2)getStock 用滞后的 MySQL 快照回填覆盖在途预扣 → 超卖。
+                    // 因此 UPDATE 事件不再删除缓存。out-of-band 的 MySQL 直接修改（管理员 SQL）
+                    // 通过 /api/inventory/reinit 管理端点显式重建。
+                    log.debug("[库存缓存失效] 跳过UPDATE回声(L1权威,Redis数据更新): skuId={}, canalVersion={}",
+                            skuId, canalVersion);
+                }
                 case "DELETE" -> evictCacheCompletely(skuId, canalVersion);
                 default -> log.debug("[库存缓存失效] 忽略事件类型: type={}", type);
             }
@@ -184,20 +215,8 @@ public class InventoryCacheEvictConsumer implements RocketMQListener<MessageExt>
         String versionKey = CANAL_VERSION_PREFIX + skuId;
 
         // 原子版本号检查：只有当新版本 > 已记录版本时才执行删除
-        // Lua 脚本：GET currentVersion → 如果 canalVersion > currentVersion → SET newVersion → 返回 1；否则返回 0
-        String versionCheckScript = """
-                local currentVersion = tonumber(redis.call('GET', KEYS[1]) or '0')
-                local newVersion = tonumber(ARGV[1])
-                if newVersion > currentVersion then
-                    redis.call('SETEX', KEYS[1], tonumber(ARGV[2]), tostring(newVersion))
-                    return 1
-                else
-                    return 0
-                end
-                """;
-
         Long versionResult = stringRedisTemplate.execute(
-                new org.springframework.data.redis.core.script.DefaultRedisScript<>(versionCheckScript, Long.class),
+                VERSION_CHECK_SCRIPT,
                 java.util.List.of(versionKey),
                 String.valueOf(canalVersion),
                 String.valueOf(CANAL_VERSION_TTL_SECONDS)

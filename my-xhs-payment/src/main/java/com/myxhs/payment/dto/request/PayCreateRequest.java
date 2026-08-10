@@ -1,5 +1,7 @@
 package com.myxhs.payment.dto.request;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import lombok.Data;
@@ -26,5 +28,7 @@ public class PayCreateRequest {
 
     /** 支付方式：1-支付宝(Mock) 2-微信(Mock) */
     @NotNull(message = "支付方式不能为空")
+    @Min(value = 1, message = "支付方式最小值为1")
+    @Max(value = 99, message = "支付方式最大值为99")
     private Integer payType;
 }

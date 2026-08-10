@@ -37,7 +37,12 @@ public class PayResultConsumer implements RocketMQListener<MessageExt> {
     public void onMessage(MessageExt msg) {
         MqTraceHelper.restoreTraceId(msg);
         try {
-            String body = new String(msg.getBody());
+            byte[] bodyBytes = msg.getBody();
+            if (bodyBytes == null) {
+                log.warn("[支付结果消费] 消息体为null: msgId={}", msg.getMsgId());
+                return;
+            }
+            String body = new String(bodyBytes, java.nio.charset.StandardCharsets.UTF_8);
             log.info("[支付结果消费] 收到消息: {}", body);
             // 此处可做补偿逻辑：如支付成功但订单未更新，可主动通知订单服务
         } catch (Exception e) {

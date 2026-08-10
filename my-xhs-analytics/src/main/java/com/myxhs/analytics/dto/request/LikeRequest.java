@@ -1,6 +1,7 @@
 package com.myxhs.analytics.dto.request;
 
 import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
@@ -23,5 +24,6 @@ public class LikeRequest {
      * 业务ID（笔记ID或评论ID）
      */
     @NotNull(message = "业务ID不能为空")
+    @Positive(message = "业务ID必须为正数")
     private Long bizId;
 }

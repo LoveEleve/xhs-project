@@ -135,8 +135,8 @@ public class NoteSearchService extends AbstractSearchService {
             boolBuilder.must(q -> q.matchAll(m -> m));
         }
 
-        // filter: 只搜已发布的笔记（status=1）
-        boolBuilder.filter(f -> f.term(t -> t.field("status").value(1)));
+        // filter: 只搜已发布的笔记（status=2）
+        boolBuilder.filter(f -> f.term(t -> t.field("status").value(2)));
 
         return Query.of(q -> q.bool(boolBuilder.build()));
     }

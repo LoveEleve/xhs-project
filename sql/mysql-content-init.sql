@@ -157,8 +157,8 @@ CREATE TABLE IF NOT EXISTS t_cart_item (
     sku_id       BIGINT       NOT NULL COMMENT 'SKU ID',
     quantity     INT          NOT NULL DEFAULT 1 COMMENT '数量',
     checked      TINYINT      NOT NULL DEFAULT 1 COMMENT '是否选中：0-否 1-是',
-    created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    updated_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    created_at   DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
+    updated_at   DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间(毫秒精度,C-05乱序保护依赖)',
     PRIMARY KEY (id),
     UNIQUE INDEX uk_user_sku (user_id, sku_id),
     INDEX idx_user_id (user_id)
@@ -202,6 +202,19 @@ CREATE TABLE IF NOT EXISTS t_user_coupon (
     INDEX idx_coupon_id (coupon_id),
     INDEX idx_user_coupon (user_id, coupon_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户优惠券表';
+
+-- 优惠券 Outbox 表（MQ 发送可靠性保障）
+CREATE TABLE IF NOT EXISTS t_coupon_outbox (
+    id              BIGINT       NOT NULL COMMENT 'ID',
+    user_id         BIGINT       NOT NULL COMMENT '用户ID',
+    template_id     BIGINT       NOT NULL COMMENT '优惠券模板ID',
+    claim_no        VARCHAR(64)  NOT NULL COMMENT '幂等流水号(UUID)',
+    status          TINYINT      NOT NULL DEFAULT 0 COMMENT '0=待发送 1=已发送',
+    created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (id),
+    UNIQUE INDEX uk_claim_no (claim_no),
+    INDEX idx_status_created (status, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='优惠券Outbox表';
 
 -- Canal 同步账号
 CREATE USER IF NOT EXISTS 'canal'@'%' IDENTIFIED BY 'Canal@2026#Sync';

@@ -42,8 +42,13 @@ public class AnalyticsFeignFallbackFactory implements FallbackFactory<AnalyticsF
             }
 
             @Override
-            public R<Map<String, Object>> getFollowerCount(Long userId, int page, int size) {
-                return R.ok(Map.of("total", 0L, "list", Collections.emptyList()));
+            public R<Long> getFollowerCount(Long userId) {
+                return R.ok(0L);
+            }
+
+            @Override
+            public R<Long> getFollowingCount(Long userId) {
+                return R.ok(0L);
             }
         };
     }

@@ -19,21 +19,14 @@ import org.springframework.messaging.Message;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.startsWith;
-import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.mockStatic;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * FavoriteService 单元测试
  * <p>
  * 测试策略：纯 Mockito Mock，不连接任何外部服务。
- * Mock 对象：StringRedisTemplate, RocketMQTemplate, DefaultRedisScript (favoriteAtomicScript)
+ * Mock 对象：StringRedisTemplate, RocketMQTemplate, DefaultRedisScript (favoriteAtomicScript, unfavoriteAtomicScript)
  * </p>
  */
 @ExtendWith(MockitoExtension.class)
@@ -49,6 +42,9 @@ class FavoriteServiceTest {
     @Mock(name = "favoriteAtomicScript")
     private DefaultRedisScript<Long> favoriteAtomicScript;
 
+    @Mock(name = "unfavoriteAtomicScript")
+    private DefaultRedisScript<Long> unfavoriteAtomicScript;
+
     @Mock
     private ZSetOperations<String, String> zSetOperations;
 
@@ -63,18 +59,24 @@ class FavoriteServiceTest {
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
         favoriteService = new FavoriteService(
-                stringRedisTemplate, rocketMQTemplate, objectMapper, favoriteAtomicScript);
+                stringRedisTemplate, rocketMQTemplate, objectMapper,
+                favoriteAtomicScript, unfavoriteAtomicScript);
     }
 
     // ==================== 收藏 ====================
 
     @Test
-    @DisplayName("收藏笔记 - 正常收藏成功，验证 Redis Lua 脚本执行和 MQ 异步发送")
+    @DisplayName("收藏笔记 - 正常收藏成功，验证 Redis Lua 脚本执行和 MQ 同步发送")
     void favoriteSuccess() {
         // Lua 脚本执行成功，返回 1（新增收藏）
         when(stringRedisTemplate.execute(eq(favoriteAtomicScript), anyList(), anyString(), anyString()))
                 .thenReturn(1L);
-        doNothing().when(rocketMQTemplate).asyncSend(anyString(), any(Message.class), any());
+        // H3修复后改用 syncSend → mock SendResult
+        org.apache.rocketmq.client.producer.SendResult mockResult =
+                mock(org.apache.rocketmq.client.producer.SendResult.class);
+        when(mockResult.getSendStatus()).thenReturn(org.apache.rocketmq.client.producer.SendStatus.SEND_OK);
+        when(rocketMQTemplate.syncSend(anyString(), any(org.springframework.messaging.Message.class), anyLong()))
+                .thenReturn(mockResult);
 
         try (MockedStatic<MqTraceHelper> mockedMqTrace = mockStatic(MqTraceHelper.class)) {
             mockedMqTrace.when(() -> MqTraceHelper.wrapWithTraceId(any()))
@@ -84,18 +86,25 @@ class FavoriteServiceTest {
                     .doesNotThrowAnyException();
 
             verify(stringRedisTemplate).execute(eq(favoriteAtomicScript), anyList(), anyString(), anyString());
-            verify(rocketMQTemplate).asyncSend(startsWith("SOCIAL_TOPIC:FAVORITE"), any(Message.class), any());
+            verify(rocketMQTemplate).syncSend(startsWith("SOCIAL_TOPIC:FAVORITE"), any(org.springframework.messaging.Message.class), anyLong());
         }
     }
 
     // ==================== 取消收藏 ====================
 
     @Test
-    @DisplayName("取消收藏 - 正常取消收藏成功，验证 Redis ZSet 移除和 MQ 异步发送")
+    @DisplayName("取消收藏 - 正常取消收藏成功，验证 Redis ZSet 移除和 MQ 同步发送")
     void unfavoriteSuccess() {
+        // unfavorite 先读原始 score（用于回滚），再执行 Lua 脚本
         when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
-        when(zSetOperations.remove(anyString(), anyString())).thenReturn(1L);
-        doNothing().when(rocketMQTemplate).asyncSend(anyString(), any(Message.class), any());
+        when(zSetOperations.score(anyString(), anyString())).thenReturn(1234567890.0);
+        when(stringRedisTemplate.execute(eq(unfavoriteAtomicScript), anyList(), anyString()))
+                .thenReturn(1L);
+        org.apache.rocketmq.client.producer.SendResult mockResult =
+                mock(org.apache.rocketmq.client.producer.SendResult.class);
+        when(mockResult.getSendStatus()).thenReturn(org.apache.rocketmq.client.producer.SendStatus.SEND_OK);
+        when(rocketMQTemplate.syncSend(anyString(), any(org.springframework.messaging.Message.class), anyLong()))
+                .thenReturn(mockResult);
 
         try (MockedStatic<MqTraceHelper> mockedMqTrace = mockStatic(MqTraceHelper.class)) {
             mockedMqTrace.when(() -> MqTraceHelper.wrapWithTraceId(any()))
@@ -104,8 +113,9 @@ class FavoriteServiceTest {
             assertThatCode(() -> favoriteService.unfavorite(USER_ID, NOTE_ID))
                     .doesNotThrowAnyException();
 
-            verify(zSetOperations).remove(startsWith("myxhs:favorite:"), eq(String.valueOf(NOTE_ID)));
-            verify(rocketMQTemplate).asyncSend(startsWith("SOCIAL_TOPIC:UNFAVORITE"), any(Message.class), any());
+            verify(zSetOperations).score(startsWith("myxhs:favorite:"), eq(String.valueOf(NOTE_ID)));
+            verify(stringRedisTemplate).execute(eq(unfavoriteAtomicScript), anyList(), anyString());
+            verify(rocketMQTemplate).syncSend(startsWith("SOCIAL_TOPIC:UNFAVORITE"), any(org.springframework.messaging.Message.class), anyLong());
         }
     }
 

@@ -57,7 +57,7 @@ public class UserAddressService {
     @Transactional(rollbackFor = Exception.class)
     public AddressVO createAddress(Long userId, AddressCreateRequest request) {
         // 1. 分布式锁防止并发创建超过上限
-        String lockKey = "myxhs:user:address:lock:" + userId;
+        String lockKey = RedisKeyConstants.USER_ADDRESS_LOCK + userId;
         RLock lock = redissonClient.getLock(lockKey);
         try {
             if (!lock.tryLock(3, 10, java.util.concurrent.TimeUnit.SECONDS)) {
@@ -132,38 +132,55 @@ public class UserAddressService {
         // 1. 校验地址归属
         UserAddress address = getAndVerifyOwnership(userId, addressId);
 
-        // 2. 构建更新条件（同时加 userId 和 addressId 条件，双重校验防越权）
-        LambdaUpdateWrapper<UserAddress> updateWrapper = new LambdaUpdateWrapper<>();
-        updateWrapper.eq(UserAddress::getId, addressId)
-                     .eq(UserAddress::getUserId, userId);
+        // 2. 分布式锁（与 createAddress 共用锁 key，保证地址操作的串行化）
+        String lockKey = RedisKeyConstants.USER_ADDRESS_LOCK + userId;
+        RLock lock = redissonClient.getLock(lockKey);
+        try {
+            if (!lock.tryLock(3, 10, TimeUnit.SECONDS)) {
+                throw new BizException(ResultCode.LOCK_ACQUIRE_FAIL);
+            }
 
-        boolean hasUpdate = false;
-        if (request.getReceiverName() != null) { updateWrapper.set(UserAddress::getReceiverName, request.getReceiverName()); hasUpdate = true; }
-        if (request.getReceiverPhone() != null) { updateWrapper.set(UserAddress::getReceiverPhone, request.getReceiverPhone()); hasUpdate = true; }
-        if (request.getProvince() != null) { updateWrapper.set(UserAddress::getProvince, request.getProvince()); hasUpdate = true; }
-        if (request.getCity() != null) { updateWrapper.set(UserAddress::getCity, request.getCity()); hasUpdate = true; }
-        if (request.getDistrict() != null) { updateWrapper.set(UserAddress::getDistrict, request.getDistrict()); hasUpdate = true; }
-        if (request.getDetailAddress() != null) { updateWrapper.set(UserAddress::getDetailAddress, request.getDetailAddress()); hasUpdate = true; }
+            // 3. 构建更新条件（同时加 userId 和 addressId 条件，双重校验防越权）
+            LambdaUpdateWrapper<UserAddress> updateWrapper = new LambdaUpdateWrapper<>();
+            updateWrapper.eq(UserAddress::getId, addressId)
+                         .eq(UserAddress::getUserId, userId);
 
-        // 3. 处理默认地址切换
-        if (Boolean.TRUE.equals(request.getIsDefault()) && address.getIsDefault() == 0) {
-            cancelDefaultAddress(userId);
-            updateWrapper.set(UserAddress::getIsDefault, 1);
-            hasUpdate = true;
-            updateDefaultAddressCache(userId, addressId);
+            boolean hasUpdate = false;
+            if (request.getReceiverName() != null) { updateWrapper.set(UserAddress::getReceiverName, request.getReceiverName()); hasUpdate = true; }
+            if (request.getReceiverPhone() != null) { updateWrapper.set(UserAddress::getReceiverPhone, request.getReceiverPhone()); hasUpdate = true; }
+            if (request.getProvince() != null) { updateWrapper.set(UserAddress::getProvince, request.getProvince()); hasUpdate = true; }
+            if (request.getCity() != null) { updateWrapper.set(UserAddress::getCity, request.getCity()); hasUpdate = true; }
+            if (request.getDistrict() != null) { updateWrapper.set(UserAddress::getDistrict, request.getDistrict()); hasUpdate = true; }
+            if (request.getDetailAddress() != null) { updateWrapper.set(UserAddress::getDetailAddress, request.getDetailAddress()); hasUpdate = true; }
+
+            // 4. 处理默认地址切换
+            if (Boolean.TRUE.equals(request.getIsDefault()) && address.getIsDefault() == 0) {
+                cancelDefaultAddress(userId);
+                updateWrapper.set(UserAddress::getIsDefault, 1);
+                hasUpdate = true;
+                updateDefaultAddressCache(userId, addressId);
+            }
+
+            // 5. 执行更新（至少有一个字段需要更新时才执行）
+            if (hasUpdate) {
+                userAddressMapper.update(null, updateWrapper);
+                log.info("[收货地址] 更新成功, userId={}, addressId={}", userId, addressId);
+            } else {
+                log.debug("[收货地址] 无字段需要更新, userId={}, addressId={}", userId, addressId);
+            }
+
+            // 6. 查询最新数据返回
+            UserAddress updated = userAddressMapper.selectById(addressId);
+            return toAddressVO(updated);
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BizException(ResultCode.LOCK_ACQUIRE_FAIL);
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
         }
-
-        // 4. 执行更新（至少有一个字段需要更新时才执行）
-        if (hasUpdate) {
-            userAddressMapper.update(null, updateWrapper);
-            log.info("[收货地址] 更新成功, userId={}, addressId={}", userId, addressId);
-        } else {
-            log.debug("[收货地址] 无字段需要更新, userId={}, addressId={}", userId, addressId);
-        }
-
-        // 5. 查询最新数据返回
-        UserAddress updated = userAddressMapper.selectById(addressId);
-        return toAddressVO(updated);
     }
 
     // ==================== 删除地址 ====================
@@ -179,7 +196,23 @@ public class UserAddressService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void deleteAddress(Long userId, Long addressId) {
-        // 1. 校验地址归属
+        RLock lock = redissonClient.getLock(RedisKeyConstants.USER_ADDRESS_LOCK + userId);
+        try {
+            if (!lock.tryLock(3, 10, java.util.concurrent.TimeUnit.SECONDS)) {
+                throw new BizException(ResultCode.LOCK_ACQUIRE_FAIL);
+            }
+            doDeleteAddress(userId, addressId);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BizException(ResultCode.LOCK_ACQUIRE_FAIL);
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+    }
+
+    private void doDeleteAddress(Long userId, Long addressId) {
         UserAddress address = getAndVerifyOwnership(userId, addressId);
         boolean wasDefault = address.getIsDefault() == 1;
 
@@ -295,7 +328,23 @@ public class UserAddressService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void setDefaultAddress(Long userId, Long addressId) {
-        // 1. 校验地址归属
+        RLock lock = redissonClient.getLock(RedisKeyConstants.USER_ADDRESS_LOCK + userId);
+        try {
+            if (!lock.tryLock(3, 10, java.util.concurrent.TimeUnit.SECONDS)) {
+                throw new BizException(ResultCode.LOCK_ACQUIRE_FAIL);
+            }
+            doSetDefaultAddress(userId, addressId);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BizException(ResultCode.LOCK_ACQUIRE_FAIL);
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+    }
+
+    private void doSetDefaultAddress(Long userId, Long addressId) {
         UserAddress address = getAndVerifyOwnership(userId, addressId);
 
         if (address.getIsDefault() == 1) {

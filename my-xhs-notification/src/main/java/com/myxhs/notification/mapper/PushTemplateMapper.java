@@ -8,6 +8,6 @@ import org.apache.ibatis.annotations.Select;
 @Mapper
 public interface PushTemplateMapper extends BaseMapper<PushTemplate> {
 
-    @Select("SELECT * FROM t_push_template WHERE type = #{type} AND status = 1")
+    @Select("SELECT * FROM t_push_template WHERE type = #{type} AND status = 1 AND deleted = 0")
     PushTemplate selectByType(String type);
 }

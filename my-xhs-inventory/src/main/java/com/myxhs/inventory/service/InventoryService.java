@@ -19,7 +19,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.messaging.support.MessageBuilder;
@@ -27,7 +29,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 
 /**
  * 库存服务
@@ -114,6 +115,8 @@ public class InventoryService {
     private static final String TOTAL_KEY_PREFIX = "inventory:{%d}:total";
     private static final String PREDEDUCT_KEY_PREFIX = "inventory:prededuct:";
     private static final String BUCKET_COUNT_KEY_PREFIX = "inventory:bucket:count:";
+    /** 预扣索引 ZSet key（member=orderId, score=过期时间戳ms，供超时 Job ZRANGEBYSCORE 查询） */
+    private static final String PREDEDUCT_INDEX_KEY = "inventory:prededuct:index";
 
     private static String totalKey(Long skuId) { return String.format(TOTAL_KEY_PREFIX, skuId); }
     private static String predeductKey(Long orderId) { return PREDEDUCT_KEY_PREFIX + orderId; }
@@ -210,7 +213,7 @@ public class InventoryService {
         String pauseKey = "inventory:paused:" + skuId;
         if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(pauseKey))) {
             log.info("[库存] SKU正在扩容中，延迟消费: skuId={}", skuId);
-            throw new RuntimeException("SKU扩容中，稍后重试");
+            throw new ResizeInProgressException("SKU扩容中，稍后重试: skuId=" + skuId);
         }
 
         // 获取分桶数
@@ -218,7 +221,13 @@ public class InventoryService {
         if (bucketCountStr == null) {
             throw new BizException(ResultCode.PARAM_INVALID, "库存未初始化");
         }
-        int bucketCount = Integer.parseInt(bucketCountStr);
+        int bucketCount;
+        try {
+            bucketCount = Integer.parseInt(bucketCountStr);
+        } catch (NumberFormatException e) {
+            log.error("[库存] bucketCount脏数据: skuId={}, value={}", skuId, bucketCountStr);
+            throw new BizException(ResultCode.INTERNAL_ERROR, "库存数据异常，请联系管理员重建");
+        }
 
         // 【M9】热点检测（异步触发扩容，不阻塞当前请求）
         if (hotSkuDetector.recordAndCheck(skuId) && bucketCount < hotBucketCount) {
@@ -236,13 +245,14 @@ public class InventoryService {
         String totalKeyStr = totalKey(skuId);
         String predeductKeyStr = predeductKey(orderId);
 
-        // 构建完整 KEYS 列表：[totalKey, predeductKey, bucket:0, bucket:1, ..., bucket:N-1]
-        List<String> keys = new ArrayList<>(2 + bucketCount);
+        // 构建完整 KEYS 列表：[totalKey, predeductKey, bucket:0, bucket:1, ..., bucket:N-1, indexKey]
+        List<String> keys = new ArrayList<>(3 + bucketCount);
         keys.add(totalKeyStr);
         keys.add(predeductKeyStr);
         for (int i = 0; i < bucketCount; i++) {
             keys.add(bucketKey(skuId, i));
         }
+        keys.add(PREDEDUCT_INDEX_KEY);
 
         Long result = stringRedisTemplate.execute(
                 preDeductScript,
@@ -312,21 +322,40 @@ public class InventoryService {
                 continue;
             }
 
-            Long skuId = Long.parseLong(fieldName);
-            int quantity = Integer.parseInt(entry.getValue().toString());
+            Long skuId;
+            int quantity;
+            try {
+                skuId = Long.parseLong(fieldName);
+                quantity = Integer.parseInt(entry.getValue().toString());
+            } catch (NumberFormatException e) {
+                log.warn("[库存] 确认扣减跳过脏数据(skuId/数量非数字): orderId={}, field={}, value={}",
+                        orderId, fieldName, entry.getValue());
+                continue;
+            }
 
-            // Lua 原子删除预扣记录
+            // 【N10】扩容窗口保护：SKU 正在 resize 时延迟处理（confirm 只删预扣记录不动库存，
+            // 但预扣记录里的桶号可能已过期，需等待 resize 完成）
+            String pauseKey = "inventory:paused:" + skuId;
+            if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(pauseKey))) {
+                log.info("[库存] SKU正在扩容中，延迟确认: orderId={}, skuId={}", orderId, skuId);
+                throw new ResizeInProgressException("SKU扩容中，稍后重试: skuId=" + skuId);
+            }
+
+            // Lua 原子删除预扣记录（传入 predeductKey + indexKey）
             Long result = stringRedisTemplate.execute(
                     confirmScript,
-                    List.of(predeductKey),
-                    fieldName
+                    List.of(predeductKey, PREDEDUCT_INDEX_KEY),
+                    fieldName, String.valueOf(orderId)
             );
 
             log.info("[库存] 确认扣减: orderId={}, skuId={}, qty={}, result={}",
                     orderId, skuId, quantity, result);
 
-            // L2: MQ 异步更新 MySQL（locked_stock 减少）
-            sendInventoryEvent(orderId, skuId, quantity, "CONFIRM");
+            // L2: MQ 异步更新 MySQL（同步发送，失败记录日志，等 L3 对账修复）
+            if (!sendInventoryEvent(orderId, skuId, quantity, "CONFIRM")) {
+                log.error("[库存] 确认扣减MQ发送失败(等待L3对账修复): orderId={}, skuId={}, qty={}",
+                        orderId, skuId, quantity);
+            }
         }
     }
 
@@ -364,8 +393,24 @@ public class InventoryService {
                 continue;
             }
 
-            Long skuId = Long.parseLong(fieldName);
-            int quantity = Integer.parseInt(entry.getValue().toString());
+            Long skuId;
+            int quantity;
+            try {
+                skuId = Long.parseLong(fieldName);
+                quantity = Integer.parseInt(entry.getValue().toString());
+            } catch (NumberFormatException e) {
+                log.warn("[库存] 释放库存跳过脏数据(skuId/数量非数字): orderId={}, field={}, value={}",
+                        orderId, fieldName, entry.getValue());
+                continue;
+            }
+
+            // 【N10】扩容窗口保护：SKU 正在 resize 时延迟释放
+            // （释放写旧桶号后 resize 用收集值覆盖 → 释放的库存丢失）
+            String pauseKey = "inventory:paused:" + skuId;
+            if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(pauseKey))) {
+                log.info("[库存] SKU正在扩容中，延迟释放: orderId={}, skuId={}", orderId, skuId);
+                throw new ResizeInProgressException("SKU扩容中，稍后重试: skuId=" + skuId);
+            }
 
             // 获取来源桶号（release.lua 需要桶 Key 作为 KEYS[3]）
             Object bucketNoObj = stringRedisTemplate.opsForHash().get(predeductKey, fieldName + ":bucket");
@@ -374,18 +419,21 @@ public class InventoryService {
             String totalKeyStr = totalKey(skuId);
             String bucketKeyStr = bucketKey(skuId, bucketNo);
 
-            // Lua 原子释放（传入 totalKey + predeductKey + bucketKey）
+            // Lua 原子释放（传入 totalKey + predeductKey + bucketKey + indexKey）
             Long result = stringRedisTemplate.execute(
                     releaseScript,
-                    List.of(totalKeyStr, predeductKey, bucketKeyStr),
-                    fieldName
+                    List.of(totalKeyStr, predeductKey, bucketKeyStr, PREDEDUCT_INDEX_KEY),
+                    fieldName, String.valueOf(orderId)
             );
 
             log.info("[库存] 释放库存: orderId={}, skuId={}, qty={}, bucket={}, result={}",
                     orderId, skuId, quantity, bucketNo, result);
 
-            // L2: MQ 异步更新 MySQL（locked_stock → available_stock）
-            sendInventoryEvent(orderId, skuId, quantity, "RELEASE");
+            // L2: MQ 异步更新 MySQL（同步发送，失败记录日志，等 L3 对账修复）
+            if (!sendInventoryEvent(orderId, skuId, quantity, "RELEASE")) {
+                log.error("[库存] 释放库存MQ发送失败(等待L3对账修复): orderId={}, skuId={}, qty={}",
+                        orderId, skuId, quantity);
+            }
         }
     }
 
@@ -419,9 +467,18 @@ public class InventoryService {
             String bucketCountStr = stringRedisTemplate.opsForValue().get(BUCKET_COUNT_KEY_PREFIX + skuId);
             int bucketCount = bucketCountStr != null ? Integer.parseInt(bucketCountStr) : defaultBucketCount;
 
+            // lockedStock 不缓存在 Redis，从 MySQL 查
+            Integer lockedStock = null;
+            Inventory inv = inventoryMapper.selectOne(
+                    new LambdaQueryWrapper<Inventory>()
+                            .select(Inventory::getLockedStock)
+                            .eq(Inventory::getSkuId, skuId));
+            if (inv != null) lockedStock = inv.getLockedStock();
+
             return StockVO.builder()
                     .skuId(skuId)
                     .availableStock(Integer.parseInt(totalStr))
+                    .lockedStock(lockedStock)
                     .bucketCount(bucketCount)
                     .initialized(true)
                     .build();
@@ -440,80 +497,21 @@ public class InventoryService {
         String bucketCountStr = stringRedisTemplate.opsForValue().get(bucketCountKey);
 
         if (bucketCountStr != null) {
-            // 之前初始化过，Canal 删除了总库存 Key 但分桶数量 Key 可能还在
-            // 从 MySQL 回填 Redis 总库存和分桶
-            int bucketCount = Integer.parseInt(bucketCountStr);
-            reloadStockToRedis(skuId, inventory.getAvailableStock(), bucketCount);
-            log.info("[库存] Canal缓存失效后回填: skuId={}, stock={}, buckets={}",
-                    skuId, inventory.getAvailableStock(), bucketCount);
-        } else {
-            // 检查 Canal 版本号 Key 是否存在（Canal 删了所有 Key 的场景）
-            String versionKey = "inventory:canal:version:" + skuId;
-            if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(versionKey))) {
-                // Canal 曾经处理过该 SKU，说明之前初始化过但被 Canal 完全清除了
-                int bucketCount = defaultBucketCount;
-                reloadStockToRedis(skuId, inventory.getAvailableStock(), bucketCount);
-                log.info("[库存] Canal全量缓存清除后回填: skuId={}, stock={}, buckets={}",
-                        skuId, inventory.getAvailableStock(), bucketCount);
-            }
-            // 否则：从未初始化过，只返回 MySQL 数据，不回填
+            // 【N7 超卖防护】不再用 MySQL available_stock 盲目回填 Redis：
+            // MySQL 是 L2 异步持久层，在途预扣（Redis 已扣/MQ 未落库）尚未反映到 MySQL，
+            // 用 MySQL 快照回填会把在途预扣"回滚"→ 超卖。
+            // Redis 数据缺失（failover）时：读走 MySQL（返回真实持久值），
+            // 写路径（preDeduct 依赖 Redis Key）暂时不可用，由 /api/inventory/reinit 显式重建。
+            log.warn("[库存] Redis分桶数据缺失(可能Redis故障), 不回填MySQL防超卖, 需reinit重建: skuId={}", skuId);
         }
 
         return StockVO.builder()
                 .skuId(skuId)
                 .availableStock(inventory.getAvailableStock())
                 .lockedStock(inventory.getLockedStock())
-                .initialized(bucketCountStr != null || Boolean.TRUE.equals(
-                        stringRedisTemplate.hasKey("inventory:canal:version:" + skuId)))
+                .initialized(bucketCountStr != null && Boolean.TRUE.equals(
+                        stringRedisTemplate.hasKey(totalKey(skuId))))
                 .build();
-    }
-
-    /**
-     * 从 MySQL 重新加载库存到 Redis（Canal 缓存失效后回填）
-     * <p>
-     * 与 initStock 的区别：
-     * - initStock：首次初始化，使用 SETNX 幂等检查
-     * - reloadStockToRedis：缓存失效后回填，使用 SET 覆盖写入（保证一定能回填成功）
-     * </p>
-     * <p>
-     * 回填原子性：
-     * 使用 Redis Pipeline 将总库存、各桶库存、桶数量一次性写入，
-     * 减少网络往返次数。Pipeline 不是事务，中间可能穿插其他命令，
-     * 但由于回填是从 MySQL 读取的一致快照，即使中间有预扣减操作，
-     * 预扣减的 Lua 脚本会检查库存是否足够，不会超卖。
-     * </p>
-     *
-     * @param skuId       SKU ID
-     * @param totalStock  MySQL 中的可用库存
-     * @param bucketCount 分桶数
-     */
-    private void reloadStockToRedis(Long skuId, int totalStock, int bucketCount) {
-        // 均匀分配到各桶
-        int perBucket = totalStock / bucketCount;
-        int remainder = totalStock % bucketCount;
-
-        // Pipeline 批量写入
-        stringRedisTemplate.executePipelined(
-                (RedisCallback<Object>) connection -> {
-                    var stringConnection = connection.stringCommands();
-                    byte[] totalKeyBytes = (totalKey(skuId)).getBytes();
-                    byte[] bucketCountKeyBytes = (BUCKET_COUNT_KEY_PREFIX + skuId).getBytes();
-
-                    // 写入总库存
-                    stringConnection.set(totalKeyBytes, String.valueOf(totalStock).getBytes());
-                    // 写入分桶数量
-                    stringConnection.set(bucketCountKeyBytes, String.valueOf(bucketCount).getBytes());
-
-                    // 写入各桶库存
-                    for (int i = 0; i < bucketCount; i++) {
-                        int bucketStock = perBucket + (i == 0 ? remainder : 0);
-                        byte[] bucketKeyBytes = bucketKey(skuId, i).getBytes();
-                        stringConnection.set(bucketKeyBytes, String.valueOf(bucketStock).getBytes());
-                    }
-
-                    return null;
-                }
-        );
     }
 
     // ==================== 私有方法 ====================
@@ -530,11 +528,15 @@ public class InventoryService {
      */
     private boolean sendInventoryEvent(Long orderId, Long skuId, int quantity, String action) {
         try {
+            // Outbox: 提前写入，syncSend 超时/失败由 OutboxSenderJob 异步重试
+            inventoryMapper.insertOutboxEvent(orderId, skuId, quantity, action);
+
             InventoryDeductEvent event = InventoryDeductEvent.builder()
                     .orderId(orderId)
                     .skuId(skuId)
                     .quantity(quantity)
                     .action(action)
+                    .eventTime(System.currentTimeMillis())
                     .build();
 
             String payload = objectMapper.writeValueAsString(event);
@@ -545,16 +547,28 @@ public class InventoryService {
             );
 
             if (sendResult.getSendStatus() == org.apache.rocketmq.client.producer.SendStatus.SEND_OK) {
+                // 同步发送成功立即标记 Outbox 已发送，
+                // 防止 OutboxSenderJob 用新 msgId 重发同事件绕过消费者幂等 → MySQL 双扣
+                inventoryMapper.markOutboxSent(orderId, skuId);
                 log.debug("[库存] MQ发送成功: action={}, orderId={}, skuId={}",
                         action, orderId, skuId);
                 return true;
             } else {
                 log.error("[库存] MQ发送状态异常: action={}, orderId={}, skuId={}, status={}",
                         action, orderId, skuId, sendResult.getSendStatus());
+                // 发送失败且调用方将回滚 Redis：取消 outbox 行，
+                // 防止 Job 补发已回滚事件 → MySQL 扣了 Redis 没扣（幻影 locked）
+                inventoryMapper.cancelOutboxEvent(orderId, skuId);
                 return false;
             }
         } catch (Exception e) {
             log.error("[库存] MQ发送异常: orderId={}, skuId={}, action={}", orderId, skuId, action, e);
+            // 同上：异常路径也取消 outbox（若 insertOutboxEvent 本身失败则此调用无影响）
+            try {
+                inventoryMapper.cancelOutboxEvent(orderId, skuId);
+            } catch (Exception cancelEx) {
+                log.error("[库存] 取消Outbox失败: orderId={}, skuId={}", orderId, skuId, cancelEx);
+            }
             return false;
         }
     }
@@ -575,13 +589,19 @@ public class InventoryService {
 
             stringRedisTemplate.execute(
                     releaseScript,
-                    List.of(totalKeyStr, predeductKeyStr, bucketKeyStr),
-                    String.valueOf(skuId)
+                    List.of(totalKeyStr, predeductKeyStr, bucketKeyStr, PREDEDUCT_INDEX_KEY),
+                    String.valueOf(skuId), String.valueOf(orderId)
             );
             log.info("[库存] Redis预扣回滚成功: orderId={}, skuId={}, qty={}", orderId, skuId, quantity);
         } catch (Exception e) {
-            log.error("[库存] Redis预扣回滚失败(需人工介入): orderId={}, skuId={}, qty={}",
+            log.error("[库存] Redis预扣回滚失败(已写入补偿表): orderId={}, skuId={}, qty={}",
                     orderId, skuId, quantity, e);
+            // 写入补偿表，由 InventoryCompensationJob 异步重试
+            try {
+                inventoryMapper.insertCompensation(orderId, skuId, quantity, e.getMessage());
+            } catch (Exception ex) {
+                log.error("[库存] 补偿表写入也失败, 需人工介入: orderId={}, skuId={}", orderId, skuId, ex);
+            }
         }
     }
 
@@ -614,7 +634,13 @@ public class InventoryService {
                 int totalStock = 0;
                 for (int i = 0; i < oldBucketCount; i++) {
                     String val = stringRedisTemplate.opsForValue().get(bucketKey(skuId, i));
-                    totalStock += (val != null ? Integer.parseInt(val) : 0);
+                    if (val != null) {
+                        try {
+                            totalStock += Integer.parseInt(val);
+                        } catch (NumberFormatException e) {
+                            log.warn("[库存] 扩容收集时桶{}脏数据按0处理: skuId={}, value={}", i, skuId, val);
+                        }
+                    }
                 }
 
                 // 3. 按新桶数重新分配
@@ -622,22 +648,22 @@ public class InventoryService {
                 final int remainder = totalStock % newBucketCount;
                 final int finalTotal = totalStock;
 
-                // 4. Pipeline 原子写入
+                // 4. Pipeline 原子写入（显式 UTF-8，与全模块其他序列化路径一致）
                 stringRedisTemplate.executePipelined(
                         (RedisCallback<Object>) connection -> {
                             var cmd = connection.stringCommands();
                             for (int i = 0; i < newBucketCount; i++) {
                                 int stock = perBucket + (i == 0 ? remainder : 0);
-                                cmd.set(bucketKey(skuId, i).getBytes(),
-                                        String.valueOf(stock).getBytes());
+                                cmd.set(bucketKey(skuId, i).getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                                        String.valueOf(stock).getBytes(java.nio.charset.StandardCharsets.UTF_8));
                             }
                             for (int i = newBucketCount; i < oldBucketCount; i++) {
-                                connection.keyCommands().del(bucketKey(skuId, i).getBytes());
+                                connection.keyCommands().del(bucketKey(skuId, i).getBytes(java.nio.charset.StandardCharsets.UTF_8));
                             }
-                            cmd.set((BUCKET_COUNT_KEY_PREFIX + skuId).getBytes(),
-                                    String.valueOf(newBucketCount).getBytes());
-                            cmd.set(totalKey(skuId).getBytes(),
-                                    String.valueOf(finalTotal).getBytes());
+                            cmd.set((BUCKET_COUNT_KEY_PREFIX + skuId).getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                                    String.valueOf(newBucketCount).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                            cmd.set(totalKey(skuId).getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                                    String.valueOf(finalTotal).getBytes(java.nio.charset.StandardCharsets.UTF_8));
                             return null;
                         });
 
@@ -667,12 +693,16 @@ public class InventoryService {
 
         int totalStock = inventory.getAvailableStock() + inventory.getLockedStock();
 
-        // 清除所有 Redis Key
+        // 清除所有 Redis Key（使用 SCAN 而非 KEYS，避免阻塞 Redis）
         String totalKeyStr = totalKey(skuId);
-        Set<String> bucketKeys = stringRedisTemplate.keys(
-                String.format("inventory:{%d}:bucket:*", skuId));
-        if (bucketKeys != null && !bucketKeys.isEmpty()) {
-            stringRedisTemplate.delete(bucketKeys);
+        String bucketPattern = String.format("inventory:{%d}:bucket:*", skuId);
+        try (Cursor<String> cursor = stringRedisTemplate.scan(
+                ScanOptions.scanOptions().match(bucketPattern).count(64).build())) {
+            while (cursor.hasNext()) {
+                stringRedisTemplate.delete(cursor.next());
+            }
+        } catch (Exception e) {
+            log.warn("[库存] SCAN 清除分桶 Key 异常: skuId={}", skuId, e);
         }
         stringRedisTemplate.delete(totalKeyStr);
         stringRedisTemplate.delete(BUCKET_COUNT_KEY_PREFIX + skuId);
@@ -691,5 +721,15 @@ public class InventoryService {
                 String.valueOf(newBucketCount));
 
         log.info("[库存] 重新初始化完成: skuId={}, total={}, buckets={}", skuId, totalStock, newBucketCount);
+    }
+
+    /**
+     * SKU 扩容进行中异常（preDeduct/release/confirm 在 resize 窗口内抛出，
+     * MQ 消费者捕获后触发重试，HTTP 调用方收到后应延迟重试）
+     */
+    public static class ResizeInProgressException extends RuntimeException {
+        public ResizeInProgressException(String message) {
+            super(message);
+        }
     }
 }

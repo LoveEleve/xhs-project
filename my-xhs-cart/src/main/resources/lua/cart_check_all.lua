@@ -6,8 +6,8 @@
 -- 然后被后续的 SADD 覆盖丢失。
 -- Lua 脚本保证：读取所有 SKU → 重建 checked Set 是一个原子操作。
 --
--- KEYS[1] = myxhs:cart:items:{userId}     (Hash: 商品+数量)
--- KEYS[2] = myxhs:cart:checked:{userId}   (Set: 选中状态)
+-- KEYS[1] = myxhs:myxhs:cart:{userId}:items     (Hash: 商品+数量)
+-- KEYS[2] = myxhs:myxhs:cart:{userId}:checked   (Set: 选中状态)
 --
 -- ARGV[1] = checked ("1"=全选, "0"=取消全选)
 --

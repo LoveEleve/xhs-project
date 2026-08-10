@@ -59,22 +59,44 @@ public class CartReconcileJob {
      */
     @XxlJob("cartReconcileJob")
     public void reconcile() {
+        // 分布式锁: 防定时任务+手动端点并发对账(XXL-Job多实例/广播模式)
+        Boolean locked = stringRedisTemplate.opsForValue()
+                .setIfAbsent("myxhs:lock:cart:reconcile", "1", 600, java.util.concurrent.TimeUnit.SECONDS);
+        if (locked == null || !locked) {
+            log.info("[购物车对账] 已有实例执行中，跳过");
+            return;
+        }
+        try {
+            doReconcile();
+        } finally {
+            stringRedisTemplate.delete("myxhs:lock:cart:reconcile");
+        }
+    }
+
+    private void doReconcile() {
         log.info("[购物车对账] 开始执行...");
         long startTime = System.currentTimeMillis();
         int repairCount = 0;
+        int userCount = 0;
+        int batchSize = 1000;  // C-16: 游标分页，每批 1000 用户
 
         try {
-            // 1. 获取 MySQL 中所有有购物车记录的用户 ID（去重）
-            List<Long> userIds = cartItemMapper.selectDistinctUserIds();
-            log.info("[购物车对账] 待对账用户数: {}", userIds.size());
+            long lastUserId = 0;
+            while (true) {
+                List<Long> batch = cartItemMapper.selectDistinctUserIdsByCursor(lastUserId, batchSize);
+                if (batch.isEmpty()) break;
 
-            for (Long userId : userIds) {
-                repairCount += reconcileUser(userId);
+                for (Long userId : batch) {
+                    repairCount += reconcileUser(userId);
+                }
+                userCount += batch.size();
+                lastUserId = batch.get(batch.size() - 1);
+                log.debug("[购物车对账] 进度: 已对账 {} 用户", userCount);
             }
 
             long elapsed = System.currentTimeMillis() - startTime;
             log.info("[购物车对账] 完成: 对账{}个用户, 修复{}条记录, 耗时{}ms",
-                    userIds.size(), repairCount, elapsed);
+                    userCount, repairCount, elapsed);
             XxlJobHelper.handleSuccess("对账完成，修复 " + repairCount + " 条记录");
         } catch (Exception e) {
             log.error("[购物车对账] 执行异常", e);
@@ -83,27 +105,53 @@ public class CartReconcileJob {
     }
 
     /**
-     * 对账单个用户的购物车
+     * 对账单个用户的购物车（C-01: 改为 public 供管理端点调用）
      *
      * @return 修复的记录数
      */
-    private int reconcileUser(Long userId) {
+    public int reconcileUser(Long userId) {
         String itemsKey = itemsKey(userId);
         int repairCount = 0;
-
-        // 获取 Redis 中的购物车数据
-        Map<Object, Object> redisItems = stringRedisTemplate.opsForHash().entries(itemsKey);
-        Set<String> redisChecked = stringRedisTemplate.opsForSet().members(checkedKey(userId));
 
         // 获取 MySQL 中的购物车数据
         List<CartItem> mysqlItems = cartItemMapper.selectList(
                 new LambdaQueryWrapper<CartItem>().eq(CartItem::getUserId, userId));
 
+        // 【防双份全丢】检测 itemsKey 是否存在：
+        // key 不存在有两种可能——(a)用户清空购物车（clearCart 删除 key）；(b)Redis 故障丢数据（failover/重启无AOF）。
+        // 若为(b)，场景3（Redis无+MySQL有→DELETE MySQL）会把 MySQL 兜底数据也删掉 → 双份全丢。
+        // 保守策略：key 不存在时跳过场景3。代价是丢失 CLEAR 事件时的陈旧 MySQL 行残留，
+        // 但读取以 Redis 为准所以陈旧行对用户不可见，仅占用存储。
+        Boolean keyExists = stringRedisTemplate.hasKey(itemsKey);
+        boolean skipDeleteScenario = !Boolean.TRUE.equals(keyExists);
+        if (skipDeleteScenario && !mysqlItems.isEmpty()) {
+            log.warn("[购物车对账] itemsKey不存在, 跳过删除场景(防Redis故障时误删MySQL兜底): userId={}, mysqlItems={}",
+                    userId, mysqlItems.size());
+        }
+
+        // 获取 Redis 中的购物车数据
+        Map<Object, Object> redisItems = stringRedisTemplate.opsForHash().entries(itemsKey);
+        Set<String> redisChecked = stringRedisTemplate.opsForSet().members(checkedKey(userId));
+
         // 场景 1：Redis 有 + MySQL 无 → INSERT MySQL（MQ 消息丢失导致）
         for (Map.Entry<Object, Object> entry : redisItems.entrySet()) {
             String skuIdStr = entry.getKey().toString();
-            Long skuId = Long.parseLong(skuIdStr);
-            int redisQty = Integer.parseInt(entry.getValue().toString());
+            int redisQty;
+            try {
+                redisQty = Integer.parseInt(entry.getValue().toString());
+            } catch (NumberFormatException e) {
+                log.warn("[购物车对账] 跳过脏数据(数量非数字): userId={}, skuId={}, value={}",
+                        userId, skuIdStr, entry.getValue());
+                continue;
+            }
+            Long skuId;
+            try {
+                skuId = Long.parseLong(skuIdStr);
+            } catch (NumberFormatException e) {
+                log.warn("[购物车对账] 跳过脏数据(skuId非数字): userId={}, key={}",
+                        userId, skuIdStr);
+                continue;
+            }
 
             boolean existsInMysql = mysqlItems.stream()
                     .anyMatch(item -> item.getSkuId().equals(skuId));
@@ -132,7 +180,14 @@ public class CartReconcileJob {
         for (CartItem mysqlItem : mysqlItems) {
             Object redisQtyObj = redisItems.get(String.valueOf(mysqlItem.getSkuId()));
             if (redisQtyObj != null) {
-                int redisQty = Integer.parseInt(redisQtyObj.toString());
+                int redisQty;
+                try {
+                    redisQty = Integer.parseInt(redisQtyObj.toString());
+                } catch (NumberFormatException e) {
+                    log.warn("[购物车对账] 跳过脏数据(数量非数字): userId={}, skuId={}, value={}",
+                            userId, mysqlItem.getSkuId(), redisQtyObj);
+                    continue;
+                }
                 boolean isChecked = redisChecked != null
                         && redisChecked.contains(String.valueOf(mysqlItem.getSkuId()));
                 int redisCheckedVal = isChecked ? 1 : 0;
@@ -151,16 +206,20 @@ public class CartReconcileJob {
         }
 
         // 场景 3：Redis 无 + MySQL 有 → DELETE MySQL（用户已删除）
-        for (CartItem mysqlItem : mysqlItems) {
-            boolean existsInRedis = redisItems.containsKey(String.valueOf(mysqlItem.getSkuId()));
-            if (!existsInRedis) {
-                cartItemMapper.deleteById(mysqlItem.getId());
-                repairCount++;
-                log.info("[购物车对账] 删除MySQL残留: userId={}, skuId={}",
-                        userId, mysqlItem.getSkuId());
+        // 仅在 itemsKey 存在时执行（key 不存在可能是 Redis 故障丢数据，此时删除会摧毁 MySQL 兜底）
+        if (!skipDeleteScenario) {
+            for (CartItem mysqlItem : mysqlItems) {
+                boolean existsInRedis = redisItems.containsKey(String.valueOf(mysqlItem.getSkuId()));
+                if (!existsInRedis) {
+                    cartItemMapper.deleteById(mysqlItem.getId());
+                    repairCount++;
+                    log.info("[购物车对账] 删除MySQL残留: userId={}, skuId={}",
+                            userId, mysqlItem.getSkuId());
+                }
             }
         }
 
         return repairCount;
+    }
     }
 }

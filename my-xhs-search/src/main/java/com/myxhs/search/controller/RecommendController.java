@@ -27,6 +27,7 @@ import java.util.concurrent.ExecutorService;
 @RestController
 @RequestMapping("/api/recommend")
 @RequiredArgsConstructor
+@org.springframework.validation.annotation.Validated
 public class RecommendController {
 
     private final RecommendService recommendService;
@@ -34,6 +35,12 @@ public class RecommendController {
 
     @Qualifier("recallExecutor")
     private final ExecutorService recallExecutor;
+
+    /** 管理接口令牌（配置化管理，不再硬编码） */
+    @org.springframework.beans.factory.annotation.Value("${myxhs.admin.token}")
+    private String adminToken;
+
+    private boolean isAdminCall(String v) { return adminToken != null && !adminToken.isEmpty() && adminToken.equals(v); }
 
     /**
      * 个性化推荐 Feed（发现页）
@@ -86,7 +93,9 @@ public class RecommendController {
      * </p>
      */
     @PostMapping("/compute")
-    public R<String> triggerCompute() {
+    public R<String> triggerCompute(
+            @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
+        if (!isAdminCall(adminCall)) return R.fail(403, "无权访问管理接口");
         recommendComputeJob.extractFeatures();
         recommendComputeJob.computeItemCFMatrix();
         recommendComputeJob.refreshHotPool();

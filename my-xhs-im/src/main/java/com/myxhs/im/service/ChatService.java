@@ -63,8 +63,8 @@ public class ChatService {
         this.webSocketHandler = webSocketHandler;
     }
 
-    private static final String UNREAD_KEY_PREFIX = "im:unread:";
-    private static final String OFFLINE_KEY_PREFIX = "im:offline:";
+    private static final String UNREAD_KEY_PREFIX = "myxhs:im:unread:";
+    private static final String OFFLINE_KEY_PREFIX = "myxhs:im:offline:";
     private static final int MAX_OFFLINE_MESSAGES = 1000;
 
     /** 【M25】离线消息原子存储 Lua 脚本 */
@@ -114,7 +114,7 @@ public class ChatService {
         long msgId = IdWorker.getId();
         long conversationId = generateConversationId(senderId, receiverId);
         // 【M8】会话级序列号（Redis INCR 原子递增，保证同会话消息严格有序）
-        long seqNo = stringRedisTemplate.opsForValue().increment("im:seq:" + conversationId);
+        long seqNo = stringRedisTemplate.opsForValue().increment("myxhs:im:seq:" + conversationId);
         LocalDateTime now = LocalDateTime.now();
 
         // 1. 持久化消息 + 更新会话（通过独立 Bean 调用，确保 @Transactional 生效）
@@ -154,7 +154,7 @@ public class ChatService {
                     .timestamp(timestamp)
                     .build();
             try {
-                stringRedisTemplate.convertAndSend("im:route:" + targetServerId,
+                stringRedisTemplate.convertAndSend("myxhs:im:route:" + targetServerId,
                         JSON.toJSONString(routeMsg));
             } catch (Exception e) {
                 log.error("[IM] Pub/Sub 路由失败，降级存离线: receiverId={}", receiverId, e);
@@ -239,7 +239,7 @@ public class ChatService {
                     .timestamp(System.currentTimeMillis())
                     .build();
             try {
-                stringRedisTemplate.convertAndSend("im:route:" + targetServerId,
+                stringRedisTemplate.convertAndSend("myxhs:im:route:" + targetServerId,
                         JSON.toJSONString(routeMsg));
             } catch (Exception e) {
                 log.warn("[IM] 已读回执Pub/Sub路由失败: peerId={}", peerId, e);
@@ -278,7 +278,7 @@ public class ChatService {
                     .timestamp(System.currentTimeMillis())
                     .build();
             try {
-                stringRedisTemplate.convertAndSend("im:route:" + targetServerId,
+                stringRedisTemplate.convertAndSend("myxhs:im:route:" + targetServerId,
                         JSON.toJSONString(routeMsg));
             } catch (Exception e) {
                 log.warn("[IM] TYPING Pub/Sub路由失败: peerId={}", peerId, e);

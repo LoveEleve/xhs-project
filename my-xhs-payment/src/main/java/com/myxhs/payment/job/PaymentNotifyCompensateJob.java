@@ -52,7 +52,7 @@ public class PaymentNotifyCompensateJob {
     private final OrderFeignClient orderFeignClient;
 
     /** 通知计数器 Redis Key 前缀 */
-    private static final String NOTIFY_COUNT_PREFIX = "payment:notify:count:";
+    private static final String NOTIFY_COUNT_PREFIX = "myxhs:payment:notify:count:";
     /** 最大重试次数 */
     private static final int MAX_RETRY_COUNT = 10;
     /** 通知计数器 TTL（7 天后自动清除） */
@@ -104,7 +104,14 @@ public class PaymentNotifyCompensateJob {
             try {
                 String countKey = NOTIFY_COUNT_PREFIX + orderId;
                 String countStr = stringRedisTemplate.opsForValue().get(countKey);
-                int retryCount = countStr != null ? Integer.parseInt(countStr) : 0;
+                int retryCount = 0;
+                if (countStr != null) {
+                    try {
+                        retryCount = Integer.parseInt(countStr);
+                    } catch (NumberFormatException nfe) {
+                        log.warn("[补偿任务] Redis计数非法值: orderId={}, value={}", orderId, countStr);
+                    }
+                }
 
                 if (retryCount >= MAX_RETRY_COUNT) {
                     log.warn("[补偿任务] 订单 {} 已达最大重试次数 {}，需人工处理", orderId, MAX_RETRY_COUNT);
@@ -155,7 +162,14 @@ incrementRetryCount(countKey);
                 log.error("[补偿任务] 处理订单 {} 补偿异常", orderId, e);
                 String countKey = NOTIFY_COUNT_PREFIX + orderId;
                 String countStr = stringRedisTemplate.opsForValue().get(countKey);
-                int retryCount = countStr != null ? Integer.parseInt(countStr) : 0;
+                int retryCount = 0;
+                if (countStr != null) {
+                    try {
+                        retryCount = Integer.parseInt(countStr);
+                    } catch (NumberFormatException nfe) {
+                        log.warn("[补偿任务] Redis计数非法值: orderId={}, value={}", orderId, countStr);
+                    }
+                }
 incrementRetryCount(countKey);
             }
         }

@@ -26,8 +26,8 @@ public interface LocalMessageMapper extends BaseMapper<LocalMessage> {
                                      @Param("maxRetry") int maxRetry,
                                      @Param("limit") int limit);
 
-    /** 标记为已发送 */
-    @Update("UPDATE t_local_message SET status = 1 WHERE id = #{id}")
+    /** 标记为已发送（乐观锁：仅 status=0 时更新） */
+    @Update("UPDATE t_local_message SET status = 1 WHERE id = #{id} AND status = 0")
     int markSent(@Param("id") Long id);
 
     /**
@@ -73,6 +73,12 @@ public interface LocalMessageMapper extends BaseMapper<LocalMessage> {
     int updatePushProgress(@Param("id") Long id,
                            @Param("pushStatus") int pushStatus,
                            @Param("pushCursor") int pushCursor);
+
+    /**
+     * 仅更新推送状态（不修改 cursor，避免补偿任务覆盖 Consumer 的推送进度）
+     */
+    @Update("UPDATE t_local_message SET push_status = #{pushStatus} WHERE id = #{id}")
+    int updatePushStatus(@Param("id") Long id, @Param("pushStatus") int pushStatus);
 
     /**
      * 更新总粉丝数

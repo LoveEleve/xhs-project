@@ -43,7 +43,7 @@ public class Refund implements Serializable {
     /** 用户ID */
     private Long userId;
 
-    /** 退款单号（格式：REFUND_时间戳_随机数） */
+    /** 退款单号（格式：REFUND_日期_流水号 (如 REFUND20260516000001，Redis INCR)） */
     private String refundNo;
 
     /** 退款金额 */

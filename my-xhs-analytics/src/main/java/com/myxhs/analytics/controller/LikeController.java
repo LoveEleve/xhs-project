@@ -6,7 +6,10 @@ import com.myxhs.common.annotation.Idempotent;
 import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -24,6 +27,7 @@ import java.util.stream.Stream;
 @RestController
 @RequestMapping("/api/social/like")
 @RequiredArgsConstructor
+@Validated
 public class LikeController {
 
     private final LikeService likeService;
@@ -86,12 +90,13 @@ public class LikeController {
     @GetMapping("/batch-status")
     public R<Map<Long, Boolean>> batchCheckLikeStatus(
             @RequestHeader("X-User-Id") Long userId,
-            @RequestParam int bizType,
+            @RequestParam @Min(1) @Max(2) int bizType,
             @RequestParam String bizIds) {
         List<Long> idList = Stream.of(bizIds.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
-                .map(Long::valueOf)
+                .map(s -> { try { return Long.valueOf(s); } catch (NumberFormatException e) { return null; } })
+                .filter(id -> id != null)
                 .collect(Collectors.toList());
         return R.ok(likeService.batchCheckLikeStatus(userId, bizType, idList));
     }

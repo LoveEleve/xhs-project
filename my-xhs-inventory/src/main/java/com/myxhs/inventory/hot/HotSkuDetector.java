@@ -14,8 +14,9 @@ import java.util.concurrent.TimeUnit;
  * 滑动窗口内请求数超过阈值时判定为热点。
  * </p>
  * <p>
- * 内存优化：使用秒级时间戳 + 计数后缀替代毫秒级时间戳，
- * 大幅减少 ZSet member 数量（同秒内多次请求合并为同一秒计数器）。
+ * 内存控制：score 使用秒级时间戳，ZREMRANGEBYSCORE 定期清理窗口外数据 + TTL 兜底。
+ * member 使用"秒:线程ID:nanoTime"唯一后缀——每次请求一个独立 member，
+ * 通过 ZCARD 统计窗口内请求数（不合并同秒请求，保证计数精确）。
  * </p>
  */
 @Slf4j

@@ -1,6 +1,7 @@
 package com.myxhs.gateway.filter;
 
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
@@ -49,15 +50,19 @@ public class RequestLogFilter implements GlobalFilter, Ordered {
             traceId = UUID.randomUUID().toString().replace("-", "");
         }
 
-        // 2. 记录请求开始时间（用 nanoTime 避免时钟回拨影响）
+        // 2. 注入 MDC（Logstash JSON encoder 通过 includeMdcKeyName=traceId 提取）
+        //    WebFlux 线程模型下 MDC 是 ThreadLocal，doFinally 确保清理
+        MDC.put("traceId", traceId);
+
+        // 3. 记录请求开始时间（用 nanoTime 避免时钟回拨影响）
         exchange.getAttributes().put(START_TIME_ATTR, System.nanoTime());
 
-        // 3. 注入 TraceId 到请求 Header
+        // 4. 注入 TraceId 到请求 Header
         ServerHttpRequest mutatedRequest = request.mutate()
                 .header(TRACE_ID_HEADER, traceId)
                 .build();
 
-        // 4. 入站日志
+        // 5. 入站日志
         if (query != null && !query.isEmpty()) {
             log.info("[Gateway] >>> method={}, path={}, query={}, traceId={}",
                     method, path, query, traceId);
@@ -69,8 +74,8 @@ public class RequestLogFilter implements GlobalFilter, Ordered {
         final String finalTraceId = traceId;
 
         return chain.filter(exchange.mutate().request(mutatedRequest).build())
-                .then(Mono.fromRunnable(() -> {
-                    // 5. 出站日志：记录响应状态码和耗时
+                .then(Mono.<Void>fromRunnable(() -> {
+                    // 6. 出站日志：记录响应状态码和耗时
                     Long startTimeNanos = exchange.getAttribute(START_TIME_ATTR);
                     if (startTimeNanos != null) {
                         long durationMs = (System.nanoTime() - startTimeNanos) / 1_000_000;
@@ -80,7 +85,8 @@ public class RequestLogFilter implements GlobalFilter, Ordered {
                         log.info("[Gateway] <<< method={}, path={}, status={}, duration={}ms, traceId={}",
                                 method, path, statusCode, durationMs, finalTraceId);
                     }
-                }));
+                }))
+                .doFinally(signal -> MDC.remove("traceId"));  // 7. 清理 MDC
     }
 
     @Override

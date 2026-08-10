@@ -12,8 +12,6 @@ import com.myxhs.payment.dto.request.RefundRequest;
 import com.myxhs.payment.dto.response.PaymentVO;
 import com.myxhs.payment.entity.Payment;
 import com.myxhs.payment.entity.Refund;
-import com.myxhs.payment.mapper.PaymentMapper;
-import com.myxhs.payment.mapper.RefundMapper;
 import com.myxhs.payment.feign.OrderFeignClient;
 import com.myxhs.payment.strategy.PayChannelStrategy;
 import lombok.RequiredArgsConstructor;
@@ -87,12 +85,12 @@ public class PaymentService {
     // ==================== 常量 ====================
 
     /** 支付中状态 Redis Key 前缀（防重复支付） */
-    private static final String PAYING_KEY_PREFIX = "payment:paying:";
+    private static final String PAYING_KEY_PREFIX = "myxhs:payment:paying:";
     /** 支付中状态 TTL（与订单超时时间一致：30 分钟） */
     private static final Duration PAYING_KEY_TTL = Duration.ofMinutes(30);
 
     /** 退款中状态 Redis Key 前缀（防重复退款） */
-    private static final String REFUNDING_KEY_PREFIX = "payment:refunding:";
+    private static final String REFUNDING_KEY_PREFIX = "myxhs:payment:refunding:";
     /** 退款中状态 TTL（7 天，覆盖退款处理周期） */
     private static final Duration REFUNDING_KEY_TTL = Duration.ofDays(7);
 
@@ -140,7 +138,7 @@ public class PaymentService {
         BigDecimal amount = request.getAmount();
         Integer payType = request.getPayType();
         String payingKey = PAYING_KEY_PREFIX + orderId;
-        String statusKey = "payment:status:" + orderId;
+        String statusKey = "myxhs:payment:status:" + orderId;
         Long paymentRecordId = null;
 
         // 记录支付尝试
@@ -149,7 +147,7 @@ public class PaymentService {
         // 1. 幂等校验：Redisson 分布式锁 + DB 乐观锁双重保障
         //    Redisson 对 Sentinel 主从切换有更好的支持（自动重试 + Watchdog 续期），
         //    即使主从切换导致锁短暂丢失，DB 乐观锁（WHERE status = 待支付）作为最终防线。
-        RLock payLock = redissonClient.getLock("lock:payment:pay:" + orderId);
+        RLock payLock = redissonClient.getLock("myxhs:lock:payment:pay:" + orderId);
         boolean locked = false;
         try {
             locked = payLock.tryLock(3, 10, TimeUnit.SECONDS);
@@ -221,7 +219,7 @@ public class PaymentService {
             // 删除已插入的支付记录（避免脏数据残留）
             if (paymentRecordId != null) {
                 try {
-                    paymentJdbcTemplate.update("DELETE FROM t_payment WHERE id = ?", paymentRecordId);
+                    paymentJdbcTemplate.update("DELETE FROM t_payment WHERE id = ? AND status = 0 AND deleted = 0", paymentRecordId);
                 } catch (Exception deleteEx) {
                     log.error("[支付] 清理支付记录失败: paymentId={}", paymentRecordId, deleteEx);
                 }
@@ -235,7 +233,7 @@ public class PaymentService {
             stringRedisTemplate.delete(statusKey);
             if (paymentRecordId != null) {
                 try {
-                    paymentJdbcTemplate.update("DELETE FROM t_payment WHERE id = ?", paymentRecordId);
+                    paymentJdbcTemplate.update("DELETE FROM t_payment WHERE id = ? AND status = 0 AND deleted = 0", paymentRecordId);
                 } catch (Exception deleteEx) {
                     log.error("[支付] 清理支付记录失败: paymentId={}", paymentRecordId, deleteEx);
                 }
@@ -294,7 +292,7 @@ public class PaymentService {
         // 乐观锁：只有 status=0(待支付) 的记录才会被更新
         int updated = paymentJdbcTemplate.update(
                 "UPDATE t_payment SET status = ?, paid_at = ?, updated_at = ? " +
-                        "WHERE order_id = ? AND status = ?",
+                        "WHERE order_id = ? AND status = ? AND deleted = 0",
                 STATUS_SUCCESS, LocalDateTime.now(), LocalDateTime.now(),
                 orderId, STATUS_PENDING
         );
@@ -305,7 +303,7 @@ public class PaymentService {
         }
 
         // 更新 Redis 支付状态缓存
-        stringRedisTemplate.opsForValue().set("payment:status:" + orderId, "1", PAYING_KEY_TTL);
+        stringRedisTemplate.opsForValue().set("myxhs:payment:status:" + orderId, "1"); // 永久: 防30min过期后重复支付
 
         // 删除幂等键（支付完成后允许该订单再次支付，如退款后重新支付）
         stringRedisTemplate.delete(PAYING_KEY_PREFIX + orderId);
@@ -331,17 +329,23 @@ public class PaymentService {
     private void handlePayFailInternal(Long orderId, Long userId, String paymentNo) {
         int updated = paymentJdbcTemplate.update(
                 "UPDATE t_payment SET status = ?, updated_at = ? " +
-                        "WHERE order_id = ? AND status = ?",
+                        "WHERE order_id = ? AND status = ? AND deleted = 0",
                 STATUS_FAIL, LocalDateTime.now(),
                 orderId, STATUS_PENDING
         );
 
         if (updated > 0) {
-            stringRedisTemplate.opsForValue().set("payment:status:" + orderId, "2", PAYING_KEY_TTL);
+            stringRedisTemplate.opsForValue().set("myxhs:payment:status:" + orderId, "2", PAYING_KEY_TTL);
             stringRedisTemplate.delete(PAYING_KEY_PREFIX + orderId);
             log.info("[支付失败] orderId={}, paymentNo={}", orderId, paymentNo);
             businessMetrics.recordPaymentCallback("fail");
             sendPayResultMq(orderId, userId, false, null);
+            // 同步通知订单服务支付失败
+            try {
+                orderFeignClient.notifyPayFail(orderId);
+            } catch (Exception e) {
+                log.error("[支付失败] 通知订单服务失败(订单MQ消费者会兜底): orderId={}", orderId, e);
+            }
         }
     }
 
@@ -368,7 +372,7 @@ public class PaymentService {
         Long refundRecordId = null;
 
         // 1. 幂等校验：Redisson 分布式锁 + DB 乐观锁双重保障
-        RLock refundLock = redissonClient.getLock("lock:payment:refund:" + paymentId);
+        RLock refundLock = redissonClient.getLock("myxhs:lock:payment:refund:" + paymentId);
         boolean locked = false;
         try {
             locked = refundLock.tryLock(3, 10, TimeUnit.SECONDS);
@@ -391,6 +395,10 @@ public class PaymentService {
             Payment payment = findById(paymentId);
             if (payment == null) {
                 throw new BizException(ResultCode.PAYMENT_FAIL, "支付单不存在");
+            }
+            // 归属校验: 防水平越权退款他人支付单
+            if (!payment.getUserId().equals(userId)) {
+                throw new BizException(ResultCode.PAYMENT_FAIL, "无权操作该支付单");
             }
             if (payment.getStatus() != STATUS_SUCCESS) {
                 throw new BizException(ResultCode.ORDER_STATUS_ERROR, "支付单状态不允许退款");
@@ -517,13 +525,13 @@ public class PaymentService {
 
         // 3. 更新支付单状态为"已退款"
         paymentJdbcTemplate.update(
-                "UPDATE t_payment SET status = ?, updated_at = ? WHERE id = ?",
+                "UPDATE t_payment SET status = ?, updated_at = ? WHERE id = ? AND deleted = 0",
                 STATUS_REFUNDED, LocalDateTime.now(), refund.getPaymentId()
         );
 
         // 4. 清理 Redis
         stringRedisTemplate.delete(REFUNDING_KEY_PREFIX + refund.getPaymentId());
-        stringRedisTemplate.opsForValue().set("payment:status:" + refund.getOrderId(), "3", PAYING_KEY_TTL);
+        stringRedisTemplate.opsForValue().set("myxhs:payment:status:" + refund.getOrderId(), "3", PAYING_KEY_TTL);
 
         log.info("[退款成功] refundNo={}, paymentId={}, orderId={}", refundNo, refund.getPaymentId(), refund.getOrderId());
 
@@ -537,7 +545,7 @@ public class PaymentService {
     private void handleRefundFailInternal(String refundNo) {
         int updated = paymentJdbcTemplate.update(
                 "UPDATE t_refund SET status = ?, updated_at = ? " +
-                        "WHERE refund_no = ? AND status = ?",
+                        "WHERE refund_no = ? AND status = ? AND deleted = 0",
                 REFUND_STATUS_FAIL, LocalDateTime.now(),
                 refundNo, REFUND_STATUS_PROCESSING
         );
@@ -563,7 +571,7 @@ public class PaymentService {
      */
     public void checkPaymentTimeout() {
         // 分布式锁：防止多实例重复执行
-        String lockKey = "payment:lock:timeout-check";
+        String lockKey = "myxhs:payment:lock:timeout-check";
         String lockValue = java.util.UUID.randomUUID().toString();
         Boolean locked = stringRedisTemplate.opsForValue()
                 .setIfAbsent(lockKey, lockValue, Duration.ofSeconds(30));
@@ -573,11 +581,21 @@ public class PaymentService {
         }
 
         try {
-            // Lua 脚本原子操作：检查 Redis 中的支付状态，如果待支付且超时则标记为失败
-            Long timeout = System.currentTimeMillis() - PAY_TIMEOUT_MS;
-            Long result = stringRedisTemplate.execute(paymentTimeoutScript,
-                    java.util.Collections.singletonList("payment:status:*"),
-                    String.valueOf(timeout), String.valueOf(System.currentTimeMillis()));
+            // SCAN 扫描所有 status key，对 status=0(支付中) 的检查是否超时
+            // 修复: 原 Lua GET 将通配符 "myxhs:payment:status:*" 当字面量, 永远返回 nil
+            long timeout = System.currentTimeMillis() - PAY_TIMEOUT_MS;
+            Long result = 0L;
+            java.util.Set<String> keys = stringRedisTemplate.keys("myxhs:payment:status:*");
+            if (keys != null && !keys.isEmpty()) {
+                for (String key : keys) {
+                    Long singleResult = stringRedisTemplate.execute(paymentTimeoutScript,
+                            java.util.Collections.singletonList(key),
+                            String.valueOf(timeout), String.valueOf(System.currentTimeMillis()));
+                    if (singleResult != null) result += singleResult;
+                }
+            }
+            log.info("[支付超时检查] 完成: pendingCount={}, timeoutCount={}", 
+                    keys != null ? keys.size() : 0, result);
 
             log.debug("[支付超时检查] 扫描完成: result={}", result);
         } finally {
@@ -599,7 +617,7 @@ public class PaymentService {
      * </p>
      */
     public void checkRefundTimeout() {
-        String lockKey = "payment:lock:refund-timeout-check";
+        String lockKey = "myxhs:payment:lock:refund-timeout-check";
         String lockValue = java.util.UUID.randomUUID().toString();
         Boolean locked = stringRedisTemplate.opsForValue()
                 .setIfAbsent(lockKey, lockValue, Duration.ofSeconds(60));
@@ -626,8 +644,8 @@ public class PaymentService {
             for (RefundTimeoutRecord record : timeoutRefunds) {
                 // 乐观锁更新为"退款关闭"
                 int updated = paymentJdbcTemplate.update(
-                        "UPDATE t_refund SET status = ?, updated_at = ? " +
-                                "WHERE id = ? AND status = ?",
+                "UPDATE t_refund SET status = ?, updated_at = ? " +
+                        "WHERE id = ? AND status = ? AND deleted = 0",
                         REFUND_STATUS_CLOSED, LocalDateTime.now(),
                         record.id(), REFUND_STATUS_PROCESSING
                 );
@@ -682,7 +700,7 @@ public class PaymentService {
      * </p>
      */
     public void reconcile() {
-        String lockKey = "payment:lock:reconcile";
+        String lockKey = "myxhs:payment:lock:reconcile";
         String lockValue = java.util.UUID.randomUUID().toString();
         Boolean locked = stringRedisTemplate.opsForValue()
                 .setIfAbsent(lockKey, lockValue, Duration.ofMinutes(5));
@@ -692,47 +710,50 @@ public class PaymentService {
 
         try {
             log.info("[对账] 开始执行支付对账...");
-            // 查询所有支付成功的记录
-            List<ReconcileRecord> records = paymentJdbcTemplate.query(
-                    "SELECT order_id, payment_no FROM t_payment " +
-                            "WHERE status = 1 AND deleted = 0",
-                    (rs, rowNum) -> new ReconcileRecord(
-                            rs.getLong("order_id"),
-                            rs.getString("payment_no")
-                    )
-            );
-
+            // 游标分页查询（避免全量查询 OOM）
+            long lastId = 0;
+            int batchSize = 200;
             int inconsistent = 0;
-            for (ReconcileRecord record : records) {
-                try {
-                    R<BigDecimal> payAmountResult = orderFeignClient.getOrderPayAmount(record.orderId());
+            int totalRecords = 0;
 
-                    if (payAmountResult == null || !payAmountResult.isSuccess()) {
-                        log.error("[对账] 订单服务不可达: orderId={}, paymentNo={}, code={}",
-                                record.orderId(), record.paymentNo(),
-                                payAmountResult != null ? payAmountResult.getCode() : -1);
-                        continue;
-                    }
+            while (true) {
+                List<ReconcileRecord> records = paymentJdbcTemplate.query(
+                        "SELECT order_id, payment_no, id FROM t_payment " +
+                                "WHERE status = 1 AND deleted = 0 AND id > ? ORDER BY id ASC LIMIT ?",
+                        (rs, rowNum) -> new ReconcileRecord(
+                                rs.getLong("id"),
+                                rs.getLong("order_id"),
+                                rs.getString("payment_no")
+                        ),
+                        lastId, batchSize
+                );
+                if (records.isEmpty()) break;
+                totalRecords += records.size();
 
-                    BigDecimal payAmount = payAmountResult.getData();
-                    if (payAmount != null && payAmount.compareTo(BigDecimal.ZERO) > 0) {
-                        log.error("[对账] 不一致: 支付成功但订单仍待支付, orderId={}, paymentNo={}",
-                                record.orderId(), record.paymentNo());
-                        inconsistent++;
-                        orderFeignClient.notifyPaySuccess(record.orderId(), record.paymentNo());
-                        log.info("[对账] 已触发补偿通知: orderId={}", record.orderId());
-                    } else {
-                        log.debug("[对账] 一致: orderId={}, paymentNo={}", record.orderId(), record.paymentNo());
+                for (ReconcileRecord record : records) {
+                    try {
+                        R<BigDecimal> payAmountResult = orderFeignClient.getOrderPayAmount(record.orderId());
+                        if (payAmountResult != null && payAmountResult.isSuccess()) {
+                            BigDecimal payAmount = payAmountResult.getData();
+                            if (payAmount != null && payAmount.compareTo(BigDecimal.ZERO) > 0) {
+                                log.error("[对账] 不一致: 支付成功但订单仍待支付, orderId={}", record.orderId());
+                                inconsistent++;
+                                orderFeignClient.notifyPaySuccess(record.orderId(), record.paymentNo());
+                            }
+                        }
+                    } catch (Exception e) {
+                        log.error("[对账] 处理异常: orderId={}", record.orderId(), e);
                     }
-                } catch (Exception e) {
-                    log.error("[对账] 处理异常: orderId={}, paymentNo={}", record.orderId(), record.paymentNo(), e);
                 }
+                long finalLastId = lastId;
+                lastId = records.stream().mapToLong(ReconcileRecord::id).max().orElse(finalLastId);
+                if (records.size() < batchSize) break;
             }
 
             if (inconsistent > 0) {
                 log.warn("[对账] 发现 {} 条不一致记录，已触发补偿通知", inconsistent);
             }
-            log.info("[对账] 支付对账完成: totalRecords={}, inconsistent={}", records.size(), inconsistent);
+            log.info("[对账] 支付对账完成: totalRecords={}, inconsistent={}", totalRecords, inconsistent);
         } finally {
             safeUnlock(lockKey, lockValue);
         }
@@ -741,7 +762,7 @@ public class PaymentService {
     /**
      * 对账记录 DTO
      */
-    private record ReconcileRecord(Long orderId, String paymentNo) {
+    private record ReconcileRecord(Long id, Long orderId, String paymentNo) {
     }
 
     // ==================== 8. 查询接口 ====================
@@ -985,9 +1006,9 @@ public class PaymentService {
             bodyMap.put("success", success);
             bodyMap.put("refundNo", refundNo != null ? refundNo : "");
             String body = objectMapper.writeValueAsString(bodyMap);
-            Message<String> message = MessageBuilder.withPayload(body)
+            Message<String> message = MqTraceHelper.wrapWithTraceId(MessageBuilder.withPayload(body)
                     .setHeader("KEYS", key)
-                    .build();
+                    .build());
             rocketMQTemplate.syncSend(destination, message);
             log.info("[退款结果MQ] 发送成功: topic={}, tag={}, orderId={}", topic, tag, orderId);
         } catch (Exception e) {

@@ -2,15 +2,14 @@ server:
   port: 19011
   shutdown: graceful
   tomcat:
-    # Tomcat 线程数按服务特性差异化：网关(入口,IO密集)=300, 订单(BFF聚合,并发调用)=200, 库存(锁竞争)=100, 支付(等回调)=100, 其他=150
     threads:
       max: 200
       min-spare: 20
     max-connections: 8192
     accept-count: 100
-    connection-timeout: 30000          # 连接超时 30s
-    keep-alive-timeout: 60000          # Keep-Alive 超时 60s
-    max-keep-alive-requests: 200       # 单连接最大 200 次请求
+    connection-timeout: 30000
+    keep-alive-timeout: 60000
+    max-keep-alive-requests: 200
   compression:
     enabled: true
     mime-types: application/json,application/xml,text/html,text/xml,text/plain,text/css,application/javascript
@@ -36,16 +35,17 @@ spring:
       - org.springframework.boot.autoconfigure.jmx.JmxAutoConfiguration
   data:
     redis:
-      # 【Nacos 配置】Redis 密码已迁移至 Nacos Config（my-xhs-redis.yaml），本地值为 fallback
+      # Redis 密码 — Nacos shared-configs(my-xhs-common.yaml) 优先，本地为 fallback
       host: 21.130.247.89
       password: "Xhs@2026#Redis"
+      port: 6379
       sentinel:
         master: mymaster
-        nodes: 21.130.247.89:26379,21.130.247.89:26380,21.130.247.89:26381
-      cache:
-        port: 16380  # Cache Redis (allkeys-lru)
+        nodes: 21.130.247.89:26379
       business:
-        port: 16381  # Business Redis (noeviction)
+        port: 6379
+      cache:
+        port: 6379
       lettuce:
         pool:
           max-active: 25
@@ -58,7 +58,6 @@ spring:
         enabled: true
         server-addr: 21.130.247.89:18848
         namespace: my-xhs
-        group: DEFAULT_GROUP
         metadata:
           zone: ${MYXHS_ZONE:defaultZone}
       config:
@@ -67,6 +66,10 @@ spring:
         import-check:
           enabled: false
         file-extension: yaml
+        shared-configs:
+          - data-id: my-xhs-common.yaml
+            group: DEFAULT_GROUP
+            refresh: true
         # Nacos 动态配置示例（myxhs-dynamic.yml）：
         # myxhs:
         #   dynamic:
@@ -93,12 +96,9 @@ spring:
           max-connections-per-route: 50
       client:
         config:
-          my-xhs-inventory:
-            url: http://localhost:19009
-          my-xhs-coupon:
-            url: http://localhost:19010
-          my-xhs-payment:
-            url: http://localhost:19012
+          default:
+            request-interceptors:
+              - com.myxhs.feign.config.FeignInternalCallInterceptor
   lifecycle:
     timeout-per-shutdown-phase: 30s
 
@@ -115,7 +115,7 @@ mybatis-plus:
 
 # RocketMQ 配置
 rocketmq:
-  name-server: 21.130.247.89:9876;21.130.247.89:9877
+  name-server: 21.130.247.89:9876
   producer:
     group: order-producer-group
     send-message-timeout: 3000
@@ -132,12 +132,12 @@ feign:
   sentinel:
     enabled: true
 
-# Mock 支付配置
+# Mock 支付配置 → 测试环境走真实 payment 服务
 pay:
-  type: mock
+  type: remote
   # 支付数据源（payment 表在独立库，不走分片）
   datasource:
-    url: jdbc:mysql://21.130.247.89:13308/my_xhs_payment?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
+    url: jdbc:mysql://21.130.247.89:3306/my_xhs_payment?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
     username: root
     password: "Xhs@2026#MySQL"
 
@@ -145,7 +145,7 @@ pay:
 order:
   mapping:
     datasource:
-      url: jdbc:mysql://21.130.247.89:13308/my_xhs_order?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
+      url: jdbc:mysql://21.130.247.89:3306/my_xhs_order?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
       username: root
       password: "Xhs@2026#MySQL"
 
@@ -186,3 +186,10 @@ logging:
     org.springframework.web: info
     org.apache.shardingsphere: info
 
+
+# 管理/内部接口令牌（环境变量注入，未配置时为空 → 管理接口全部拒绝(fail-closed)）
+myxhs:
+  admin:
+    token: ${ADMIN_TOKEN:}
+  internal:
+    token: ${INTERNAL_TOKEN:my-xhs-internal-token-2026}

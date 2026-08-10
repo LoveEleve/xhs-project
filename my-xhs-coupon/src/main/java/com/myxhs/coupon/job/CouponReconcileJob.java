@@ -18,7 +18,8 @@ import java.util.List;
  * 优惠券库存对账修复任务（XXL-Job 分布式调度）
  * <p>
  * 每天凌晨 2 点执行，对比 Redis 库存与 MySQL remain_count。
- * 以 MySQL 为准修复 Redis（因为 MySQL 是优惠券数据的权威来源）。
+ * 以 Redis 为准修复 MySQL（因为 Redis 是实时扣减的权威数据源，
+ * claimCoupon 通过 Lua 原子扣减 Redis 库存，MySQL 异步持久）。
  * </p>
  * <p>
  * 为什么需要对账？
@@ -38,7 +39,7 @@ public class CouponReconcileJob {
     private final StringRedisTemplate stringRedisTemplate;
     private final CouponTemplateMapper templateMapper;
 
-    private static final String STOCK_KEY_TPL = "coupon:{%d}:stock";
+    private static final String STOCK_KEY_TPL = "myxhs:coupon:{%d}:stock";
     private static final Duration TEMPLATE_CACHE_TTL = Duration.ofSeconds(1800);
 
     private static String stockKey(Long templateId) {
@@ -84,25 +85,31 @@ public class CouponReconcileJob {
             String key = stockKey(template.getId());
             String redisStockStr = stringRedisTemplate.opsForValue().get(key);
 
-            // Redis 未初始化 → 从 MySQL 补全
+            // Redis 未初始化 → 从 MySQL 补全（stock Key 应持久，不带 TTL）
             if (redisStockStr == null) {
                 stringRedisTemplate.opsForValue().set(key,
-                        String.valueOf(template.getRemainCount()),
-                        TEMPLATE_CACHE_TTL);
+                        String.valueOf(template.getRemainCount()));
                 repairCount++;
                 log.info("[券对账] 补全Redis库存: templateId={}, stock={}",
                         template.getId(), template.getRemainCount());
                 continue;
             }
 
-            int redisStock = Integer.parseInt(redisStockStr);
+            int redisStock;
+            try {
+                redisStock = Integer.parseInt(redisStockStr);
+            } catch (NumberFormatException e) {
+                log.error("[券对账] Redis库存值非法: templateId={}, value={}", template.getId(), redisStockStr, e);
+                continue;
+            }
             int mysqlRemain = template.getRemainCount();
 
-            // 不一致 → 以 MySQL 为准修复 Redis
+            // 不一致 → 以 Redis 为准修复 MySQL（Redis 是实时扣减的权威数据源）
             if (redisStock != mysqlRemain) {
-                stringRedisTemplate.opsForValue().set(key,
-                        String.valueOf(mysqlRemain),
-                        TEMPLATE_CACHE_TTL);
+                templateMapper.update(null,
+                        new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<CouponTemplate>()
+                                .eq(CouponTemplate::getId, template.getId())
+                                .set(CouponTemplate::getRemainCount, redisStock));
                 repairCount++;
                 log.info("[券对账] 修复: templateId={}, name={}, redis: {} → mysql: {}",
                         template.getId(), template.getName(), redisStock, mysqlRemain);

@@ -6,6 +6,7 @@ import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
+import jakarta.validation.constraints.Min;
 
 import java.util.List;
 import java.util.Map;
@@ -44,8 +45,13 @@ public class FollowController {
 
     /**
      * 取关用户
+     * <p>
+     * 同一用户1分钟内最多取消关注20次（与关注限流对称）。
+     * </p>
      */
     @DeleteMapping("/follow/{targetUserId}")
+    @RateLimit(windowSeconds = 60, maxRequests = 20, perUser = true, prefix = "social:unfollow",
+            message = "操作过于频繁，请稍后重试")
     public R<Void> unfollow(
             @RequestHeader("X-User-Id") Long userId,
             @PathVariable Long targetUserId) {
@@ -63,7 +69,7 @@ public class FollowController {
     @GetMapping("/following/{userId}")
     public R<Map<String, Object>> getFollowingList(
             @PathVariable Long userId,
-            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "1") @Min(1) int page,
             @RequestParam(defaultValue = "20") int size) {
         List<FollowVO> list = followService.getFollowingList(userId, page, size);
         long total = followService.getFollowingCount(userId);
@@ -80,7 +86,7 @@ public class FollowController {
     @GetMapping("/follower/{userId}")
     public R<Map<String, Object>> getFollowerList(
             @PathVariable Long userId,
-            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "1") @Min(1) int page,
             @RequestParam(defaultValue = "20") int size) {
         List<FollowVO> list = followService.getFollowerList(userId, page, size);
         long total = followService.getFollowerCount(userId);
@@ -120,15 +126,43 @@ public class FollowController {
     // ==================== 内部管理接口 ====================
 
     /**
-     * 计数对账修复（内部接口，后续接入定时任务或管理后台）
-     * <p>
-     * 以 Redis ZSet 的 ZCARD 为准，修复 counter 计数值。
-     * 用于防御 Lua 脚本部分执行失败导致的计数不一致。
-     * </p>
+     * 获取粉丝数
+     */
+    @GetMapping("/follower/count/{userId}")
+    public R<Long> getFollowerCount(@PathVariable Long userId) {
+        return R.ok(followService.getFollowerCount(userId));
+    }
+
+    /**
+     * 获取关注数
+     */
+    @GetMapping("/following/count/{userId}")
+    public R<Long> getFollowingCount(@PathVariable Long userId) {
+        return R.ok(followService.getFollowingCount(userId));
+    }
+
+    /**
+     * 计数对账修复（内部管理接口，需 X-Admin-Call 校验）
      */
     @PostMapping("/internal/repair-counter/{userId}")
-    public R<String> repairCounter(@PathVariable Long userId) {
+    @com.myxhs.common.annotation.RateLimit(windowSeconds = 60, maxRequests = 2, perUser = false, prefix = "myxhs:follow:repair", message = "修复接口限流")
+    public R<String> repairCounter(
+            @PathVariable Long userId,
+            @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
+        if (!isAdminCall(adminCall)) {
+            return R.fail(403, "无权访问管理接口");
+        }
         String result = followService.repairUserCounters(userId);
         return R.ok(result);
+    }
+
+    // ==================== 管理接口鉴权 ====================
+
+    @org.springframework.beans.factory.annotation.Value("${management.admin-token}")
+    private String adminToken;
+
+    private boolean isAdminCall(String headerValue) {
+        // fail-closed：token 未配置（空）时永远拒绝，防止空 Header 绕过
+        return adminToken != null && !adminToken.isEmpty() && adminToken.equals(headerValue);
     }
 }

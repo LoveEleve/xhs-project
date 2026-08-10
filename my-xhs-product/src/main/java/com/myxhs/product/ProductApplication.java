@@ -8,7 +8,7 @@ import org.springframework.scheduling.annotation.EnableAsync;
  * 商品服务启动类
  * <p>
  * Phase-2 电商交易链路的起点。
- * 提供 SPU/SKU 管理、三级分类树、多级缓存（Caffeine → Redis → MySQL）。
+ * 提供 SPU/SKU 管理、三级分类树、Redis 逻辑过期缓存 + MySQL 兜底。
  * </p>
  */
 @EnableAsync

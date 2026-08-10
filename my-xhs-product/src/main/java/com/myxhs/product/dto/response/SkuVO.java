@@ -6,6 +6,10 @@ import java.math.BigDecimal;
 
 /**
  * SKU 响应
+ * <p>
+ * 注意：不含 stock 字段。SKU 表的 stock 是创建时的冗余占位值（从不更新），
+ * 展示会误导前端。真实库存以 inventory 服务为准（/api/inventory/stock/{skuId}）。
+ * </p>
  */
 @Data
 public class SkuVO {
@@ -23,9 +27,6 @@ public class SkuVO {
 
     /** 原价 */
     private BigDecimal originalPrice;
-
-    /** 库存 */
-    private Integer stock;
 
     /** 规格属性JSON */
     private String specs;

@@ -39,7 +39,7 @@ public class NoteController {
      * </p>
      */
     @PostMapping("/publish")
-    @RateLimit(windowSeconds = 60, maxRequests = 5, perUser = true, prefix = "note:publish",
+    @RateLimit(windowSeconds = 60, maxRequests = 5, perUser = true, prefix = "myxhs:note:publish",
             message = "发布过于频繁，请稍后重试")
     public R<Map<String, Long>> publishNote(
             @RequestHeader("X-User-Id") Long userId,
@@ -135,7 +135,7 @@ public class NoteController {
      * </p>
      */
     @PostMapping("/upload/image")
-    @RateLimit(windowSeconds = 60, maxRequests = 20, perUser = true, prefix = "note:upload",
+    @RateLimit(windowSeconds = 60, maxRequests = 20, perUser = true, prefix = "myxhs:note:upload",
             message = "上传过于频繁，请稍后重试")
     public R<Map<String, String>> uploadImage(
             @RequestHeader("X-User-Id") Long userId,
@@ -152,6 +152,8 @@ public class NoteController {
      * </p>
      */
     @PostMapping("/{id}/share")
+    @RateLimit(prefix = "myxhs:note:share", maxRequests = 10, windowSeconds = 60, perUser = true,
+            message = "分享过于频繁")
     public R<Void> shareNote(
             @RequestHeader("X-User-Id") Long userId,
             @PathVariable("id") Long noteId) {

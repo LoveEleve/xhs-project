@@ -10,7 +10,9 @@ import com.myxhs.coupon.dto.response.UserCouponVO;
 import com.myxhs.coupon.entity.CouponTemplate;
 import com.myxhs.coupon.entity.UserCoupon;
 import com.myxhs.coupon.mapper.CouponTemplateMapper;
+import com.myxhs.coupon.mapper.CouponOutboxMapper;
 import com.myxhs.coupon.mapper.UserCouponMapper;
+import com.myxhs.common.id.IdGeneratorUtil;
 import com.myxhs.coupon.validator.CouponValidator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,9 +41,9 @@ import java.util.stream.Collectors;
  * </p>
  * <p>
  * Redis Key 设计（使用 {templateId} 作为 hash tag，保证 Lua 脚本跨 Key 原子操作在 Cluster 下同 slot）：
- * - 券库存：coupon:{templateId}:stock（String，值=剩余数量）
- * - 用户领取次数：coupon:{templateId}:claimed:userId（String，值=已领次数）
- * - 模板缓存：coupon:template:{templateId}（Hash，缓存模板信息，避免高并发查 MySQL）
+ * - 券库存：myxhs:coupon:{templateId}:stock（String，值=剩余数量）
+ * - 用户领取次数：myxhs:coupon:{templateId}:claimed:userId（String，值=已领次数）
+ * - 模板缓存：myxhs:coupon:template:{templateId}（JSON String，缓存模板信息，避免高并发查 MySQL）
  * </p>
  */
 @Slf4j
@@ -53,15 +55,17 @@ public class CouponService {
     private final RocketMQTemplate rocketMQTemplate;
     private final CouponTemplateMapper templateMapper;
     private final UserCouponMapper userCouponMapper;
+    private final CouponOutboxMapper outboxMapper;
+    private final IdGeneratorUtil idGeneratorUtil;
     private final ObjectMapper objectMapper;
     private final DefaultRedisScript<Long> claimCouponScript;
     private final DefaultRedisScript<Long> returnCouponScript;
     private final List<CouponValidator> validators; // Spring 自动注入所有校验器（按 @Order 排序）
 
     /** 【修复M15】Key 使用 {templateId} 作为 hash tag，保证 stock 和 claimed 落同 slot */
-    private static final String STOCK_KEY_TPL = "coupon:{%d}:stock";
-    private static final String CLAIMED_KEY_TPL = "coupon:{%d}:claimed:%d";
-    private static final String TEMPLATE_KEY_PREFIX = "coupon:template:";
+    private static final String STOCK_KEY_TPL = "myxhs:coupon:{%d}:stock";
+    private static final String CLAIMED_KEY_TPL = "myxhs:coupon:{%d}:claimed:%d";
+    private static final String TEMPLATE_KEY_PREFIX = "myxhs:coupon:template:";
     private static final String COUPON_CLAIM_TOPIC = "COUPON_CLAIM_TOPIC";
     private static final long TEMPLATE_CACHE_SECONDS = 1800L; // 模板缓存 30 分钟
 
@@ -174,6 +178,9 @@ public class CouponService {
         if (template.getStatus() != 1) {
             throw new BizException(ResultCode.COUPON_NOT_AVAILABLE, "优惠券已下线");
         }
+        if (template.getValidStart() != null && LocalDateTime.now().isBefore(template.getValidStart())) {
+            throw new BizException(ResultCode.COUPON_NOT_AVAILABLE, "活动尚未开始");
+        }
         if (LocalDateTime.now().isAfter(template.getValidEnd())) {
             throw new BizException(ResultCode.COUPON_EXPIRED);
         }
@@ -194,10 +201,8 @@ public class CouponService {
 
         switch (result.intValue()) {
             case 1 -> {
-                // 3. MQ 同步发送（失败则回滚 Redis）
-                boolean mqSuccess = sendClaimEventSync(userId, templateId);
-                if (!mqSuccess) {
-                    // MQ 发送失败，回滚 Redis 库存
+                String claimNo = sendClaimEventSync(userId, templateId);
+                if (claimNo == null) {
                     rollbackRedisStock(stockKey, claimedKey);
                     throw new BizException(ResultCode.INTERNAL_ERROR, "领券失败，请重试");
                 }
@@ -229,6 +234,33 @@ public class CouponService {
         }
     }
 
+    // ==================== 查询折扣（不核销） ====================
+
+    /**
+     * 查询优惠券折扣金额（下单前调用，不标记已使用）
+     * @param userId 用户ID（校验券归属）
+     * @param userCouponId 用户券记录 ID
+     * @param orderAmount 订单金额（用于门槛校验和折扣计算）
+     * @return 折扣金额
+     */
+    public java.math.BigDecimal getCouponDiscount(Long userId, Long userCouponId, java.math.BigDecimal orderAmount) {
+        UserCoupon userCoupon = userCouponMapper.selectById(userCouponId);
+        if (userCoupon == null || !userCoupon.getUserId().equals(userId)) {
+            throw new BizException(ResultCode.COUPON_NOT_AVAILABLE, "优惠券不属于当前用户");
+        }
+        if (userCoupon.getStatus() != 0) {
+            throw new BizException(ResultCode.COUPON_NOT_AVAILABLE, "优惠券不可用");
+        }
+        CouponTemplate template = getTemplateWithCache(userCoupon.getCouponId());
+        if (template == null) {
+            throw new BizException(ResultCode.COUPON_NOT_FOUND);
+        }
+        for (CouponValidator validator : validators) {
+            validator.validate(template, orderAmount);
+        }
+        return calculateDiscount(template, orderAmount);
+    }
+
     // ==================== 用券 ====================
 
     /**
@@ -238,7 +270,11 @@ public class CouponService {
      * 全部通过后标记券为已使用。
      * </p>
      */
-    public void useCoupon(Long userId, UseCouponRequest request) {
+    /**
+     * 核销优惠券（创建订单时调用）
+     * @return 折扣金额
+     */
+    public java.math.BigDecimal useCoupon(Long userId, UseCouponRequest request) {
         // 1. 查询用户券
         UserCoupon userCoupon = userCouponMapper.selectById(request.getUserCouponId());
         if (userCoupon == null || !userCoupon.getUserId().equals(userId)) {
@@ -259,14 +295,30 @@ public class CouponService {
             validator.validate(template, request.getOrderAmount());
         }
 
-        // 4. 标记已使用（乐观锁：WHERE status = 0）
+        // 4. 计算折扣
+        java.math.BigDecimal discount = calculateDiscount(template, request.getOrderAmount());
+
+        // 5. 标记已使用（乐观锁：WHERE status = 0）
         int affected = userCouponMapper.markUsed(userCoupon.getId(), request.getOrderId());
         if (affected == 0) {
             throw new BizException(ResultCode.COUPON_NOT_AVAILABLE, "优惠券已被使用");
         }
 
-        log.info("[优惠券] 用券成功: userId={}, couponId={}, orderId={}",
-                userId, userCoupon.getCouponId(), request.getOrderId());
+        log.info("[优惠券] 用券成功: userId={}, couponId={}, orderId={}, discount={}",
+                userId, userCoupon.getCouponId(), request.getOrderId(), discount);
+        return discount;
+    }
+
+    private java.math.BigDecimal calculateDiscount(CouponTemplate template, java.math.BigDecimal orderAmount) {
+        java.math.BigDecimal discount = switch (template.getType()) {
+            case 1 -> template.getDiscountValue(); // 满减
+            case 2 -> orderAmount.subtract(orderAmount.multiply(template.getDiscountValue())
+                    .divide(new java.math.BigDecimal("10"), 2, java.math.RoundingMode.HALF_UP)); // 折扣
+            case 3 -> template.getDiscountValue(); // 无门槛
+            default -> java.math.BigDecimal.ZERO;
+        };
+        // 减免不能超过订单金额（防 0 元购）
+        return discount.min(orderAmount);
     }
 
     // ==================== 退券 ====================
@@ -304,18 +356,24 @@ public class CouponService {
         // 与步骤2在同一 @Transactional 事务中，保证原子性
         templateMapper.incrementRemainCount(userCoupon.getCouponId());
 
-        // 4. Redis 回退库存 + 减少领取次数（Lua 原子操作）
-        // Redis 操作在 MySQL 事务提交后执行，若 Redis 失败则通过定时对账修复
-        String stockKey = stockKey(userCoupon.getCouponId());
-        String claimedKey = claimedKey(userCoupon.getCouponId(), userId);
+        // 4. Redis 回退库存 + 减少领取次数 — 移至事务提交后执行
+        // 防: Redis已+1但MySQL事务回滚 → 不一致
+        final String stockKey = stockKey(userCoupon.getCouponId());
+        final String claimedKey = claimedKey(userCoupon.getCouponId(), userId);
+        final Long couponId = userCoupon.getCouponId();
 
-        Long result = stringRedisTemplate.execute(
-                returnCouponScript,
-                List.of(stockKey, claimedKey)
-        );
-
-        log.info("[优惠券] 退券成功: userId={}, couponId={}, orderId={}, redisResult={}",
-                userId, userCoupon.getCouponId(), request.getOrderId(), result);
+        org.springframework.transaction.support.TransactionSynchronizationManager
+                .registerSynchronization(new org.springframework.transaction.support.TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        Long result = stringRedisTemplate.execute(
+                                returnCouponScript,
+                                List.of(stockKey, claimedKey)
+                        );
+                        log.info("[优惠券] 退券Redis回退: couponId={}, userId={}, result={}", couponId, userId, result);
+                        evictTemplateCache(couponId);
+                    }
+                });
     }
 
     // ==================== 查询 ====================
@@ -436,28 +494,36 @@ public class CouponService {
      * 同步发送失败时可以立即回滚，保证强一致。
      * </p>
      *
-     * @return true=发送成功, false=发送失败
+     * @return claimNo=发送成功, null=发送失败
      */
-    private boolean sendClaimEventSync(Long userId, Long templateId) {
+    private String sendClaimEventSync(Long userId, Long templateId) {
+        String claimNo = java.util.UUID.randomUUID().toString().replace("-", "");
         try {
+            // Outbox 模式：先写入 Outbox 表（幂等），syncSend 失败由 Job 补发
+            Long outboxId = idGeneratorUtil.nextId();
+            outboxMapper.insertOutboxEvent(outboxId, userId, templateId, claimNo);
+
             String payload = objectMapper.writeValueAsString(
-                    new CouponClaimEvent(userId, templateId));
+                    new CouponClaimEvent(userId, templateId, claimNo));
             SendResult sendResult = rocketMQTemplate.syncSend(
                     COUPON_CLAIM_TOPIC,
                     MqTraceHelper.wrapWithTraceId(MessageBuilder.withPayload(payload).build()),
-                    3000 // 超时 3 秒
-            );
+                    3000);
             if (sendResult.getSendStatus() == SendStatus.SEND_OK) {
-                log.debug("[优惠券] MQ同步发送成功: userId={}, templateId={}", userId, templateId);
-                return true;
+                log.debug("[优惠券] MQ同步发送成功: userId={}, templateId={}, claimNo={}", userId, templateId, claimNo);
+                outboxMapper.markOutboxSent(claimNo);
+                return claimNo;
             } else {
-                log.error("[优惠券] MQ发送状态异常: userId={}, templateId={}, status={}",
-                        userId, templateId, sendResult.getSendStatus());
-                return false;
+                log.error("[优惠券] MQ发送状态异常: userId={}, templateId={}, claimNo={}, status={}",
+                        userId, templateId, claimNo, sendResult.getSendStatus());
+                outboxMapper.deleteByClaimNo(claimNo);  // 回滚Outbox: 防Job补发与回滚冲突
+                return null;
             }
         } catch (Exception e) {
-            log.error("[优惠券] MQ同步发送异常: userId={}, templateId={}", userId, templateId, e);
-            return false;
+            log.error("[优惠券] MQ同步发送异常: userId={}, templateId={}, claimNo={}",
+                    userId, templateId, claimNo, e);
+            outboxMapper.deleteByClaimNo(claimNo);  // 回滚Outbox
+            return null;
         }
     }
 
@@ -523,5 +589,6 @@ public class CouponService {
     /**
      * 领券事件（MQ 消息体）
      */
-    public record CouponClaimEvent(Long userId, Long templateId) {}
+    public record CouponClaimEvent(Long userId, Long templateId, String claimNo) {
+    }
 }

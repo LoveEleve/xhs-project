@@ -35,15 +35,16 @@ spring:
   data:
     redis:
       host: 21.130.247.89
-      # 【Nacos 配置】Redis 密码已迁移至 Nacos Config（my-xhs-redis.yaml），本地值为 fallback
+      # Redis 密码 — Nacos shared-configs(my-xhs-common.yaml) 优先，本地为 fallback
       password: "Xhs@2026#Redis"
+      port: 6379
       sentinel:
         master: mymaster
-        nodes: 21.130.247.89:26379,21.130.247.89:26380,21.130.247.89:26381
-      cache:
-        port: 16380  # Cache Redis (allkeys-lru)
+        nodes: 21.130.247.89:26379
       business:
-        port: 16381  # Business Redis (noeviction)
+        port: 6379
+      cache:
+        port: 6379
       lettuce:
         pool:
           max-active: 30
@@ -59,7 +60,6 @@ spring:
         enabled: true
         server-addr: 21.130.247.89:18848
         namespace: my-xhs
-        group: DEFAULT_GROUP
         metadata:
           zone: ${MYXHS_ZONE:defaultZone}
       config:
@@ -68,6 +68,10 @@ spring:
         import-check:
           enabled: false
         file-extension: yaml
+        shared-configs:
+          - data-id: my-xhs-common.yaml
+            group: DEFAULT_GROUP
+            refresh: true
         # Nacos 动态配置示例（myxhs-dynamic.yml）：
         # myxhs:
         #   dynamic:
@@ -85,9 +89,6 @@ spring:
         dashboard: 21.130.247.89:8858
         port: 8725
       eager: true
-      feign:
-        sentinel:
-          enabled: true
       # Sentinel 舱壁隔离规则（通过 Nacos 动态配置推送）：
       # - resource: my-xhs-inventory → threadPoolMaxSize=10, maxQueueSize=20
       # - resource: my-xhs-order → threadPoolMaxSize=15, maxQueueSize=30
@@ -100,32 +101,12 @@ spring:
           enabled: true
           max-connections: 200
           max-connections-per-route: 50
-      client:
-        config:
-          my-xhs-user:
-            url: http://localhost:19001
-          my-xhs-content:
-            url: http://localhost:19002
-          my-xhs-analytics:
-            url: http://localhost:19003
-          my-xhs-counter:
-            url: http://localhost:19004
-          my-xhs-product:
-            url: http://localhost:19006
-          my-xhs-cart:
-            url: http://localhost:19008
-          my-xhs-inventory:
-            url: http://localhost:19009
-          my-xhs-coupon:
-            url: http://localhost:19010
-          my-xhs-notification:
-            url: http://localhost:19013
   lifecycle:
     timeout-per-shutdown-phase: 30s
 
 # RocketMQ 配置（消费笔记发布事件，推送到粉丝收件箱）
 rocketmq:
-  name-server: 21.130.247.89:9876;21.130.247.89:9877
+  name-server: 21.130.247.89:9876
   consumer:
     group: home-consumer-group
 
@@ -137,6 +118,9 @@ feign:
         connect-timeout: 3000
         read-timeout: 3000
         logger-level: BASIC
+  # 启用 Sentinel 作为 Feign 熔断器，FallbackFactory 才能生效
+  sentinel:
+    enabled: true
 
 # BFF 聚合线程池
 home:
@@ -189,7 +173,7 @@ xxl:
     enabled: true
     admin:
       addresses: http://21.130.247.89:18080/xxl-job-admin
-    accessToken: my-xhs-xxl-job-token-2026
+    accessToken: ${XXL_JOB_TOKEN:my-xhs-xxl-job-token-2026}
     executor:
       appname: my-xhs-home
       port: 9994

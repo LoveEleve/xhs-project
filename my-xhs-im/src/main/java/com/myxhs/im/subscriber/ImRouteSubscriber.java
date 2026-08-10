@@ -62,7 +62,7 @@ public class ImRouteSubscriber implements MessageListener {
     @PostConstruct
     public void start() {
         String localServerId = onlineRouteService.getServerId();
-        String channel = "im:route:" + localServerId;
+        String channel = "myxhs:im:route:" + localServerId;
 
         container = new RedisMessageListenerContainer();
         container.setConnectionFactory(stringRedisTemplate.getConnectionFactory());

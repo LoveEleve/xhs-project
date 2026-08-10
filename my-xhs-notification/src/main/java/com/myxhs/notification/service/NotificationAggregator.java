@@ -43,7 +43,7 @@ public class NotificationAggregator {
     private final NotificationMapper notificationMapper;
     private final PushTemplateMapper pushTemplateMapper;
 
-    private static final String AGGREGATE_WINDOW_KEY = "notify:agg:";
+    private static final String AGGREGATE_WINDOW_KEY = "myxhs:notification:agg:";
     private static final Duration AGGREGATE_WINDOW = Duration.ofMinutes(5);
 
     /**
@@ -78,6 +78,9 @@ public class NotificationAggregator {
             "  return redis.call('GET', KEYS[1]) " +
             "end";
 
+    private static final DefaultRedisScript<String> AGGREGATE_REDIS_SCRIPT =
+            new DefaultRedisScript<>(AGGREGATE_SETNX_SCRIPT, String.class);
+
     /**
      * 处理通知（含聚合逻辑）
      *
@@ -93,8 +96,7 @@ public class NotificationAggregator {
                 notification.getTargetId();
 
         // Lua 原子操作：SETNX 窗口锁（先用临时值写入，后续替换为真实 ID）
-        DefaultRedisScript<String> script = new DefaultRedisScript<>(AGGREGATE_SETNX_SCRIPT, String.class);
-        String result = stringRedisTemplate.execute(script,
+        String result = stringRedisTemplate.execute(AGGREGATE_REDIS_SCRIPT,
                 Collections.singletonList(aggregateKey),
                 "PENDING",
                 String.valueOf(AGGREGATE_WINDOW.getSeconds()));
@@ -125,9 +127,12 @@ public class NotificationAggregator {
 
         // Redis 返回的是主通知 ID（或 "PENDING" 表示正在写入）
         if ("PENDING".equals(result)) {
-            // 主通知正在写入，等待并重读
-            try { Thread.sleep(100); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-            result = stringRedisTemplate.opsForValue().get(aggregateKey);
+            // 主通知正在写入，自旋重试（最多 3 次，指数退避 50/100/200ms）
+            for (int retry = 0; retry < 3; retry++) {
+                try { Thread.sleep(50L << retry); } catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
+                result = stringRedisTemplate.opsForValue().get(aggregateKey);
+                if (result != null && !"PENDING".equals(result)) break;
+            }
             if (result == null || "PENDING".equals(result)) {
                 notification.setAggregateCount(1);
                 notification.setIsRead(0);
@@ -136,7 +141,16 @@ public class NotificationAggregator {
             }
         }
 
-        Long mainId = Long.parseLong(result);
+        Long mainId;
+        try {
+            mainId = Long.parseLong(result);
+        } catch (NumberFormatException e) {
+            log.warn("[聚合] Redis脏值: result={}", result, e);
+            notification.setAggregateCount(1);
+            notification.setIsRead(0);
+            notificationMapper.insert(notification);
+            return notification;
+        }
 
         // 原子递增聚合计数 + 查询新值
         int affected = notificationMapper.incrementAggregateCount(mainId);

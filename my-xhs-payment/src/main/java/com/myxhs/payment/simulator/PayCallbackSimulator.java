@@ -36,9 +36,9 @@ public class PayCallbackSimulator {
     }
 
     /** 待回调 Redis Key 前缀 */
-    private static final String CALLBACK_PENDING_PREFIX = "payment:callback:pending:";
+    private static final String CALLBACK_PENDING_PREFIX = "myxhs:payment:callback:pending:";
     /** 回调分布式锁前缀 */
-    private static final String CALLBACK_LOCK_PREFIX = "payment:callback:simulate:";
+    private static final String CALLBACK_LOCK_PREFIX = "myxhs:payment:callback:simulate:";
     /** 回调模拟成功率（0~1） */
     private static final double SUCCESS_RATE = 0.9;
 
@@ -71,8 +71,15 @@ public class PayCallbackSimulator {
      */
     @Scheduled(fixedDelay = 5000)
     public void simulateCallback() {
-        // 扫描待回调的支付单
-        var keys = redisTemplate.keys(CALLBACK_PENDING_PREFIX + "*");
+        // 使用 SCAN 代替 keys("*")，避免大数据量时阻塞 Redis
+        var keys = new java.util.HashSet<String>();
+        try (var cursor = redisTemplate.scan(
+                org.springframework.data.redis.core.ScanOptions.scanOptions()
+                        .match(CALLBACK_PENDING_PREFIX + "*")
+                        .count(100)
+                        .build())) {
+            cursor.forEachRemaining(keys::add);
+        }
         if (keys == null || keys.isEmpty()) {
             return;
         }

@@ -5,7 +5,6 @@ import com.myxhs.home.dto.NoteCardVO;
 import com.myxhs.home.dto.UserProfileAggVO;
 import com.myxhs.home.feign.AnalyticsFeignClient;
 import com.myxhs.home.feign.ContentFeignClient;
-import com.myxhs.home.feign.CounterFeignClient;
 import com.myxhs.home.feign.UserFeignClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,7 +36,6 @@ public class UserProfileAggService {
 
     private final UserFeignClient userFeignClient;
     private final AnalyticsFeignClient analyticsFeignClient;
-    private final CounterFeignClient counterFeignClient;
     private final ContentFeignClient contentFeignClient;
     private final ExecutorService aggregatorPool;
 
@@ -64,27 +62,19 @@ public class UserProfileAggService {
                     }
                 }, aggregatorPool);
 
-        // 2. 计数（关注数/粉丝数/获赞与收藏数/笔记数）
+        // 2. 计数（粉丝数/关注数 — 从 analytics 直接取，不绕 counter）
         CompletableFuture<Map<String, Long>> counterFuture = CompletableFuture
                 .supplyAsync(() -> {
+                    Map<String, Long> result = new HashMap<>();
                     try {
-                        List<Map<String, Object>> queries = new ArrayList<>();
-                        // 用户维度计数：targetType=3(用户)
-                        Map<String, Object> q = new HashMap<>();
-                        q.put("targetType", 3);
-                        q.put("targetId", targetUserId);
-                        q.put("countTypes", List.of(5, 6, 7, 8)); // 5=关注数 6=粉丝数 7=获赞与收藏 8=笔记数
-                        queries.add(q);
-                        Map<String, Object> request = Map.of("queries", queries);
-                        R<Map<String, Map<String, Long>>> r = counterFeignClient.batchGetCounts(request);
-                        if (r != null && r.isSuccess() && r.getData() != null) {
-                            String key = "3:" + targetUserId;
-                            return r.getData().getOrDefault(key, Collections.emptyMap());
-                        }
+                        R<Long> flwR = analyticsFeignClient.getFollowerCount(targetUserId);
+                        R<Long> fwgR = analyticsFeignClient.getFollowingCount(targetUserId);
+                        result.put("follower", flwR != null && flwR.isSuccess() ? flwR.getData() : 0L);
+                        result.put("following", fwgR != null && fwgR.isSuccess() ? fwgR.getData() : 0L);
                     } catch (Exception e) {
-                        log.warn("[用户主页] 获取计数失败: userId={}", targetUserId);
+                        log.warn("[用户主页] 获取计数失败: userId={}", targetUserId, e);
                     }
-                    return Collections.<String, Long>emptyMap();
+                    return result;
                 }, aggregatorPool);
 
         // 3. 关注关系

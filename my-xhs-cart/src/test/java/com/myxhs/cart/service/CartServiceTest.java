@@ -60,6 +60,15 @@ class CartServiceTest {
     @Mock
     private DefaultRedisScript<Long> cartCheckAllScript;
 
+    @Mock
+    private DefaultRedisScript<Long> cartUpdateQuantityScript;
+
+    @Mock
+    private DefaultRedisScript<Long> cartMergeItemScript;
+
+    @Mock
+    private DefaultRedisScript<Long> cartCheckItemScript;
+
     private ObjectMapper objectMapper;
     private CartService cartService;
 
@@ -76,7 +85,10 @@ class CartServiceTest {
                 objectMapper,
                 cartAddScript,
                 cartRemoveScript,
-                cartCheckAllScript
+                cartCheckAllScript,
+                cartUpdateQuantityScript,
+                cartMergeItemScript,
+                cartCheckItemScript
         );
     }
 
@@ -248,17 +260,16 @@ class CartServiceTest {
         request.setSkuId(SKU_ID);
         request.setQuantity(5);
 
-        // Mock Hash 操作
-        org.springframework.data.redis.core.HashOperations<String, Object, Object> hashOps = mock(org.springframework.data.redis.core.HashOperations.class);
-        when(stringRedisTemplate.opsForHash()).thenReturn(hashOps);
-        when(hashOps.hasKey(argThat(key -> key.contains(":items")), eq(String.valueOf(SKU_ID))))
-                .thenReturn(true);
+        // 生产代码使用 cartUpdateQuantityScript Lua（HEXISTS+HSET 原子），stub execute 返回 1
+        when(stringRedisTemplate.execute(eq(cartUpdateQuantityScript), anyList(), any(), any()))
+                .thenReturn(1L);
 
         assertThatCode(() -> cartService.updateQuantity(USER_ID, request))
                 .doesNotThrowAnyException();
 
-        verify(hashOps).put(
-                argThat(key -> key.contains(":items")),
+        verify(stringRedisTemplate).execute(
+                eq(cartUpdateQuantityScript),
+                argThat((List<String> keys) -> keys.size() == 1 && keys.get(0).contains(":items")),
                 eq(String.valueOf(SKU_ID)),
                 eq("5"));
     }
@@ -270,10 +281,9 @@ class CartServiceTest {
         request.setSkuId(SKU_ID);
         request.setQuantity(3);
 
-        org.springframework.data.redis.core.HashOperations<String, Object, Object> hashOps = mock(org.springframework.data.redis.core.HashOperations.class);
-        when(stringRedisTemplate.opsForHash()).thenReturn(hashOps);
-        when(hashOps.hasKey(argThat(key -> key.contains(":items")), eq(String.valueOf(SKU_ID))))
-                .thenReturn(false);
+        // Lua 返回 0 表示商品不在购物车（HEXISTS 检查失败）
+        when(stringRedisTemplate.execute(eq(cartUpdateQuantityScript), anyList(), any(), any()))
+                .thenReturn(0L);
 
         assertThatThrownBy(() -> cartService.updateQuantity(USER_ID, request))
                 .isInstanceOf(BizException.class)

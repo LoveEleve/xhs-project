@@ -227,9 +227,9 @@ class InventoryServiceTest {
         // 模拟 :bucket 辅助字段
         when(hashOperations.get(eq("inventory:prededuct:123456"), eq("10001:bucket")))
                 .thenReturn("0");
-        // Lua 释放脚本返回 1（成功）
+        // Lua 释放脚本返回 1（成功）；生产代码传 2 个 vararg（fieldName + orderId）
         when(stringRedisTemplate.execute(
-                eq(releaseScript), anyList(), anyString()))
+                eq(releaseScript), anyList(), anyString(), anyString()))
                 .thenReturn(1L);
         // MQ 发送成功
         SendResult sendResult = new SendResult();
@@ -244,9 +244,9 @@ class InventoryServiceTest {
         assertThatCode(() -> inventoryService.releaseStock(request))
                 .doesNotThrowAnyException();
 
-        // 验证释放脚本被调用
+        // 验证释放脚本被调用（2 个 vararg：fieldName + orderId）
         verify(stringRedisTemplate).execute(
-                eq(releaseScript), anyList(), eq("10001"));
+                eq(releaseScript), anyList(), eq("10001"), eq(String.valueOf(ORDER_ID)));
         // 验证 MQ 释放消息已发送
         verify(rocketMQTemplate).syncSend(
                 eq("INVENTORY_TOPIC:RELEASE"), any(Message.class), eq(3000L));

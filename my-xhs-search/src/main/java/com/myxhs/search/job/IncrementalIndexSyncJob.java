@@ -18,7 +18,11 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.Set;
+
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
 
 /**
  * ES 索引增量补偿任务
@@ -62,12 +66,12 @@ public class IncrementalIndexSyncJob {
     private static final String FAILED_NOTE_KEY = "myxhs:es:sync:failed:note";
     private static final String FAILED_PRODUCT_KEY = "myxhs:es:sync:failed:product";
     private static final int MAX_BATCH = 50;
-    private static final long VERSION = System.currentTimeMillis();
+    private long version() { return System.currentTimeMillis(); }
 
     /**
      * 定时增量补偿（每 5 分钟）
      */
-    @Scheduled(fixedRate = 300_000)
+    @Scheduled(fixedRate = 60_000) // 每 1 分钟（测试环境快速验证）
     public void incrementalCompensate() {
         long startTime = System.currentTimeMillis();
         int noteCompensated = compensateFailedNotes();
@@ -200,7 +204,7 @@ public class IncrementalIndexSyncJob {
 
         String placeholders = String.join(",", ids.stream().map(id -> "?").toArray(String[]::new));
         String sql = "SELECT id, user_id, title, content, cover_url, status, created_at " +
-                "FROM t_note WHERE id IN (" + placeholders + ")";
+                "FROM t_note WHERE id IN (" + placeholders + ") AND deleted = 0";
 
         Object[] params = ids.toArray();
         return jdbcTemplate.queryForList(sql, params);
@@ -218,9 +222,10 @@ public class IncrementalIndexSyncJob {
         }
 
         String placeholders = String.join(",", ids.stream().map(id -> "?").toArray(String[]::new));
-        String sql = "SELECT id, name, category_id, category_name, brand_name, price, " +
-                "main_image, sales, status, created_at " +
-                "FROM t_spu WHERE id IN (" + placeholders + ")";
+        // t_spu 表实际字段：id, name, category_id, brand_id, description, images, status, deleted, created_at, updated_at
+        // category_name/price/image 等需通过 product Feign 或 buildProductDocument 默认值补全
+        String sql = "SELECT id, name, category_id, brand_id, description, images, status, created_at " +
+                "FROM t_spu WHERE id IN (" + placeholders + ") AND deleted = 0";
 
         Object[] params = ids.toArray();
         return jdbcTemplate.queryForList(sql, params);
@@ -245,7 +250,7 @@ public class IncrementalIndexSyncJob {
                                 .index(noteIndexName)
                                 .id(String.valueOf(noteId))
                                 .versionType(co.elastic.clients.elasticsearch._types.VersionType.ExternalGte)
-                                .version(VERSION)
+                                .version(version())
                                 .withJson(new StringReader(doc))));
             }
 
@@ -285,7 +290,7 @@ public class IncrementalIndexSyncJob {
                                 .index(productIndexName)
                                 .id(String.valueOf(spuId))
                                 .versionType(co.elastic.clients.elasticsearch._types.VersionType.ExternalGte)
-                                .version(VERSION)
+                                .version(version())
                                 .withJson(new StringReader(doc))));
             }
 
@@ -337,18 +342,32 @@ public class IncrementalIndexSyncJob {
      * </p>
      */
     private String buildProductDocument(Map<String, Object> product) {
-        Map<String, Object> doc = Map.of(
-                "spuId", product.get("id"),
-                "name", product.getOrDefault("name", ""),
-                "categoryId", product.getOrDefault("category_id", 0),
-                "categoryName", product.getOrDefault("category_name", ""),
-                "brandName", product.getOrDefault("brand_name", ""),
-                "price", product.getOrDefault("price", 0),
-                "image", product.getOrDefault("main_image", ""),
-                "sales", product.getOrDefault("sales", 0),
-                "status", product.getOrDefault("status", 1),
-                "createdAt", product.get("created_at") != null ? product.get("created_at").toString() : null
-        );
-        return com.alibaba.fastjson2.JSON.toJSONString(doc);
+        // 从 images JSON 数组提取第一张图片
+        String firstImage = "";
+        Object imagesObj = product.get("images");
+        if (imagesObj instanceof String imagesStr && !imagesStr.isEmpty()) {
+            try {
+                JSONArray arr = JSON.parseArray(imagesStr);
+                if (arr != null && !arr.isEmpty()) {
+                    firstImage = arr.getString(0);
+                }
+            } catch (Exception e) {
+                log.debug("[增量补偿] images 解析失败，使用空图片: {}", imagesStr);
+            }
+        }
+
+        Map<String, Object> doc = new HashMap<>();
+        doc.put("spuId", product.get("id"));
+        doc.put("name", product.getOrDefault("name", ""));
+        doc.put("categoryId", product.getOrDefault("category_id", 0));
+        doc.put("categoryName", "");    // t_spu 无此字段，需 product 服务补全
+        doc.put("brandId", product.getOrDefault("brand_id", 0));
+        doc.put("brandName", "");       // t_spu 无此字段
+        doc.put("price", 0);            // 价格在 t_sku 表，补偿时不补
+        doc.put("image", firstImage);
+        doc.put("sales", 0);            // 无销量统计
+        doc.put("status", product.getOrDefault("status", 1));
+        doc.put("createdAt", product.get("created_at") != null ? product.get("created_at").toString() : null);
+        return JSON.toJSONString(doc);
     }
 }

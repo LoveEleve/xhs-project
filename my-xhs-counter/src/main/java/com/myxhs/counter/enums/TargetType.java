@@ -11,7 +11,9 @@ import lombok.Getter;
 public enum TargetType {
 
     NOTE(1, "笔记"),
-    USER(2, "用户");
+    USER(2, "用户"),
+    COMMENT(3, "评论"),
+    PRODUCT(4, "商品");
 
     private final int code;
     private final String desc;

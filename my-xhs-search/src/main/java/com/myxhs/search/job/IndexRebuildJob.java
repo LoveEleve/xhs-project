@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -20,8 +21,12 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
 
 /**
  * 全量索引重建任务
@@ -53,10 +58,13 @@ public class IndexRebuildJob {
     @Value("${search.product.index-name:product_index}")
     private String productIndexName;
 
+    @Value("${search.suggest.index-name:suggest_index}")
+    private String suggestIndexName;
+
     @Value("${search.rebuild.batch-size:500}")
     private int batchSize;
 
-    private static final String LOCK_KEY = "lock:job:search:index:rebuild";
+    private static final String LOCK_KEY = "myxhs:lock:job:search:index:rebuild";
     private static final String REBUILD_STATUS_KEY = "myxhs:search:index:rebuild:status";
 
     /**
@@ -152,8 +160,7 @@ public class IndexRebuildJob {
         // ===== 重建笔记索引 =====
         while (true) {
             List<Map<String, Object>> notes = jdbcTemplate.queryForList(
-"SELECT id, user_id, title, content, cover_url, like_count, collect_count, " +
-                            "comment_count, status, created_at FROM t_note " +
+"SELECT id, user_id, title, content, cover_url, status, created_at FROM t_note " +
                             "WHERE id > ? AND deleted = 0 ORDER BY id ASC LIMIT ?",
                     lastNoteId, batchSize);
 
@@ -183,14 +190,26 @@ public class IndexRebuildJob {
             }
         }
 
+        // ===== 重建搜索建议索引（在商品索引前执行——t_note可用但t_spu不可用时仍能填充） =====
+        try {
+            int suggestIndexed = rebuildSuggestIndex();
+            if (suggestIndexed > 0) {
+                totalIndexed += suggestIndexed;
+                log.info("[索引重建] 建议关键词已索引{}条", suggestIndexed);
+            }
+        } catch (Exception e) {
+            log.error("[索引重建] 建议索引重建失败（不影响其他索引）", e);
+        }
+
         // ===== 重建商品索引 =====
+        try {
         String lastSpuIdStr = (String) stringRedisTemplate.opsForHash().get(REBUILD_STATUS_KEY, "lastSpuId");
         long lastSpuId = lastSpuIdStr != null ? Long.parseLong(lastSpuIdStr) : 0;
 
         while (true) {
             List<Map<String, Object>> products = jdbcTemplate.queryForList(
-                    "SELECT id, name, category_id, category_name, brand_name, price, " +
-                            "main_image, sales, status, created_at FROM t_spu " +
+                    // t_spu 表实际字段 — category_name/price/image 由 buildProductDocument 默认值补全
+                    "SELECT id, name, category_id, brand_id, description, images, status, created_at FROM t_spu " +
                             "WHERE id > ? AND deleted = 0 ORDER BY id ASC LIMIT ?",
                     lastSpuId, batchSize);
 
@@ -215,6 +234,9 @@ public class IndexRebuildJob {
                 break;
             }
         }
+        } catch (Exception e) {
+            log.error("[索引重建] 商品索引重建失败（不影响笔记和建议索引）", e);
+        }
 
         long elapsed = System.currentTimeMillis() - startTime;
         log.info("[索引重建] 完成: 共索引{}条, 耗时{}ms", totalIndexed, elapsed);
@@ -234,13 +256,13 @@ public class IndexRebuildJob {
 
             for (Map<String, Object> note : notes) {
                 Long noteId = ((Number) note.get("id")).longValue();
-                String doc = buildNoteDocument(note);
+                Map<String, Object> doc = buildNoteDocument(note);
 
                 bulkBuilder.operations(op -> op
                         .index(idx -> idx
                                 .index(noteIndexName)
                                 .id(String.valueOf(noteId))
-                                .withJson(new StringReader(doc))));
+                                .document(doc)));
             }
 
             BulkResponse response = esClient.bulk(bulkBuilder.build());
@@ -272,13 +294,13 @@ public class IndexRebuildJob {
 
             for (Map<String, Object> product : products) {
                 Long spuId = ((Number) product.get("id")).longValue();
-                String doc = buildProductDocument(product);
+                Map<String, Object> doc = buildProductDocument(product);
 
                 bulkBuilder.operations(op -> op
                         .index(idx -> idx
                                 .index(productIndexName)
                                 .id(String.valueOf(spuId))
-                                .withJson(new StringReader(doc))));
+                                .document(doc)));
             }
 
             BulkResponse response = esClient.bulk(bulkBuilder.build());
@@ -299,35 +321,124 @@ public class IndexRebuildJob {
         }
     }
 
-    private String buildNoteDocument(Map<String, Object> note) {
-        Map<String, Object> doc = Map.of(
-                "noteId", note.get("id"),
-                "userId", note.get("user_id"),
-                "title", note.getOrDefault("title", ""),
-                "content", note.getOrDefault("content", ""),
-"coverImage", note.getOrDefault("cover_url", ""),
-                "likeCount", note.getOrDefault("like_count", 0),
-                "collectCount", note.getOrDefault("collect_count", 0),
-                "commentCount", note.getOrDefault("comment_count", 0),
-                "status", note.getOrDefault("status", 1),
-                "createdAt", note.get("created_at") != null ? note.get("created_at").toString() : null
-        );
-        return com.alibaba.fastjson2.JSON.toJSONString(doc);
+    private Map<String, Object> buildNoteDocument(Map<String, Object> note) {
+        Map<String, Object> doc = new HashMap<>();
+        doc.put("noteId", note.getOrDefault("id", 0L));
+        doc.put("userId", note.getOrDefault("user_id", 0L));
+        doc.put("title", note.getOrDefault("title", ""));
+        doc.put("content", note.getOrDefault("content", ""));
+        doc.put("coverImage", note.getOrDefault("cover_url", ""));
+        doc.put("likeCount", 0);
+        doc.put("collectCount", 0);
+        doc.put("commentCount", 0);
+        doc.put("status", note.getOrDefault("status", 1));
+        doc.put("createdAt", note.get("created_at") != null ? note.get("created_at").toString() : null);
+        return doc;
     }
 
-    private String buildProductDocument(Map<String, Object> product) {
-        Map<String, Object> doc = Map.of(
-                "spuId", product.get("id"),
-                "name", product.getOrDefault("name", ""),
-                "categoryId", product.getOrDefault("category_id", 0),
-                "categoryName", product.getOrDefault("category_name", ""),
-                "brandName", product.getOrDefault("brand_name", ""),
-                "price", product.getOrDefault("price", 0),
-                "image", product.getOrDefault("main_image", ""),
-                "sales", product.getOrDefault("sales", 0),
-                "status", product.getOrDefault("status", 1),
-                "createdAt", product.get("created_at") != null ? product.get("created_at").toString() : null
-        );
-        return com.alibaba.fastjson2.JSON.toJSONString(doc);
+    private Map<String, Object> buildProductDocument(Map<String, Object> product) {
+        // 从 images JSON 数组提取第一张图片
+        String firstImage = "";
+        Object imagesObj = product.get("images");
+        if (imagesObj instanceof String imagesStr && !imagesStr.isEmpty()) {
+            try {
+                JSONArray arr = JSON.parseArray(imagesStr);
+                if (arr != null && !arr.isEmpty()) {
+                    firstImage = arr.getString(0);
+                }
+            } catch (Exception e) {
+                log.debug("[索引重建] images 解析失败，使用空图片: {}", imagesStr);
+            }
+        }
+
+        Map<String, Object> doc = new HashMap<>();
+        doc.put("spuId", product.get("id"));
+        doc.put("name", product.getOrDefault("name", ""));
+        doc.put("categoryId", product.getOrDefault("category_id", 0));
+        doc.put("categoryName", "");    // t_spu 无此字段，需 product 服务补全
+        doc.put("brandId", product.getOrDefault("brand_id", 0));
+        doc.put("brandName", "");       // t_spu 无此字段
+        doc.put("price", 0);            // 价格在 t_sku 表，重建时不补
+        doc.put("image", firstImage);
+        doc.put("sales", 0);            // 无销量统计
+        doc.put("status", product.getOrDefault("status", 1));
+        doc.put("createdAt", product.get("created_at") != null ? product.get("created_at").toString() : null);
+        return doc;
+    }
+
+    /**
+     * 重建搜索建议索引（suggest_index）
+     * <p>
+     * 从 t_note 读取已发布笔记的 title，写入 ES Completion Suggester。
+     * title 经 IK 分词后生成候选建议词。
+     * </p>
+     */
+    private int rebuildSuggestIndex() {
+        int total = 0;
+        long lastId = 0;
+        while (true) {
+            List<Map<String, Object>> notes = jdbcTemplate.queryForList(
+                    "SELECT id, title FROM t_note WHERE id > ? AND deleted = 0 AND status = 2 " +
+                            "ORDER BY id ASC LIMIT ?",
+                    lastId, batchSize);
+            if (notes.isEmpty()) break;
+
+            int indexed = bulkIndexSuggest(notes);
+            total += indexed;
+
+            if (indexed < notes.size()) {
+                log.warn("[索引重建] 建议批次部分失败: 成功={}/{}", indexed, notes.size());
+                break;
+            }
+            lastId = ((Number) notes.get(notes.size() - 1).get("id")).longValue();
+            if (notes.size() < batchSize) break;
+        }
+        return total;
+    }
+
+    /**
+     * 批量写入 note title 到 suggest_index
+     */
+    private int bulkIndexSuggest(List<Map<String, Object>> notes) {
+        try {
+            BulkRequest.Builder bulkBuilder = new BulkRequest.Builder();
+            for (Map<String, Object> note : notes) {
+                Long noteId = ((Number) note.get("id")).longValue();
+                String title = (String) note.getOrDefault("title", "");
+                if (title.isBlank()) continue;
+                Map<String, Object> doc = buildSuggestDoc(title);
+                bulkBuilder.operations(op -> op
+                        .index(idx -> idx
+                                .index(suggestIndexName)
+                                .id("note_" + noteId)
+                                .document(doc)));
+            }
+            BulkResponse response = esClient.bulk(bulkBuilder.build());
+            if (response.errors()) {
+                int errorCount = 0;
+                for (BulkResponseItem item : response.items()) {
+                    if (item.error() != null) errorCount++;
+                }
+                return notes.size() - errorCount;
+            }
+            return notes.size();
+        } catch (Exception e) {
+            log.error("[索引重建] 建议批量索引异常", e);
+            return 0;
+        }
+    }
+
+    /**
+     * 构建 suggest_index 文档（Completion Suggester 格式）
+     * <p>
+     * keyword 字段经 IK 分词生成建议词列表；
+     * weight 用于排序，取基本值 1（后续可扩展为搜索热度权重）。
+     * </p>
+     */
+    private Map<String, Object> buildSuggestDoc(String title) {
+        Map<String, Object> doc = new HashMap<>();
+        doc.put("keyword", title);
+        doc.put("weight", 1);
+        return doc;
     }
 }

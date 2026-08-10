@@ -90,7 +90,7 @@ public class GeoRecallStrategy implements RecallStrategy {
      */
     private String getUserGeoHash(Long userId) {
         try {
-            String key = "user:geo:" + userId;
+            String key = "myxhs:user:geo:" + userId;
             String cached = stringRedisTemplate.opsForValue().get(key);
             if (cached != null && !cached.isEmpty()) {
                 return cached;

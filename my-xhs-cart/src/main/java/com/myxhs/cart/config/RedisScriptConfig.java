@@ -59,4 +59,41 @@ public class RedisScriptConfig {
         script.setResultType(Long.class);
         return script;
     }
+
+    /**
+     * 修改购物车数量 Lua 脚本（C-02 修复）
+     * 原子操作：HEXISTS 检查 + HSET 设置，替代原非原子的 hasKey+HSET
+     */
+    @Bean
+    public DefaultRedisScript<Long> cartUpdateQuantityScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/cart_update_quantity.lua")));
+        script.setResultType(Long.class);
+        return script;
+    }
+
+    /**
+     * 合并购物车通用 Lua 脚本（新商品+已有商品统一原子处理）
+     * 原子操作：HEXISTS分支 → 已有:HGET+max()+HSET / 新增:HLEN+HSET+SADD+ZADD NX
+     * 替代原 hasKey→get→put 三步非原子路径，消除并发复活/覆盖窗口
+     */
+    @Bean
+    public DefaultRedisScript<Long> cartMergeItemScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/cart_merge_item.lua")));
+        script.setResultType(Long.class);
+        return script;
+    }
+
+    /**
+     * 勾选/取消勾选 Lua 脚本
+     * 原子操作：HEXISTS 校验 + SADD/SREM，消除 hasKey→SADD 的 TOCTOU 窗口
+     */
+    @Bean
+    public DefaultRedisScript<Long> cartCheckItemScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/cart_check_item.lua")));
+        script.setResultType(Long.class);
+        return script;
+    }
 }

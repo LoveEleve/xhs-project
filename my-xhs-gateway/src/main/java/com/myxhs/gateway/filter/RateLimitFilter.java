@@ -7,8 +7,10 @@ import com.alibaba.csp.sentinel.adapter.gateway.sc.callback.GatewayCallbackManag
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cloud.gateway.config.GatewayProperties;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
+import org.springframework.cloud.gateway.route.RouteDefinition;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -72,14 +74,20 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
 
     private final ObjectMapper objectMapper;
     private final org.springframework.context.ApplicationContext applicationContext;
+    private final GatewayProperties gatewayProperties;
 
     /** Sentinel Gateway 适配过滤器（委托执行） */
     private final SentinelGatewayFilter sentinelGatewayFilter;
 
+    /** 无 metadata 时的默认限流 QPS */
+    private static final int DEFAULT_QPS = 100;
+
     public RateLimitFilter(ObjectMapper objectMapper,
-                           org.springframework.context.ApplicationContext applicationContext) {
+                           org.springframework.context.ApplicationContext applicationContext,
+                           GatewayProperties gatewayProperties) {
         this.objectMapper = objectMapper;
         this.applicationContext = applicationContext;
+        this.gatewayProperties = gatewayProperties;
         // SentinelGatewayFilter 无参构造即可，限流异常由自定义 BlockHandler 处理
         this.sentinelGatewayFilter = new SentinelGatewayFilter();
     }
@@ -167,86 +175,61 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
     }
 
     /**
-     * 初始化接口级限流规则
+     * 从 yml 路由 metadata 加载限流规则（唯一数据源）
      * <p>
-     * 规则说明：
-     * - resource: route ID，与 application.yml 中的路由定义对应
-     * - count: QPS 阈值
-     * - intervalSec: 统计窗口时间（秒），默认 1 秒
-     * <p>
-     * 限流阈值设定依据：
-     * - 用户服务：登录/注册 200 QPS（涉及密码校验和验证码，CPU 密集）
-     * - 订单服务：500 QPS（核心交易，但库存扣减是瓶颈）
-     * - 支付服务：300 QPS（三方支付回调延迟）
-     * - 搜索服务：1000 QPS（ES 查询快，允许高并发）
-     * - 其他服务：800 QPS（通用兜底）
+     * 规则来源：GatewayProperties 读取 application.yml 中定义的所有路由（不依赖 Nacos 异步发现）
+     * - 逐一读取每个路由的 metadata.rate-limit-qps 值
+     * - 未配置 rate-limit-qps 的路由使用默认值 {@link #DEFAULT_QPS}
+     * - 排除 actuator 等非业务路由（id 含 "CompositeDiscoveryClient"）
      */
     private void initFlowRules() {
         Set<GatewayFlowRule> rules = new HashSet<>();
+        int loaded = 0;
 
-        // ===== 核心交易链路（限流严格） =====
-        rules.add(new GatewayFlowRule("order-service")
-                .setCount(500)
-                .setIntervalSec(1));
+        for (RouteDefinition rd : gatewayProperties.getRoutes()) {
+            if (rd.getId() == null || rd.getId().contains("CompositeDiscoveryClient")) {
+                continue;
+            }
+            int qps = readQpsFromMetadata(rd);
+            rules.add(new GatewayFlowRule(rd.getId())
+                    .setCount(qps)
+                    .setIntervalSec(1));
+            log.info("[Gateway-Sentinel] 加载限流规则: route={}, qps={}", rd.getId(), qps);
+            loaded++;
+        }
 
-        rules.add(new GatewayFlowRule("payment-service")
-                .setCount(300)
-                .setIntervalSec(1));
-
-        rules.add(new GatewayFlowRule("inventory-service")
-                .setCount(500)
-                .setIntervalSec(1));
-
-        rules.add(new GatewayFlowRule("coupon-service")
-                .setCount(200)
-                .setIntervalSec(1));
-
-        // ===== 用户认证（密码校验 CPU 密集） =====
-        rules.add(new GatewayFlowRule("user-service")
-                .setCount(200)
-                .setIntervalSec(1));
-
-        // ===== 高频读接口（限流宽松） =====
-        rules.add(new GatewayFlowRule("search-service")
-                .setCount(1000)
-                .setIntervalSec(1));
-
-        rules.add(new GatewayFlowRule("home-service")
-                .setCount(1000)
-                .setIntervalSec(1));
-
-        rules.add(new GatewayFlowRule("product-service")
-                .setCount(800)
-                .setIntervalSec(1));
-
-        rules.add(new GatewayFlowRule("counter-service")
-                .setCount(1000)
-                .setIntervalSec(1));
-
-        // ===== 内容/社交接口（中等限流） =====
-        rules.add(new GatewayFlowRule("content-service")
-                .setCount(500)
-                .setIntervalSec(1));
-
-        rules.add(new GatewayFlowRule("analytics-service")
-                .setCount(500)
-                .setIntervalSec(1));
-
-        // ===== 通知/IM（非核心，中等限流） =====
-        rules.add(new GatewayFlowRule("notification-service")
-                .setCount(300)
-                .setIntervalSec(1));
-
-        rules.add(new GatewayFlowRule("im-service")
-                .setCount(500)
-                .setIntervalSec(1));
-
-        // ===== 购物车（中等限流） =====
-        rules.add(new GatewayFlowRule("cart-service")
-                .setCount(500)
-                .setIntervalSec(1));
+        if (loaded == 0) {
+            log.warn("[Gateway-Sentinel] 未找到任何路由限流配置，规则集为空");
+        }
 
         GatewayRuleManager.loadRules(rules);
+        log.info("[Gateway-Sentinel] 限流规则加载完成，共 {} 条", loaded);
+    }
+
+    /**
+     * 从路由定义中读取 rate-limit-qps 配置
+     * <p>
+     * metadata 格式示例（application.yml）：
+     * <pre>
+     *   metadata:
+     *     rate-limit-qps: 50
+     * </pre>
+     */
+    private int readQpsFromMetadata(RouteDefinition rd) {
+        Map<String, Object> metadata = rd.getMetadata();
+        if (metadata != null && metadata.containsKey("rate-limit-qps")) {
+            Object val = metadata.get("rate-limit-qps");
+            if (val instanceof Number) {
+                return ((Number) val).intValue();
+            }
+            try {
+                return Integer.parseInt(String.valueOf(val));
+            } catch (NumberFormatException ignored) {
+                log.warn("[Gateway-Sentinel] route={} 的 rate-limit-qps 值非法: {}，使用默认值 {}",
+                        rd.getId(), val, DEFAULT_QPS);
+            }
+        }
+        return DEFAULT_QPS;
     }
 
     /**

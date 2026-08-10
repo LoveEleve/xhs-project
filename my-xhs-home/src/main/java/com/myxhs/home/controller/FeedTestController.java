@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/home/test")
 @RequiredArgsConstructor
+@org.springframework.validation.annotation.Validated
 @Profile("dev")
 public class FeedTestController {
 

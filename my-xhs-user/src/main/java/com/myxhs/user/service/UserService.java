@@ -6,6 +6,7 @@ import com.myxhs.common.cache.CacheHelper;
 import com.myxhs.common.cache.RedisOperator;
 import com.myxhs.common.constants.RedisKeyConstants;
 import com.myxhs.common.exception.BizException;
+import com.myxhs.common.exception.RedisUnavailableException;
 import com.myxhs.common.response.ResultCode;
 import com.myxhs.user.dto.request.ChangePasswordRequest;
 import com.myxhs.user.dto.request.LoginRequest;
@@ -64,7 +65,17 @@ public class UserService {
      * 5. 插入数据库
      * </p>
      */
+    @Transactional(rollbackFor = Exception.class)
     public void register(RegisterRequest request) {
+        try {
+            doRegister(request);
+        } catch (RedisUnavailableException e) {
+            log.error("[注册] Redis 不可用, username={}", request.getUsername(), e);
+            throw new BizException(ResultCode.SERVICE_UNAVAILABLE, "认证服务暂时不可用，请稍后重试");
+        }
+    }
+
+    private void doRegister(RegisterRequest request) {
         // 1. 校验验证码
         captchaService.verifyCaptcha(request.getCaptchaKey(), request.getCaptchaCode());
 
@@ -106,6 +117,15 @@ public class UserService {
             userMapper.insert(user);
             log.info("[注册] 用户注册成功, userId={}, username={}", user.getId(), user.getUsername());
 
+        } catch (DuplicateKeyException e) {
+            String msg = e.getMessage();
+            if (msg != null && msg.contains("username")) {
+                throw new BizException(ResultCode.USERNAME_EXISTS);
+            }
+            if (msg != null && msg.contains("phone")) {
+                throw new BizException(ResultCode.PHONE_EXISTS);
+            }
+            throw new BizException(ResultCode.USERNAME_EXISTS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new BizException(ResultCode.LOCK_ACQUIRE_FAIL);
@@ -114,6 +134,7 @@ public class UserService {
                 lock.unlock();
             }
         }
+    }
     }
 
     // ==================== 登录 ====================
@@ -128,7 +149,18 @@ public class UserService {
      * 5. 登录成功 → 清除失败计数 → 生成 Token 对
      * </p>
      */
+    @Transactional(rollbackFor = Exception.class)
     public TokenResponse login(LoginRequest request) {
+        // Redis 不可用时返回明确错误，而非 500
+        try {
+            return doLogin(request);
+        } catch (RedisUnavailableException e) {
+            log.error("[登录] Redis 不可用, username={}", request.getUsername(), e);
+            throw new BizException(ResultCode.SERVICE_UNAVAILABLE, "认证服务暂时不可用，请稍后重试");
+        }
+    }
+
+    private TokenResponse doLogin(LoginRequest request) {
         // 1. 校验验证码
         captchaService.verifyCaptcha(request.getCaptchaKey(), request.getCaptchaCode());
 
@@ -148,7 +180,6 @@ public class UserService {
         );
         if (user == null) {
             log.info("[登录] 用户不存在, username={}", username);
-            incrementLoginFail(username);
             throw new BizException(ResultCode.PASSWORD_ERROR, "用户名或密码错误");
         }
 
@@ -172,6 +203,7 @@ public class UserService {
         TokenResponse tokenResponse = tokenService.generateTokenPair(user.getId());
         log.info("[登录] 用户登录成功, userId={}, username={}", user.getId(), username);
         return tokenResponse;
+    }
     }
 
     // ==================== Token 刷新 ====================
@@ -217,10 +249,21 @@ public class UserService {
     /**
      * 更新用户信息
      */
+    @Transactional(rollbackFor = Exception.class)
     public UserInfoResponse updateUserInfo(Long userId, UpdateUserRequest request) {
         User user = userMapper.selectById(userId);
         if (user == null) {
             throw new BizException(ResultCode.USER_NOT_FOUND);
+        }
+
+        // 检查账号状态：禁用用户不可修改个人信息
+        if (user.getStatus() == 0) {
+            throw new BizException(ResultCode.ACCOUNT_DISABLED);
+        }
+
+        // 至少一个字段有值，避免空 wrapper → SQL 语法错误 500
+        if (request.hasNoFields()) {
+            throw new BizException(ResultCode.PARAM_INVALID, "至少需要修改一个字段");
         }
 
         // 检查手机号唯一性
@@ -269,6 +312,11 @@ public class UserService {
         User user = userMapper.selectById(userId);
         if (user == null) {
             throw new BizException(ResultCode.USER_NOT_FOUND);
+        }
+
+        // 检查账号状态：禁用用户不可修改密码
+        if (user.getStatus() == 0) {
+            throw new BizException(ResultCode.ACCOUNT_DISABLED);
         }
 
         // 校验旧密码
@@ -363,8 +411,6 @@ public class UserService {
 
     // ==================== 屏蔽管理 ====================
 
-    private static final String USER_BLOCK_KEY = "myxhs:user:block:";
-
     /**
      * 屏蔽用户
      */
@@ -372,8 +418,9 @@ public class UserService {
         if (userId.equals(targetUserId)) {
             throw new BizException(ResultCode.BAD_REQUEST, "不能屏蔽自己");
         }
-        String blockKey = USER_BLOCK_KEY + userId;
+        String blockKey = RedisKeyConstants.USER_BLOCK_LIST + userId;
         redisOperator.sAdd(blockKey, targetUserId.toString());
+        redisOperator.expire(blockKey, 365, TimeUnit.DAYS);
         log.info("[屏蔽] 用户屏蔽成功: userId={}, targetUserId={}", userId, targetUserId);
     }
 
@@ -381,7 +428,7 @@ public class UserService {
      * 取消屏蔽
      */
     public void unblockUser(Long userId, Long targetUserId) {
-        String blockKey = USER_BLOCK_KEY + userId;
+        String blockKey = RedisKeyConstants.USER_BLOCK_LIST + userId;
         redisOperator.sRemove(blockKey, targetUserId.toString());
         log.info("[屏蔽] 用户取消屏蔽: userId={}, targetUserId={}", userId, targetUserId);
     }
@@ -390,7 +437,7 @@ public class UserService {
      * 获取屏蔽用户列表
      */
     public Set<Object> getBlockList(Long userId) {
-        String blockKey = USER_BLOCK_KEY + userId;
+        String blockKey = RedisKeyConstants.USER_BLOCK_LIST + userId;
         return redisOperator.sMembers(blockKey);
     }
 
@@ -398,6 +445,8 @@ public class UserService {
      * User → UserInfoResponse
      */
     private UserInfoResponse toUserInfoResponse(User user) {
+        // /me 是用户查看自己的信息，phone/email 返回完整值（不脱敏）
+        // 脱敏只在公开接口 toUserPublicInfoResponse 中体现（完全剔除 phone/email）
         return UserInfoResponse.builder()
                 .id(user.getId())
                 .username(user.getUsername())
@@ -405,8 +454,8 @@ public class UserService {
                 .avatar(user.getAvatar())
                 .gender(user.getGender())
                 .birthday(user.getBirthday())
-                .phone(UserInfoResponse.maskPhone(user.getPhone()))
-                .email(UserInfoResponse.maskEmail(user.getEmail()))
+                .phone(user.getPhone())
+                .email(user.getEmail())
                 .signature(user.getSignature())
                 .status(user.getStatus())
                 .createdAt(user.getCreatedAt())

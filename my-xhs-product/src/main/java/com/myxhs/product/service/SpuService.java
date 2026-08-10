@@ -2,6 +2,7 @@ package com.myxhs.product.service;
 
 import com.alibaba.fastjson2.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.myxhs.common.cache.RedisOperator;
 import com.myxhs.common.constants.RedisKeyConstants;
@@ -31,6 +32,8 @@ import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 import java.util.Collections;
@@ -43,17 +46,17 @@ import java.util.stream.Collectors;
 /**
  * SPU 服务（商品核心服务）
  * <p>
- * 【多级缓存架构】
- * L2: Redis 分布式缓存（30min 逻辑过期，防缓存击穿）
+ * 【两级缓存架构】
+ * L2: Redis 分布式缓存（30min 逻辑过期 + 2h 物理 TTL 兜底，防缓存击穿）
  * L3: MySQL 持久化存储
  * <p>
  * 【防护策略】
- * - 缓存穿透：三层防御（布隆过滤器前置拦截 + 缓存空值兜底 + ID 格式校验）
- * - 缓存击穿：逻辑过期（热点 Key 永不物理过期，发现逻辑过期异步刷新）
- * - 缓存雪崩：TTL 随机偏移（CacheHelper 已内置）
+ * - 缓存穿透：两层防御（布隆过滤器前置拦截 + 缓存空值兜底）
+ * - 缓存击穿：逻辑过期（热点 Key 在逻辑过期后异步刷新，旧值仍可用）
+ * - 缓存雪崩：逻辑过期本身避免 Key 集中失效，不需额外随机 TTL
  * <p>
  * 【一致性策略】
- * 写操作：先更新 DB → 删 Redis
+ * 写操作：先更新 DB → TransactionSynchronization.afterCommit 删 Redis
  * </p>
  */
 @Slf4j
@@ -134,10 +137,9 @@ public class SpuService {
      */
     @PostConstruct
     public void initBloomFilter() {
-        spuBloomFilter = redissonClient.getBloomFilter("myxhs:product:bloom:spu");
-
-        // tryInit 是幂等的：Redis 中已存在则返回 false（不会重置），不存在则创建并返回 true
-        boolean isNewFilter = spuBloomFilter.tryInit(1_000_000L, 0.01);
+        try {
+            spuBloomFilter = redissonClient.getBloomFilter("myxhs:product:bloom:spu");
+            boolean isNewFilter = spuBloomFilter.tryInit(1_000_000L, 0.01);
 
         if (isNewFilter) {
             // 首次部署：异步分批加载历史数据，不阻塞启动
@@ -154,6 +156,9 @@ public class SpuService {
                 log.info("[布隆过滤器] Redis 中已存在布隆过滤器(count={}), 直接复用, 跳过全量加载",
                         spuBloomFilter.count());
             }
+        }
+        } catch (Exception e) {
+            log.error("[布隆过滤器] 初始化失败(Redis 不可用?), 服务降级启动: bloomFilterReady=false", e);
         }
     }
 
@@ -259,8 +264,15 @@ public class SpuService {
         // 3. 入库
         spuMapper.insert(spu);
 
-        // 4. 加入布隆过滤器
-        spuBloomFilter.add(spu.getId());
+        // 4. 事务提交后注册布隆过滤器（回滚时不执行，避免假阳性）
+        final Long newSpuId = spu.getId();
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                spuBloomFilter.add(newSpuId);
+                log.debug("[布隆过滤器] 新增 SPU ID: {}", newSpuId);
+            }
+        });
 
         log.info("[商品] 创建 SPU 成功, spuId={}, name={}", spu.getId(), spu.getName());
         return spu.getId();
@@ -268,41 +280,69 @@ public class SpuService {
 
     /**
      * 更新 SPU
+     * <p>
+     * 使用 LambdaUpdateWrapper 按字段更新，避免 read-then-write 的丢失更新：
+     * 两个并发请求分别修改 name 和 description → 各自只更新自己的字段。
+     * </p>
      */
     @Transactional(rollbackFor = Exception.class)
     public void updateSpu(Long spuId, SpuUpdateRequest request) {
-        // 1. 查询原 SPU
+        // 1. 校验 SPU 存在
         Spu spu = spuMapper.selectById(spuId);
         if (spu == null) {
             throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
         }
 
-        // 2. 更新字段（非空才更新）
+        // 2. 构建部分更新（LambdaUpdateWrapper 只 UPDATE 修改的字段）
+        LambdaUpdateWrapper<Spu> updateWrapper = new LambdaUpdateWrapper<>();
+        updateWrapper.eq(Spu::getId, spuId);
+
+        boolean hasUpdate = false;
         if (StringUtils.hasText(request.getName())) {
-            spu.setName(request.getName());
+            updateWrapper.set(Spu::getName, request.getName());
+            hasUpdate = true;
         }
         if (request.getCategoryId() != null) {
             Category category = categoryMapper.selectById(request.getCategoryId());
             if (category == null) {
                 throw new BizException(ResultCode.PARAM_INVALID, "分类不存在");
             }
-            spu.setCategoryId(request.getCategoryId());
+            updateWrapper.set(Spu::getCategoryId, request.getCategoryId());
+            hasUpdate = true;
         }
         if (request.getBrandId() != null) {
-            spu.setBrandId(request.getBrandId());
+            updateWrapper.set(Spu::getBrandId, request.getBrandId());
+            hasUpdate = true;
         }
         if (request.getDescription() != null) {
-            spu.setDescription(request.getDescription());
+            updateWrapper.set(Spu::getDescription, request.getDescription());
+            hasUpdate = true;
         }
         if (request.getImages() != null) {
-            spu.setImages(JSON.toJSONString(request.getImages()));
+            updateWrapper.set(Spu::getImages, JSON.toJSONString(request.getImages()));
+            hasUpdate = true;
         }
 
-        // 3. 更新 DB
-        spuMapper.updateById(spu);
+        // 3. 执行更新（至少有一个字段变更时才执行，避免空 UPDATE）
+        if (hasUpdate) {
+            // update(null, wrapper) 不触发 BaseEntity 的 MetaObjectHandler 自动填充，
+            // 需显式设置 updatedAt（INSERT_UPDATE 策略）
+            updateWrapper.set(Spu::getUpdatedAt, java.time.LocalDateTime.now());
+            spuMapper.update(null, updateWrapper);
 
-        // 4. 清除缓存（先删 Redis → MQ 广播删 Caffeine）
-        evictSpuCache(spuId);
+            // 4. 事务提交后删除缓存(延迟双删: 立即删 + 1s后二次删, 防并发异步重建回填旧值)
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    evictSpuCache(spuId);
+                    // 延迟二次删除: 覆盖并发读异步重建窗口(异步刷新DB查询+Redis写回, 正常<1s)
+                    CompletableFuture.runAsync(() -> {
+                        try { Thread.sleep(1000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+                        evictSpuCache(spuId);
+                    }, spuAsyncExecutor);
+                }
+            });
+        }
 
         log.info("[商品] 更新 SPU 成功, spuId={}", spuId);
     }
@@ -317,14 +357,27 @@ public class SpuService {
             throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
         }
 
-        // 校验状态值合法性
-        ProductStatus.of(status);
+        // 校验状态值合法性（ProductStatus.of 对非法值抛 IllegalArgumentException，转为业务异常返回 400）
+        try {
+            ProductStatus.of(status);
+        } catch (IllegalArgumentException e) {
+            throw new BizException(ResultCode.PARAM_INVALID, "商品状态无效");
+        }
 
-        spu.setStatus(status);
-        spuMapper.updateById(spu);
+        // LambdaUpdateWrapper 按字段更新，避免 updateById 全量写覆盖并发修改的其他字段
+        LambdaUpdateWrapper<Spu> updateWrapper = new LambdaUpdateWrapper<Spu>()
+                .eq(Spu::getId, spuId)
+                .set(Spu::getStatus, status)
+                .set(Spu::getUpdatedAt, java.time.LocalDateTime.now());
+        spuMapper.update(null, updateWrapper);
 
-        // 清除缓存
-        evictSpuCache(spuId);
+        // 事务提交后删除缓存
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                evictSpuCache(spuId);
+            }
+        });
 
         log.info("[商品] SPU 状态变更, spuId={}, status={}", spuId, status);
     }
@@ -334,12 +387,15 @@ public class SpuService {
     /** 空值缓存逻辑过期时间（分钟），比正常数据短 */
     private static final long NULL_CACHE_EXPIRE_MINUTES = 2;
 
+    /** 物理 TTL（分钟）— 逻辑过期 30min 的兜底，Key 最多存活 2h */
+    private static final long PHYSICAL_TTL_MINUTES = 120;
+
     /**
      * 获取 SPU 详情（多级缓存 + 逻辑过期 + 统一空值防穿透）
      * <p>
      * 查询链路：布隆过滤器(前置) → Redis(L2, 逻辑过期) → MySQL(L3)
      * <p>
-     * 【三层防穿透策略 — 大厂生产级方案】
+     * 【两层防穿透策略】
      * <p>
      * 第一层：布隆过滤器（前置拦截）
      *   - 拦截"一定不存在"的 ID，连 Redis 都不用查
@@ -350,9 +406,6 @@ public class SpuService {
      *   - DB 查不到 → 缓存 RedisCacheData(data=null, logicExpire=2min)
      *   - 统一用 RedisCacheData 包装，避免同一 Key 存两种类型的坑
      *   - 空值也走逻辑过期，与正常数据处理逻辑完全一致
-     * <p>
-     * 第三层：ID 格式校验（Controller 层 / 网关层）
-     *   - 雪花 ID 有固定格式，非法格式直接拒绝，不进入缓存链路
      * <p>
      * 【为什么不单独用缓存空值？】
      * 攻击者用海量不同的不存在 ID 发请求 → 每个 ID 缓存一个空值 Key → Redis 内存被打爆。
@@ -369,14 +422,27 @@ public class SpuService {
     public SpuDetailVO getSpuDetail(Long spuId) {
         // 1. 布隆过滤器前置拦截（第一层防穿透）
         //    拦截"一定不存在"的 ID，连 Redis 都不用查，减少无效 Key 进入缓存
-        if (bloomFilterReady.get() && !spuBloomFilter.contains(spuId)) {
-            log.info("[多级缓存] 布隆过滤器拦截, spuId={} 不存在", spuId);
-            return null;
+        //    Redis 故障时降级跳过（视为"可能存在"，放行到缓存/DB 层）
+        if (bloomFilterReady.get()) {
+            try {
+                if (!spuBloomFilter.contains(spuId)) {
+                    log.info("[多级缓存] 布隆过滤器拦截, spuId={} 不存在", spuId);
+                    return null;
+                }
+            } catch (Exception e) {
+                log.warn("[多级缓存] 布隆过滤器不可用, 降级放行, spuId={}", spuId, e);
+            }
         }
 
         // 2. L2: Redis 分布式缓存（统一用 RedisCacheData 包装，包括空值）
         String redisKey = RedisKeyConstants.PRODUCT_SPU + spuId;
-        RedisCacheData<SpuDetailVO> cacheData = redisOperator.get(redisKey);
+        RedisCacheData<SpuDetailVO> cacheData = null;
+        try {
+            cacheData = redisOperator.get(redisKey);
+        } catch (Exception e) {
+            log.warn("[多级缓存] Redis 不可用，降级直查 DB, spuId={}", spuId, e);
+            // cacheData 保持 null，直接落到 L3 MySQL
+        }
 
         if (cacheData != null) {
             if (!cacheData.isExpired()) {
@@ -403,23 +469,58 @@ public class SpuService {
             }
         }
 
-        // 3. L3: MySQL 兜底
-        log.info("[多级缓存] L2 Redis 未命中, 查询 DB, spuId={}", spuId);
-        SpuDetailVO detail = loadSpuDetailFromDb(spuId);
-        if (detail != null) {
-            // 回填 L2（逻辑过期）
-            RedisCacheData<SpuDetailVO> newCacheData = RedisCacheData.of(detail, LOGIC_EXPIRE_MINUTES);
-            redisOperator.set(redisKey, newCacheData);
-        } else {
-            // 【第二层防穿透】DB 也查不到 → 缓存空值（统一用 RedisCacheData 包装）
-            // 逻辑过期 2 分钟（2 分钟后重新查 DB，数据可能已新增）
-            // 物理 TTL 5 分钟（兜底清理，防止攻击者用大量不存在 ID 打爆 Redis 内存）
-            RedisCacheData<SpuDetailVO> nullCacheData = RedisCacheData.of(null, NULL_CACHE_EXPIRE_MINUTES);
-            redisOperator.set(redisKey, nullCacheData, 5, TimeUnit.MINUTES);
-            log.info("[多级缓存] DB 未查到, 缓存空值(防穿透, 逻辑过期={}min, 物理TTL=5min), spuId={}",
-                    NULL_CACHE_EXPIRE_MINUTES, spuId);
+        // 3. L3: MySQL 兜底（冷 Key 并发 miss 用分布式锁防惊群穿透到 DB）
+        String loadLockKey = CACHE_REFRESH_LOCK + "load:" + spuId;
+        RLock loadLock = redissonClient.getLock(loadLockKey);
+        boolean loadLocked = false;
+        try {
+            // tryLock 短等待：拿不到锁的线程短暂等待后重查缓存（持锁线程已回填）
+            loadLocked = loadLock.tryLock(1, 10, TimeUnit.SECONDS);
+            if (loadLocked) {
+                // 双重检查：持锁期间其他线程可能已回填
+                try {
+                    RedisCacheData<SpuDetailVO> recheck = redisOperator.get(redisKey);
+                    if (recheck != null && !recheck.isExpired()) {
+                        return recheck.getData();
+                    }
+                } catch (Exception e) {
+                    log.warn("[多级缓存] 双重检查读缓存失败(降级), spuId={}", spuId, e);
+                }
+            }
+
+            log.info("[多级缓存] L2 Redis 未命中, 查询 DB, spuId={}", spuId);
+            SpuDetailVO detail = loadSpuDetailFromDb(spuId);
+            if (detail != null) {
+                // 回填 L2（逻辑过期 30min + 物理 TTL 2h 兜底）；Redis 故障降级仅记日志
+                RedisCacheData<SpuDetailVO> newCacheData = RedisCacheData.of(detail, LOGIC_EXPIRE_MINUTES);
+                try {
+                    redisOperator.set(redisKey, newCacheData, PHYSICAL_TTL_MINUTES, TimeUnit.MINUTES);
+                } catch (Exception e) {
+                    log.warn("[多级缓存] Redis 回填失败(降级, DB数据仍正常返回), spuId={}", spuId, e);
+                }
+            } else {
+                // 【第二层防穿透】DB 也查不到 → 缓存空值（统一用 RedisCacheData 包装）
+                // 逻辑过期 2 分钟（2 分钟后重新查 DB，数据可能已新增）
+                // 物理 TTL 5 分钟（兜底清理，防止攻击者用大量不存在 ID 打爆 Redis 内存）
+                RedisCacheData<SpuDetailVO> nullCacheData = RedisCacheData.of(null, NULL_CACHE_EXPIRE_MINUTES);
+                try {
+                    redisOperator.set(redisKey, nullCacheData, 5, TimeUnit.MINUTES);
+                } catch (Exception e) {
+                    log.warn("[多级缓存] 空值缓存写入失败(降级), spuId={}", spuId, e);
+                }
+                log.info("[多级缓存] DB 未查到, 缓存空值(防穿透, 逻辑过期={}min, 物理TTL=5min), spuId={}",
+                        NULL_CACHE_EXPIRE_MINUTES, spuId);
+            }
+            return detail;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("[多级缓存] 加载锁被中断, spuId={}", spuId);
+            return loadSpuDetailFromDb(spuId);
+        } finally {
+            if (loadLocked && loadLock.isHeldByCurrentThread()) {
+                loadLock.unlock();
+            }
         }
-        return detail;
     }
 
     /**
@@ -449,9 +550,13 @@ public class SpuService {
      * </p>
      */
     public void evictSpuCache(Long spuId) {
-        // 删 Redis
+        // 删 Redis；Redis 故障时降级仅记日志（DB 已提交成功，客户端不应收到 500）
         String redisKey = RedisKeyConstants.PRODUCT_SPU + spuId;
-        redisOperator.delete(redisKey);
+        try {
+            redisOperator.delete(redisKey);
+        } catch (Exception e) {
+            log.warn("[多级缓存] 删除缓存失败(降级, 依赖物理TTL兜底), spuId={}", spuId, e);
+        }
     }
 
     // ==================== 私有方法 ====================
@@ -480,8 +585,13 @@ public class SpuService {
                 SpuDetailVO detail = loadSpuDetailFromDb(spuId);
                 if (detail != null) {
                     RedisCacheData<SpuDetailVO> newCacheData = RedisCacheData.of(detail, LOGIC_EXPIRE_MINUTES);
-                    redisOperator.set(redisKey, newCacheData);
+                    redisOperator.set(redisKey, newCacheData, PHYSICAL_TTL_MINUTES, TimeUnit.MINUTES);
                     log.info("[缓存刷新] 异步刷新完成, spuId={}", spuId);
+                } else {
+                    // 查不到（已删除/下架）：写空值缓存，防止已删除商品脏数据永远返回
+                    RedisCacheData<SpuDetailVO> nullCacheData = RedisCacheData.of(null, NULL_CACHE_EXPIRE_MINUTES);
+                    redisOperator.set(redisKey, nullCacheData, 5, TimeUnit.MINUTES);
+                    log.info("[缓存刷新] 商品已删除, 写入空值缓存, spuId={}", spuId);
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -569,7 +679,7 @@ public class SpuService {
         vo.setName(sku.getName());
         vo.setPrice(sku.getPrice());
         vo.setOriginalPrice(sku.getOriginalPrice());
-        vo.setStock(sku.getStock());
+        // stock 字段已从 SkuVO 剔除：SKU 表 stock 是冗余占位值，真实库存以 inventory 服务为准
         vo.setSpecs(sku.getSpecs());
         vo.setStatus(sku.getStatus());
         return vo;

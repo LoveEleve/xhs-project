@@ -4,6 +4,7 @@ import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.ComponentScan;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * 优惠券服务启动类
@@ -14,6 +15,7 @@ import org.springframework.context.annotation.ComponentScan;
  * </p>
  */
 @SpringBootApplication
+@EnableScheduling
 @ComponentScan(basePackages = {"com.myxhs.coupon", "com.myxhs.common"})
 @MapperScan("com.myxhs.coupon.mapper")
 public class CouponApplication {

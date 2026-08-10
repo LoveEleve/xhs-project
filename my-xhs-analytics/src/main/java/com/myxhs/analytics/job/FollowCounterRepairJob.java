@@ -65,6 +65,13 @@ public class FollowCounterRepairJob {
 
                     String relationResult = followService.repairUserRelationships(userId);
                     if (!relationResult.contains("无需修复")) relationFixed++;
+
+                    // 粉丝侧对账（修复 Step B 失败导致的粉丝列表不一致）
+                    String followerResult = followService.repairFollowerRelationships(userId);
+                    if (!followerResult.contains("无需修复")) relationFixed++;
+
+                    // 同步到 counter 模块 key（双计数体系一致性）
+                    followService.syncCountersToCounterModule(userId);
                 } catch (Exception e) {
                     log.error("[关注对账] 修复失败: userId={}", userId, e);
                 }

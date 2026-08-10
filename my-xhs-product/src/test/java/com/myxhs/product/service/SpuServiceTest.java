@@ -74,6 +74,16 @@ class SpuServiceTest {
     private static final Long SPU_ID = 100001L;
     private static final Long CATEGORY_ID = 10L;
 
+    @org.junit.jupiter.api.BeforeAll
+    static void initMybatisPlusTableInfo() {
+        // LambdaUpdateWrapper 列名解析依赖 MyBatis-Plus TableInfo 缓存，
+        // 纯 Mockito 测试无 Spring 上下文需手动初始化（否则 can not find lambda cache）
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
+                new org.apache.ibatis.builder.MapperBuilderAssistant(
+                        new org.apache.ibatis.session.Configuration(), ""),
+                Spu.class);
+    }
+
     @BeforeEach
     void setUp() {
         spuService = new SpuService(
@@ -90,21 +100,34 @@ class SpuServiceTest {
     @Test
     @DisplayName("创建 SPU - 正常创建成功")
     void createSpuSuccess() {
-        SpuCreateRequest request = buildCreateRequest();
+        try (org.mockito.MockedStatic<org.springframework.transaction.support.TransactionSynchronizationManager> mockedTs =
+                     mockStatic(org.springframework.transaction.support.TransactionSynchronizationManager.class)) {
+            // 捕获注册的同步器并立即执行 afterCommit（模拟事务提交）
+            mockedTs.when(() -> org.springframework.transaction.support.TransactionSynchronizationManager
+                            .registerSynchronization(any()))
+                    .thenAnswer(invocation -> {
+                        org.springframework.transaction.support.TransactionSynchronization sync =
+                                invocation.getArgument(0);
+                        sync.afterCommit();
+                        return null;
+                    });
 
-        Category category = new Category();
-        category.setId(CATEGORY_ID);
-        category.setName("测试分类");
+            SpuCreateRequest request = buildCreateRequest();
 
-        when(categoryMapper.selectById(CATEGORY_ID)).thenReturn(category);
-        when(idGeneratorUtil.nextId()).thenReturn(SPU_ID);
-        when(spuMapper.insert(any(Spu.class))).thenReturn(1);
+            Category category = new Category();
+            category.setId(CATEGORY_ID);
+            category.setName("测试分类");
 
-        Long spuId = spuService.createSpu(request);
+            when(categoryMapper.selectById(CATEGORY_ID)).thenReturn(category);
+            when(idGeneratorUtil.nextId()).thenReturn(SPU_ID);
+            when(spuMapper.insert(any(Spu.class))).thenReturn(1);
 
-        assertThat(spuId).isEqualTo(SPU_ID);
-        verify(spuMapper).insert(any(Spu.class));
-        verify(spuBloomFilter).add(SPU_ID);
+            Long spuId = spuService.createSpu(request);
+
+            assertThat(spuId).isEqualTo(SPU_ID);
+            verify(spuMapper).insert(any(Spu.class));
+            verify(spuBloomFilter).add(SPU_ID);
+        }
     }
 
     // ==================== 查询 SPU 详情 ====================
@@ -131,7 +154,6 @@ class SpuServiceTest {
         skuVO.setSpuId(SPU_ID);
         skuVO.setName("红色-XL");
         skuVO.setPrice(new BigDecimal("99.00"));
-        skuVO.setStock(100);
         skuVO.setStatus(ProductStatus.ON_SHELF.getCode());
         detailVO.setSkuList(Collections.singletonList(skuVO));
 
@@ -167,19 +189,29 @@ class SpuServiceTest {
     @Test
     @DisplayName("更新 SPU - 更新名称和描述成功")
     void updateSpuSuccess() {
-        Spu spu = buildSpu();
-        when(spuMapper.selectById(SPU_ID)).thenReturn(spu);
-        when(spuMapper.updateById(any(Spu.class))).thenReturn(1);
+        try (org.mockito.MockedStatic<org.springframework.transaction.support.TransactionSynchronizationManager> mockedTs =
+                     mockStatic(org.springframework.transaction.support.TransactionSynchronizationManager.class)) {
+            mockedTs.when(() -> org.springframework.transaction.support.TransactionSynchronizationManager
+                            .registerSynchronization(any()))
+                    .thenAnswer(invocation -> null);
 
-        SpuUpdateRequest request = new SpuUpdateRequest();
-        request.setName("新名称");
-        request.setDescription("新描述");
+            Spu spu = buildSpu();
+            when(spuMapper.selectById(SPU_ID)).thenReturn(spu);
+            // 生产代码使用 LambdaUpdateWrapper：update(null, wrapper)
+            when(spuMapper.update(org.mockito.ArgumentMatchers.isNull(),
+                    any(com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper.class)))
+                    .thenReturn(1);
 
-        spuService.updateSpu(SPU_ID, request);
+            SpuUpdateRequest request = new SpuUpdateRequest();
+            request.setName("新名称");
+            request.setDescription("新描述");
 
-        verify(spuMapper).updateById(any(Spu.class));
-        assertThat(spu.getName()).isEqualTo("新名称");
-        assertThat(spu.getDescription()).isEqualTo("新描述");
+            spuService.updateSpu(SPU_ID, request);
+
+            // 验证按字段更新被调用（LambdaUpdateWrapper 不修改实体对象，只生成 SQL）
+            verify(spuMapper).update(org.mockito.ArgumentMatchers.isNull(),
+                    any(com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper.class));
+        }
     }
 
     // ==================== SPU 列表 ====================

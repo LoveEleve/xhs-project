@@ -54,7 +54,8 @@ class FollowServiceTest {
         followService = new FollowService(
                 stringRedisTemplate, followSelfScript, followTargetScript,
                 unfollowSelfScript, unfollowTargetScript,
-                followMapper, idGeneratorUtil);
+                followMapper, idGeneratorUtil,
+                mock(org.apache.rocketmq.spring.core.RocketMQTemplate.class));
     }
 
     @Test

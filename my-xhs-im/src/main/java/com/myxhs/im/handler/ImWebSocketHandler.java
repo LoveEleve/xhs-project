@@ -40,8 +40,15 @@ public class ImWebSocketHandler extends TextWebSocketHandler {
     private final ChatService chatService;
     private final OnlineRouteService onlineRouteService;
 
+    private static final int MAX_CONNECTIONS = 50000;
+
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
+        if (sessions.size() >= MAX_CONNECTIONS) {
+            log.warn("[IM] 连接数超限: current={}, max={}", sessions.size(), MAX_CONNECTIONS);
+            closeQuietly(session, CloseStatus.SERVICE_OVERLOAD);
+            return;
+        }
         Long userId = getUserId(session);
         if (userId == null) {
             closeQuietly(session, CloseStatus.POLICY_VIOLATION);
@@ -51,6 +58,8 @@ public class ImWebSocketHandler extends TextWebSocketHandler {
         // 踢掉旧连接（同一用户只允许一个 WebSocket 连接）
         WebSocketSession oldSession = sessions.put(userId, session);
         if (oldSession != null && oldSession.isOpen()) {
+            // 先注销旧连接路由，防止 afterConnectionClosed 异步事件误删新连接路由
+            onlineRouteService.unregisterRoute(userId);
             log.info("[IM] 踢掉旧连接: userId={}, oldSessionId={}", userId, oldSession.getId());
             closeQuietly(oldSession, new CloseStatus(4001, "新设备登录，当前连接已断开"));
         }

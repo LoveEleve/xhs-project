@@ -42,7 +42,7 @@ public class NotificationEventConsumer implements RocketMQListener<MessageExt> {
     private final NotificationService notificationService;
     private final MessageIdempotentHelper idempotentHelper;
 
-    private static final String BIZ_TYPE = "notify:consumed";
+    private static final String BIZ_TYPE = "myxhs:notification:consumed";
     private static final long IDEMPOTENT_TTL_SECONDS = 86400; // 24 小时
 
     @Override
@@ -75,8 +75,10 @@ public class NotificationEventConsumer implements RocketMQListener<MessageExt> {
 
         } catch (Exception e) {
             log.error("[通知消费] 处理失败: msgId={}", msg.getMsgId(), e);
-            // 业务失败时删除幂等标记，允许 MQ 重试
-            idempotentHelper.removeMark(BIZ_TYPE, msg.getMsgId());
+            // 删除幂等标记，让 MQ 重试时能真正重新处理（而非被 isFirstProcess 拦截）
+            try { idempotentHelper.removeMark(BIZ_TYPE, msgId); } catch (Exception markEx) {
+                log.error("[通知消费] 清除幂等标记失败: msgId={}", msgId, markEx);
+            }
             throw new RuntimeException("通知消费失败", e); // 触发 RocketMQ 重试
         } finally {
             MqTraceHelper.clearTraceId();

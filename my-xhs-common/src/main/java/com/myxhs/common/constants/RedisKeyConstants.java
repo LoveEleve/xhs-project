@@ -33,6 +33,9 @@ public final class RedisKeyConstants {
     /** Token 黑名单 myxhs:user:token:blacklist:{jti} */
     public static final String USER_TOKEN_BLACKLIST = PROJECT_PREFIX + "user:token:blacklist:";
 
+    /** HMAC 签名密钥（per-session）myxhs:user:hmac:secret:{userId} */
+    public static final String USER_HMAC_SECRET = PROJECT_PREFIX + "user:hmac:secret:";
+
     /** 图形验证码 myxhs:user:captcha:{key} */
     public static final String USER_CAPTCHA = PROJECT_PREFIX + "user:captcha:";
 
@@ -50,6 +53,15 @@ public final class RedisKeyConstants {
 
     /** 账号锁定标记 myxhs:user:login:lock:{username} */
     public static final String USER_LOGIN_LOCK = PROJECT_PREFIX + "user:login:lock:";
+
+    /** 用户屏蔽列表 myxhs:user:block:{userId} */
+    public static final String USER_BLOCK_LIST = PROJECT_PREFIX + "user:block:";
+
+    /** 收货地址操作锁 myxhs:user:address:lock:{userId} */
+    public static final String USER_ADDRESS_LOCK = PROJECT_PREFIX + "user:address:lock:";
+
+    /** Token 刷新并发锁 myxhs:token:refresh:lock:{jti} */
+    public static final String TOKEN_REFRESH_LOCK = PROJECT_PREFIX + "token:refresh:lock:";
 
     // ==================== 内容服务 ====================
 
@@ -110,7 +122,7 @@ public final class RedisKeyConstants {
     /** 库存缓存 myxhs:inventory:stock:{skuId} */
     public static final String INVENTORY_STOCK = PROJECT_PREFIX + "inventory:stock:";
 
-    /** 优惠券库存（已废弃：CouponService 自行管理 Key，使用 coupon:{%s}:stock 格式） */
+    /** 优惠券库存（已废弃：CouponService 自行管理 Key，使用 myxhs:coupon:{%s}:stock 格式） */
     @Deprecated
     public static final String COUPON_STOCK = PROJECT_PREFIX + "coupon:stock:";
 

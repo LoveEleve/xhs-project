@@ -15,12 +15,18 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
 /**
  * SKU 服务
+ * <p>
+ * SKU 无独立缓存，随所属 SPU 的缓存一起管理。
+ * 创建 SKU 时会清除 SPU 缓存以触发重建。
+ * </p>
  */
 @Slf4j
 @Service
@@ -55,8 +61,14 @@ public class SkuService {
 
         skuMapper.insert(sku);
 
-        // 清除 SPU 缓存（SKU 列表变了）
-        spuService.evictSpuCache(request.getSpuId());
+        // 事务提交后清除 SPU 缓存（SKU 列表变了）
+        final Long spuId = request.getSpuId();
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                spuService.evictSpuCache(spuId);
+            }
+        });
 
         log.info("[商品] 创建 SKU 成功, skuId={}, spuId={}", sku.getId(), sku.getSpuId());
         return sku.getId();
@@ -83,7 +95,10 @@ public class SkuService {
         if (skuIds == null || skuIds.isEmpty()) {
             return List.of();
         }
-        List<Sku> skuList = skuMapper.selectBatchIds(skuIds);
+        LambdaQueryWrapper<Sku> wrapper = new LambdaQueryWrapper<Sku>()
+                .in(Sku::getId, skuIds)
+                .eq(Sku::getStatus, ProductStatus.ON_SHELF.getCode());
+        List<Sku> skuList = skuMapper.selectList(wrapper);
         return skuList.stream()
                 .map(this::toSkuVO)
                 .collect(Collectors.toList());
@@ -111,7 +126,7 @@ public class SkuService {
         vo.setName(sku.getName());
         vo.setPrice(sku.getPrice());
         vo.setOriginalPrice(sku.getOriginalPrice());
-        vo.setStock(sku.getStock());
+        // stock 字段已从 SkuVO 剔除：SKU 表 stock 是冗余占位值，真实库存以 inventory 服务为准
         vo.setSpecs(sku.getSpecs());
         vo.setStatus(sku.getStatus());
         return vo;

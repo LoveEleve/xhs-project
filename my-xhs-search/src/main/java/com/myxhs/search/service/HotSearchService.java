@@ -68,7 +68,7 @@ public class HotSearchService {
     @Value("${search.hot.antispam.ip-max-per-minute:10}")
     private int ipMaxPerMinute;
 
-    private static final String LOCK_KEY = "lock:job:search:hot:calculate";
+    private static final String LOCK_KEY = "myxhs:lock:job:search:hot:calculate";
     private static final DateTimeFormatter BUCKET_FORMAT = DateTimeFormatter.ofPattern("yyyyMMddHHmm");
     private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
@@ -189,7 +189,7 @@ public class HotSearchService {
      * 分布式安全：Redisson 分布式锁保证多实例只有一个执行。
      * </p>
      */
-    @Scheduled(fixedRate = 300_000) // 每 5 分钟
+    @Scheduled(fixedRate = 60_000) // 每 1 分钟（测试环境快速验证）
     public void calculateHotSearch() {
         RLock lock = redissonClient.getLock(LOCK_KEY);
         boolean acquired = false;

@@ -56,6 +56,12 @@ public class TokenService {
         String refreshToken = JwtUtil.generateToken(userIdStr, "refresh",
                 jwtProperties.getRefreshTokenExpire(), secret);
 
+        // 将旧 access token 加入黑名单（单设备登录：新登录踢出旧设备）
+        String oldAccessToken = redisOperator.getString(RedisKeyConstants.USER_TOKEN_ACCESS + userId);
+        if (oldAccessToken != null && !oldAccessToken.isEmpty()) {
+            blacklistOldToken(oldAccessToken);
+        }
+
         // 存入 Redis（支持后续踢出登录）
         redisOperator.set(
                 RedisKeyConstants.USER_TOKEN_ACCESS + userId,
@@ -70,10 +76,21 @@ public class TokenService {
                 TimeUnit.SECONDS
         );
 
+        // 生成 per-session HMAC 密钥（用于非公开接口的请求签名，防篡改+防重放）
+        // 密钥与 Refresh Token 同生命周期（7天），每次登录重新生成（旧密钥覆盖）
+        String hmacSecret = java.util.UUID.randomUUID().toString().replace("-", "");
+        redisOperator.set(
+                RedisKeyConstants.USER_HMAC_SECRET + userId,
+                hmacSecret,
+                jwtProperties.getRefreshTokenExpire() / 1000,
+                TimeUnit.SECONDS
+        );
+
         log.info("[Token] 生成 Token 对, userId={}", userId);
         return TokenResponse.builder()
                 .accessToken(accessToken)
                 .refreshToken(refreshToken)
+                .hmacSecret(hmacSecret)
                 .build();
     }
 
@@ -113,7 +130,7 @@ public class TokenService {
 
         // 3. 分布式锁防止并发刷新（多个请求同时发现 AccessToken 过期，都来刷新）
         //    锁粒度：按 jti（每个 RefreshToken 唯一），不影响其他用户
-        String lockKey = "myxhs:token:refresh:lock:" + jti;
+        String lockKey = RedisKeyConstants.TOKEN_REFRESH_LOCK + jti;
         RLock lock = redissonClient.getLock(lockKey);
         try {
             if (!lock.tryLock(3, 10, TimeUnit.SECONDS)) {
@@ -169,6 +186,7 @@ public class TokenService {
             userId = JwtUtil.getUserId(accessToken, secret);
             redisOperator.delete(RedisKeyConstants.USER_TOKEN_ACCESS + userId);
             redisOperator.delete(RedisKeyConstants.USER_TOKEN_REFRESH + userId);
+            redisOperator.delete(RedisKeyConstants.USER_HMAC_SECRET + userId);
         } catch (Exception e) {
             log.warn("[Token] 清除 Redis Token 失败", e);
         }
@@ -201,6 +219,7 @@ public class TokenService {
         // 清除 Redis 映射
         redisOperator.delete(accessTokenKey);
         redisOperator.delete(refreshTokenKey);
+        redisOperator.delete(RedisKeyConstants.USER_HMAC_SECRET + userId);
 
         log.info("[Token] 已注销用户所有活跃Token, userId={}", userId);
     }
@@ -233,6 +252,18 @@ public class TokenService {
                     TimeUnit.SECONDS
             );
             log.info("[Token] 加入黑名单, jti={}, 剩余有效期={}秒", jti, remainingMs / 1000);
+        }
+    }
+
+    /**
+     * 将旧 access token 加入黑名单（单设备登录踢出）
+     */
+    private void blacklistOldToken(String token) {
+        try {
+            Claims claims = JwtUtil.parseToken(token, jwtProperties.getSecret());
+            blacklistByClaims(claims);
+        } catch (Exception e) {
+            log.warn("[Token] 旧 token 解析失败(可能已过期), 跳过黑名单: {}", e.getMessage());
         }
     }
 

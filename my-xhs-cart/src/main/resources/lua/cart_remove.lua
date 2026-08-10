@@ -1,9 +1,9 @@
 -- 删除购物车商品 Lua 脚本
 -- 原子操作：三结构同时删除（Hash + Set + ZSet）
 --
--- KEYS[1] = cart:items:{userId}    (Hash)
--- KEYS[2] = cart:checked:{userId}  (Set)
--- KEYS[3] = cart:sort:{userId}     (ZSet)
+-- KEYS[1] = myxhs:cart:{userId}:items    (Hash)
+-- KEYS[2] = myxhs:cart:{userId}:checked  (Set)
+-- KEYS[3] = myxhs:cart:{userId}:sort     (ZSet)
 --
 -- ARGV[1] = skuId
 --

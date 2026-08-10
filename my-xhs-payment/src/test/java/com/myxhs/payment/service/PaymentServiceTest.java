@@ -155,7 +155,7 @@ class PaymentServiceTest {
         )).thenReturn(1);
 
         // Mock: get(statusKey) 返回 null（尚未支付）
-        when(valueOperations.get(eq("payment:status:" + ORDER_ID))).thenReturn(null);
+        when(valueOperations.get(eq("myxhs:payment:status:" + ORDER_ID))).thenReturn(null);
 
         PayCreateRequest request = buildPayRequest();
         R<PaymentVO> result = paymentService.pay(request);
@@ -196,7 +196,7 @@ class PaymentServiceTest {
                 any(), any(), any(), any(), any()
         )).thenReturn(1);
 
-        when(valueOperations.get(eq("payment:status:" + ORDER_ID))).thenReturn(null);
+        when(valueOperations.get(eq("myxhs:payment:status:" + ORDER_ID))).thenReturn(null);
 
         PayCreateRequest request = buildPayRequest();
         R<PaymentVO> result = paymentService.pay(request);
@@ -221,7 +221,7 @@ class PaymentServiceTest {
         )).thenReturn(1);
 
         // 第一次 get 返回 null（未支付），第二次返回 "1"（已支付）
-        when(valueOperations.get(eq("payment:status:" + ORDER_ID)))
+        when(valueOperations.get(eq("myxhs:payment:status:" + ORDER_ID)))
                 .thenReturn(null, "1");
 
         // 第一次支付：应该成功
@@ -248,7 +248,7 @@ class PaymentServiceTest {
                 any(), any(), any(), any(), any()
         )).thenReturn(1);
 
-        when(valueOperations.get(eq("payment:status:" + ORDER_ID))).thenReturn(null);
+        when(valueOperations.get(eq("myxhs:payment:status:" + ORDER_ID))).thenReturn(null);
 
         // 第一次调用 pay（会 mock handlePaySuccessInternal 将状态设为 SUCCESS）
         paymentService.pay(buildPayRequest());
@@ -295,7 +295,7 @@ class PaymentServiceTest {
                 any(), any(), any(), any(), any()
         )).thenReturn(1);
 
-        when(valueOperations.get(eq("payment:status:" + ORDER_ID))).thenReturn(null);
+        when(valueOperations.get(eq("myxhs:payment:status:" + ORDER_ID))).thenReturn(null);
 
         PayCreateRequest request = buildPayRequest();
         paymentService.pay(request);

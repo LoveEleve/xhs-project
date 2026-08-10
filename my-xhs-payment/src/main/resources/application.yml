@@ -35,15 +35,16 @@ spring:
   data:
     redis:
       host: 21.130.247.89
-      # 【Nacos 配置】Redis 密码已迁移至 Nacos Config（my-xhs-redis.yaml），本地值为 fallback
+      # Redis 密码 — Nacos shared-configs(my-xhs-common.yaml) 优先，本地为 fallback
       password: "Xhs@2026#Redis"
+      port: 6379
       sentinel:
         master: mymaster
-        nodes: 21.130.247.89:26379,21.130.247.89:26380,21.130.247.89:26381
-      cache:
-        port: 16380  # Cache Redis (allkeys-lru)
+        nodes: 21.130.247.89:26379
       business:
-        port: 16381  # Business Redis (noeviction)
+        port: 6379
+      cache:
+        port: 6379
       lettuce:
         pool:
           max-active: 15
@@ -52,7 +53,7 @@ spring:
           max-wait: 3000ms
   pay-datasource:
       # 生产环境建议通过环境变量注入：${MYSQL_HOST:21.130.247.89}
-    jdbc-url: jdbc:mysql://21.130.247.89:13308/my_xhs_payment?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true&autoReconnect=true&failOverReadOnly=false&connectTimeout=5000&socketTimeout=30000
+    jdbc-url: jdbc:mysql://21.130.247.89:3306/my_xhs_payment?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true&autoReconnect=true&failOverReadOnly=false&connectTimeout=5000&socketTimeout=30000
     username: root
     password: "Xhs@2026#MySQL"
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -71,7 +72,6 @@ spring:
         enabled: true
         server-addr: 21.130.247.89:18848
         namespace: my-xhs
-        group: DEFAULT_GROUP
         metadata:
           zone: ${MYXHS_ZONE:defaultZone}
       config:
@@ -80,6 +80,10 @@ spring:
         import-check:
           enabled: false
         file-extension: yaml
+        shared-configs:
+          - data-id: my-xhs-common.yaml
+            group: DEFAULT_GROUP
+            refresh: true
     # Sentinel 配置（轻量模式，暂不连接 Dashboard）
     sentinel:
       transport:
@@ -127,7 +131,7 @@ management:
 
 # RocketMQ 配置
 rocketmq:
-  name-server: 21.130.247.89:9876;21.130.247.89:9877
+  name-server: 21.130.247.89:9876
   producer:
     group: payment-producer-group
     send-message-timeout: 3000
@@ -175,3 +179,10 @@ logging:
 
 
 spring.datasource.readwrite.enabled: true
+
+# 管理/内部接口令牌（环境变量注入，未配置时为空 → 管理接口全部拒绝(fail-closed)）
+myxhs:
+  admin:
+    token: ${ADMIN_TOKEN:}
+  internal:
+    token: ${INTERNAL_TOKEN:my-xhs-internal-token-2026}

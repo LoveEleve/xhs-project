@@ -13,6 +13,8 @@ import com.myxhs.order.dto.response.OrderVO;
 import com.myxhs.order.entity.*;
 import com.myxhs.order.feign.CouponFeignClient;
 import com.myxhs.order.feign.InventoryFeignClient;
+import com.myxhs.order.feign.ProductFeignClient;
+import com.myxhs.order.dto.SkuInfoDTO;
 import com.myxhs.order.listener.OrderTransactionListener;
 import com.myxhs.order.mapper.*;
 import com.myxhs.order.repository.OrderNoMappingRepository;
@@ -61,14 +63,17 @@ public class OrderService {
     private final ObjectMapper objectMapper;
     private final InventoryFeignClient inventoryFeignClient;
     private final CouponFeignClient couponFeignClient;
+    private final ProductFeignClient productFeignClient;
     private final BusinessMetrics businessMetrics;
 
-    private static final String IDEMPOTENT_KEY_PREFIX = "order:idempotent:";
-    private static final String CREATE_LOCK_PREFIX = "order:create:lock:";
+    private static final String IDEMPOTENT_KEY_PREFIX = "myxhs:order:idempotent:";
+    private static final String CREATE_LOCK_PREFIX = "myxhs:order:create:lock:";
     private static final String ORDER_CLOSE_TOPIC = "ORDER_CLOSE_TOPIC";
     /** 事务消息 Topic：下单成功后通知下游服务（库存预扣、优惠券核销等） */
     public static final String ORDER_TRANSACTION_TOPIC = "ORDER_TRANSACTION_TOPIC";
     private static final DateTimeFormatter ORDER_NO_FORMAT = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
+    @Value("${order.close.delay-level:16}")
+    private int orderCloseDelayLevel; // 延时关单等级: 默认16=30min, 测试设5=1min
 
     /**
      * Lua 脚本：安全释放分布式锁（只释放自己持有的锁）
@@ -125,12 +130,36 @@ public class OrderService {
         }
 
         try {
-            // 3. 计算金额
+            // 3. 获取 SKU 真实数据（不再使用 Mock 价格）
+            List<Long> skuIds = request.getSkuItems().stream()
+                    .map(OrderCreateRequest.SkuItem::getSkuId)
+                    .collect(Collectors.toList());
+            R<List<SkuInfoDTO>> skuResp = productFeignClient.batchGetSkuDetails(skuIds);
+            if (!skuResp.isSuccess() || skuResp.getData() == null || skuResp.getData().isEmpty()) {
+                throw new BizException(ResultCode.SERVICE_CALL_FAIL, "商品信息查询失败");
+            }
+            Map<Long, SkuInfoDTO> skuMap = skuResp.getData().stream()
+                    .collect(Collectors.toMap(SkuInfoDTO::getId, s -> s));
+
+            // 3.5 前置库存校验（避免创建订单后预扣失败进DLQ）
+            for (OrderCreateRequest.SkuItem item : request.getSkuItems()) {
+                R<Map<String, Object>> stockResp = inventoryFeignClient.queryStock(item.getSkuId());
+                if (!stockResp.isSuccess() || stockResp.getData() == null) {
+                    throw new BizException(ResultCode.STOCK_NOT_ENOUGH, "库存查询失败");
+                }
+                Object availableObj = stockResp.getData().get("availableStock");
+                int available = availableObj instanceof Integer ? (Integer) availableObj
+                        : Integer.parseInt(availableObj.toString());
+                if (available < item.getQuantity()) {
+                    throw new BizException(ResultCode.STOCK_NOT_ENOUGH,
+                            "库存不足: skuId=" + item.getSkuId() + ", need=" + item.getQuantity() + ", have=" + available);
+                }
+            }
+
+            // 4. 计算金额（使用真实 SKU 价格 + 真实优惠券折扣）
             String orderNo = generateOrderNo(userId);
-            BigDecimal totalAmount = calculateTotalAmount(request.getSkuItems());
-            BigDecimal discountAmount = request.getCouponId() != null
-                    ? new BigDecimal("10.00") // Mock: 优惠券固定减 10 元
-                    : BigDecimal.ZERO;
+            BigDecimal totalAmount = calculateTotalAmount(request.getSkuItems(), skuMap);
+            BigDecimal discountAmount = calculateCouponDiscount(userId, request, totalAmount);
             BigDecimal payAmount = totalAmount.subtract(discountAmount);
             if (payAmount.compareTo(BigDecimal.ZERO) < 0) {
                 payAmount = BigDecimal.ZERO;
@@ -150,8 +179,9 @@ public class OrderService {
                             .totalAmount(totalAmount)
                             .discountAmount(discountAmount)
                             .payAmount(payAmount)
-                            .transactionPayload(payload)
-                            .build();
+                    .transactionPayload(payload)
+                    .skuMap(skuMap)
+                    .build();
 
             // 构建事务消息（注入 traceId 保证全链路追踪）
             org.springframework.messaging.Message<String> msg = MqTraceHelper.wrapWithTraceId(
@@ -216,13 +246,18 @@ public class OrderService {
             return buildOrderVO(order);
 
         } catch (BizException e) {
-            // 业务异常：事务未提交，释放幂等键允许重试
+            // 业务异常：仅事务未提交时释放幂等键允许重试
+            if (context.getOrderId() == null) {
+                stringRedisTemplate.delete(idempotentKey);
+            }
             businessMetrics.recordOrderCreated("fail");
-            stringRedisTemplate.delete(idempotentKey);
             throw e;
         } catch (Exception e) {
+            // 非业务异常：仅事务未提交时释放幂等键，已提交则保留(防重复下单)
+            if (context.getOrderId() == null) {
+                stringRedisTemplate.delete(idempotentKey);
+            }
             businessMetrics.recordOrderCreated("fail");
-            stringRedisTemplate.delete(idempotentKey);
             throw new BizException(ResultCode.INTERNAL_ERROR, "下单失败: " + e.getMessage());
         } finally {
             // Lua 安全释放锁（只释放自己持有的锁）
@@ -335,8 +370,11 @@ public class OrderService {
         orderEventService.appendEvent(order, OrderEventService.EVENT_CANCELLED, 
                 Map.of("cancelReason", "用户主动取消", "cancelTime", LocalDateTime.now().toString()));
 
+        // appendEvent 只设 status=4，补设 cancelled_at
+        orderMapper.setCancelledAt(orderId, userId);
+
         // 联动释放库存 + 退还优惠券（并行执行，互不依赖，带超时控制）
-        CompletableFuture<Void> releaseFuture = CompletableFuture.runAsync(() -> releaseInventory(orderId, userId));
+        CompletableFuture<Void> releaseFuture = CompletableFuture.runAsync(() -> releaseInventory(orderId, order.getOrderNo(), userId));
         CompletableFuture<Void> returnFuture = CompletableFuture.runAsync(() -> returnCouponIfUsed(order));
         try {
             CompletableFuture.allOf(releaseFuture, returnFuture).get(3, TimeUnit.SECONDS);
@@ -345,7 +383,7 @@ public class OrderService {
         }
 
         takeSnapshot(orderId, userId, "CANCELLED");
-        stringRedisTemplate.delete("order:info:" + orderId);
+        stringRedisTemplate.delete("myxhs:order:info:" + orderId);
         log.info("[订单] 取消成功: userId={}, orderId={}", userId, orderId);
     }
 
@@ -357,9 +395,13 @@ public class OrderService {
      * 幂等保证：库存服务内部通过 orderId 做幂等（同一订单重复释放不会多加库存）。
      * </p>
      */
-    private void releaseInventory(Long orderId, Long userId) {
+    private void releaseInventory(Long orderId, String orderNo, Long userId) {
         try {
-            Map<String, Object> request = Map.of("orderId", orderId);
+            // 库存预扣记录以 fold-hash(orderNo) 派生的 pseudoOrderId 为幂等键
+            // （OrderTransactionConsumer 在半消息阶段只有 orderNo，订单未入库无法获得真实 orderId），
+            // 释放必须用同一派生值，否则 prededuct 记录找不到 → 库存永久泄漏
+            long pseudoOrderId = derivePseudoOrderId(orderNo);
+            Map<String, Object> request = Map.of("orderId", pseudoOrderId);
             R<Void> result = inventoryFeignClient.releaseStock(request);
             if (result == null || !result.isSuccess()) {
                 log.error("[订单] 释放库存失败，需补偿: orderId={}, result={}", orderId, result);
@@ -373,6 +415,18 @@ public class OrderService {
             log.error("[订单] 释放库存异常，需补偿: orderId={}", orderId, e);
             sendCompensationMessage("RELEASE_STOCK", orderId, userId, e.getMessage());
         }
+    }
+
+    /**
+     * 从 orderNo 派生伪 orderId（与 inventory 服务 OrderTransactionConsumer 相同的 fold-hash 算法）
+     * 用于释放库存时定位预扣记录
+     */
+    private static long derivePseudoOrderId(String orderNo) {
+        long pseudoOrderId = 0;
+        for (int i = 0; i < orderNo.length(); i++) {
+            pseudoOrderId = pseudoOrderId * 31 + orderNo.charAt(i);
+        }
+        return pseudoOrderId;
     }
 
     /**
@@ -454,9 +508,10 @@ public class OrderService {
         // Event Sourcing: 追加完成事件并更新状态
         orderEventService.appendEvent(order, OrderEventService.EVENT_COMPLETED,
                 Map.of("completeTime", LocalDateTime.now().toString()));
+        orderMapper.setCompletedAt(orderId, userId);
 
         takeSnapshot(orderId, userId, "COMPLETED");
-        stringRedisTemplate.delete("order:info:" + orderId);
+        stringRedisTemplate.delete("myxhs:order:info:" + orderId);
         log.info("[订单] 确认收货: userId={}, orderId={}", userId, orderId);
     }
 
@@ -486,9 +541,10 @@ public class OrderService {
                 Map.of("deliveredTime", LocalDateTime.now().toString(),
                        "logisticsCompany", logisticsCompany != null ? logisticsCompany : "",
                        "trackingNo", trackingNo != null ? trackingNo : ""));
+        orderMapper.setDeliveredAt(orderId, userId);
 
         takeSnapshot(orderId, userId, "DELIVERED");
-        stringRedisTemplate.delete("order:info:" + orderId);
+        stringRedisTemplate.delete("myxhs:order:info:" + orderId);
         log.info("[订单] 发货成功: userId={}, orderId={}, logisticsCompany={}, trackingNo={}",
                 userId, orderId, logisticsCompany, trackingNo);
     }
@@ -537,11 +593,39 @@ public class OrderService {
         // Event Sourcing: 追加支付事件并更新状态
         orderEventService.appendEvent(order, OrderEventService.EVENT_PAID,
                 Map.of("paidTime", LocalDateTime.now().toString()));
+        orderMapper.setPaidAt(orderId, userId);
+
+        // 确认库存扣减（预扣 → 正式扣减，异步不阻塞主链路，失败由补偿+对账兜底）
+        confirmInventoryDeduct(orderId, order.getOrderNo(), userId);
 
         takeSnapshot(orderId, userId, "PAID");
-        stringRedisTemplate.delete("order:info:" + orderId);
+        stringRedisTemplate.delete("myxhs:order:info:" + orderId);
         log.info("[订单] 支付成功: orderId={}", orderId);
         return true;
+    }
+
+    /**
+     * 确认库存扣减（支付成功后调用）
+     * <p>
+     * 将预扣的 locked_stock 正式扣除。使用 fold-hash(orderNo) 派生的 pseudoOrderId 定位预扣记录。
+     * 失败时记录日志，由库存对账任务兜底（Redis 预扣记录 30min 过期 + MySQL locked 对账修复）。
+     * </p>
+     */
+    private void confirmInventoryDeduct(Long orderId, String orderNo, Long userId) {
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try {
+                long pseudoOrderId = derivePseudoOrderId(orderNo);
+                Map<String, Object> request = Map.of("orderId", pseudoOrderId);
+                R<Void> result = inventoryFeignClient.confirmDeduct(request);
+                if (result == null || !result.isSuccess()) {
+                    log.error("[订单] 确认库存扣减失败，依赖对账兜底: orderId={}, result={}", orderId, result);
+                } else {
+                    log.info("[订单] 确认库存扣减成功: orderId={}", orderId);
+                }
+            } catch (Exception e) {
+                log.error("[订单] 确认库存扣减异常，依赖对账兜底: orderId={}", orderId, e);
+            }
+        });
     }
 
     // ==================== 超时关单 ====================
@@ -567,14 +651,17 @@ public class OrderService {
             orderEventService.appendEvent(order, OrderEventService.EVENT_TIMEOUT_CANCELLED,
                     Map.of("cancelReason", "超时未支付", "cancelTime", LocalDateTime.now().toString()));
 
+            // appendEvent 只设 status=4，补设 cancelled_at
+            orderMapper.setCancelledAt(orderId, userId);
+
             // 联动释放库存（与 cancelOrder 复用同一逻辑）
-            releaseInventory(orderId, userId);
+            releaseInventory(orderId, order.getOrderNo(), userId);
 
             // 联动退还优惠券（与 cancelOrder 复用同一逻辑）
             returnCouponIfUsed(order);
 
             takeSnapshot(orderId, userId, "TIMEOUT_CANCELLED");
-            stringRedisTemplate.delete("order:info:" + orderId);
+            stringRedisTemplate.delete("myxhs:order:info:" + orderId);
             log.info("[订单] 超时关单: orderId={}, orderNo={}", orderId, order.getOrderNo());
 
         } catch (Exception e) {
@@ -615,7 +702,7 @@ public class OrderService {
                                     .setHeader("orderNo", orderNo)
                                     .setHeader("userId", userId.toString())
                                     .build()),
-                    3000, 16); // delayLevel=16 = 30 分钟
+                    3000, orderCloseDelayLevel); // 默认16=30min, 测试环境可设5=1min
             if (result.getSendStatus() != SendStatus.SEND_OK) {
                 log.warn("[订单] 延时关单消息发送状态异常: orderId={}, status={}",
                         orderId, result.getSendStatus());
@@ -682,15 +769,37 @@ public class OrderService {
     }
 
     /**
-     * 计算订单总金额（MVP Mock：每个 SKU 单价 99 元）
+     * 计算订单总金额（使用真实 SKU 价格）
      */
-    private BigDecimal calculateTotalAmount(List<OrderCreateRequest.SkuItem> skuItems) {
+    private BigDecimal calculateTotalAmount(List<OrderCreateRequest.SkuItem> skuItems,
+                                            Map<Long, SkuInfoDTO> skuMap) {
         BigDecimal total = BigDecimal.ZERO;
         for (OrderCreateRequest.SkuItem item : skuItems) {
-            total = total.add(new BigDecimal("99.00").multiply(
-                    BigDecimal.valueOf(item.getQuantity())));
+            SkuInfoDTO sku = skuMap.get(item.getSkuId());
+            BigDecimal price = sku != null ? sku.getPrice() : BigDecimal.ZERO;
+            total = total.add(price.multiply(BigDecimal.valueOf(item.getQuantity())));
         }
         return total;
+    }
+
+    /**
+     * 计算优惠券折扣金额（调用 coupon 服务实时计算，替代 Mock）
+     */
+    private BigDecimal calculateCouponDiscount(Long userId, OrderCreateRequest request,
+                                                BigDecimal totalAmount) {
+        if (request.getCouponId() == null) {
+            return BigDecimal.ZERO;
+        }
+        try {
+            R<BigDecimal> result = couponFeignClient.getCouponDiscount(
+                    userId, request.getCouponId(), totalAmount);
+            if (result != null && result.isSuccess() && result.getData() != null) {
+                return result.getData();
+            }
+        } catch (Exception e) {
+            log.warn("[订单] 查询券折扣失败(降级为0): couponId={}", request.getCouponId(), e);
+        }
+        return BigDecimal.ZERO;
     }
 
     private OrderVO buildOrderVO(Order order) {
@@ -746,12 +855,25 @@ public class OrderService {
      * 场景：客服通过订单号查询、支付回调通过订单号定位订单
      * </p>
      */
-    public OrderVO getOrderByOrderNo(String orderNo) {
+    public OrderVO getOrderByOrderNo(Long requestUserId, String orderNo) {
         OrderNoMapping mapping = orderNoMappingRepository.selectByOrderNo(orderNo);
         if (mapping == null) {
             throw new BizException(ResultCode.ORDER_NOT_FOUND, "订单不存在");
         }
+        if (!requestUserId.equals(mapping.getUserId())) {
+            throw new BizException(ResultCode.FORBIDDEN, "无权查看该订单");
+        }
         return getOrderDetail(mapping.getUserId(), mapping.getOrderId());
+    }
+
+    public boolean isOrderOwner(Long userId, Long orderId) {
+        // 使用带 userId 的查询确保 ShardingSphere 路由到正确分片
+        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<Order>()
+                .eq(Order::getId, orderId)
+                .eq(Order::getUserId, userId)
+                .eq(Order::getDeleted, 0);
+        Order order = orderMapper.selectOne(wrapper);
+        return order != null;
     }
 
     /**
@@ -801,13 +923,13 @@ public class OrderService {
                 Map.of("refundTime", LocalDateTime.now().toString()));
 
         // 4. 释放库存
-        releaseInventory(orderId, userId);
+        releaseInventory(orderId, order.getOrderNo(), userId);
 
         // 5. 退还优惠券
         returnCouponIfUsed(order);
 
         takeSnapshot(orderId, userId, "REFUNDED");
-        stringRedisTemplate.delete("order:info:" + orderId);
+        stringRedisTemplate.delete("myxhs:order:info:" + orderId);
         log.info("[订单] 退款成功: orderId={}", orderId);
     }
 
@@ -844,7 +966,7 @@ public class OrderService {
                 Map.of("cancelReason", "支付失败", "cancelTime", LocalDateTime.now().toString()));
 
         // 并行释放库存 + 退还优惠券
-        CompletableFuture<Void> releaseFuture = CompletableFuture.runAsync(() -> releaseInventory(orderId, userId));
+        CompletableFuture<Void> releaseFuture = CompletableFuture.runAsync(() -> releaseInventory(orderId, order.getOrderNo(), userId));
         CompletableFuture<Void> returnFuture = CompletableFuture.runAsync(() -> returnCouponIfUsed(order));
         try {
             CompletableFuture.allOf(releaseFuture, returnFuture).get(3, TimeUnit.SECONDS);
@@ -853,7 +975,7 @@ public class OrderService {
         }
 
         takeSnapshot(orderId, userId, "CANCELLED");
-        stringRedisTemplate.delete("order:info:" + orderId);
+        stringRedisTemplate.delete("myxhs:order:info:" + orderId);
         log.info("[订单] 支付失败已自动取消: orderId={}", orderId);
     }
 

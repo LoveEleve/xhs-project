@@ -56,10 +56,14 @@ public interface AnalyticsFeignClient {
                                    @RequestParam("noteId") Long noteId);
 
     /**
-     * 获取粉丝数（用于判断是否大V）
+     * 获取粉丝数
      */
-    @GetMapping("/api/social/follower/{userId}")
-    R<Map<String, Object>> getFollowerCount(@PathVariable("userId") Long userId,
-                                            @RequestParam("page") int page,
-                                            @RequestParam("size") int size);
+    @GetMapping("/api/social/follower/count/{userId}")
+    R<Long> getFollowerCount(@PathVariable("userId") Long userId);
+
+    /**
+     * 获取关注数
+     */
+    @GetMapping("/api/social/following/count/{userId}")
+    R<Long> getFollowingCount(@PathVariable("userId") Long userId);
 }

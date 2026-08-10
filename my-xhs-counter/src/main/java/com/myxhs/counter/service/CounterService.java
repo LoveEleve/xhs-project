@@ -1,6 +1,5 @@
 package com.myxhs.counter.service;
 
-import com.myxhs.common.cache.RedisOperator;
 import com.myxhs.common.constants.RedisKeyConstants;
 import com.myxhs.counter.buffer.CounterBuffer;
 import com.myxhs.counter.dto.CounterBatchRequest;
@@ -36,7 +35,6 @@ import java.util.*;
 @RequiredArgsConstructor
 public class CounterService {
 
-    private final RedisOperator redisOperator;
     private final StringRedisTemplate stringRedisTemplate;
     private final CounterBuffer counterBuffer;
     private final CounterMapper counterMapper;
@@ -89,6 +87,47 @@ public class CounterService {
 
     /** MQ 去重 TTL（2 小时，覆盖 MQ 最大重试窗口） */
     private static final long DEDUP_TTL_SECONDS = Duration.ofHours(2).toSeconds();
+
+    /**
+     * 【修复H2】Set-based Like/Unlike 原子 Lua 脚本 — 解决 MQ 乱序计数虚增
+     * <p>
+     * KEYS[1]: dedup key（myxhs:counter:dedup:{msgId}）
+     * KEYS[2]: like set key（myxhs:like:set:{targetType}:{targetId}）
+     * KEYS[3]: counter key（myxhs:counter:{targetType}:{targetId}:{countType}）
+     * ARGV[1]: member（userId — SADD/SREM 的目标元素）
+     * ARGV[2]: action（"ADD" 或 "REMOVE"）
+     * ARGV[3]: dedup TTL
+     * <p>
+     * 返回 List [status, count, changed]：
+     *   status: 1=执行成功, 0=已去重（跳过）
+     *   count: 当前 Set 的 SCARD
+     *   changed: SADD/SREM 的实际变更量（1=新增/删除, 0=成员已存在/不存在）
+     * <p>
+     * 为什么用 Set 替代 delta 计数：
+     * - delta 方式下，UNLIKE 先到、LIKE 后到 → 计数值 +1（实际应为 0）
+     * - Set 方式下，SADD/SREM 天然幂等，乱序到达不影响最终 SCARD 结果
+     * </p>
+     */
+    private static final org.springframework.data.redis.core.script.DefaultRedisScript<List> LIKE_SET_SCRIPT;
+    static {
+        LIKE_SET_SCRIPT = new org.springframework.data.redis.core.script.DefaultRedisScript<>(
+                "if redis.call('EXISTS', KEYS[1]) == 1 then return {0, 0, 0} end " +
+                "redis.call('SET', KEYS[1], '1', 'EX', ARGV[3]) " +
+                "local changed " +
+                "if ARGV[2] == 'ADD' then " +
+                "  changed = redis.call('SADD', KEYS[2], ARGV[1]) " +
+                "else " +
+                "  changed = redis.call('SREM', KEYS[2], ARGV[1]) " +
+                "end " +
+                "local count = redis.call('SCARD', KEYS[2]) " +
+                "redis.call('SET', KEYS[3], count) " +
+                "return {1, count, changed}",  // changed = 0/1，反映 Set 的真实变更量
+                List.class);
+    }
+
+    /** Like Set Key 前缀 */
+    // counter内部的like Set(优化展示缓存), 与analytics权威Set(myxhs:like:note:/myxhs:like:comment:)独立维护
+    private static final String LIKE_SET_PREFIX = "myxhs:like:set:";
 
     // ==================== 写操作 ====================
 
@@ -212,9 +251,134 @@ public class CounterService {
         return true;
     }
 
+    /**
+     * 【修复H2】Set-based Like/Unlike 计数（带 MQ 去重）
+     * <p>
+     * 使用 Redis Set 替代增量计数，SADD/SREM 天然幂等，乱序到达不影响最终计数。
+     * </p>
+     *
+     * @param msgId     MQ 消息 ID（用作去重 Key）
+     * @param targetType 目标类型（1-笔记 3-评论）
+     * @param targetId   目标ID（noteId 或 commentId）
+     * @param userId     操作用户ID
+     * @param isLike     true=点赞, false=取消点赞
+     * @return true=执行成功, false=重复消息
+     */
+    public boolean setBasedLikeWithDedup(String msgId, int targetType, long targetId,
+                                          Long userId, boolean isLike) {
+        String dedupKey = buildDedupKey(msgId);
+        String likeSetKey = LIKE_SET_PREFIX + targetType + ":" + targetId;
+        String counterKey = buildRedisKey(targetType, targetId, 1); // countType=1 LIKE
+
+        // 懒迁移：counter Set 为空但 counter 值 > 0（有历史数据），从 analytics 权威 Set 同步
+        boolean migrated = tryLazyMigrateLikeSet(targetType, targetId, likeSetKey, counterKey);
+
+        @SuppressWarnings("unchecked")
+        List<Long> result = stringRedisTemplate.execute(
+                LIKE_SET_SCRIPT,
+                List.of(dedupKey, likeSetKey, counterKey),
+                String.valueOf(userId), isLike ? "ADD" : "REMOVE",
+                String.valueOf(DEDUP_TTL_SECONDS));
+
+        if (result == null || result.isEmpty()) {
+            throw new RuntimeException("LikeSet Lua 脚本返回异常: null or empty");
+        }
+
+        long status = result.get(0);
+        if (status == 0) {
+            log.info("[计数-LikeSet] 重复消息跳过: msgId={}, targetType={}, targetId={}, userId={}",
+                    msgId, targetType, targetId, userId);
+            return false;
+        }
+
+        long newCount = result.get(1);
+        long changed = result.get(2);
+        // 写入 Buffer（delta = 0/±1，反映 Set 的真实变更量，changed=0表示SADD/SREM无实际变更）
+        if (changed != 0) {
+            counterBuffer.add(targetType, targetId, 1, isLike ? changed : -changed);
+        }
+        log.info("[计数-LikeSet] {}: msgId={}, targetType={}, targetId={}, userId={}, count={}, changed={}",
+                isLike ? "点赞" : "取消点赞", msgId, targetType, targetId, userId, newCount, changed);
+        return true;
+    }
+
+    /**
+     * 懒迁移：将 analytics 权威点赞 Set 的成员同步到 counter Set
+     * <p>触发条件：counter Set 为空但 counter 值 > 0（有历史数据未被 Set-based 计数覆盖）</p>
+     */
+    private boolean tryLazyMigrateLikeSet(int targetType, long targetId, String likeSetKey, String counterKey) {
+        Long setSize = stringRedisTemplate.opsForSet().size(likeSetKey);
+        if (setSize != null && setSize > 0) return false; // 已迁移
+
+        String counterValue = stringRedisTemplate.opsForValue().get(counterKey);
+        if (counterValue == null || Long.parseLong(counterValue) == 0) return false; // 无历史数据
+
+        // 构建 analytics 权威 Set key
+        String analyticsKey = RedisKeyConstants.LIKE_SET + (targetType == 1 ? "note:" : "comment:") + targetId;
+        java.util.Set<String> members = stringRedisTemplate.opsForSet().members(analyticsKey);
+        if (members == null || members.isEmpty()) return false;
+
+        // 批量迁移
+        String[] memberArray = members.toArray(new String[0]);
+        stringRedisTemplate.opsForSet().add(likeSetKey, memberArray);
+        // 用 SCARD 覆盖 counter 值
+        Long actualCount = stringRedisTemplate.opsForSet().size(likeSetKey);
+        if (actualCount != null) {
+            stringRedisTemplate.opsForValue().set(counterKey, String.valueOf(actualCount));
+        }
+        log.info("[计数-LikeSet] 懒迁移完成: targetType={}, targetId={}, members={}, count={}",
+                targetType, targetId, memberArray.length, actualCount);
+        return true;
+    }
+
     /** 构建 MQ 消息去重 Key */
     private String buildDedupKey(String msgId) {
         return RedisKeyConstants.COUNTER_DEDUP + msgId;
+    }
+
+    /**
+     * 从 analytics 权威 Set 对账修正 counter LIKE 计数
+     * <p>analytics 的 myxhs:like:note:{noteId} 是业务权威数据源，
+     * counter 的 like:set:{type}:{id} 是优化展示缓存——两者漂移时以 analytics 为准</p>
+     * @return 修复的计数条数
+     */
+    public int reconcileLikeFromAnalytics() {
+        int fixed = 0;
+        // 覆盖笔记和评论两种 like 计数：targetType=1(note) targetType=3(comment)
+        for (int targetType : new int[]{1, 3}) {
+            String typeName = targetType == 1 ? "note" : "comment";
+            String counterPrefix = RedisKeyConstants.COUNTER + targetType + ":";
+            // 扫描所有 counter key（like countType=1），与 analytics SCARD 对比
+            var cursor = stringRedisTemplate.scan(
+                    org.springframework.data.redis.core.ScanOptions.scanOptions()
+                            .match(counterPrefix + "*" + ":1")
+                            .count(100).build());
+            while (cursor.hasNext()) {
+                String counterKey = cursor.next();
+                try {
+                    String val = stringRedisTemplate.opsForValue().get(counterKey);
+                    if (val == null) continue;
+                    long counterValue = Long.parseLong(val);
+                    String[] parts = counterKey.split(":");
+                    if (parts.length < 4) continue;
+                    String targetId = parts[3];
+
+                    // 读 analytics 权威 Set SCARD
+                    String analyticsKey = RedisKeyConstants.LIKE_SET + typeName + ":" + targetId;
+                    Long analyticsCount = stringRedisTemplate.opsForSet().size(analyticsKey);
+                    if (analyticsCount != null && analyticsCount != counterValue) {
+                        stringRedisTemplate.opsForValue().set(counterKey, String.valueOf(analyticsCount));
+                        log.warn("[计数-对账] analytics权威修正: key={}, counter={}→analytics={}",
+                                counterKey, counterValue, analyticsCount);
+                        fixed++;
+                    }
+                } catch (Exception e) {
+                    log.warn("[计数-对账] 跳过无法解析的key: {}", counterKey);
+                }
+            }
+            try { cursor.close(); } catch (Exception e) { /* ignore */ }
+        }
+        return fixed;
     }
 
     // ==================== 读操作 ====================
@@ -387,6 +551,13 @@ public class CounterService {
                 }
             }
         } while (batch.size() == batchSize);
+
+        // 从 analytics 权威 Set 修正 like 计数（counter 的 like:set 与 analytics 的 like:note 可能漂移）
+        int likeFixed = reconcileLikeFromAnalytics();
+        if (likeFixed > 0) {
+            log.info("[对账修复] analytics权威修正: {} 条", likeFixed);
+            fixedCount += likeFixed;
+        }
 
         log.info("[对账修复] 完成，修复 {} 条", fixedCount);
         return fixedCount;

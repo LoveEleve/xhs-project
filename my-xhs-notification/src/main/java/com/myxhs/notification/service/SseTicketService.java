@@ -30,7 +30,7 @@ public class SseTicketService {
 
     private final StringRedisTemplate stringRedisTemplate;
 
-    private static final String TICKET_KEY_PREFIX = "notify:sse:ticket:";
+    private static final String TICKET_KEY_PREFIX = "myxhs:notification:sse:ticket:";
     private static final Duration TICKET_TTL = Duration.ofSeconds(30);
 
     /**
@@ -63,6 +63,6 @@ public class SseTicketService {
         if (userIdStr == null) {
             return null; // Ticket 不存在或已使用
         }
-        return Long.parseLong(userIdStr);
+        try { return Long.parseLong(userIdStr); } catch (NumberFormatException e) { log.warn("[SSE] Redis脏值: userIdStr={}", userIdStr, e); return null; }
     }
 }

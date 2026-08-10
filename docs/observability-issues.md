@@ -28,9 +28,11 @@ traceId: 3696c8ed7b034096be6f2a345387e8cc.240.17855678610420037
 ### Gateway 入口（webflux 兜底）
 - `apm-spring-webflux-6.x-plugin` 移入 plugins → `[Entry] spring-webflux my-xhs-gateway` ✅
 
-### 遗留：Gateway 转发（route 级）链路
-- SCG 4.1.2 无 `responseCacheSizeWeigher`（4.2+ 才有），gateway-4.x 插件 witness 盲区
-- 对方已代报 apache/skywalking-java issue（B-1 方案）
+### ~~遗留：Gateway 转发（route 级）链路~~ ✅ 已解决（2026-08-01）
+- **旧描述（错误）**：SCG 4.1.2 无 `responseCacheSizeWeigher`（4.2+ 才有），gateway-4.x 插件 witness 盲区
+- **真正根因**：`apm-spring-cloud-gateway-4.x-plugin-9.6.0.jar` 在 `optional-plugins` 目录没移到 `plugins`，agent 没加载。插件 `skywalking-plugin.def` 里有 `v412x` 子包专门支持 SCG 4.1.2，根本不是 witness 盲区
+- **修复**：`cp optional-plugins/apm-spring-cloud-gateway-4.x-plugin-9.6.0.jar plugins/` + 重启 gateway
+- **验证**：gateway `/api/user/1/info` segment trace_id=`42508a52dda14a6abc98536a9f16b69f`，user `GET:/api/user/{userId}/info` segment 同 trace_id，sw8 传播成功
 
 ### Prometheus / Grafana / Logstash→ES
 - Prometheus 16/16 UP、Grafana 4 面板 + ES 日志、traceId 精确检索
@@ -61,9 +63,21 @@ traceId: 3696c8ed7b034096be6f2a345387e8cc.240.17855678610420037
 
 ---
 
-## 问题 3：Kibana 未部署 → 已用 Grafana 替代 ✅
+## 问题 3：Kibana ~~未部署~~ → 完整 Elastic Stack ✅（2026-08-02）
 
-**状态**：Kibana 无法部署，但**不需要它**——Grafana 已有 Elasticsearch-Logs 数据源。
+**状态**：Kibana 之前因 CVE-2024-4367（PDF.js）删除，用 Grafana 替代。2026-08-02 重新部署 Kibana + 新增 Filebeat，现在为完整 Elastic Stack 8.19.19。
+
+**完整日志链路**：
+```
+服务 logback → Filebeat（轻量采集）→ Logstash（grok 提取 traceId）→ ES 19200（存储）→ Kibana（查询+可视化）
+```
+
+**容器状态**（均 Up 42h+）：
+- `my-xhs-kibana`（docker.elastic.co/kibana/kibana:8.19.19）
+- `my-xhs-filebeat`（docker.elastic.co/beats/filebeat:8.19.19）← 新增
+- `my-xhs-logstash`（docker.elastic.co/logstash/logstash:8.19.19）
+
+**Grafana ES 数据源**：已配 basicAuth + 密码，可继续作为补充可视化入口。
 
 **发现的问题**：Grafana ES 数据源开了 basicAuth（用户名 elastic）但**未存密码**，查询报 "Authentication to data source failed"。
 
@@ -75,7 +89,7 @@ Grafana 代理查询 ES: myxhs-logs-2026.07.31 → 10000 条命中 ✅
 按 traceId 查询: traceId=0d0d58cf... → 1 条命中 ✅
 ```
 
-**结论**：日志查询用 Grafana（Logs 面板）替代 Kibana 即可，无需部署 Kibana。
+**结论**：日志查询用 Kibana（完整 ELK），Grafana 作为补充可视化入口。
 
 ---
 

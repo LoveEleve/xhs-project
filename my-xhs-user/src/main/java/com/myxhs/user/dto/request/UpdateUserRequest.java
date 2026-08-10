@@ -38,4 +38,9 @@ public class UpdateUserRequest {
 
     @Size(max = 256, message = "个性签名最长256位")
     private String signature;
+
+    public boolean hasNoFields() {
+        return nickname == null && avatar == null && gender == null
+                && birthday == null && phone == null && email == null && signature == null;
+    }
 }

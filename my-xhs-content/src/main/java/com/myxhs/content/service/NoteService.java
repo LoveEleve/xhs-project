@@ -1,6 +1,7 @@
 package com.myxhs.content.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -25,10 +26,12 @@ import com.myxhs.content.enums.NoteStatus;
 import com.myxhs.content.filter.DFAFilter;
 import com.myxhs.content.mapper.LocalMessageMapper;
 import com.myxhs.content.mapper.NoteMapper;
+import com.myxhs.content.mapper.CommentMapper;
 import com.myxhs.common.trace.MqTraceHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
+import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -36,6 +39,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.util.StringUtils;
 
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -53,6 +58,7 @@ import java.util.stream.Collectors;
 public class NoteService {
 
     private final NoteMapper noteMapper;
+    private final CommentMapper commentMapper;
     private final LocalMessageMapper localMessageMapper;
     private final DFAFilter dfaFilter;
     private final IdGeneratorUtil idGeneratorUtil;
@@ -102,7 +108,7 @@ public class NoteService {
 
         LocalMessage localMsg = new LocalMessage();
         localMsg.setTopic("FEED_TOPIC");
-        localMsg.setBody(toJson(event));
+        localMsg.setBody(toJson(event));  // localMsgId 此时为 null，补偿 job 读取时补丁
         localMsg.setStatus(0); // 待发送
         localMsg.setRetryCount(0);
         localMsg.setCreatedAt(java.time.LocalDateTime.now());
@@ -182,10 +188,7 @@ public class NoteService {
 
     /**
      * 编辑笔记
-     * <p>
-     * 仅允许编辑草稿和已发布的笔记。
-     * 已发布的笔记编辑后需重新进行敏感词检测。
-     * </p>
+     * <p>使用 LambdaUpdateWrapper 按字段更新，避免 read-then-write 丢失更新</p>
      */
     @Transactional(rollbackFor = Exception.class)
     public void updateNote(Long userId, Long noteId, NoteUpdateRequest request) {
@@ -205,30 +208,44 @@ public class NoteService {
             checkSensitiveWords(newTitle, newContent);
         }
 
-        // 4. 更新字段
+        // 4. LambdaUpdateWrapper 按字段更新，避免并发丢失更新
+        LambdaUpdateWrapper<Note> wrapper = new LambdaUpdateWrapper<>();
+        wrapper.eq(Note::getId, noteId);
+        boolean hasUpdate = false;
         if (StringUtils.hasText(request.getTitle())) {
-            note.setTitle(request.getTitle());
+            wrapper.set(Note::getTitle, request.getTitle());
+            hasUpdate = true;
         }
         if (request.getContent() != null) {
-            note.setContent(request.getContent());
+            wrapper.set(Note::getContent, request.getContent());
+            hasUpdate = true;
         }
         if (request.getImages() != null) {
-            note.setImages(toJson(request.getImages()));
+            wrapper.set(Note::getImages, toJson(request.getImages()));
+            hasUpdate = true;
         }
         if (request.getVideoUrl() != null) {
-            note.setVideoUrl(request.getVideoUrl());
+            wrapper.set(Note::getVideoUrl, request.getVideoUrl());
+            hasUpdate = true;
         }
         if (request.getCoverUrl() != null) {
-            note.setCoverUrl(request.getCoverUrl());
+            wrapper.set(Note::getCoverUrl, request.getCoverUrl());
+            hasUpdate = true;
         }
         if (request.getTopicIds() != null) {
-            note.setTopicIds(toJson(request.getTopicIds()));
+            wrapper.set(Note::getTopicIds, toJson(request.getTopicIds()));
+            hasUpdate = true;
         }
         if (request.getTags() != null) {
-            note.setTags(toJson(request.getTags()));
+            wrapper.set(Note::getTags, toJson(request.getTags()));
+            hasUpdate = true;
+        }
+        if (hasUpdate) {
+            // update(null,wrapper) 不触发 MetaObjectHandler auto-fill，需显式设置 updatedAt
+            wrapper.set(Note::getUpdatedAt, java.time.LocalDateTime.now());
+            noteMapper.update(null, wrapper);
         }
 
-        noteMapper.updateById(note);
         log.info("[笔记] 编辑成功: noteId={}, userId={}", noteId, userId);
 
         // 5. 事务提交后清除缓存
@@ -253,18 +270,28 @@ public class NoteService {
         // 1. 查询笔记并校验权限
         Note note = getAndCheckOwner(noteId, userId);
 
-        // 2. 逻辑删除
-        noteMapper.deleteById(noteId);
-        log.info("[笔记] 删除成功: noteId={}, userId={}", noteId, userId);
+        // 2. 级联逻辑删除评论（避免孤儿评论可公开查询）——用 delete 返回值替代 selectCount 避免 TOCTOU
+        int actualDeleted = commentMapper.delete(new LambdaQueryWrapper<com.myxhs.content.entity.Comment>()
+                .eq(com.myxhs.content.entity.Comment::getNoteId, noteId));
+        final long commentCount = actualDeleted;
 
-        // 3. 事务提交后清除缓存（统一使用延迟双删）
+        // 4. 逻辑删除笔记
+        noteMapper.deleteById(noteId);
+        log.info("[笔记] 删除成功: noteId={}, userId={}, 级联删除{}条评论", noteId, userId, commentCount);
+
+        // 5. 事务提交后清除缓存 + 补偿 counter 服务 + 通知 Feed 清理
         final Long finalNoteId = noteId;
         final Long finalUserId = userId;
+        final long finalCommentCount = commentCount;
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.NOTE_DETAIL + finalNoteId);
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.NOTE_LIST_USER + finalUserId);
+                // 补偿 counter：发送单条 UNCOMMENT 事件（带计数），避免循环发送 N 条独立 MQ
+                sendCounterEvent(finalNoteId, finalUserId, "UNCOMMENT", finalCommentCount);
+                // 通知 Feed 流清理已删除的笔记
+                sendCounterEvent(finalNoteId, finalUserId, "NOTE_DELETE", 0);
             }
         });
     }
@@ -303,6 +330,9 @@ public class NoteService {
             throw new BizException(ResultCode.NOTE_NOT_FOUND);
         }
 
+        // 浏览计数：每次请求都发送 VIEW 事件到 counter 服务（缓存命中时也计数）
+        sendCounterEvent(noteId, null, "VIEW", 0);
+
         return toDetailVO(note);
     }
 
@@ -312,8 +342,8 @@ public class NoteService {
      * 获取用户笔记列表（公开接口，仅已发布）
      */
     public PageResult<NoteItemVO> getUserNotes(Long userId, int pageNum, int pageSize) {
-        pageSize = Math.min(pageSize, MAX_PAGE_SIZE);
-        Page<Note> page = new Page<>(pageNum, pageSize);
+        pageSize = Math.max(1, Math.min(pageSize, MAX_PAGE_SIZE));
+        Page<Note> page = new Page<>(Math.max(1, pageNum), pageSize);
         LambdaQueryWrapper<Note> wrapper = new LambdaQueryWrapper<Note>()
                 .eq(Note::getUserId, userId)
                 .eq(Note::getStatus, NoteStatus.PUBLISHED.getCode())
@@ -332,8 +362,8 @@ public class NoteService {
      * 获取当前用户的所有笔记（包含草稿、已下架等，需登录）
      */
     public PageResult<NoteItemVO> getMyNotes(Long userId, Integer status, int pageNum, int pageSize) {
-        pageSize = Math.min(pageSize, MAX_PAGE_SIZE);
-        Page<Note> page = new Page<>(pageNum, pageSize);
+        pageSize = Math.max(1, Math.min(pageSize, MAX_PAGE_SIZE));
+        Page<Note> page = new Page<>(Math.max(1, pageNum), pageSize);
         LambdaQueryWrapper<Note> wrapper = new LambdaQueryWrapper<Note>()
                 .eq(Note::getUserId, userId)
                 .eq(status != null, Note::getStatus, status)
@@ -357,19 +387,23 @@ public class NoteService {
     public void publishDraft(Long userId, Long noteId) {
         Note note = getAndCheckOwner(noteId, userId);
 
+        // 仅 DRAFT 状态可由作者发布；AUDITING 需经审核后自动发布
         NoteStatus currentStatus = NoteStatus.of(note.getStatus());
-        if (!currentStatus.canTransitTo(NoteStatus.PUBLISHED)) {
+        if (!currentStatus.canTransitTo(NoteStatus.PUBLISHED) || NoteStatus.AUDITING.equals(currentStatus)) {
             throw new BizException(ResultCode.NOTE_STATUS_ERROR,
-                    "当前状态[" + currentStatus.getDesc() + "]不允许发布");
+                    "仅草稿状态可发布，当前状态[" + currentStatus.getDesc() + "]不允许");
         }
 
         // 敏感词检测
         checkSensitiveWords(note.getTitle(), note.getContent());
 
-        // 更新状态
-        note.setStatus(NoteStatus.PUBLISHED.getCode());
-        note.setAuditStatus(AuditStatus.APPROVED.getCode());
-        noteMapper.updateById(note);
+        // LambdaUpdateWrapper 按字段更新状态，避免全量写覆盖并发修改
+        LambdaUpdateWrapper<Note> wrapper = new LambdaUpdateWrapper<Note>()
+                .eq(Note::getId, noteId)
+                .set(Note::getStatus, NoteStatus.PUBLISHED.getCode())
+                .set(Note::getAuditStatus, AuditStatus.APPROVED.getCode())
+                .set(Note::getUpdatedAt, java.time.LocalDateTime.now());
+        noteMapper.update(null, wrapper);
 
         log.info("[笔记] 草稿发布成功: noteId={}, userId={}", noteId, userId);
 
@@ -387,6 +421,8 @@ public class NoteService {
         localMsg.setRetryCount(0);
         localMsg.setCreatedAt(java.time.LocalDateTime.now());
         localMessageMapper.insert(localMsg);
+
+        draftEvent.setLocalMsgId(localMsg.getId());  // 对齐 publishNote：传递 localMsgId
 
         final Long draftLocalMsgId = localMsg.getId();
 
@@ -427,8 +463,9 @@ public class NoteService {
     /**
      * 分享笔记
      * <p>
-     * 使用 Redis Hash 递增笔记的分享计数。
-     * Key 格式：myxhs:note:count:{noteId}，field=share
+     * 通过 MQ 事件通知 counter 服务更新分享计数（countType=SHARE），
+     * 由 counter 服务统一管理计数（对齐 COMMENT/VIEW 的 MQ 模式），
+     * 避免直接 Redis hIncrement 与 MQ 双写导致计数翻倍。
      * </p>
      */
     public void shareNote(Long noteId, Long userId) {
@@ -438,10 +475,40 @@ public class NoteService {
             throw new BizException(ResultCode.NOTE_NOT_FOUND);
         }
 
-        String countKey = RedisKeyConstants.NOTE_COUNT + noteId;
-        Long shareCount = cacheHelper.getRedisOperator().hIncrement(countKey, "share", 1);
+        // 通过 MQ 通知 counter 服务更新 share 计数（对齐 COMMENT/VIEW 模式）
+        sendCounterEvent(noteId, userId, "SHARE", 0);
 
-        log.info("[笔记] 分享成功: noteId={}, userId={}, shareCount={}", noteId, userId, shareCount);
+        log.info("[笔记] 分享成功: noteId={}, userId={}", noteId, userId);
+    }
+
+    /**
+     * 发送计数事件到 MQ
+     * <p>用于分享(SHARE)/取消评论(UNCOMMENT)/浏览(VIEW)/删除笔记(NOTE_DELETE)等事件的计数更新。</p>
+     */
+    private void sendCounterEvent(Long noteId, Long userId, String action, long count) {
+        try {
+            Map<String, Object> event = new HashMap<>();
+            event.put("noteId", noteId);
+            event.put("userId", userId);
+            if (count > 0) {
+                event.put("count", count);
+            }
+            rocketMQTemplate.asyncSend(
+                    "SOCIAL_TOPIC:" + action,
+                    MqTraceHelper.wrapWithTraceContext(MessageBuilder.withPayload(event).build()),
+                    new org.apache.rocketmq.client.producer.SendCallback() {
+                        @Override
+                        public void onSuccess(org.apache.rocketmq.client.producer.SendResult sendResult) {
+                            log.debug("[计数] {}事件发送成功: noteId={}", action, noteId);
+                        }
+                        @Override
+                        public void onException(Throwable e) {
+                            log.warn("[计数] {}事件发送失败: noteId={}", action, noteId, e);
+                        }
+                    });
+        } catch (Exception e) {
+            log.error("[计数] {}事件序列化失败: noteId={}", action, noteId, e);
+        }
     }
 
     // ==================== 私有方法 ====================
@@ -560,6 +627,7 @@ public class NoteService {
             return objectMapper.readValue(json, typeRef);
         } catch (JsonProcessingException e) {
             log.error("[JSON] 反序列化失败: {}", json, e);
+            businessMetrics.recordFeedPush("json_deser_fail");
             return null;
         }
     }

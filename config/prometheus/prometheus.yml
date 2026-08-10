@@ -18,63 +18,63 @@ scrape_configs:
     scrape_interval: 10s
     static_configs:
       # 网关服务
-      - targets: ['21.130.247.89:19000']
+      - targets: ['21.214.97.212:19000']
         labels:
           service: 'my-xhs-gateway'
       # 用户服务
-      - targets: ['21.130.247.89:19001']
+      - targets: ['21.214.97.212:19001']
         labels:
           service: 'my-xhs-user'
       # 内容服务
-      - targets: ['21.130.247.89:19002']
+      - targets: ['21.214.97.212:19002']
         labels:
           service: 'my-xhs-content'
       # 互动分析服务
-      - targets: ['21.130.247.89:19003']
+      - targets: ['21.214.97.212:19003']
         labels:
           service: 'my-xhs-analytics'
       # 计数服务
-      - targets: ['21.130.247.89:19004']
+      - targets: ['21.214.97.212:19004']
         labels:
           service: 'my-xhs-counter'
       # 商品服务
-      - targets: ['21.130.247.89:19006']
+      - targets: ['21.214.97.212:19006']
         labels:
           service: 'my-xhs-product'
       # 购物车服务
-      - targets: ['21.130.247.89:19008']
+      - targets: ['21.214.97.212:19008']
         labels:
           service: 'my-xhs-cart'
       # 库存服务
-      - targets: ['21.130.247.89:19009']
+      - targets: ['21.214.97.212:19009']
         labels:
           service: 'my-xhs-inventory'
       # 优惠券服务
-      - targets: ['21.130.247.89:19010']
+      - targets: ['21.214.97.212:19010']
         labels:
           service: 'my-xhs-coupon'
       # 订单服务
-      - targets: ['21.130.247.89:19011']
+      - targets: ['21.214.97.212:19011']
         labels:
           service: 'my-xhs-order'
       # 支付服务
-      - targets: ['21.130.247.89:19012']
+      - targets: ['21.214.97.212:19012']
         labels:
           service: 'my-xhs-payment'
       # 通知服务
-      - targets: ['21.130.247.89:19013']
+      - targets: ['21.214.97.212:19013']
         labels:
           service: 'my-xhs-notification'
       # IM 服务
-      - targets: ['21.130.247.89:19014']
+      - targets: ['21.214.97.212:19014']
         labels:
           service: 'my-xhs-im'
       # 首页聚合服务
-      - targets: ['21.130.247.89:19015']
+      - targets: ['21.214.97.212:19015']
         labels:
           service: 'my-xhs-home'
       # 搜索服务
-      - targets: ['21.130.247.89:19016']
+      - targets: ['21.214.97.212:19016']
         labels:
           service: 'my-xhs-search'
 

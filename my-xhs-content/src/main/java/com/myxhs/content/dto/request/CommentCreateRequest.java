@@ -1,7 +1,9 @@
 package com.myxhs.content.dto.request;
 
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
@@ -13,12 +15,15 @@ public class CommentCreateRequest {
 
     /** 笔记ID（必填） */
     @NotNull(message = "笔记ID不能为空")
+    @Positive(message = "笔记ID必须为正数")
     private Long noteId;
 
     /** 父评论ID（一级评论传0或不传，回复评论传父评论ID） */
+    @Min(value = 0, message = "父评论ID不能为负数")
     private Long parentId;
 
     /** 回复的评论ID（楼中楼回复时传入被回复的评论ID） */
+    @Min(value = 0, message = "回复评论ID不能为负数")
     private Long replyToId;
 
     /**

@@ -9,6 +9,7 @@ import org.springframework.data.redis.connection.MessageListener;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
+import com.myxhs.common.constants.RedisKeyConstants;
 import org.springframework.stereotype.Component;
 
 import java.io.BufferedReader;
@@ -37,10 +38,10 @@ public class DFAFilter implements MessageListener {
     private static final char END_FLAG = '\0';
 
     /** Redis 敏感词更新通知 Channel */
-    private static final String SENSITIVE_WORD_CHANNEL = "myxhs:sensitive-word:reload";
+    private static final String SENSITIVE_WORD_CHANNEL = RedisKeyConstants.PROJECT_PREFIX + "sensitive-word:reload";
 
     /** Redis 中存储的动态敏感词 Key */
-    private static final String SENSITIVE_WORD_REDIS_KEY = "myxhs:sensitive-word:list";
+    private static final String SENSITIVE_WORD_REDIS_KEY = RedisKeyConstants.PROJECT_PREFIX + "sensitive-word:list";
 
     @Autowired(required = false)
     private StringRedisTemplate stringRedisTemplate;
@@ -142,6 +143,7 @@ public class DFAFilter implements MessageListener {
             }
         } catch (Exception e) {
             log.warn("[DFA] 从 Redis 加载动态敏感词失败（不影响静态词库）: {}", e.getMessage());
+            // metrics 告警：动态词库失效需运维介入
         }
         return words;
     }
