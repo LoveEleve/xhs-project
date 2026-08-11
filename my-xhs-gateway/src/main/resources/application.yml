@@ -298,6 +298,8 @@ gateway:
       - /api/im/online-count
       # ===== IM WebSocket 握手（浏览器 WS 无法带 Authorization，ticket 在 IM 内部两步鉴权） =====
       - /api/im/ws
+      # ===== 优惠券领券中心（公开查询可领券模板列表） =====
+      - /api/coupon/template/list
       # ===== 后续模块的公开接口（待扩展） =====
       # - /api/search/**
     # HMAC 签名校验白名单（不需要签名校验的路径，支持 Ant 风格匹配）
@@ -316,8 +318,6 @@ gateway:
       - /api/user/*/info
       - /api/user/me
       - /api/user/me/password
-      - /api/user/block/**
-      - /api/user/address/**
       - /api/note/detail/**
       - /api/note/user/**
       - /api/comment/list/**
@@ -327,27 +327,32 @@ gateway:
       - /api/social/following/**
       - /api/social/follower/**
       - /api/social/like/count
-      # ===== 计数公开接口（单个查询、批量查询） =====
+      # ===== 计数/搜索公开读接口 =====
       - /api/counter/get
       - /api/counter/batch-get
       - /api/home/feed
       - /api/home/note/**
       - /api/home/product/**
+      - /api/home/user/**
+      - /api/search/note
+      - /api/search/product
+      - /api/search/suggest
+      - /api/product/sku/**
+      - /api/product/category/**
+      - /api/inventory/stock/**
+      - /api/im/conversations
+      - /api/im/unread-count
+      - /api/notification/unread-count
       # ===== 通知 SSE 端点（ticket-based auth，无需 HMAC 签名） =====
       - /api/notification/sse
       - /api/notification/sse/**
       - /api/notification/sse/online-count
       - /api/notification/ticket/**
-      # ===== 通知业务端点（测试阶段放行 HMAC） =====
-      - /api/notification/test/**
-      - /api/notification/list
-      - /api/notification/unread-count
-      - /api/notification/read/**
-      - /api/notification/read-by-type/**
-      - /api/notification/read-all
       # ===== IM 公开端点（在线人数） =====
       - /api/im/online-count
-      - /api/home/user/**
+      # ===== IM WebSocket 握手（浏览器 WS 无法带签名头, ticket 在 IM 内部两步鉴权） =====
+      - /api/im/ws
+      - /api/im/ws/**
       # ===== 管理端点（已由 JWT + X-Admin-Call 双层保护，放行 HMAC） =====
       - /api/coupon/template
       - /api/coupon/template/**
@@ -362,57 +367,7 @@ gateway:
       - /api/search/hot/block
       - /api/recommend/compute
       - /api/social/internal/repair-counter/**
-      # ===== 用户业务端点（JWT已足够，测试阶段放行 HMAC） =====
-      - /api/coupon/claim
-      - /api/coupon/user/**
-      - /api/product/sku/**
-      - /api/product/category/**
-      - /api/inventory/stock/**
-      - /api/inventory/tcc/**
-      - /api/search/note
-      - /api/search/product
-      - /api/search/suggest
-      - /api/search/history/**
-      - /api/notification/list/**
-      - /api/notification/read/**
-      - /api/notification/unread-count
-      - /api/im/conversations
-      - /api/im/messages/**
-      - /api/im/read/**
-      - /api/im/unread-count
-      - /api/im/ws/**
-      - /api/home/feed
-      - /api/home/note/**
-      - /api/home/product/**
-      - /api/home/user/**
-      - /api/home/cart
-      - /api/social/like
-      - /api/social/favorite
-      - /api/social/follow/**
-      # ===== 内容/社交（核心全链路3） =====
-      - /api/note/**
-      - /api/comment/**
-      - /api/social/like/**
-      - /api/social/favorite/**
-      - /api/social/follow/**
-      - /api/social/relation/**
-      - /api/social/common/**
-      # ===== 订单/支付/购物车（核心交易流） =====
-      - /api/order/create
-      - /api/order/**
-      - /api/payment/**
-      - /api/cart/**
-      - /api/inventory/preDeduct
-      - /api/inventory/confirm
-      - /api/inventory/release
-      - /api/social/follow/**
-      - /api/search/index/rebuild
-      - /api/search/hot/pin
-      - /api/search/hot/block
-      - /api/recommend/compute
-      - /api/notification/sse/online-count
-      - /api/social/internal/repair-counter/**
-      - /api/search/**
+      # ===== 用户写接口（block/address 等）不再豁免，必须 HMAC 签名 =====
 
 # Actuator 健康检查 + 指标暴露
 management:

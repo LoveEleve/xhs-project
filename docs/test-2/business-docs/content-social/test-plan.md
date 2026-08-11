@@ -21,31 +21,31 @@ done
 
 ### 内容(Note + Comment) — 8端点
 
-| 顺序 | 端点 | 依赖 | 异常 |
-|:--:|------|------|:--:|
-| 1 | NC01-publish-note | Token | ⚠️ @RateLimit 5/min |
-| 2 | NC09-upload-image | Token | ⚠️ @RateLimit 20/min |
-| 3 | NC05-note-detail | NC01 | ⚠️ 不存在/下架 |
-| 4 | NC07-my-notes | Token | — |
-| 5 | CM01-create-comment | NC01+Token | ⚠️ @RateLimit 10/min |
-| 6 | CM03-comment-list | NC05 | 游标分页 |
-| 7 | CM02-delete-comment | CM01 | — |
-| 8 | NC08-publish-draft | Token+草稿 | MQ异步 |
+| 顺序 | 端点 | 依赖 | 产出 | 异常 |
+|:--:|------|------|------|:--:|
+| 1 | NC01-publish-note | Token | execution/content-social/NC01-publish-note.md | ⚠️ @RateLimit 5/min |
+| 2 | NC09-upload-image | Token | execution/content-social/NC09-upload-image.md | ⚠️ @RateLimit 20/min |
+| 3 | NC05-note-detail | NC01 | execution/content-social/NC05-note-detail.md | ⚠️ 不存在/下架 |
+| 4 | NC07-my-notes | Token | execution/content-social/NC07-my-notes.md | — |
+| 5 | CM01-create-comment | NC01+Token | execution/content-social/CM01-create-comment.md | ⚠️ @RateLimit 10/min |
+| 6 | CM03-comment-list | NC05 | execution/content-social/CM03-comment-list.md | 游标分页 |
+| 7 | CM02-delete-comment | CM01 | execution/content-social/CM02-delete-comment.md | — |
+| 8 | NC08-publish-draft | Token+草稿 | execution/content-social/NC08-publish-draft.md | MQ异步 |
 
 ### 社交(Favorite+Like+Follow) — 18端点
 
-| 顺序 | 端点 | 依赖 | 异常 |
-|:--:|------|------|:--:|
-| 9 | FA01-favorite | NC01+Token | @Idempotent 5s |
-| 10 | FA03-fav-status | FA01 | — |
-| 11 | LK01-like | NC01+Token | @Idempotent 5s |
-| 12 | LK03-like-status | LK01 | — |
-| 13 | LK04-batch-status | LK01 | Pipeline SISMEMBER |
-| 14 | FW01-follow | secondUser+Token | ⚠️ 不能关注自己 |
-| 15 | FW06-relation | FW01 | 双向SISMEMBER |
-| 16 | FW03-following | FW01 | 公开接口 |
-| 17 | FW04-followers | FW01 | — |
-| 18 | FW02-unfollow | FW01 | — |
+| 顺序 | 端点 | 依赖 | 产出 | 异常 |
+|:--:|------|------|------|:--:|
+| 9 | FA01-favorite | NC01+Token | execution/content-social/FA01-favorite.md | @Idempotent 5s |
+| 10 | FA03-fav-status | FA01 | execution/content-social/FA03-fav-status.md | — |
+| 11 | LK01-like | NC01+Token | execution/content-social/LK01-like.md | @Idempotent 5s |
+| 12 | LK03-like-status | LK01 | execution/content-social/LK03-like-status.md | — |
+| 13 | LK04-batch-status | LK01 | execution/content-social/LK04-batch-status.md | Pipeline SISMEMBER |
+| 14 | FW01-follow | secondUser+Token | execution/content-social/FW01-follow.md | ⚠️ 不能关注自己 |
+| 15 | FW06-relation | FW01 | execution/content-social/FW06-relation.md | 双向SISMEMBER |
+| 16 | FW03-following | FW01 | execution/content-social/FW03-following.md | 公开接口 |
+| 17 | FW04-followers | FW01 | execution/content-social/FW04-followers.md | — |
+| 18 | FW02-unfollow | FW01 | execution/content-social/FW02-unfollow.md | — |
 
 ---
 
@@ -70,3 +70,38 @@ done
 | NOTE_ID | NC01 返回 | NC01 创建 |
 | SECOND_USER_TOKEN | chaintest_u2 | 链1 U03 |
 | COUNTER_SHARD | `myxhs:counter:{noteId}` | CounterEventConsumer |
+
+---
+## 测试要点补充（2026-08-10，实测修正）
+
+- **认证**：写操作(发笔记/评论/点赞/收藏/关注/删评论/草稿/传图)均需 JWT+HMAC；读(详情/评论列表/关注列表)公开。
+- **LK01-like**：bizType 是 **int(1笔记/2评论)**，非字符串。
+- **FA01-favorite**：body 用 **noteId**（非 bizId）。
+- **NC09-upload-image**：multipart `file` 字段，需**真实图片文件**（假字节返回40002）。
+- **NC08-publish-draft**：POST /api/note/draft。
+- **CM01-create-comment**：body{noteId,content}，空content返回40002。
+- 事件流：like/favorite/comment/follow 会生成通知（供链7 notification 测试用）。
+
+---
+## L0-L4 逐端点核对清单
+
+### NC01-publish-note
+- [ ] L0: token+HMAC
+- [ ] L1正常: 200 noteId; 异常: @RateLimit 5/min→429
+- [ ] L2: MySQL `t_note` 新增; 发 FEED/SOCIAL 事件
+- [ ] L3: RateLimit / 异步(MQ)
+
+### LK01-like / FA01-favorite
+- [ ] L1: 200; 重复5s内→幂等拦截
+- [ ] L2: Redis `myxhs:like:set:{type}:{id}` / counter
+- [ ] L3: 幂等(5s) / 并发
+
+### CM01-create-comment
+- [ ] L1: 200; 空内容→40002
+- [ ] L2: MySQL `t_comment`
+- [ ] L3: RateLimit 10/min
+
+### FW01-follow
+- [ ] L1: 200; 关注自己→拒绝
+- [ ] L2: Redis 关注关系 + counter
+- [ ] L3: 双向关系

@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.Map;
 
 /**
@@ -53,6 +54,7 @@ public class OrderTransactionService {
                                          String orderNo, BigDecimal totalAmount,
                                          BigDecimal discountAmount, BigDecimal payAmount,
                                          String transactionPayload,
+                                         String addressSnapshot,
                                          Map<Long, SkuInfoDTO> skuMap) {
         // 1. 创建订单主表
         Order order = new Order();
@@ -64,9 +66,8 @@ public class OrderTransactionService {
         order.setCouponId(request.getCouponId());
         order.setStatus(0); // 待付款
         order.setRemark(request.getRemark());
-        // Mock 地址快照
-        order.setAddressSnapshot("{\"name\":\"测试用户\",\"phone\":\"13800138000\"," +
-                "\"address\":\"北京市朝阳区xxx路xxx号\"}");
+        // 真实地址快照（来自 user 服务，替代 Mock 硬编码）
+        order.setAddressSnapshot(addressSnapshot != null ? addressSnapshot : "{\"name\":\"\",\"phone\":\"\",\"address\":\"\"}");
         orderMapper.insert(order);
 
         // 2. 记录 Event Sourcing 事件（与订单创建同事务）
@@ -81,7 +82,7 @@ public class OrderTransactionService {
             item.setSkuId(skuItem.getSkuId());
             item.setSpuId(sku != null ? sku.getSpuId() : skuItem.getSkuId());
             item.setSkuName(sku != null ? sku.getName() : "SKU-" + skuItem.getSkuId());
-            item.setSkuImage(null); // product SkuVO 不含 image 字段
+            item.setSkuImage(sku != null ? sku.getImage() : null); // 从 product 服务取 SKU 主图（继承 SPU）
             item.setPrice(sku != null ? sku.getPrice() : BigDecimal.ZERO);
             item.setQuantity(skuItem.getQuantity());
             item.setTotalAmount((sku != null ? sku.getPrice() : BigDecimal.ZERO)

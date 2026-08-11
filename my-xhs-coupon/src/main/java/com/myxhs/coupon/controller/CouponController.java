@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 优惠券接口
@@ -73,6 +74,19 @@ public class CouponController {
     @GetMapping("/template/{id}")
     public R<CouponTemplateVO> getTemplate(@PathVariable Long id) {
         return R.ok(toTemplateVO(couponService.getTemplate(id)));
+    }
+
+    /**
+     * 可领券模板列表（领券中心公开接口）
+     * <p>
+     * 返回当前可领取的券模板（上架、未删除、剩余>0、在有效期内）。
+     * </p>
+     */
+    @GetMapping("/template/list")
+    public R<List<CouponTemplateVO>> listClaimableTemplates() {
+        return R.ok(couponService.listClaimableTemplates().stream()
+                .map(this::toTemplateVO)
+                .collect(Collectors.toList()));
     }
 
     // ==================== 用户端 ====================

@@ -1,6 +1,6 @@
 # U01 — 注册 (POST /api/user/auth/register)
 
-> 2026-08-08 | 链1-2 | user服务 | chaintest_c1(2085982901507301378)
+> 2026-08-08 | 链1-2 | user服务 | chaintest_u1(2085982901507301378)
 
 ## § 业务逻辑
 
@@ -21,7 +21,7 @@ curl → Gateway:19000 (whitelist免JWT)
 
 | 检查项 | 结果 |
 |------|:--:|
-| 用户名 | chaintest_c1 ✅ |
+| 用户名 | chaintest_u1 ✅ |
 | 注册成功 | code=200 ✅ |
 | MySQL写入 | id=2085982901507301378, status=1 ✅ |
 | captcha消费 | TTL=-2(已删除) ✅ |
@@ -52,9 +52,9 @@ curl → Gateway:19000 (whitelist免JWT)
 ```bash
 curl -s http://localhost:19000/api/user/auth/captcha > /tmp/cap.json
 KEY=$(python3 -c "import json; d=json.load(open('/tmp/cap.json')); print(d['data']['captchaKey'])")
-CODE=$(grep "$KEY" /tmp/r_user.log | tail -1 | grep -oP 'code=\K\w+')
+CODE=$(python3 -c "import redis; r=redis.Redis(host='21.130.247.89',port=6379,password='Xhs@2026#Redis'); print(r.get('myxhs:user:captcha:$KEY').decode())")
 curl -s -X POST http://localhost:19000/api/user/auth/register -H "Content-Type: application/json" \
-  -d "{\"username\":\"chaintest_c1\",\"password\":\"Test@123456\",\"captchaKey\":\"$KEY\",\"captchaCode\":\"$CODE\"}"
+  -d "{\"username\":\"chaintest_u1\",\"password\":\"Test@123456\",\"captchaKey\":\"$KEY\",\"captchaCode\":\"$CODE\"}"
 ```
 
 ## § 可观测性 (L4)

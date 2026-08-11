@@ -1,6 +1,6 @@
 # T07 — 全部已读 (POST /api/notification/read-all)
 
-> 2026-08-08 | 链7-6 | notification | chaintest_c1
+> 2026-08-08 | 链7-6 | notification | chaintest_u1
 
 ## § 业务逻辑
 

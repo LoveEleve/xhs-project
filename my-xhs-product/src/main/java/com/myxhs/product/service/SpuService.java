@@ -339,7 +339,7 @@ public class SpuService {
                     CompletableFuture.runAsync(() -> {
                         try { Thread.sleep(1000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
                         evictSpuCache(spuId);
-                    }, spuAsyncExecutor);
+                    }, SPU_ASYNC_EXECUTOR);
                 }
             });
         }
@@ -655,7 +655,7 @@ public class SpuService {
         vo.setUpdatedAt(spu.getUpdatedAt());
 
         List<SkuVO> skuVOList = skuList != null ? skuList.stream()
-                .map(this::toSkuVO)
+                .map(sku -> toSkuVO(sku, firstImageOf(spu.getImages())))
                 .collect(Collectors.toList()) : Collections.emptyList();
         vo.setSkuList(skuVOList);
 
@@ -672,7 +672,7 @@ public class SpuService {
         return vo;
     }
 
-    private SkuVO toSkuVO(Sku sku) {
+    private SkuVO toSkuVO(Sku sku, String image) {
         SkuVO vo = new SkuVO();
         vo.setId(sku.getId());
         vo.setSpuId(sku.getSpuId());
@@ -681,8 +681,15 @@ public class SpuService {
         vo.setOriginalPrice(sku.getOriginalPrice());
         // stock 字段已从 SkuVO 剔除：SKU 表 stock 是冗余占位值，真实库存以 inventory 服务为准
         vo.setSpecs(sku.getSpecs());
+        vo.setImage(image);
         vo.setStatus(sku.getStatus());
         return vo;
+    }
+
+    /** 取 SPU.images(JSON数组) 的第一张作 SKU 主图 */
+    private String firstImageOf(String imagesJson) {
+        List<String> list = parseJsonList(imagesJson);
+        return list.isEmpty() ? null : list.get(0);
     }
 
     @SuppressWarnings("unchecked")

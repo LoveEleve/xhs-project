@@ -1,6 +1,6 @@
 # T09 — 测试通知发送 (POST /api/notification/test/send)
 
-> 2026-08-08 | 链7-1 | notification | chaintest_c1 | @Profile("dev")
+> 2026-08-08 | 链7-1 | notification | chaintest_u1 | @Profile("dev")
 
 ## § 业务逻辑
 

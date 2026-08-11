@@ -3,6 +3,8 @@ package com.myxhs.common.config;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.module.SimpleModule;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateDeserializer;
 import com.fasterxml.jackson.datatype.jsr310.deser.LocalDateTimeDeserializer;
@@ -46,6 +48,15 @@ public class JacksonConfig {
                     new LocalDateSerializer(DateTimeFormatter.ofPattern(DATE_PATTERN)));
             builder.deserializerByType(LocalDate.class,
                     new LocalDateDeserializer(DateTimeFormatter.ofPattern(DATE_PATTERN)));
+
+            // Long/long 序列化为 String：
+            // 雪花ID（19位）超过 JS Number.MAX_SAFE_INTEGER(2^53)，作为 JSON 数字会被前端丢失精度，
+            // 统一转字符串保持精度。注：作用于 HTTP 响应序列化，不影响 Redis/MQ 内部 ObjectMapper；
+            // BigDecimal 价格/金额、Integer 等不受影响。用 modulesToInstall 强制覆盖默认 Long 序列化。
+            SimpleModule longToStringModule = new SimpleModule();
+            longToStringModule.addSerializer(Long.class, ToStringSerializer.instance);
+            longToStringModule.addSerializer(Long.TYPE, ToStringSerializer.instance);
+            builder.modulesToInstall(longToStringModule);
 
             // 忽略未知属性
             builder.featuresToDisable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);

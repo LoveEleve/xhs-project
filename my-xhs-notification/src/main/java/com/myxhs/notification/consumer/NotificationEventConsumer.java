@@ -48,8 +48,8 @@ public class NotificationEventConsumer implements RocketMQListener<MessageExt> {
     @Override
     public void onMessage(MessageExt msg) {
         MqTraceHelper.restoreTraceId(msg);
+        String msgId = msg.getMsgId();
         try {
-            String msgId = msg.getMsgId();
             String body = new String(msg.getBody(), StandardCharsets.UTF_8);
 
             // 一级幂等：统一幂等检查

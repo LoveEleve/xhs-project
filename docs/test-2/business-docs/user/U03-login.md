@@ -50,12 +50,12 @@
 # 1. 获取验证码
 curl -s http://localhost:19000/api/user/auth/captcha > /tmp/cap.json
 KEY=$(python3 -c "import json;print(json.load(open('/tmp/cap.json'))['data']['captchaKey'])")
-CODE=$(grep "$KEY" /tmp/r_user.log | tail -1 | grep -oP 'code=\K\w+')
+CODE=$(python3 -c "import redis; r=redis.Redis(host='21.130.247.89',port=6379,password='Xhs@2026#Redis'); print(r.get('myxhs:user:captcha:$KEY').decode())")
 
 # 2. 登录
 curl -s -i http://localhost:19000/api/user/auth/login \
   -H "Content-Type: application/json" \
-  -d "{\"username\":\"chaintest_c1\",\"password\":\"Test@123456\",\"captchaKey\":\"$KEY\",\"captchaCode\":\"$CODE\"}"
+  -d "{\"username\":\"chaintest_u1\",\"password\":\"Test@123456\",\"captchaKey\":\"$KEY\",\"captchaCode\":\"$CODE\"}"
 
 # 3. 保存token
 TOKEN=$(上述响应 | python3 -c "import json,sys;print(json.load(sys.stdin)['data']['accessToken'])")

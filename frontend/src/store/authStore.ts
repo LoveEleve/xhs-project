@@ -1,11 +1,12 @@
 import { create } from 'zustand';
 import { login as loginApi, register as registerApi, logout as logoutApi, getUserInfo, updateUserInfo } from '../api/auth';
 import { mergeCart } from '../api/cart';
+import { setHmacSecret } from '../utils/hmac';
 import type { UserInfoResponse } from '../types';
 
 interface AuthState {
   token: string | null;
-  userId: number | null;
+  userId: string | null;
   user: UserInfoResponse | null;
   loading: boolean;
   login: (username: string, password: string, captchaKey: string, captchaCode: string) => Promise<void>;
@@ -24,8 +25,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   login: async (username, password, captchaKey, captchaCode) => {
     const resp = await loginApi({ username, password, captchaKey, captchaCode });
-    const { accessToken } = resp.data.data;
+    const { accessToken, hmacSecret } = resp.data.data;
     localStorage.setItem('token', accessToken);
+    setHmacSecret(hmacSecret); // 保存 per-session HMAC 密钥（写请求签名用）
     set({ token: accessToken, userId: null });
     await get().fetchUser();  // fetchUser 会更新 userId
     // 登录后合并游客购物车
@@ -50,6 +52,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try { await logoutApi(); } catch { /* 忽略 */ }
     localStorage.removeItem('token');
     localStorage.removeItem('userId');
+    setHmacSecret(null);
     set({ token: null, userId: null, user: null });
   },
 
@@ -57,7 +60,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ loading: true });
     try {
       const resp = await getUserInfo();
-      set({ user: resp.data.data, loading: false });
+      set({ user: resp.data.data, userId: resp.data.data.id, loading: false });
     } catch {
       set({ loading: false });
     }

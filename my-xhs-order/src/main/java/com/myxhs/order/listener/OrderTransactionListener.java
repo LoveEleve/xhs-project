@@ -66,6 +66,7 @@ public class OrderTransactionListener implements RocketMQLocalTransactionListene
                     context.getDiscountAmount(),
                     context.getPayAmount(),
                     context.getTransactionPayload(),
+                    context.getAddressSnapshot(),
                     context.getSkuMap()
             );
 
@@ -148,6 +149,8 @@ public class OrderTransactionListener implements RocketMQLocalTransactionListene
         private java.math.BigDecimal payAmount;
         /** 事务消息的完整 payload JSON（与 MQ 消息体一致，本地消息表存储用） */
         private String transactionPayload;
+        /** 真实收货地址快照 JSON（替代 Mock 硬编码） */
+        private String addressSnapshot;
         /** 本地事务执行后回写 */
         private Long orderId;
         /** SKU 详情 Map（skuId → SkuInfoDTO），避免事务内再调 Feign */

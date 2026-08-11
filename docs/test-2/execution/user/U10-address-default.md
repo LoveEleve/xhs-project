@@ -1,6 +1,6 @@
 # U10 — 设置默认地址 (PUT /api/user/address/{id}/default)
 
-> 2026-08-08 | 链1-11 | user服务 | chaintest_c1
+> 2026-08-08 | 链1-11 | user服务 | chaintest_u1
 
 ## § 业务逻辑
 

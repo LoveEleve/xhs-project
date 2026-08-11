@@ -19,13 +19,15 @@ export default function NoteCard({ noteId, coverUrl, title, noteType, authorNick
             src={coverUrl}
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             onError={(e) => {
-              (e.target as HTMLImageElement).style.display = 'none';
-              if (e.target.parentElement) {
-                e.target.parentElement.style.display = 'flex';
-                e.target.parentElement.style.alignItems = 'center';
-                e.target.parentElement.style.justifyContent = 'center';
-                e.target.parentElement.style.color = '#999';
-                e.target.parentElement.textContent = '图片加载失败';
+              const img = e.target as HTMLImageElement;
+              img.style.display = 'none';
+              const parent = img.parentElement;
+              if (parent) {
+                parent.style.display = 'flex';
+                parent.style.alignItems = 'center';
+                parent.style.justifyContent = 'center';
+                parent.style.color = '#999';
+                parent.textContent = '图片加载失败';
               }
             }}
           />

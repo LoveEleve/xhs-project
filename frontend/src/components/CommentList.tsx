@@ -3,12 +3,12 @@ import { Button, Input, Space, message, Modal, Spin } from 'antd';
 import { getComments, getChildComments, postComment, deleteComment } from '../api/note';
 import { formatRelativeTime } from '../utils';
 import UserAvatar from './UserAvatar';
-import type { CommentVO } from '../../types';
+import type { CommentVO } from '../types';
 
 interface CommentListProps {
-  noteId: number;
+  noteId: string | number;
   /** 当前用户 ID，用于判断是否是自己的评论 */
-  currentUserId?: number;
+  currentUserId?: string | number;
 }
 
 export default function CommentList({ noteId, currentUserId }: CommentListProps) {
@@ -16,7 +16,7 @@ export default function CommentList({ noteId, currentUserId }: CommentListProps)
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
-  const [replyTo, setReplyTo] = useState<{ id: number; name: string; parentId?: number } | null>(null);
+  const [replyTo, setReplyTo] = useState<{ id: string; name: string; parentId?: string } | null>(null);
   const [replyText, setReplyText] = useState('');
 
   const fetchComments = async (pageNum = 1) => {
@@ -29,7 +29,7 @@ export default function CommentList({ noteId, currentUserId }: CommentListProps)
       } else {
         setComments(prev => [...prev, ...data.records]);
       }
-      setHasMore(data.records.length === 20);
+      setHasMore(pageNum * 20 < data.total);
       setPage(pageNum);
     } catch { message.error('加载评论失败'); }
     finally { setLoading(false); }
@@ -46,15 +46,19 @@ export default function CommentList({ noteId, currentUserId }: CommentListProps)
         parentId: replyTo.parentId ?? replyTo.id,
         replyToId: replyTo.parentId ? replyTo.id : undefined,
       });
-      const newComment = resp.data.data;
-      setComments(prev => [newComment, ...prev]);
-      message.success('评论成功');
+      if (resp.data.code === 200) {
+        message.success('评论成功');
+        // 后端只返回 {commentId}，直接重拉第一页刷新列表
+        fetchComments(1);
+      } else {
+        message.error(resp.data.message || '评论失败');
+      }
     } catch { message.error('评论失败'); }
     setReplyText('');
     setReplyTo(null);
   };
 
-  const handleDelete = (commentId: number) => {
+  const handleDelete = (commentId: string | number) => {
     Modal.confirm({
       title: '确认删除这条评论？',
       onOk: async () => {
@@ -80,7 +84,7 @@ export default function CommentList({ noteId, currentUserId }: CommentListProps)
     }
   };
 
-  const renderComment = (comment: CommentVO, isChild = false, parentCommentId?: number) => {
+  const renderComment = (comment: CommentVO, isChild = false, parentCommentId?: string) => {
     const replyToData = isChild
       ? { id: comment.id, name: `用户${comment.userId}`, parentId: parentCommentId! }
       : { id: comment.id, name: `用户${comment.userId}` };

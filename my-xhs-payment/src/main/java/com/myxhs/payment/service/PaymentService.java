@@ -70,6 +70,7 @@ public class PaymentService {
     private final RocketMQTemplate rocketMQTemplate;
     private final RedissonClient redissonClient;
     private final Map<Integer, PayChannelStrategy> payChannelStrategyMap;
+    private final com.myxhs.payment.simulator.PayCallbackSimulator callbackSimulator;
     private final DefaultRedisScript<Long> paymentTimeoutScript;
     private final OrderFeignClient orderFeignClient;
     private final IdGeneratorUtil idGeneratorUtil;
@@ -204,9 +205,12 @@ public class PaymentService {
             String tradeNo = strategy.pay(orderId, amount, paymentNo);
             log.info("[支付] 支付请求已发送: paymentNo={}, tradeNo={}, payType={}", paymentNo, tradeNo, payType);
 
-            // 6. Mock 模式：同步标记成功
+            // 6. Mock 模式：同步标记成功；异步模式（支付宝/微信）：登记到模拟器，由定时任务发回调闭环
             if (isMockMode(payType)) {
                 handlePaySuccessInternal(orderId, userId, paymentNo, tradeNo);
+            } else {
+                // 修复：此前漏掉 registerCallback，导致异步支付回调永远不触发、订单停留在待付款
+                callbackSimulator.registerCallback(paymentNo, payType);
             }
 
             return R.ok(buildPaymentVO(payment));

@@ -44,7 +44,7 @@
 # 1. 获取验证码
 curl -s http://localhost:19000/api/user/auth/captcha > /tmp/cap.json
 KEY=$(python3 -c "import json;print(json.load(open('/tmp/cap.json'))['data']['captchaKey'])")
-CODE=$(grep "$KEY" /tmp/r_user.log | tail -1 | grep -oP 'code=\K\w+')
+CODE=$(python3 -c "import redis; r=redis.Redis(host='21.130.247.89',port=6379,password='Xhs@2026#Redis'); print(r.get('myxhs:user:captcha:$KEY').decode())")
 
 # 2. 注册
 curl -s -i -X POST http://localhost:19000/api/user/auth/register \

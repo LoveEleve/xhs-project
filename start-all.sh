@@ -6,9 +6,20 @@ LOG_DIR="$BASE_DIR/logs"
 PIDS_DIR="$BASE_DIR/pids"
 mkdir -p "$LOG_DIR" "$PIDS_DIR"
 
+# 安全令牌注入 (所有服务通过 ${ADMIN_TOKEN:}/ ${INTERNAL_TOKEN:} 读取)
+export ADMIN_TOKEN="my-xhs-admin-token-2026"
+export INTERNAL_TOKEN="my-xhs-internal-token-2026"
+
+# Redis 连接使用 Sentinel 模式（replica 已通过 replica-announce-ip 广播真实地址 21.130.247.89）
+# 历史: 曾因 Docker slave 广播 127.0.0.1:6380 而临时 export SPRING_DATA_REDIS_SENTINEL_ENABLED=false 降级 standalone，现远程已修复，恢复 Sentinel 模式
+
 JAVA_OPTS_BASE="-javaagent:/data/workspace/my-xhs/skywalking-agent-9.6.0/skywalking-agent.jar -Dskywalking.agent.service_name=SW_PLACEHOLDER -Dskywalking.collector.backend_service=21.130.247.89:11800 -Xms512m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
-JAVA_OPTS_GW="-javaagent:/data/workspace/my-xhs/skywalking-agent-9.6.0/skywalking-agent.jar -Dskywalking.agent.service_name=SW_PLACEHOLDER -Dskywalking.collector.backend_service=21.130.247.89:11800 -Xms256m -Xmx256m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
+JAVA_OPTS_GW="-javaagent:/data/workspace/my-xhs/skywalking-agent-9.6.0/skywalking-agent.jar -Dskywalking.agent.service_name=SW_PLACEHOLDER -Dskywalking.collector.backend_service=21.130.247.89:11800 -Xms256m -Xmx256m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m -Dspring.data.redis.host=21.130.247.89"
 JAVA_OPTS_HEAVY="-javaagent:/data/workspace/my-xhs/skywalking-agent-9.6.0/skywalking-agent.jar -Dskywalking.agent.service_name=SW_PLACEHOLDER -Dskywalking.collector.backend_service=21.130.247.89:11800 -Xms1024m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m"
+# analytics 特殊: 需要 -Dmanagement.admin-token
+JAVA_OPTS_ANALYTICS="-javaagent:/data/workspace/my-xhs/skywalking-agent-9.6.0/skywalking-agent.jar -Dskywalking.agent.service_name=my-xhs-analytics -Dskywalking.collector.backend_service=21.130.247.89:11800 -Xms512m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m -Dmanagement.admin-token=${ADMIN_TOKEN}"
+# home/notification 需 dev profile 以启用测试端点(N09-test-send 等)
+JAVA_OPTS_DEV="${JAVA_OPTS_BASE} -Dspring.profiles.active=dev"
 
 echo "=== 启动所有 my-xhs 微服务 ==="
 
@@ -56,7 +67,7 @@ echo ""
 # ===== 核心基础服务（先启动） =====
 start_service "my-xhs-user"         19001 &
 start_service "my-xhs-content"      19002 &
-start_service "my-xhs-analytics"    19003 &
+start_service "my-xhs-analytics"    19003 "$JAVA_OPTS_ANALYTICS" &
 start_service "my-xhs-counter"      19004 &
 wait
 sleep 2
@@ -76,9 +87,9 @@ wait
 sleep 2
 
 # ===== 辅助服务 =====
-start_service "my-xhs-notification" 19013 &
+start_service "my-xhs-notification" 19013 "$JAVA_OPTS_DEV" &
 start_service "my-xhs-im"           19014 &
-start_service "my-xhs-home"         19015 &
+start_service "my-xhs-home"         19015 "$JAVA_OPTS_DEV" &
 start_service "my-xhs-search"       19016 "$JAVA_OPTS_HEAVY" &
 wait
 sleep 2

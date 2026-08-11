@@ -31,6 +31,9 @@ public class SkuVO {
     /** 规格属性JSON */
     private String specs;
 
+    /** SKU 主图（继承自所属 SPU 的第一张图；SKU 表本身无 image 字段） */
+    private String image;
+
     /** 状态：0-下架 1-上架 */
     private Integer status;
 }

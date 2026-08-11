@@ -33,6 +33,9 @@ public class DlqMetrics {
 
     private final Map<String, DefaultMQPullConsumer> consumers = new ConcurrentHashMap<>();
 
+    /** DLQ 积压缓存（定时任务计算，Gauge 只读此值，避免抓取时执行 RocketMQ I/O） */
+    private final Map<String, Long> backlogCache = new ConcurrentHashMap<>();
+
     /**
      * 所有配置了 maxReconsumeTimes 的 consumer group 列表。
      * 重试耗尽后消息进入 %DLQ%<consumerGroup>，需要监控其堆积量。
@@ -82,6 +85,14 @@ public class DlqMetrics {
 
     @PostConstruct
     public void init() {
+        // 注册 Gauge：取值函数只读缓存（backlogCache），抓取时不再触发 RocketMQ 查询
+        for (String consumerGroup : CONSUMER_GROUPS) {
+            Gauge.builder("rocketmq.dlq.backlog", () -> backlogCache.getOrDefault(consumerGroup, -1L))
+                    .description("DLQ 死信队列堆积量: " + consumerGroup)
+                    .tag("consumer_group", consumerGroup)
+                    .register(meterRegistry);
+        }
+        // 定时任务真正执行 RocketMQ 查询并缓存（30s），指标抓取全程无 I/O
         scheduler.scheduleAtFixedRate(this::collectDlqMetrics, 10, 30, TimeUnit.SECONDS);
         log.info("[DLQ监控] 已启动死信队列监控，监控 {} 个 consumer group，采集间隔 30s", CONSUMER_GROUPS.length);
     }
@@ -89,13 +100,11 @@ public class DlqMetrics {
     private void collectDlqMetrics() {
         for (String consumerGroup : CONSUMER_GROUPS) {
             try {
-                String dlqTopic = "%DLQ%" + consumerGroup;
-                Gauge.builder("rocketmq.dlq.backlog", () -> getDlqBacklog(consumerGroup, dlqTopic))
-                        .description("DLQ 死信队列堆积量: " + consumerGroup)
-                        .tag("consumer_group", consumerGroup)
-                        .register(meterRegistry);
+                long backlog = getDlqBacklog(consumerGroup, "%DLQ%" + consumerGroup);
+                backlogCache.put(consumerGroup, backlog);
             } catch (Exception e) {
-                log.debug("[DLQ监控] 注册 Gauge 失败: {}", consumerGroup, e);
+                backlogCache.put(consumerGroup, -1L);
+                log.debug("[DLQ监控] 采集积压异常: {}", consumerGroup, e);
             }
         }
     }

@@ -1,3 +1,12 @@
+import { useParams } from 'react-router-dom';
+import FollowList from '../../components/FollowList';
+
 export default function FollowingPage() {
-  return <div style={{ padding: 20, textAlign: 'center', color: '#999' }}>关注列表 - 开发中</div>;
+  const { userId } = useParams<{ userId: string }>();
+  return (
+    <div style={{ maxWidth: 700, margin: '0 auto' }}>
+      <h2 style={{ marginBottom: 16 }}>关注</h2>
+      {userId ? <FollowList mode="following" userId={userId} /> : null}
+    </div>
+  );
 }

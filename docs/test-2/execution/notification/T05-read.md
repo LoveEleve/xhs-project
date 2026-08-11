@@ -1,6 +1,6 @@
 # T05 — 标记已读 (POST /api/notification/read/{id})
 
-> 2026-08-08 | 链7-4 | notification | chaintest_c1
+> 2026-08-08 | 链7-4 | notification | chaintest_u1
 
 ## § 业务逻辑
 

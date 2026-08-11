@@ -1,0 +1,3 @@
+# P10-search-product — GET /api/search/product
+> 2026-08-10 | 链2 product | 验证结果: ✅ 通过
+- search total=19 (索引已含新SPU)

@@ -18,17 +18,18 @@ curl -s "http://21.130.247.89:18848/nacos/v1/ns/instance/list?serviceName=my-xhs
 
 ## 二、执行顺序
 
-| 顺序 | 端点 | 前置 | 认证 | 异常 |
-|:--:|------|------|:--:|:--:|
-| 1 | N01-template-create | Token | Admin | ⚠️ 缺Admin/参数非法 |
-| 2 | N03-template-detail | N01 | JWT | ⚠️ 缓存30min旧validStart |
-| 3 | N04-claim | N01+Token | JWT | ⚠️ 库存不足/限领超限/模板无效 |
-| 4 | N05-user-coupons | N04 | JWT | — |
-| 5 | N06-available-coupons | N04 | JWT | ⚠️ validStart未过滤 |
-| 6 | N02-template-status | N01 | Admin | ⚠️ 缓存未清 |
-| 7 | N07-coupon-discount | N04+订单 | Internal | ⚠️ 折扣计算/满减超限 |
-| 8 | N08-use-coupon | N04+订单 | Internal | ⚠️ 已用/过期/并发 |
-| 9 | N09-return-coupon | N08 | Internal | ⚠️ 已退/非本人 |
+| 顺序 | 端点 | 前置 | 认证 | 产出 | 异常 |
+|:--:|------|------|:--:|------|:--:|
+| 1 | N01-template-create | Token | Admin | execution/coupon/N01-template-create.md | ⚠️ 缺Admin/参数非法 |
+| 2 | N03-template-detail | N01 | JWT | execution/coupon/N03-template-detail.md | ⚠️ 缓存30min旧validStart |
+| 3 | N10-template-list | 无(公开) | 公开 | execution/coupon/N10-template-list.md | ⚠️ 领券中心取列表 |
+| 4 | N04-claim | N01+Token | JWT | execution/coupon/N04-claim.md | ⚠️ 库存不足/限领超限/模板无效 |
+| 5 | N05-user-coupons | N04 | JWT | execution/coupon/N05-user-coupons.md | — |
+| 6 | N06-available-coupons | N04 | JWT | execution/coupon/N06-available-coupons.md | ⚠️ validStart未过滤 |
+| 7 | N02-template-status | N01 | Admin | execution/coupon/N02-template-status.md | ⚠️ 缓存未清 |
+| 8 | N07-coupon-discount | N04+订单 | Internal | execution/coupon/N07-coupon-discount.md | ⚠️ 折扣计算/满减超限 |
+| 9 | N08-use-coupon | N04+订单 | Internal | execution/coupon/N08-use-coupon.md | ⚠️ 已用/过期/并发 |
+| 10 | N09-return-coupon | N08 | Internal | execution/coupon/N09-return-coupon.md | ⚠️ 已退/非本人 |
 
 ---
 
@@ -76,3 +77,32 @@ curl -s "http://21.130.247.89:18848/nacos/v1/ns/instance/list?serviceName=my-xhs
 | INTERNAL_TOKEN | `my-xhs-internal-token-2026` | 环境 |
 | TEMPLATE_ID | N01 返回 | N01 创建 |
 | USER_COUPON_ID | N04 返回 | N04 领券 |
+
+---
+## 测试要点补充（2026-08-10，实测修正）
+
+- **认证**：N01/N02 管理端点需 JWT+Admin；N04 领券需 JWT+HMAC；N10 公开。
+- **N01-template-create**：日期格式必须 `yyyy-MM-dd HH:mm:ss`（空格，非ISO"T"）；validStart 必须未来；否则 40002。
+- **N04-claim 异步落库**：返回200后需等 2-5s 再查 N05。
+- **N08-use 校验模板状态**：模板下架则 30016(COUPON_NOT_AVAILABLE)；用券/退券/折扣是**内部端点**(X-Internal-Call 直连 19010，带 X-User-Id)。
+- **N07/N08/N09 内部端点**：GET /api/coupon/discount/{id}?orderAmount=、POST /use{userCouponId,orderId,orderAmount}、POST /return{userCouponId,orderId}。
+- **N10-template-list（新增公开接口）**：GET /api/coupon/template/list，返回可领券列表。
+
+---
+## L0-L4 逐端点核对清单
+
+### N04-claim
+- [ ] L0: token+HMAC + templateId(可领)
+- [ ] L1正常: 200; 异常: 库存不足→COUPON_SOLD_OUT, 超限→ALREADY_RECEIVED
+- [ ] L2: Redis `myxhs:coupon:stock:{id}` DECR + `claimed` INCR; MySQL `t_user_coupon` 新增(等MQ 2-5s)
+- [ ] L3: 并发(超卖Lua原子) / 幂等 / 限领
+
+### N08-use / N09-return
+- [ ] L1: POST use → 200 discount; return → 200
+- [ ] L2: MySQL `t_user_coupon.status` 0→1→0
+- [ ] L3: 并发用券一次成功 / 幂等; 模板须上架否则30016
+
+### N01-template-create
+- [ ] L1: 200; 异常: 过去validStart→40002
+- [ ] L2: MySQL `t_coupon_template` 新增
+- [ ] L3: 日期格式(空格) / 校验

@@ -1,6 +1,6 @@
 # B02 — 购物车列表 (GET /api/cart/list)
 
-> 2026-08-08 | 链3-2 | cart服务 | chaintest_c1
+> 2026-08-08 | 链3-2 | cart服务 | chaintest_u1
 
 ## § 业务逻辑
 

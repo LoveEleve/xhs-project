@@ -73,6 +73,8 @@ class PaymentServiceTest {
     private RLock payLock;
     @Mock
     private PayChannelStrategy mockStrategy;
+    @Mock
+    private com.myxhs.payment.simulator.PayCallbackSimulator callbackSimulator;
 
     private ObjectMapper objectMapper;
     private PaymentService paymentService;
@@ -94,6 +96,7 @@ class PaymentServiceTest {
                 rocketMQTemplate,
                 redissonClient,
                 payChannelStrategyMap,
+                callbackSimulator,
                 paymentTimeoutScript,
                 orderFeignClient,
                 idGeneratorUtil,

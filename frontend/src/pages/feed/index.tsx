@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Spin, Alert, Empty, Tabs, message } from 'antd';
-import { getFeed } from '../../api/home';
+import { getFeed, getNoteDetail } from '../../api/home';
 import { getRecommendFeed } from '../../api/recommend';
 import { batchLikeStatus } from '../../api/social';
 import { reportBehavior } from '../../api/recommend';
@@ -36,25 +36,62 @@ export default function FeedPage() {
     });
   };
 
+  // 推荐接口返回的是 noteId 列表，需逐个取详情组装成卡片
+  const fetchRecommendCards = async (): Promise<NoteCardVO[]> => {
+    try {
+      const resp = await getRecommendFeed(20);
+      const list = resp.data.data || [];
+      const cards = await Promise.all(list.map(async (item) => {
+        try {
+          const d = (await getNoteDetail(item.noteId)).data.data;
+          return {
+            noteId: d.noteId,
+            title: d.title,
+            coverUrl: d.coverUrl || d.images?.[0] || '',
+            noteType: d.noteType,
+            authorId: d.authorId,
+            authorNickname: d.authorNickname,
+            authorAvatar: d.authorAvatar,
+            likeCount: d.likeCount,
+            collectCount: d.collectCount,
+            commentCount: d.commentCount,
+            isLiked: d.isLiked,
+            isCollected: d.isCollected,
+            isFollowed: d.isFollowed,
+            createdAt: d.createdAt,
+            score: item.score ?? 0,
+          } as NoteCardVO;
+        } catch { return null; }
+      }));
+      return cards.filter((c): c is NoteCardVO => c !== null);
+    } catch { return []; }
+  };
+
   const loadNotes = async (reset = false) => {
     try {
       setLoadingMore(true);
       setError(null);
-      let resp;
+      let newNotes: NoteCardVO[] = [];
+      let hasMore = false;
       if (tab === 'recommend') {
-        resp = await getRecommendFeed(20);
+        newNotes = await fetchRecommendCards();
+        hasMore = false; // 推荐暂不分页
       } else {
-        resp = await getFeed(reset ? undefined : lastScore, 20);
+        const resp = await getFeed(reset ? undefined : lastScore, 20);
+        const data = resp.data.data;
+        newNotes = data.notes || [];
+        hasMore = data.hasMore;
+        // 用后端返回的 nextCursor 作为下一页游标（比取最后一篇 score 更可靠）
+        setLastScore(newNotes.length > 0
+          ? Number(data.nextCursor ?? newNotes[newNotes.length - 1].score)
+          : lastScore);
       }
-      const data = resp.data.data;
-      const newNotes = data.notes || [];
       if (reset) {
         setNotes(newNotes);
       } else {
         setNotes(prev => [...prev, ...newNotes]);
       }
-      setLastScore(newNotes.length > 0 ? newNotes[newNotes.length - 1].score : lastScore);
-      setHasMore(data.hasMore);
+      setHasMore(hasMore);
       fetchBatchLikeStatus(newNotes);
       reportImpressions(newNotes);
     } catch (e: any) {
@@ -100,7 +137,7 @@ export default function FeedPage() {
       {loading ? (
         <div style={{ textAlign: 'center', padding: 60 }}><Spin size="large" /></div>
       ) : error ? (
-        <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />
+        <Alert type="error" title={error} showIcon style={{ marginBottom: 16 }} />
       ) : notes.length === 0 ? (
         <Empty description={
           tab === 'follow' ? '还没有关注任何人，去看看推荐吧' : '暂无笔记'

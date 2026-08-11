@@ -61,10 +61,10 @@ public class LikeUnlikeConsumer implements RocketMQListener<MessageExt> {
     @Override
     public void onMessage(MessageExt msg) {
         MqTraceHelper.restoreTraceId(msg);
+        String versionKey = null;
         try {
             String message = new String(msg.getBody(), StandardCharsets.UTF_8);
             LikeEvent event = objectMapper.readValue(message, LikeEvent.class);
-            String versionKey = null;
 
             // 原子版本号防乱序：Lua GET+compare+SET，含 userId 维度避免跨用户覆盖
             if (event.getActionTime() != null) {

@@ -1,6 +1,6 @@
 # U06 — 创建地址 (POST /api/user/address)
 
-> 2026-08-08 | 链1-7 | user服务 | chaintest_c1 | addrId=2085983401418006529
+> 2026-08-08 | 链1-7 | user服务 | chaintest_u1 | addrId=2085983401418006529
 
 ## § 业务逻辑
 

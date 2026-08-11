@@ -11,7 +11,7 @@ export const useCartStore = create<CartState>((set) => ({
   fetchCount: async () => {
     try {
       const resp = await getCartCount();
-      set({ count: resp.data.data });
+      set({ count: resp.data.data.count });
     } catch { /* 静默 */ }
   },
 }));

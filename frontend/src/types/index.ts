@@ -39,7 +39,7 @@ export interface TokenResponse {
 }
 
 export interface UserInfoResponse {
-  id: number;
+  id: string;
   username: string;
   nickname: string;
   avatar: string;
@@ -56,8 +56,18 @@ export interface UserInfoResponse {
   noteCount?: number;
 }
 
+export interface UserPublicInfoResponse {
+  id: string;
+  username: string;
+  nickname: string;
+  avatar: string;
+  gender: number;
+  signature: string;
+  createdAt: string;
+}
+
 export interface AddressVO {
-  id: number;
+  id: string;
   receiverName: string;
   receiverPhone: string;
   province: string;
@@ -70,18 +80,19 @@ export interface AddressVO {
 }
 
 export interface AddressRequest {
-  name: string;
-  phone: string;
+  receiverName: string;
+  receiverPhone: string;
   province: string;
   city: string;
   district: string;
-  detail: string;
+  detailAddress: string;
+  isDefault?: boolean;
 }
 
 // --- 笔记 ---
 export interface NoteDetailVO {
-  id: number;
-  userId: number;
+  id: string;
+  userId: string;
   title: string;
   content: string;
   images: string[];
@@ -97,11 +108,11 @@ export interface NoteDetailVO {
 }
 
 export interface NoteCardVO {
-  noteId: number;
+  noteId: string;
   title: string;
   coverUrl: string;
   noteType: number;
-  authorId: number;
+  authorId: string;
   authorNickname: string;
   authorAvatar: string;
   likeCount: number;
@@ -114,8 +125,34 @@ export interface NoteCardVO {
   score: number;
 }
 
+// 我的笔记列表项
+export interface NoteItemVO {
+  id: string;
+  userId: string;
+  title: string;
+  coverUrl?: string;
+  firstImage?: string;
+  noteType: number;
+  status: number;
+  createdAt: string;
+}
+
+// 关注/粉丝
+export interface FollowVO {
+  userId: string;
+  nickname?: string;
+  avatar?: string;
+  followedAt?: string;
+  isFollowBack: boolean;
+}
+
+export interface FollowListData {
+  total: number;
+  list: FollowVO[];
+}
+
 export interface NoteDetailAggVO {
-  noteId: number;
+  noteId: string;
   title: string;
   content: string;
   images: string[];
@@ -124,7 +161,7 @@ export interface NoteDetailAggVO {
   noteType: number;
   tags: string[];
   createdAt: string;
-  authorId: number;
+  authorId: string;
   authorNickname: string;
   authorAvatar: string;
   likeCount: number;
@@ -142,17 +179,18 @@ export interface PublishNoteRequest {
   noteType: number;
   coverUrl?: string;
   images?: string[];
+  videoUrl?: string;
   topicIds?: number[];
   tags?: string[];
 }
 
 // --- 评论 ---
 export interface CommentVO {
-  id: number;
-  noteId: number;
-  userId: number;
-  parentId: number;
-  replyToId: number;
+  id: string;
+  noteId: string;
+  userId: string;
+  parentId: string;
+  replyToId: string;
   content: string;
   likeCount: number;
   createdAt: string;
@@ -162,8 +200,8 @@ export interface CommentVO {
 
 // --- 商品 ---
 export interface SkuVO {
-  id: number;
-  spuId: number;
+  id: string;
+  spuId: string;
   name: string;
   price: number;
   originalPrice: number;
@@ -172,11 +210,11 @@ export interface SkuVO {
 }
 
 export interface SpuDetailVO {
-  id: number;
+  id: string;
   name: string;
-  categoryId: number;
+  categoryId: string;
   categoryName: string;
-  brandId: number;
+  brandId: string;
   description: string;
   images: string[];
   status: number;
@@ -186,15 +224,15 @@ export interface SpuDetailVO {
 }
 
 export interface SpuItemVO {
-  id: number;
+  id: string;
   name: string;
-  categoryId: number;
+  categoryId: string;
   images: string[];
   status: number;
 }
 
 export interface SkuWithStockVO {
-  skuId: number;
+  skuId: string;
   skuName: string;
   price: number;
   image: string;
@@ -204,11 +242,11 @@ export interface SkuWithStockVO {
 }
 
 export interface ProductDetailAggVO {
-  spuId: number;
+  spuId: string;
   name: string;
   description: string;
   images: string[];
-  categoryId: number;
+  categoryId: string;
   categoryName: string;
   status: number;
   skuList: SkuWithStockVO[];
@@ -217,10 +255,20 @@ export interface ProductDetailAggVO {
   relatedNotes: NoteCardVO[];
 }
 
+export interface CategoryTreeVO {
+  id: string;
+  name: string;
+  parentId: string;
+  level: number;
+  sort: number;
+  icon?: string;
+  children?: CategoryTreeVO[];
+}
+
 // --- 购物车 ---
 export interface CartItemVO {
-  skuId: number;
-  spuId: number;
+  skuId: string;
+  spuId: string;
   name: string;
   price: number;
   originalPrice: number;
@@ -234,8 +282,8 @@ export interface CartItemVO {
 }
 
 export interface CartItemAggVO {
-  skuId: number;
-  spuId: number;
+  skuId: string;
+  spuId: string;
   skuName: string;
   skuImage: string;
   price: number;
@@ -259,7 +307,7 @@ export interface CartAggVO {
 
 // --- 订单 ---
 export interface OrderItemVO {
-  skuId: number;
+  skuId: string;
   skuName: string;
   skuImage: string;
   price: number;
@@ -268,7 +316,7 @@ export interface OrderItemVO {
 }
 
 export interface OrderVO {
-  orderId: number;
+  orderId: string;
   orderNo: string;
   totalAmount: number;
   payAmount: number;
@@ -283,14 +331,16 @@ export interface OrderVO {
 }
 
 export interface CreateOrderRequest {
-  skuItems: { skuId: number; quantity: number }[];
-  couponId?: number;
-  addressId: number;
+  skuItems: { skuId: string; quantity: number }[];
+  couponId?: string;
+  addressId: string;
+  /** 幂等键（前端每次下单生成一个，防重复提交） */
+  bizIdentifier: string;
 }
 
 // --- 优惠券 ---
 export interface CouponTemplateVO {
-  id: number;
+  id: string;
   name: string;
   type: number;
   discountValue: number;
@@ -304,8 +354,8 @@ export interface CouponTemplateVO {
 }
 
 export interface UserCouponVO {
-  id: number;
-  couponId: number;
+  id: string;
+  couponId: string;
   name: string;
   type: number;
   discountValue: number;
@@ -317,14 +367,14 @@ export interface UserCouponVO {
 
 // --- 通知 ---
 export interface NotificationVO {
-  id: number;
+  id: string;
   type: number;
   title: string;
   content: string;
-  senderId: number;
+  senderId: string;
   senderName: string;
   senderAvatar: string;
-  targetId: number;
+  targetId: string;
   targetType: number;
   isRead: number;
   aggregateCount: number;
@@ -338,7 +388,7 @@ export interface UnreadCountVO {
 
 // --- IM ---
 export interface ConversationVO {
-  peerId: number;
+  peerId: string;
   peerName: string;
   peerAvatar: string;
   lastContent: string;
@@ -348,9 +398,9 @@ export interface ConversationVO {
 }
 
 export interface ImMessageVO {
-  id: number;
-  senderId: number;
-  receiverId: number;
+  id: string;
+  senderId: string;
+  receiverId: string;
   content: string;
   msgType: number;
   createdAt: string;
@@ -358,7 +408,7 @@ export interface ImMessageVO {
 
 // --- 用户主页 ---
 export interface UserProfileAggVO {
-  userId: number;
+  userId: string;
   nickname: string;
   avatar: string;
   bio: string;
@@ -375,6 +425,62 @@ export interface UserProfileAggVO {
 // --- Feed ---
 export interface FeedResponse {
   notes: NoteCardVO[];
+  nextCursor?: string;
   hasMore: boolean;
+  unreadCount?: number;
   score?: number;
+}
+
+// --- 推荐 ---
+export interface RecommendFeedVO {
+  noteId: string;
+  score: number;
+  source?: string;
+  category?: string;
+  reason?: string;
+}
+
+// --- 搜索 ---
+export interface SearchResultVO<T> {
+  items: T[];
+  total: number;
+  searchAfter?: string;
+  hasMore: boolean;
+  took?: number;
+}
+
+export interface NoteSearchVO {
+  noteId: string;
+  userId: string;
+  title: string;
+  content: string;
+  coverImage: string;
+  likeCount: number;
+  collectCount: number;
+  commentCount: number;
+  createdAt: string;
+  highlightTitle?: string;
+  highlightContent?: string;
+}
+
+export interface ProductSearchVO {
+  spuId: string;
+  skuId: string;
+  name: string;
+  categoryId: string;
+  categoryName: string;
+  brandName: string;
+  price: number;
+  image: string;
+  sales: number;
+  createdAt: string;
+  highlightName?: string;
+}
+
+export interface HotSearchVO {
+  rank: number;
+  keyword: string;
+  score: number;
+  pinned?: boolean;
+  tag?: string;
 }

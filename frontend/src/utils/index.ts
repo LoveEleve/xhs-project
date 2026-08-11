@@ -1,4 +1,8 @@
-export const formatPrice = (price: number): string => `¥${price.toFixed(2)}`;
+export const formatPrice = (price: number | string | null | undefined): string => {
+  const n = Number(price);
+  if (price == null || Number.isNaN(n)) return '¥0.00';
+  return `¥${n.toFixed(2)}`;
+};
 
 export const formatDate = (dateStr: string, withTime = false): string => {
   if (!dateStr) return '';

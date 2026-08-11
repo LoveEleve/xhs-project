@@ -21,8 +21,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
@@ -135,7 +137,6 @@ public class UserService {
             }
         }
     }
-    }
 
     // ==================== 登录 ====================
 
@@ -203,7 +204,6 @@ public class UserService {
         TokenResponse tokenResponse = tokenService.generateTokenPair(user.getId());
         log.info("[登录] 用户登录成功, userId={}, username={}", user.getId(), username);
         return tokenResponse;
-    }
     }
 
     // ==================== Token 刷新 ====================

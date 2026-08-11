@@ -81,3 +81,31 @@ echo "SKU_ID=$SKU_ID SKU_ID2=$SKU_ID2"
 | TOKEN | `cat /tmp/test_token.txt` | 链1 U03 |
 | SKU_ID / SKU_ID2 | P01 P06 创建 | 链2 |
 | ADMIN_TOKEN | `my-xhs-admin-token-2026` | 环境 |
+
+---
+## 测试要点补充（2026-08-10，实测修正）
+
+- **认证**：写操作(加购/改量/勾选/删除/合并/清空)均需 JWT+HMAC。
+- **C05-check-all**：`checked` 是 **query 参数**(?checked=true/false)，非 body。
+- **C07-merge**：body 需 `items:[{skuId,quantity}]`，空 items 返回 40002。
+- **C10-reconcile 是内部/管理端点**：`X-Admin-Call` 直连 19008。
+- 加购数量会累积（同 sku 重复加购）。
+
+---
+## L0-L4 逐端点核对清单
+
+### C01-add / C02-quantity / C03-remove / C08-clear
+- [ ] L0: token+HMAC + SKU
+- [ ] L1正常: 200; 异常: 缺SKU→"商品不存在", 缺JWT→401
+- [ ] L2: Redis `myxhs:cart:{userId}` 与 MySQL `t_cart_item` 一致; 数量变化
+- [ ] L3: 并发(加购) / 一致性(Redis+MySQL同步)
+
+### C06-list / C09-count
+- [ ] L1: 200 条目/count
+- [ ] L2: 与 MySQL 一致
+- [ ] L3: 微服务(商品名Feign)
+
+### C05-check-all
+- [ ] L1: PUT `?checked=true/false` → 200
+- [ ] L2: Redis checked 状态
+- [ ] L3: 一致性

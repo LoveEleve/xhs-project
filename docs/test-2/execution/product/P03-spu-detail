@@ -1,0 +1,3 @@
+# P03-spu-detail — GET /api/product/spu/{id}
+> 2026-08-10 | 链2 product | 验证结果: ✅ 通过
+- 详情含 name/images/skuList; 发现skuList.image=null→已修复

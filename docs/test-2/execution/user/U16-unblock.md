@@ -1,6 +1,6 @@
 # U16 — 取消拉黑 (DELETE /api/user/block/{targetUserId})
 
-> 2026-08-08 | 链1-14 | user服务 | chaintest_c1
+> 2026-08-08 | 链1-14 | user服务 | chaintest_u1
 
 ## § 业务逻辑
 

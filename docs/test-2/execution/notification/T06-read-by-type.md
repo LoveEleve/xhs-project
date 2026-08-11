@@ -1,6 +1,6 @@
 # T06 — 按类型已读 (POST /api/notification/read-by-type/{type})
 
-> 2026-08-08 | 链7-8 | notification | chaintest_c1
+> 2026-08-08 | 链7-8 | notification | chaintest_u1
 
 ## § 业务逻辑
 

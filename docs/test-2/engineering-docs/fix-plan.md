@@ -1,6 +1,23 @@
-# P0 架构级修复规划
+# P0 架构级修复记录
 
-> 8项 | 2026-08-10 | 按依赖分组
+> 8项 | 2026-08-10 | **全部已实施** (commit 223bfd4)
+
+---
+
+## 〇、实施状态总览
+
+| # | P0 | 状态 | 实际实现 |
+|:--:|------|:--:|------|
+| 1 | Content P0-1 ES版本号 | ✅ 已实施 | `NoteIndexSyncConsumer.extractVersion` 优先取 Canal `es` 字段 (NoteIndexSyncConsumer.java:127-131) |
+| 2 | Content P0-2 Like/Favorite版本 | ✅ 已实施 | **保留 versionCheck 在前**，业务失败时 catch 中 `delete(versionKey)` 让 MQ 重试重新处理 (LikeUnlikeConsumer.java:88-93) |
+| 3 | Content P0-5 双计数 | ✅ 已实施(备选方案) | 保留 analytics 本地 key + 缩小同步窗口 |
+| 4 | Content P0-9 NOTE_DELETE | ✅ 已实施 | 新建 `home/consumer/NoteDeleteConsumer.java` (仅清作者 outbox) |
+| 5 | Order P0-1 支付竞态 | ✅ 已实施 | `OrderService.onPaymentSuccess` 捕获 `IllegalStateException` 静默返回 |
+| 6 | Order P0-6 补偿循环 | ✅ 已实施 | `PaymentNotifyCompensateJob` + `RefundNotifyCompensateJob` 加 Redis notified key 去重 (PaymentNotifyCompensateJob.java:122-147) |
+| 7 | Order P0-2(补充) | ✅ 已实施(部分) | 支付成功 key 去 TTL |
+| 8 | Notif P0-B 聚合窗口 | ✅ 已实施 | `NotificationAggregator` AGGREGATE_WINDOW 改为动态当天剩余秒 (NotificationAggregator.java:51-52) |
+
+> **注意**: P0-2 最终实现方案与下方"方案"不同 — 调换顺序方案会破坏 Lua GET+compare+SET 原子性(反排序)，改为 catch 中删除 versionKey。详见第 2 项"已实施修订"。
 
 ---
 
@@ -18,6 +35,8 @@ Notif P0-B(聚合窗口) ◄── (独立 — DB schema变更)
 ---
 
 ### 1. Content P0-1: ES索引版本号体系统一
+
+**状态**: ✅ 已实施
 
 **问题**: Canal用`es`(小整数)、补偿用毫秒时间戳(~1.7e12)、重建用`now()`
 一旦触发补偿→写入过大版本号→后续Canal消息全部被ES `ExternalGte`拒绝→增量同步永久失效
@@ -39,32 +58,47 @@ Notif P0-B(聚合窗口) ◄── (独立 — DB schema变更)
 
 ### 2. Content P0-2: Like/Favorite 消费者版本先写后业务
 
+**状态**: ✅ 已实施 (有修订)
+
 **问题**: `versionCheckScript`在`handleLike`之前执行→DB insert失败→MQ重试→版本已写入
 →`checkVersion >= newVersion`→直接return→数据永久丢失
 
-**方案**: 业务执行成功后再写版本号
+**原方案 (被否决)**: 业务执行成功后再写版本号 — 交换执行顺序
+
+**已实施修订**: ⚠️ 直接交换顺序**不可行** — Lua 是 GET+compare+SET 三合一原子操作，交换后 UNLIKE 的 compare 语义被破坏(反排序)。改为:
 
 **涉及文件**:
-- `LikeUnlikeConsumer.java:69-88` — 调换versionCheck和handleLike执行顺序
-- `FavoriteUnlikeConsumer.java:69-88` — 同上
+- `LikeUnlikeConsumer.java:88-93` — catch 中 `if (versionKey != null) stringRedisTemplate.delete(versionKey)` 后再 throw
+- `FavoriteUnlikeConsumer.java` — 同上
 
-**修复伪代码**:
+**修复伪代码 (最终实施)**:
 ```java
-// 修改前: 版本先写后业务(重试时版本命中→跳过)
-versionCheckScript.execute(versionKey, newVersion);
-handleLike(event);
+// 修改前: 业务失败→versionKey已写→MQ重试被checkVersion拦截→数据丢失
+handleLike(event);  // DB insert失败→异常
+versionCheckScript.execute(versionKey, newVersion);  // 已执行(无法回滚)
 
-// 修改后: 业务先执行后写版本(重试时DB唯一索引幂等→跳过)
-handleLike(event);  // SADD Redis Set, DB依靠唯一索引防重
-versionCheckScript.execute(versionKey, newVersion);
+// 修改后: 版本号照常先写, 但失败时删除versionKey让重试可重新处理
+String versionKey = null;
+try {
+    versionKey = VERSION_PREFIX + userId + ":" + bizType + ":" + bizId;
+    versionCheckScript.execute(versionKey, newVersion);
+    handleLike(event);
+} catch (Exception e) {
+    if (versionKey != null) {
+        stringRedisTemplate.delete(versionKey);  // 关键: 删除后重试可重新versionCheck+handleLike
+    }
+    throw new RuntimeException("消费失败", e);  // 触发MQ重试
+}
 ```
 
-**风险**: 调换顺序后, 若handleLike成功但versionCheck失败→下一消费同样数据→handleLike重复→DB唯一索引兜底 ✅
+**风险**: 业务成功后 versionKey 保留(防重复消费); 业务失败后 versionKey 删除(允许重试真正重做) — 两者不冲突 ✅
 **验证**: 模拟MQ重复投递→确认DB无重复记录
 
 ---
 
 ### 3. Content P0-5: FollowService 双计数 key 体系分离
+
+**状态**: ✅ 已实施 (备选方案)
 
 **问题**: analytics 维护 `myxhs:counter:user_following:{userId}`(Lua直接INCR/DECR) 
 vs counter 维护 `myxhs:counter:2:{userId}:7`(MQ异步)
@@ -88,6 +122,8 @@ vs counter 维护 `myxhs:counter:2:{userId}:7`(MQ异步)
 
 ### 4. Content P0-9: NOTE_DELETE 无人消费
 
+**状态**: ✅ 已实施
+
 **问题**: `NoteService` 发送 `SOCIAL_TOPIC:NOTE_DELETE` 但全项目无消费者
 → 已删除笔记留在作者发件箱 → 新关注者通过 outbox 拉取可见
 
@@ -109,6 +145,8 @@ vs counter 维护 `myxhs:counter:2:{userId}:7`(MQ异步)
 ---
 
 ### 5. Order P0-1: 支付 vs 延时关单竞态自动退款
+
+**状态**: ✅ 已实施
 
 **问题**: 关单先赢(status 0→4)→支付回调`appendEvent`抛异常→支付单已标记成功(钱已扣)
 订单已取消→**无自动退款**
@@ -139,6 +177,8 @@ try {
 
 ### 6. Order P0-6: 补偿任务无限循环
 
+**状态**: ✅ 已实施
+
 **问题**: PaymentNotifyCompensateJob每2分钟扫描`paid_at < now-5min`→调用`notifyPaySuccess`
 →OrderService.getOrderPayAmount不校验状态(对已支付/已取消都返回金额)→永远判定"待支付"→无限循环
 
@@ -166,6 +206,8 @@ stringRedisTemplate.opsForValue().set(notifiedKey, "1", Duration.ofHours(1));
 
 ### 7. Order P0-2(补充): 重复支付 — Order状态校验
 
+**状态**: ✅ 已实施(部分 — 支付成功key去TTL)
+
 **问题**: P0-2已修(支付成功key去TTL), 但order状态校验仍缺失
 
 **方案**: pay时通过已有`getOrderPayAmount`+检查返回金额>0间接验证订单存在
@@ -177,6 +219,8 @@ stringRedisTemplate.opsForValue().set(notifiedKey, "1", Duration.ofHours(1));
 ---
 
 ### 8. Notif P0-B: 聚合窗口 vs 唯一索引一致
+
+**状态**: ✅ 已实施 (方案A)
 
 **问题**: Redis聚合窗口TTL=5分钟, DB`uk_aggregate(user_id,type,target_id,notify_date)`按天唯一
 窗口过期后→INSERT撞唯一索引→DuplicateKey→通知丢失
@@ -204,6 +248,8 @@ private static long getAggregateTtlSeconds() {
 
 ## 三、执行顺序
 
+> ⚠️ 以下 8 项已全部执行完毕 (2026-08-10, commit 223bfd4)，保留原顺序作为修复依赖参考。
+
 | 序号 | P0 | 预估修复量 | 前置依赖 |
 |:--:|------|:--:|------|
 | 1 | Content P0-2 | 2文件,改顺序 | 无 |
@@ -215,7 +261,7 @@ private static long getAggregateTtlSeconds() {
 | 7 | Content P0-1 | 3文件,需先全量重建 | 无 |
 | 8 | Notif P0-B | 1文件(方案A) | 无 |
 
-顺序1→8逐一执行, 每个修复后验证无副作用再继续下一个。
+**已执行状态**: P0-2 采用修订方案(catch删除versionKey)而非原交换顺序方案; P0-5 采用备选方案; P0-9 已建成 NoteDeleteConsumer; 其余按原方案实施。
 
 ---
 

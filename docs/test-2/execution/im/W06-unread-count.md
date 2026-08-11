@@ -1,6 +1,6 @@
 # W06 — 未读计数 (GET /api/im/unread-count)
 
-> 2026-08-08 | 链7-11 | im | chaintest_c1
+> 2026-08-08 | 链7-11 | im | chaintest_u1
 
 ## § 验证
 

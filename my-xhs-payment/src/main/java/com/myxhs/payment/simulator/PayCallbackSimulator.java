@@ -2,6 +2,7 @@ package com.myxhs.payment.simulator;
 
 import com.myxhs.payment.service.PaymentService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -27,12 +28,13 @@ import java.util.concurrent.ThreadLocalRandom;
 public class PayCallbackSimulator {
 
     private final StringRedisTemplate redisTemplate;
-    private final PaymentService paymentService;
+    // 用 ObjectProvider 懒加载 PaymentService，避免与 PaymentService→PayCallbackSimulator 形成构造器循环依赖
+    private final ObjectProvider<PaymentService> paymentServiceProvider;
 
     public PayCallbackSimulator(@Qualifier("stringRedisTemplate") StringRedisTemplate redisTemplate,
-                                PaymentService paymentService) {
+                                ObjectProvider<PaymentService> paymentServiceProvider) {
         this.redisTemplate = redisTemplate;
-        this.paymentService = paymentService;
+        this.paymentServiceProvider = paymentServiceProvider;
     }
 
     /** 待回调 Redis Key 前缀 */
@@ -120,7 +122,7 @@ public class PayCallbackSimulator {
                         paymentNo, payType, success, delay);
 
                 // 通过 PaymentService 处理回调（内部会走完整的支付成功/失败逻辑）
-                paymentService.handlePayCallback(paymentNo, tradeNo, success);
+                paymentServiceProvider.getObject().handlePayCallback(paymentNo, tradeNo, success);
 
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();

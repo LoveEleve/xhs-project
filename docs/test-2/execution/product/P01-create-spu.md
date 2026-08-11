@@ -1,6 +1,6 @@
 # P01 — 创建SPU (POST /api/product/spu)
 
-> 2026-08-08 | 链2-1 | product服务 | chaintest_c1 | spuId=2085989545951625217
+> 2026-08-08 | 链2-1 | product服务 | chaintest_u1 | spuId=2085989545951625217
 
 ## § 业务逻辑
 

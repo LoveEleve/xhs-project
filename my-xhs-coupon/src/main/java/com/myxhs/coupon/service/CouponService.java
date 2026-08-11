@@ -150,6 +150,23 @@ public class CouponService {
         return template;
     }
 
+    /**
+     * 可领券模板列表（领券中心公开接口）
+     * <p>
+     * 返回当前可领取的模板：状态=上架、未删除、剩余>0、且在有效期内。
+     * </p>
+     */
+    public List<CouponTemplate> listClaimableTemplates() {
+        LocalDateTime now = LocalDateTime.now();
+        return templateMapper.selectList(new LambdaQueryWrapper<CouponTemplate>()
+                .eq(CouponTemplate::getStatus, 1)
+                .eq(CouponTemplate::getDeleted, 0)
+                .gt(CouponTemplate::getRemainCount, 0)
+                .le(CouponTemplate::getValidStart, now)
+                .ge(CouponTemplate::getValidEnd, now)
+                .orderByDesc(CouponTemplate::getCreatedAt));
+    }
+
     // ==================== 领券 ====================
 
     /**
@@ -220,8 +237,8 @@ public class CouponService {
                         String.valueOf(template.getPerUserLimit())
                 );
                 if (result != null && result == 1) {
-                    boolean mqSuccess = sendClaimEventSync(userId, templateId);
-                    if (!mqSuccess) {
+                    String claimNo = sendClaimEventSync(userId, templateId);
+                    if (claimNo == null) {
                         rollbackRedisStock(stockKey, claimedKey);
                         throw new BizException(ResultCode.INTERNAL_ERROR, "领券失败，请重试");
                     }

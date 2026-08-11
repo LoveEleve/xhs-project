@@ -7,7 +7,7 @@
 | 场景 | 结果 |
 |------|:--:|
 | HTTP: 空(新用户) | 200, records=0 ✅ |
-| HTTP: 有数据(插入1条) | 200, records=1, content="testuser→chaintest_c1: W03验证消息" ✅ |
+| HTTP: 有数据(插入1条) | 200, records=1, content="testuser→chaintest_u1: W03验证消息" ✅ |
 | MySQL: my_xhs_im.t_chat_message | COUNT=1, content匹配 ✅ |
 
 ## § curl

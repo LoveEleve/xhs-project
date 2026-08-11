@@ -15,4 +15,7 @@ public class SkuInfoDTO {
     private Long spuId;
     private String name;
     private BigDecimal price;
+
+    /** SKU 主图（继承自所属 SPU 第一张图，来自 product 服务） */
+    private String image;
 }

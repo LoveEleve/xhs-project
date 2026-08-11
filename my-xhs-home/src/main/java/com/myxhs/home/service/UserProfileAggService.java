@@ -5,6 +5,7 @@ import com.myxhs.home.dto.NoteCardVO;
 import com.myxhs.home.dto.UserProfileAggVO;
 import com.myxhs.home.feign.AnalyticsFeignClient;
 import com.myxhs.home.feign.ContentFeignClient;
+import com.myxhs.home.feign.CounterFeignClient;
 import com.myxhs.home.feign.UserFeignClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,6 +38,7 @@ public class UserProfileAggService {
     private final UserFeignClient userFeignClient;
     private final AnalyticsFeignClient analyticsFeignClient;
     private final ContentFeignClient contentFeignClient;
+    private final CounterFeignClient counterFeignClient;
     private final ExecutorService aggregatorPool;
 
     /**
@@ -92,15 +94,21 @@ public class UserProfileAggService {
                     }
                 }, aggregatorPool);
 
-        // 4. 用户笔记列表（前 10 条）
+        // 4. 用户笔记列表（前 10 条）+ 已发布笔记总数（用于 noteCount）
+        long[] noteCountHolder = {0};
         CompletableFuture<List<NoteCardVO>> notesFuture = CompletableFuture
                 .supplyAsync(() -> {
                     try {
                         R<Map<String, Object>> r = contentFeignClient.getUserNotes(targetUserId, 1, 10);
                         if (r != null && r.isSuccess() && r.getData() != null) {
-                            Object list = r.getData().get("list");
-                            if (list instanceof List) {
-                                List<Map<String, Object>> noteList = (List<Map<String, Object>>) list;
+                            // content 返回 PageResult：字段是 records / total（修复：原误读 list 导致笔记列表为空）
+                            Object records = r.getData().get("records");
+                            Object total = r.getData().get("total");
+                            if (total instanceof Number) {
+                                noteCountHolder[0] = ((Number) total).longValue();
+                            }
+                            if (records instanceof List) {
+                                List<Map<String, Object>> noteList = (List<Map<String, Object>>) records;
                                 return noteList.stream().map(this::mapToNoteCard).toList();
                             }
                         }
@@ -110,9 +118,53 @@ public class UserProfileAggService {
                     return Collections.<NoteCardVO>emptyList();
                 }, aggregatorPool);
 
+        // 5. 获赞+收藏数：拉取用户全部已发布笔记，sum 其 like(1)+collect(2) 计数
+        CompletableFuture<Long> likeCollectFuture = CompletableFuture
+                .supplyAsync(() -> {
+                    try {
+                        List<Long> noteIds = new ArrayList<>();
+                        int page = 1;
+                        final int size = 50;
+                        long total = Long.MAX_VALUE;
+                        while (noteIds.size() < total && page <= 20) { // 上限保护，避免过多分页
+                            R<Map<String, Object>> r = contentFeignClient.getUserNotes(targetUserId, page, size);
+                            if (r == null || !r.isSuccess() || r.getData() == null) break;
+                            Object totalObj = r.getData().get("total");
+                            if (totalObj instanceof Number) total = ((Number) totalObj).longValue();
+                            Object records = r.getData().get("records");
+                            if (!(records instanceof List)) break;
+                            List<?> recs = (List<?>) records;
+                            for (Object o : recs) {
+                                Object id = ((Map<?, ?>) o).get("id");
+                                if (id instanceof Number) noteIds.add(((Number) id).longValue());
+                            }
+                            if (recs.size() < size) break;
+                            page++;
+                        }
+                        if (noteIds.isEmpty()) return 0L;
+
+                        List<Map<String, Object>> queries = new ArrayList<>();
+                        for (Long id : noteIds) {
+                            queries.add(Map.of("targetType", 1, "targetId", id, "countTypes", List.of(1, 2)));
+                        }
+                        R<Map<String, Map<String, Long>>> cr = counterFeignClient.batchGetCounts(Map.of("queries", queries));
+                        if (cr == null || !cr.isSuccess() || cr.getData() == null) return 0L;
+                        long sum = 0L;
+                        for (Long id : noteIds) {
+                            Map<String, Long> m = cr.getData().get("1:" + id);
+                            if (m == null) continue;
+                            sum += m.getOrDefault("like", 0L) + m.getOrDefault("collect", 0L);
+                        }
+                        return sum;
+                    } catch (Exception e) {
+                        log.warn("[用户主页] 获取获赞收藏数失败: userId={}", targetUserId);
+                        return 0L;
+                    }
+                }, aggregatorPool);
+
         // 等待所有并行任务完成（总超时 3 秒）
         try {
-            CompletableFuture.allOf(userFuture, counterFuture, relationFuture, notesFuture)
+            CompletableFuture.allOf(userFuture, counterFuture, relationFuture, notesFuture, likeCollectFuture)
                     .get(3, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
             log.warn("[用户主页] 聚合超时，部分数据降级");
@@ -128,6 +180,7 @@ public class UserProfileAggService {
         Map<String, Long> counters = counterFuture.getNow(Collections.emptyMap());
         Map<String, Boolean> relation = relationFuture.getNow(Collections.emptyMap());
         List<NoteCardVO> notes = notesFuture.getNow(Collections.emptyList());
+        Long likeCollect = likeCollectFuture.getNow(0L);
 
         // ========== 组装 VO ==========
         return UserProfileAggVO.builder()
@@ -137,8 +190,8 @@ public class UserProfileAggService {
                 .bio((String) userData.get("bio"))
                 .followingCount(counters.getOrDefault("following", 0L))
                 .followerCount(counters.getOrDefault("follower", 0L))
-                .likeAndCollectCount(counters.getOrDefault("likeAndCollect", 0L))
-                .noteCount(counters.getOrDefault("note", 0L))
+                .likeAndCollectCount(likeCollect)
+                .noteCount(noteCountHolder[0])
                 .isFollowing(relation.getOrDefault("isFollowing", false))
                 .isFollowBack(relation.getOrDefault("isFollowBack", false))
                 .isMutual(relation.getOrDefault("isMutual", false))

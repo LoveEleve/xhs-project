@@ -209,7 +209,8 @@ public class IndexRebuildJob {
         while (true) {
             List<Map<String, Object>> products = jdbcTemplate.queryForList(
                     // t_spu 表实际字段 — category_name/price/image 由 buildProductDocument 默认值补全
-                    "SELECT id, name, category_id, brand_id, description, images, status, created_at FROM t_spu " +
+                    // 【修复】t_spu 在 my_xhs_product 库，search 默认数据源是 my_xhs_content，必须跨库限定
+                    "SELECT id, name, category_id, brand_id, description, images, status, created_at FROM my_xhs_product.t_spu " +
                             "WHERE id > ? AND deleted = 0 ORDER BY id ASC LIMIT ?",
                     lastSpuId, batchSize);
 

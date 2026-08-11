@@ -31,18 +31,18 @@ python3 -c "import redis; r=redis.Redis(host='21.130.247.89',port=6379,password=
 
 ## 二、执行顺序
 
-| 顺序 | 端点 | 前置依赖 | 认证 | 异常 |
-|:--:|------|------|:--:|:--:|
-| 1 | P09-category-tree | 无 | 无 | ⚠️ Redis不可用 |
-| 2 | P01-spu-create | U03(Token) | Admin | ⚠️ 缺Admin/重复创建 |
-| 3 | P03-spu-detail | P01 | 无 | ⚠️ 不存在/Redis不可用 |
-| 4 | P06-sku-create | P01 | Admin | ⚠️ SPU不存在/缺Admin |
-| 5 | P04-spu-list | P01 | 无 | — |
-| 6 | P02-spu-update | P01 | Admin | ⚠️ 缺Admin |
-| 7 | P05-spu-status | P01 | Admin | ⚠️ status非法值 |
-| 8 | P07-sku-detail | P06 | 无 | ⚠️ 下架SKU |
-| 9 | P08-sku-batch | P06 | Internal | ⚠️ 缺Internal/超100 |
-| 10 | P10-search-product | P01+Canal同步 | 无 | ⚠️ Canal延迟/ES不可用 |
+| 顺序 | 端点 | 前置依赖 | 认证 | 产出 | 异常 |
+|:--:|------|------|:--:|------|:--:|
+| 1 | P09-category-tree | 无 | 无 | execution/product/P09-category-tree.md | ⚠️ Redis不可用 |
+| 2 | P01-spu-create | U03(Token) | Admin | execution/product/P01-spu-create.md | ⚠️ 缺Admin/重复创建 |
+| 3 | P03-spu-detail | P01 | 无 | execution/product/P03-spu-detail.md | ⚠️ 不存在/Redis不可用 |
+| 4 | P06-sku-create | P01 | Admin | execution/product/P06-sku-create.md | ⚠️ SPU不存在/缺Admin |
+| 5 | P04-spu-list | P01 | 无 | execution/product/P04-spu-list.md | — |
+| 6 | P02-spu-update | P01 | Admin | execution/product/P02-spu-update.md | ⚠️ 缺Admin |
+| 7 | P05-spu-status | P01 | Admin | execution/product/P05-spu-status.md | ⚠️ status非法值 |
+| 8 | P07-sku-detail | P06 | 无 | execution/product/P07-sku-detail.md | ⚠️ 下架SKU |
+| 9 | P08-sku-batch | P06 | Internal | execution/product/P08-sku-batch.md | ⚠️ 缺Internal/超100 |
+| 10 | P10-search-product | P01+Canal同步 | 无 | execution/product/P10-search-product.md | ⚠️ Canal延迟/ES不可用 |
 
 ---
 
@@ -93,3 +93,36 @@ python3 -c "import redis; r=redis.Redis(host='21.130.247.89',port=6379,password=
 | SPU_ID | P01 返回 | P01 创建后保存 |
 | SKU_ID | P06 返回 | P06 创建后保存 |
 | CATEGORY_ID | P09 返回的第一个分类树节点 id | P09 列表 |
+
+---
+## 测试要点补充（2026-08-10，实测修正）
+
+- **认证**：经 gateway 19000。P01/P06/P02/P05 管理端点需 JWT + `X-Admin-Call`；**P09/P03/P04 实际也需 JWT**（/api/product/** 未进 JWT 白名单，非文档标注的"认证:无"）。
+- **P08-sku-batch 是内部端点**：走 `X-Internal-Call` 直连 19006，不走 gateway。
+- **创建响应字段**：`data.spuId` / `data.skuId`（不是 id）。
+- **P07/P03 sku 含 image**（继承 SPU 主图，#46 已修）。
+- **P10-search-product**：需 ES 索引有数据（先 S07-rebuild 重建）；中文 keyword 需 URL 编码。
+
+---
+## L0-L4 逐端点核对清单
+
+### P01-spu-create / P06-sku-create (Admin)
+- [ ] L0: token + X-Admin-Call
+- [ ] L1正常: 200 返回 `data.spuId/skuId`; 异常: 缺Admin→403
+- [ ] L2: MySQL `t_spu`/`t_sku` 新增行
+- [ ] L3: 创建后立即读(P03)一致
+
+### P03-spu-detail
+- [ ] L1: 200 name/images/skuList; 异常: 不存在→PRODUCT_NOT_FOUND
+- [ ] L2: Redis `myxhs:product:spu:{id}` 回填; `skuList[].image` 非空
+- [ ] L3: 一致性(缓存回填) / 性能
+
+### P02/P05 更新/下架
+- [ ] L1: PUT → 200
+- [ ] L2: Redis 延迟双删; 下架后 P10 搜索不可见(Canal)
+- [ ] L3: 缓存一致性
+
+### P10-search-product
+- [ ] L1: GET → 200 total>0
+- [ ] L2: ES `product_index` 有数据
+- [ ] L3: 性能(ES)

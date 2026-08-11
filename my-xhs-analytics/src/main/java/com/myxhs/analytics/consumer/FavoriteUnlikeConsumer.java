@@ -62,10 +62,10 @@ public class FavoriteUnlikeConsumer implements RocketMQListener<MessageExt> {
     @Override
     public void onMessage(MessageExt msg) {
         MqTraceHelper.restoreTraceId(msg);
+        String versionKey = null;
         try {
             String message = new String(msg.getBody(), StandardCharsets.UTF_8);
             FavoriteEvent event = objectMapper.readValue(message, FavoriteEvent.class);
-            String versionKey = null;
 
             // 原子版本号防乱序：Lua GET+compare+SET 原子操作
             if (event.getActionTime() != null) {

@@ -1,6 +1,6 @@
 # T03 — 通知列表 (GET /api/notification/list)
 
-> 2026-08-08 | 链7-2 | notification | chaintest_c1
+> 2026-08-08 | 链7-2 | notification | chaintest_u1
 
 ## § 业务逻辑
 

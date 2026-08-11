@@ -1,6 +1,6 @@
 # U11 — 用户信息 (GET /api/user/me)
 
-> 2026-08-08 | 链1-4 | user服务 | chaintest_c1
+> 2026-08-08 | 链1-4 | user服务 | chaintest_u1
 
 ## § 业务逻辑
 
@@ -20,9 +20,9 @@ curl → Gateway:19000 (JWT+HMAC白名单免签名)
 
 | 检查项 | 结果 |
 |------|:--:|
-| 用户信息 | id=2085982901507301378, username=chaintest_c1, status=1 ✅ |
+| 用户信息 | id=2085982901507301378, username=chaintest_u1, status=1 ✅ |
 | 缓存 | TTL=2087s(首次查询后缓存填充) ✅ |
-| nickname默认 | =username(chaintest_c1) ✅ |
+| nickname默认 | =username(chaintest_u1) ✅ |
 
 ## § 数据验证 (L2)
 

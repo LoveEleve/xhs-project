@@ -100,11 +100,11 @@ public class FeedService {
         List<Long> noteIds = merged.stream()
                 .map(t -> Long.valueOf(t.getValue()))
                 .collect(Collectors.toList());
-        Double minScore = merged.get(merged.size() - 1).getScore();
+        Double nextScore = merged.get(merged.size() - 1).getScore();
 
         // ========== 第 2 步：CompletableFuture 并行聚合 ==========
         boolean hasMoreFromRedis = merged.size() >= size;
-        return aggregateFeed(userId, noteIds, minScore, size, hasMoreFromRedis);
+        return aggregateFeed(userId, noteIds, nextScore, size, hasMoreFromRedis);
     }
 
     /**

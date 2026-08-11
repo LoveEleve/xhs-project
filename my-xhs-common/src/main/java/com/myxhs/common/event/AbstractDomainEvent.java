@@ -33,6 +33,10 @@ public abstract class AbstractDomainEvent<T> implements DomainEvent<T> {
         return timestamp;
     }
 
+    public void setTimestamp(Instant timestamp) {
+        this.timestamp = timestamp;
+    }
+
     @Override
     public abstract String getEventType();
 

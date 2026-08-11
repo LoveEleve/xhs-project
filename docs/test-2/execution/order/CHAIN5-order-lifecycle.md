@@ -1,6 +1,6 @@
 # 链5 — 订单全生命周期
 
-> 2026-08-08 | order+inventory+payment | chaintest_c1 | orderId=2086000934497923073
+> 2026-08-08 | order+inventory+payment | chaintest_u1 | orderId=2086000934497923073
 
 ## 流程
 

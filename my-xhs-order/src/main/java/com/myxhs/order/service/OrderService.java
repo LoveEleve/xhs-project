@@ -14,7 +14,9 @@ import com.myxhs.order.entity.*;
 import com.myxhs.order.feign.CouponFeignClient;
 import com.myxhs.order.feign.InventoryFeignClient;
 import com.myxhs.order.feign.ProductFeignClient;
+import com.myxhs.order.feign.UserFeignClient;
 import com.myxhs.order.dto.SkuInfoDTO;
+import com.myxhs.order.dto.UserAddressDTO;
 import com.myxhs.order.listener.OrderTransactionListener;
 import com.myxhs.order.mapper.*;
 import com.myxhs.order.repository.OrderNoMappingRepository;
@@ -23,6 +25,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.client.producer.SendStatus;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.messaging.support.MessageBuilder;
@@ -64,6 +67,7 @@ public class OrderService {
     private final InventoryFeignClient inventoryFeignClient;
     private final CouponFeignClient couponFeignClient;
     private final ProductFeignClient productFeignClient;
+    private final UserFeignClient userFeignClient;
     private final BusinessMetrics businessMetrics;
 
     private static final String IDEMPOTENT_KEY_PREFIX = "myxhs:order:idempotent:";
@@ -129,6 +133,7 @@ public class OrderService {
             throw new BizException(ResultCode.LOCK_ACQUIRE_FAIL, "操作过于频繁，请稍后重试");
         }
 
+        OrderTransactionListener.OrderCreateContext context = null;
         try {
             // 3. 获取 SKU 真实数据（不再使用 Mock 价格）
             List<Long> skuIds = request.getSkuItems().stream()
@@ -171,7 +176,10 @@ public class OrderService {
             // 先构建 payload（本地消息表和 MQ 消息体共用同一份 JSON）
             String payload = buildTransactionPayload(orderNo, userId, request);
 
-            OrderTransactionListener.OrderCreateContext context =
+            // 3.6 获取真实收货地址（替代 Mock 硬编码）：通过 addressId 查询 user 服务
+            String addressSnapshot = resolveAddressSnapshot(userId, request.getAddressId());
+
+            context =
                     OrderTransactionListener.OrderCreateContext.builder()
                             .userId(userId)
                             .request(request)
@@ -179,6 +187,7 @@ public class OrderService {
                             .totalAmount(totalAmount)
                             .discountAmount(discountAmount)
                             .payAmount(payAmount)
+                            .addressSnapshot(addressSnapshot)
                     .transactionPayload(payload)
                     .skuMap(skuMap)
                     .build();
@@ -272,6 +281,41 @@ public class OrderService {
      * 下游库存服务消费后执行预扣减。
      * </p>
      */
+    /**
+     * 解析真实收货地址快照（替代 Mock 硬编码）。
+     * 通过 addressId 调用 user 服务获取，序列化为 {name, phone, address} JSON 快照。
+     */
+    private String resolveAddressSnapshot(Long userId, Long addressId) {
+        if (addressId == null) {
+            log.warn("[订单] 下单未提供 addressId, userId={}, 地址快照为空", userId);
+            return "{\"name\":\"\",\"phone\":\"\",\"address\":\"\"}";
+        }
+        try {
+            R<UserAddressDTO> resp = userFeignClient.getAddress(userId, addressId);
+            if (resp == null || !resp.isSuccess() || resp.getData() == null) {
+                log.warn("[订单] 获取收货地址失败, userId={}, addressId={}, msg={}", userId, addressId,
+                        resp != null ? resp.getMessage() : "null");
+                return "{\"name\":\"\",\"phone\":\"\",\"address\":\"\"}";
+            }
+            UserAddressDTO a = resp.getData();
+            String full = nvl(a.getProvince()) + nvl(a.getCity()) + nvl(a.getDistrict()) + nvl(a.getDetailAddress());
+            return "{\"name\":\"" + esc(a.getReceiverName()) + "\",\"phone\":\"" + esc(a.getReceiverPhone())
+                    + "\",\"address\":\"" + esc(full) + "\"}";
+        } catch (Exception e) {
+            log.warn("[订单] 获取收货地址异常, userId={}, addressId={}", userId, addressId, e);
+            return "{\"name\":\"\",\"phone\":\"\",\"address\":\"\"}";
+        }
+    }
+
+    private String nvl(String s) {
+        return s == null ? "" : s;
+    }
+
+    private String esc(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
     private String buildTransactionPayload(String orderNo, Long userId, OrderCreateRequest request) {
         try {
             return objectMapper.writeValueAsString(java.util.Map.of(

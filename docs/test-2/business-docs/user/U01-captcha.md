@@ -49,7 +49,7 @@ echo "captchaKey: $KEY"
 echo "image: ${IMAGE_BASE64:0:50}..."
 
 # 验证码日志
-CODE=$(grep "$KEY" /tmp/r_user.log | tail -1 | grep -oP 'code=\K\w+')
+CODE=$(python3 -c "import redis; r=redis.Redis(host='21.130.247.89',port=6379,password='Xhs@2026#Redis'); print(r.get('myxhs:user:captcha:$KEY').decode())")
 echo "code: $CODE"
 ```
 

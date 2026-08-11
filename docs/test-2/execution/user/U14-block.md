@@ -1,6 +1,6 @@
 # U14 — 拉黑用户 (POST /api/user/block/{targetUserId})
 
-> 2026-08-08 | 链1-13 | user服务 | chaintest_c1→10001
+> 2026-08-08 | 链1-13 | user服务 | chaintest_u1→10001
 
 ## § 业务逻辑
 

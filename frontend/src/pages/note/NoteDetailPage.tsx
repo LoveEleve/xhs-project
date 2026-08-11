@@ -27,18 +27,34 @@ export default function NoteDetailPage() {
   useEffect(() => {
     if (!id) return;
     setLoading(true);
-    getNoteDetail(Number(id))
+    getNoteDetail(id)
       .then(resp => { setNote(resp.data.data); setLoading(false); })
       .catch(e => { setError(e.response?.data?.message || '加载失败'); setLoading(false); });
 
-    getSimilarNotes(Number(id), 6)
-      .then(resp => setSimilarNotes(resp.data.data || []))
+    getSimilarNotes(id, 6)
+      .then(async (resp) => {
+        const list = resp.data.data || [];
+        const cards = await Promise.all(list.map(async (item) => {
+          try {
+            const d = (await getNoteDetail(item.noteId)).data.data;
+            return {
+              noteId: d.noteId, title: d.title,
+              coverUrl: d.coverUrl || d.images?.[0] || '', noteType: d.noteType,
+              authorId: d.authorId, authorNickname: d.authorNickname, authorAvatar: d.authorAvatar,
+              likeCount: d.likeCount, collectCount: d.collectCount, commentCount: d.commentCount,
+              isLiked: d.isLiked, isCollected: d.isCollected, isFollowed: d.isFollowed,
+              createdAt: d.createdAt, score: 0,
+            } as NoteCardVO;
+          } catch { return null; }
+        }));
+        setSimilarNotes(cards.filter((c): c is NoteCardVO => c !== null));
+      })
       .catch(() => {});
   }, [id]);
 
   if (loading) return <div style={{ textAlign: 'center', padding: 80 }}><Spin size="large" /></div>;
-  if (error) return <Alert type="error" message={error} style={{ margin: 24 }} />;
-  if (!note) return <Alert type="error" message="笔记不存在" style={{ margin: 24 }} />;
+  if (error) return <Alert type="error" title={error} style={{ margin: 24 }} />;
+  if (!note) return <Alert type="error" title="笔记不存在" style={{ margin: 24 }} />;
 
   const isAuthor = userId === note.authorId;
   const noteId = note.noteId;
@@ -62,8 +78,8 @@ export default function NoteDetailPage() {
     const oldCount = note.collectCount;
     setNote(prev => prev ? { ...prev, isCollected: !old, collectCount: oldCount + (old ? -1 : 1) } : prev);
     try {
-      if (old) await unfavorite(noteId, 1);
-      else await favorite(noteId, 1);
+      if (old) await unfavorite(noteId);
+      else await favorite(noteId);
     } catch {
       setNote(prev => prev ? { ...prev, isCollected: old, collectCount: oldCount } : prev);
       message.error('操作失败');
@@ -111,7 +127,7 @@ export default function NoteDetailPage() {
       setCommentText('');
       message.success('评论成功');
       // 重新加载 NoteDetail 获取最新计数
-      getNoteDetail(Number(id)).then(resp => setNote(resp.data.data)).catch(() => {});
+      getNoteDetail(id!).then(resp => setNote(resp.data.data)).catch(() => {});
     } catch { message.error('评论失败'); }
   };
 

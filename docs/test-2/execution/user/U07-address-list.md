@@ -1,6 +1,6 @@
 # U07 — 地址列表 (GET /api/user/address/list)
 
-> 2026-08-08 | 链1-8 | user服务 | chaintest_c1
+> 2026-08-08 | 链1-8 | user服务 | chaintest_u1
 
 ## § 业务逻辑
 

@@ -4,7 +4,7 @@
 
 ## § 业务逻辑
 
-生成32位hex captchaKey + base64 PNG图片，code值写入Redis `myxhs:user:captcha:{key}`(TTL=300s)，同时输出到user服务日志供测试脚本grep提取。状态机: 生成→存储→注册/登录消费后DEL。
+生成32位hex captchaKey + base64 PNG图片，code值写入Redis `myxhs:user:captcha:{key}`(TTL=300s)（安全设计，不写日志）。状态机: 生成→存储→注册/登录消费后DEL。测试脚本从Redis读取code（见交接文档§5.2）。
 
 ## § ASCII 流转图
 
@@ -13,8 +13,8 @@ curl → Gateway:19000 (whitelist免JWT+免HMAC)
        → my-xhs-user:19001 (GET /api/user/auth/captcha)
          → CaptchaService.generateCaptcha()
            → Redis: SETEX myxhs:user:captcha:{key} {code} 300
-           → log: code=XXXX到/tmp/r_user.log
            → 响应: captchaKey + captchaImage(base64 PNG)
+           (code 从 Redis GET myxhs:user:captcha:{key} 读取，不写日志)
 ```
 
 ## § 业务链验证

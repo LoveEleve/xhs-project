@@ -1,6 +1,6 @@
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Layout, Input, Badge, Dropdown, Avatar, Space } from 'antd';
-import { BellOutlined, ShoppingCartOutlined, UserOutlined } from '@ant-design/icons';
+import { Layout, Input, Badge, Dropdown, Avatar, Space, Button } from 'antd';
+import { BellOutlined, ShoppingCartOutlined, UserOutlined, PlusOutlined, MessageOutlined } from '@ant-design/icons';
 import { useEffect } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { useNotificationStore } from '../store/notificationStore';
@@ -12,22 +12,27 @@ const { Header, Content } = Layout;
 export default function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, logout } = useAuthStore();
-  const { unreadCount, fetchUnread } = useNotificationStore();
+  const { user, logout, token } = useAuthStore();
+  const { unreadCount, fetchUnread, connectSSE, disconnectSSE } = useNotificationStore();
   const { count: cartCount, fetchCount } = useCartStore();
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (token) {
+    if (!token) {
+      disconnectSSE();
+      return;
+    }
+    fetchUnread();
+    fetchCount();
+    connectSSE();
+    const interval = setInterval(() => {
       fetchUnread();
       fetchCount();
-      const interval = setInterval(() => {
-        fetchUnread();
-        fetchCount();
-      }, 30000);
-      return () => clearInterval(interval);
-    }
-  }, []);
+    }, 30000);
+    return () => {
+      clearInterval(interval);
+      disconnectSSE();
+    };
+  }, [token, fetchUnread, fetchCount, connectSSE, disconnectSSE]);
 
   const handleSearch = (keyword: string) => {
     if (!keyword.trim()) return;
@@ -48,7 +53,11 @@ export default function AppLayout() {
 
   const userMenuItems = [
     { key: 'profile', label: '我的主页', onClick: () => navigate('/me') },
+    { key: 'notes', label: '我的笔记', onClick: () => navigate('/me/notes') },
+    { key: 'favorites', label: '我的收藏', onClick: () => navigate('/me/favorites') },
     { key: 'orders', label: '我的订单', onClick: () => navigate('/order/list') },
+    { key: 'address', label: '收货地址', onClick: () => navigate('/me/address') },
+    { key: 'coupon', label: '我的优惠券', onClick: () => navigate('/me/coupon') },
     { key: 'block', label: '拉黑列表', onClick: () => navigate('/me/block') },
     { type: 'divider' as const },
     { key: 'logout', label: '退出登录', onClick: () => { logout(); navigate('/login'); } },
@@ -62,12 +71,18 @@ export default function AppLayout() {
         alignItems: 'center', justifyContent: 'space-between',
         height: 56, borderBottom: '1px solid #f0f0f0',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
           <span onClick={() => navigate('/feed')} style={{
             fontSize: 20, fontWeight: 700, color: '#ff4d4f', cursor: 'pointer',
           }}>
             my-xhs
           </span>
+          <a onClick={() => navigate('/feed')} style={{
+            color: location.pathname.startsWith('/feed') ? '#ff4d4f' : '#333', fontWeight: 500,
+          }}>首页</a>
+          <a onClick={() => navigate('/product')} style={{
+            color: location.pathname.startsWith('/product') ? '#ff4d4f' : '#333', fontWeight: 500,
+          }}>商品</a>
         </div>
         <div style={{ flex: 1, display: 'flex', justifyContent: 'center', padding: '0 32px' }}>
           <Input.Search
@@ -77,13 +92,17 @@ export default function AppLayout() {
             allowClear
           />
         </div>
-        <Space size={24}>
+        <Space size={20}>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/note/publish')}>
+            发布
+          </Button>
           <Badge count={cartCount} size="small" offset={[4, -4]}>
             <ShoppingCartOutlined style={{ fontSize: 20, cursor: 'pointer' }} onClick={() => navigate('/cart')} />
           </Badge>
           <Badge count={unreadCount} size="small" offset={[4, -4]}>
             <BellOutlined style={{ fontSize: 20, cursor: 'pointer' }} onClick={() => navigate('/notification')} />
           </Badge>
+          <MessageOutlined style={{ fontSize: 20, cursor: 'pointer' }} onClick={() => navigate('/im')} />
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
             <Space style={{ cursor: 'pointer' }}>
               <Avatar src={user?.avatar} size={32} icon={<UserOutlined />} />

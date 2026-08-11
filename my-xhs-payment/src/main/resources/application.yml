@@ -19,6 +19,9 @@ server:
     enabled: true
 
 spring:
+  main:
+    # PaymentService ↔ PayCallbackSimulator 存在调用闭环（模拟回调需回 PaymentService 处理），允许循环引用
+    allow-circular-references: true
   mvc:
     pathmatch:
       matching-strategy: ant_path_matcher
@@ -88,6 +91,7 @@ spring:
     sentinel:
       transport:
         dashboard: 21.130.247.89:8858
+        port: 8734
       # 取消懒加载，应用启动时即初始化 Sentinel
       eager: true
     openfeign:

@@ -1,6 +1,6 @@
 # U08 — 更新地址 (PUT /api/user/address/{id})
 
-> 2026-08-08 | 链1-9 | user服务 | chaintest_c1 | addrId=2085983401418006529
+> 2026-08-08 | 链1-9 | user服务 | chaintest_u1 | addrId=2085983401418006529
 
 ## § 业务逻辑
 

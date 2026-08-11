@@ -1,6 +1,6 @@
 # 链6 — 内容社交全链路
 
-> 2026-08-08 | content+analytics+counter | chaintest_c1 | noteId=2086012037638475778
+> 2026-08-08 | content+analytics+counter | chaintest_u1 | noteId=2086012037638475778
 
 ## 流程
 
@@ -93,17 +93,17 @@ curl -s -X POST http://localhost:19000/api/social/follow/10001 -H "Authorization
 
 | 检查项 | 结果 |
 |------|:--:|
-| chaintest_c1的粉丝数 | 0(无粉丝,Feed推空) ⚠️ |
+| chaintest_u1的粉丝数 | 0(无粉丝,Feed推空) ⚠️ |
 | 10001 Feed收件箱 | 7条历史笔记(系统正常) ✅ |
-| 新笔记推送(chaintest_c1) | 无粉丝→无推送 ⚠️ |
+| 新笔记推送(chaintest_u1) | 无粉丝→无推送 ⚠️ |
 
-> 完整的Feed推送验证需要先创建粉丝关系: testuser(10001)关注chaintest_c1→发笔记→验证10001 Feed收件箱增量
+> 完整的Feed推送验证需要先创建粉丝关系: testuser(10001)关注chaintest_u1→发笔记→验证10001 Feed收件箱增量
 
 ### Feed推送完整验证(已补)
 
 | 步骤 | 结果 |
 |------|:--:|
 | 1. 注册 feed_follower | id=2086023092250976258 ✅ |
-| 2. feed_follower 关注 chaintest_c1 | 200 ✅ |
-| 3. chaintest_c1 发笔记 | noteId=2086023195367919617 ✅ |
+| 2. feed_follower 关注 chaintest_u1 | 200 ✅ |
+| 3. chaintest_u1 发笔记 | noteId=2086023195367919617 ✅ |
 | 4. MQ推送到粉丝Feed收件箱 | myxhs:feed:inbox:{feed_follower}=1条,noteId匹配 ✅ |

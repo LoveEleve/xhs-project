@@ -1,6 +1,7 @@
 package com.myxhs.product.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.common.exception.BizException;
 import com.myxhs.common.id.IdGeneratorUtil;
 import com.myxhs.common.response.ResultCode;
@@ -37,6 +38,7 @@ public class SkuService {
     private final SpuMapper spuMapper;
     private final SpuService spuService;
     private final IdGeneratorUtil idGeneratorUtil;
+    private final ObjectMapper objectMapper;
 
     /**
      * 创建 SKU
@@ -128,7 +130,29 @@ public class SkuService {
         vo.setOriginalPrice(sku.getOriginalPrice());
         // stock 字段已从 SkuVO 剔除：SKU 表 stock 是冗余占位值，真实库存以 inventory 服务为准
         vo.setSpecs(sku.getSpecs());
+        vo.setImage(resolveSpuImage(sku.getSpuId()));
         vo.setStatus(sku.getStatus());
         return vo;
+    }
+
+    /**
+     * 解析 SKU 主图：SKU 表无 image 字段，图片存储在所属 SPU 的 images(JSON数组)，取第一张作主图。
+     */
+    private String resolveSpuImage(Long spuId) {
+        if (spuId == null) {
+            return null;
+        }
+        Spu spu = spuMapper.selectById(spuId);
+        if (spu == null || spu.getImages() == null) {
+            return null;
+        }
+        try {
+            List<String> images = objectMapper.readValue(spu.getImages(),
+                    objectMapper.getTypeFactory().constructCollectionType(List.class, String.class));
+            return (images == null || images.isEmpty()) ? null : images.get(0);
+        } catch (Exception e) {
+            log.warn("[商品] SPU images 解析失败, spuId={}", spuId, e);
+            return null;
+        }
     }
 }

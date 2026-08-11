@@ -25,7 +25,7 @@ mysql -h 21.130.247.89 -P 3306 -u root -p'Xhs@2026#MySQL' -e "SELECT 1" 2>/dev/n
 # 获取验证码
 curl -s http://localhost:19000/api/user/auth/captcha > /tmp/cap.json
 KEY=$(python3 -c "import json; print(json.load(open('/tmp/cap.json'))['data']['captchaKey'])")
-CODE=$(grep "$KEY" /tmp/r_user.log | tail -1 | grep -oP 'code=\K\w+')
+CODE=$(python3 -c "import redis; r=redis.Redis(host='21.130.247.89',port=6379,password='Xhs@2026#Redis'); print(r.get('myxhs:user:captcha:$KEY').decode())")
 
 # 注册
 curl -s -X POST http://localhost:19000/api/user/auth/register \
@@ -39,7 +39,7 @@ curl -s -X POST http://localhost:19000/api/user/auth/register \
 # 登录
 curl -s http://localhost:19000/api/user/auth/captcha > /tmp/cap.json
 KEY=$(python3 -c "import json; print(json.load(open('/tmp/cap.json'))['data']['captchaKey'])")
-CODE=$(grep "$KEY" /tmp/r_user.log | tail -1 | grep -oP 'code=\K\w+')
+CODE=$(python3 -c "import redis; r=redis.Redis(host='21.130.247.89',port=6379,password='Xhs@2026#Redis'); print(r.get('myxhs:user:captcha:$KEY').decode())")
 
 RESP=$(curl -s http://localhost:19000/api/user/auth/login \
   -H "Content-Type: application/json" \
@@ -55,7 +55,7 @@ echo "Token saved: $(head -c 20 /tmp/test_token.txt)..."
 ```bash
 curl -s http://localhost:19000/api/user/auth/captcha > /tmp/cap2.json
 KEY2=$(python3 -c "import json; print(json.load(open('/tmp/cap2.json'))['data']['captchaKey'])")
-CODE2=$(grep "$KEY2" /tmp/r_user.log | tail -1 | grep -oP 'code=\K\w+')
+CODE2=$(python3 -c "import redis; r=redis.Redis(host='21.130.247.89',port=6379,password='Xhs@2026#Redis'); print(r.get('myxhs:user:captcha:$KEY2').decode())")
 
 curl -s -X POST http://localhost:19000/api/user/auth/register \
   -H "Content-Type: application/json" \
@@ -150,3 +150,42 @@ curl -s -X POST http://localhost:19000/api/user/auth/register \
 | USER_ID | JWT subject 解码 | U06 返回的 id 字段 |
 | ADDRESS_ID | U10 返回的 addressId | U10 创建地址 |
 | PEER_USER_ID | chaintest_u2 的 id | 第二个用户 U06 返回 |
+
+---
+## 测试要点补充（2026-08-10，实测修正）
+
+- **认证**：全部经 gateway 19000。写操作(POST/PUT/DELETE)需 HMAC 签名；读操作(me/info/list)JWT 即可。
+- **U04-refresh / U05-logout**：`refreshToken` 是 **query 参数**，不是 body。
+- **U16-change-password**：改密后会**轮换 HMAC 会话密钥**，之后需重新登录。
+- **U10-U13 地址 / U-B1-B3 屏蔽**：均为写操作需 HMAC。
+- **HMAC 签名串**：`HMAC-SHA256(secret, METHOD + 纯路径 + timestamp + nonce)`，secret 取自登录响应 `hmacSecret`。
+- 测试数据：chaintest_u1/u2，密码 Test@123456。
+
+---
+## L0-L4 逐端点核对清单
+
+> 每个端点必须 L0→L4 全勾选才可标"通过"。禁止只验 HTTP。
+
+### U03-login
+- [ ] L0: token/user服务/验证码 就绪
+- [ ] L1正常: POST login → 200, accessToken+refreshToken+hmacSecret
+- [ ] L1异常: 密码错→40108; 验证码错→40104; 5次失败→锁定
+- [ ] L2: Redis `myxhs:user:token:access:{id}` TTL≈1800; `refresh` TTL≈604800; MySQL `last_login_time` 更新
+- [ ] L3: 安全(BCrypt/一次性验证码) / 并发(登录锁) / 性能(<500ms)
+
+### U06-me
+- [ ] L0: 有token
+- [ ] L1正常: GET me → 200 返回username; 异常: 无token→401
+- [ ] L2: MySQL t_user 对应行
+- [ ] L3: 性能 / 安全(JWT)
+
+### U10-U13 地址
+- [ ] L0: 有token+HMAC
+- [ ] L1: POST/PUT/DELETE address → 200; 列表一致
+- [ ] L2: MySQL `t_user_address` 增删改行数
+- [ ] L3: 地址上限(20) / 默认地址切换
+
+### U-B1/B2/B3 屏蔽
+- [ ] L1: block/list/unblock → 200; list显示/移除
+- [ ] L2: Redis `myxhs:user:block:{userId}`
+- [ ] L3: 屏蔽后对方笔记/资料不可见

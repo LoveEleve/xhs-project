@@ -1,6 +1,6 @@
 # T04 — 未读计数 (GET /api/notification/unread-count)
 
-> 2026-08-08 | 链7-3 | notification | chaintest_c1
+> 2026-08-08 | 链7-3 | notification | chaintest_u1
 
 ## § 业务逻辑
 

@@ -1,10 +1,9 @@
 import client from './client';
-import type { ApiResponse, SpuDetailVO, SpuItemVO, ProductDetailAggVO, PageData } from '../types';
+import type { ApiResponse, SpuDetailVO, SpuItemVO, ProductDetailAggVO, CategoryTreeVO, PageData } from '../types';
 
-export const getSpuDetail = (spuId: number) => client.get<ApiResponse<SpuDetailVO>>(`/product/spu/${spuId}`);
-export const getSpuList = (params: { page?: number; size?: number; categoryId?: number }) => client.get<ApiResponse<PageData<SpuItemVO>>>('/product/spu/list', { params });
-export const getCategoryTree = () => client.get<ApiResponse<unknown>>('/product/category/tree');
-export const getSkuDetail = (skuId: number) => client.get<ApiResponse<unknown>>(`/product/sku/${skuId}`);
-export const batchGetSku = (ids: number[]) => client.get<ApiResponse<unknown>>('/product/sku/batch', { params: { ids: ids.join(',') } });
-export const getSkuList = (spuId: number) => client.get<ApiResponse<unknown>>(`/product/sku/list/${spuId}`);
-export const getProductDetailAgg = (spuId: number) => client.get<ApiResponse<ProductDetailAggVO>>(`/home/product/${spuId}`);
+export const getSpuDetail = (spuId: string | number) => client.get<ApiResponse<SpuDetailVO>>(`/product/spu/${spuId}`);
+export const getSpuList = (params: { pageNum?: number; pageSize?: number; categoryId?: string | number }) => client.get<ApiResponse<PageData<SpuItemVO>>>('/product/spu/list', { params });
+export const getCategoryTree = () => client.get<ApiResponse<CategoryTreeVO[]>>('/product/category/tree');
+export const getSkuDetail = (skuId: string | number) => client.get<ApiResponse<unknown>>(`/product/sku/${skuId}`);
+export const getSkuList = (spuId: string | number) => client.get<ApiResponse<unknown>>(`/product/sku/list/${spuId}`);
+export const getProductDetailAgg = (spuId: string | number) => client.get<ApiResponse<ProductDetailAggVO>>(`/home/product/${spuId}`);

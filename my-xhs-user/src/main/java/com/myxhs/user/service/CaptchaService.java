@@ -7,6 +7,7 @@ import com.myxhs.common.response.ResultCode;
 import com.myxhs.user.dto.response.CaptchaResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import javax.imageio.ImageIO;
@@ -31,6 +32,7 @@ import java.util.concurrent.TimeUnit;
 public class CaptchaService {
 
     private final RedisOperator redisOperator;
+    private final StringRedisTemplate stringRedisTemplate;
 
     /** 验证码字符集（去掉容易混淆的 0O1lI） */
     private static final String CHAR_SET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
@@ -50,8 +52,9 @@ public class CaptchaService {
         String code = generateCode();
         String key = UUID.randomUUID().toString().replace("-", "");
 
-        // 2. 存入 Redis（5 分钟过期）
-        redisOperator.set(RedisKeyConstants.USER_CAPTCHA + key, code.toUpperCase(),
+        // 2. 存入 Redis（5 分钟过期） — 使用 StringRedisTemplate 避免 JSON 序列化引号
+        stringRedisTemplate.opsForValue().set(
+                RedisKeyConstants.USER_CAPTCHA + key, code.toUpperCase(),
                 EXPIRE_MINUTES, TimeUnit.MINUTES);
 
         // 3. 绘制验证码图片
