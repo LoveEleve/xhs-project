@@ -387,3 +387,10 @@ S03 API 返回 data=[]
   Spring 签名 `(key, min, max,...)`，收件箱 score 是正数毫秒时间戳，传 `max=0` → 区间 [minScore,0] 恒空 → 普通用户推模式 Feed 恒空（只靠大V发件箱）。
 - **修复**：改为 `reverseRangeByScoreWithScores(inboxKey, 0, minScore, 0, size)`（score∈[0,minScore]，minScore 为 lastScore 开区间上界，倒序取 size 条）。
 - **验证**（home 已重打包重启）：向用户10002收件箱写入真实已发布笔记(最高分) → `GET /api/home/feed` 返回该笔记为唯一一条（修复前收件箱恒空，该笔记不出现）。
+
+---
+## #56 P1-2 补偿消费者忽略 action → 已支付订单库存/券泄漏 — 已修复并验证（2026-08-11）
+
+- **根因**：`OrderCompensationConsumer` 对 RELEASE_STOCK/RETURN_COUPON 一律调 `closeTimeoutOrder`，其只处理 status==0；已付款/已退款/已取消订单被跳过 → 库存/券永久泄漏。
+- **修复**：按 action 分发——`RELEASE_STOCK→compensateReleaseStock`、`RETURN_COUPON→compensateReturnCoupon`、默认 `closeTimeoutOrder`。新增 public 补偿方法，加载订单取 orderNo 后释放，**不依赖订单状态**（幂等：库存按 pseudoOrderId、券按 markUsed WHERE status=1 AND orderId）。
+- **验证**（order 已重打包重启）：创建订单(sku4×2)预扣 → 订单状态置为5(已退款) → 向 ORDER_COMPENSATION_TOPIC 发 RELEASE_STOCK 补偿 → 消费者执行 `compensateReleaseStock 释放库存成功` → sku4 total 198→200、预扣记录清除。旧实现会因 status!=0 跳过。

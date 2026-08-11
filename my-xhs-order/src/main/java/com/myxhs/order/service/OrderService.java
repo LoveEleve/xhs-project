@@ -756,6 +756,46 @@ public class OrderService {
         }
     }
 
+    /**
+     * 补偿：释放库存（P1-2 修复）
+     * <p>
+     * 供 OrderCompensationConsumer 对 RELEASE_STOCK 补偿使用。加载订单取 orderNo 后释放，
+     * <b>不依赖订单状态</b>（已付款/已取消订单都需释放），避免 closeTimeoutOrder 只处理
+     * status==0 导致已支付订单库存永久泄漏。
+     * </p>
+     */
+    public void compensateReleaseStock(Long orderId, Long userId) {
+        Order order = loadOrderEntity(orderId, userId);
+        if (order == null) {
+            log.warn("[补偿] 释放库存-订单不存在: orderId={}", orderId);
+            return;
+        }
+        releaseInventory(orderId, order.getOrderNo(), userId);
+    }
+
+    /**
+     * 补偿：退还优惠券（P1-2 修复）
+     * <p>
+     * 供 OrderCompensationConsumer 对 RETURN_COUPON 补偿使用。
+     * </p>
+     */
+    public void compensateReturnCoupon(Long orderId, Long userId) {
+        Order order = loadOrderEntity(orderId, userId);
+        if (order == null) {
+            log.warn("[补偿] 退券-订单不存在: orderId={}", orderId);
+            return;
+        }
+        returnCouponIfUsed(order);
+    }
+
+    /** 按 userId(orderId) 路由加载订单实体（分库分表需带分片键） */
+    private Order loadOrderEntity(Long orderId, Long userId) {
+        return orderMapper.selectOne(
+                new LambdaQueryWrapper<Order>()
+                        .eq(Order::getUserId, userId)
+                        .eq(Order::getId, orderId));
+    }
+
     // ==================== 私有方法 ====================
 
     /**

@@ -110,10 +110,16 @@ public class OrderCompensationConsumer implements RocketMQListener<MessageExt> {
             log.info("[补偿] 开始处理: orderId={}, userId={}, action={}, reconsumeTimes={}",
                     orderId, userId, cm.getAction(), msg.getReconsumeTimes());
 
-            // 2. 执行补偿——按 action 分发（待修: releaseInventory/returnCouponIfUsed 为 private, 需加 public 方法）
-            //   RELEASE_STOCK → releaseInventory, RETURN_COUPON → returnCouponIfUsed
-            //   当前统一走 closeTimeoutOrder（status!=0 的订单会被乐观跳过, 需注意库存泄漏见 P0-10）
-            orderService.closeTimeoutOrder(orderId, userId);
+            // 2. 执行补偿——按 action 分发（P1-2 修复）：
+            //   RELEASE_STOCK → compensateReleaseStock（不依赖订单状态，已付款/已取消都释放）
+            //   RETURN_COUPON → compensateReturnCoupon（不依赖订单状态）
+            //   CLOSE_ORDER → closeTimeoutOrder（关单）
+            //   统一走专门补偿方法，避免旧实现一律调 closeTimeoutOrder 对 status!=0 订单跳过导致库存/券泄漏。
+            switch (cm.getAction() == null ? "CLOSE_ORDER" : cm.getAction()) {
+                case "RELEASE_STOCK" -> orderService.compensateReleaseStock(orderId, userId);
+                case "RETURN_COUPON" -> orderService.compensateReturnCoupon(orderId, userId);
+                default -> orderService.closeTimeoutOrder(orderId, userId);
+            }
             log.info("[补偿] 处理成功: orderId={}, action={}", orderId, cm.getAction());
 
             // 3. 消费成功后才写入去重 Key
