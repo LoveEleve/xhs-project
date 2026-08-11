@@ -424,3 +424,21 @@ S03 API 返回 data=[]
 - **根因**：`IncrementalIndexSyncJob.queryProductsByIds` 裸查 `FROM t_spu`，而 search 数据源默认 schema 是 `my_xhs_content`（t_note 所在库）→ 实际解析为 `my_xhs_content.t_spu` → `Table doesn't exist`，商品增量补偿必失败。
 - **修复**：改 `FROM my_xhs_product.t_spu`（显式跨库前缀）。
 - **验证**（search 重打包重启）：SPU1 入失败集合 → 补偿执行 `商品=1` 成功，`product_index/_doc/1` 写入（name=2026夏季新款连衣裙，version=spu updated_at 毫秒）。
+
+---
+## #60 P1-3 端口信任模型（X-User-Id 伪造越权）— 已修复并验证（2026-08-11）
+
+- **根因**：服务端口(19001+)直连可达时，客户端可任意伪造 X-User-Id 头实现水平越权；服务端逐端点手工校验 X-Internal-Call 易漏配。
+- **修复**：新增公共 Servlet 过滤器 `GatewayAuthTrustFilter`（gateway 为 WebFlux 自动排除）：
+  1. X-Internal-Call 匹配 → 信任（内部 Feign）；
+  2. Authorization Bearer 有效 access JWT → **以 JWT subject 覆盖 X-User-Id**（伪造头无效）；
+  3. 其余 → **剥离 X-User-Id**（fail-closed，MissingRequestHeaderException 拒绝）。
+  所有 14 个服务 yml 增加 `jwt.secret`（与 gateway/user 一致）。
+- **验证**（全部服务重打包重启）：
+  - 直连 + 伪造 X-User-Id=999999 无 JWT → 剥离告警 + 拒绝 ✅
+  - 直连 + 真实 JWT(user10001) + 伪造 X-User-Id=1 → 返回 10001（无法越权）✅
+  - 网关登录→/me → 正常 ✅；带 X-Internal-Call 内部下单 → 正常 ✅
+- **注意**：
+  - 部署必须保证各服务 `jwt.secret` 配置（已在 yml 固化）；未配置时 JWT 分支退化为仅剥离伪造头。
+  - 被剥离请求返回 500（MissingRequestHeaderException 未映射 400）——安全目标已达成，错误码可后续优化。
+  - 修复过程发现：Maven `package` 因 target 缓存陈旧导致部分服务 fat jar 内嵌旧 common，需 `rm -rf target` 重建（user/gateway/im 均受影响）。
