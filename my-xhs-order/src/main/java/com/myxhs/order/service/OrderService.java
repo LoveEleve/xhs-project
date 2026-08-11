@@ -218,6 +218,41 @@ public class OrderService {
                 throw new BizException(ResultCode.INTERNAL_ERROR, "下单失败: 本地事务回滚");
             }
 
+            // 5.5 核销优惠券（P0-A：下单创建订单时占用券，防止同一张券被复用导致资损）
+            //     核销在订单提交后同步执行并绑定 orderId；coupon 侧 markUsed 为乐观锁(WHERE status=0)，
+            //     天然幂等 + 归属校验。核销失败则取消订单，保证"打了折扣的订单必有已核销的券"。
+            if (request.getCouponId() != null) {
+                java.util.Map<String, Object> useReq = new java.util.HashMap<>();
+                useReq.put("userCouponId", request.getCouponId());
+                useReq.put("orderId", context.getOrderId());
+                useReq.put("orderAmount", totalAmount);
+                try {
+                    R<BigDecimal> useResp = couponFeignClient.useCoupon(userId, useReq);
+                    if (useResp == null || !useResp.isSuccess()) {
+                        log.error("[订单] 优惠券核销失败，取消订单: orderId={}, couponId={}, resp={}",
+                                context.getOrderId(), request.getCouponId(), useResp);
+                        cancelOrder(userId, context.getOrderId());
+                        stringRedisTemplate.delete(idempotentKey);
+                        throw new BizException(ResultCode.COUPON_NOT_AVAILABLE,
+                                "优惠券核销失败，订单已取消，请重新下单");
+                    }
+                } catch (BizException be) {
+                    if (ResultCode.COUPON_NOT_AVAILABLE.getCode() == be.getCode()) {
+                        // 已在上面抛出，直接透传
+                        throw be;
+                    }
+                    // 其他业务异常：取消订单保持一致
+                    log.error("[订单] 优惠券核销业务异常，取消订单: orderId={}", context.getOrderId(), be);
+                    try { cancelOrder(userId, context.getOrderId()); }
+                    catch (Exception ce) {
+                        log.error("[订单] 核销失败后取消订单异常(依赖定时任务/对账兜底): orderId={}", context.getOrderId(), ce);
+                    }
+                    stringRedisTemplate.delete(idempotentKey);
+                    throw new BizException(ResultCode.COUPON_NOT_AVAILABLE,
+                            "优惠券核销失败，订单已取消，请重新下单");
+                }
+            }
+
             // 6. 发送延时消息（30 分钟后超时关单）—— 失败不影响下单
             sendCloseDelayMessage(context.getOrderId(), orderNo, userId);
 

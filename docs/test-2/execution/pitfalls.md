@@ -362,3 +362,13 @@ S03 API 返回 data=[]
   - Prometheus product target：down → **up**
   - `rocketmq_dlq_backlog` 指标恢复采集(322)
 - **注意**：common 变更需所有服务重打包后才生效；当前仅 product 已重启验证。其他服务(此前已快)仍用旧 common，但无实际影响；后续任意服务重启会带上该修复。
+
+---
+## #53 P0-A 优惠券下单从不核销（资损）— 已修复并验证（2026-08-11）
+
+- **根因**：`OrderService.createOrder` 只调 `getCouponDiscount`（算折扣，不核销），**从不调用 `useCoupon`**（Feign/controller 死代码）→ 下单后 `user_coupon.status` 仍为 0、`used_order_id` 为空 → 同一张券可反复下单每单减额（资损）。
+- **修复**：`OrderService.createOrder` 在订单事务提交、orderId 确定后，若 `couponId!=null` 同步调用 `couponFeignClient.useCoupon` 核销并绑定 orderId；核销失败则取消订单 + 释放幂等键 + 返回 `30016`。复用 coupon 侧 `markUsed` 乐观锁(WHERE status=0)+归属校验+X-Internal-Call，天然幂等。
+- **验证**（order 已重打包重启）：
+  - 下单(券满100减20, SKU199)：券 `status 0→1`，`used_order_id` 绑定，折扣20，实付179 ✅
+  - 同券再下单：`30016 优惠券核销失败，订单已取消`，复用订单 `status=4(已取消)`，券仍绑定首单 ✅
+- **注意**：编译测试类有预存错误（OrderServiceTest/OrderTransactionServiceTest 引用旧构造签名，与本次改动无关），打包用 `-Dmaven.test.skip=true`。
