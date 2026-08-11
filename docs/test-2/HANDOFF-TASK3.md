@@ -118,6 +118,7 @@
 | engineering-docs/ | 9篇工程文档 |
 | execution/ | 每端点测试结果 |
 | execution/pitfalls.md | 52+项踩坑 |
+| **review-fresh/** | 全项目手把手 fresh Review（15模块 + 汇总）：`review-consolidated.md` 含 P0/P1/P2 优先级清单；每模块 `review-<module>.md` |
 
 ---
 

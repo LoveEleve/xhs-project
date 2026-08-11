@@ -1,0 +1,117 @@
+# my-xhs 全项目深度 Review（fresh，独立于旧文档）
+
+> 2026-08-11 | 逐模块手把手复核（15 模块），聚焦：业务逻辑 / 工程 / 分布式 / 微服务 / 日志 / 监控 / 全链路。
+> 每模块详细笔记见 review-<module>.md（/data/tmp/opencode/）。
+
+---
+
+## 一、结论速览
+
+- **整体工程成熟度中等偏上**：Lua 原子化、Outbox、对账、幂等、事件溯源、分桶、版本化索引等分布式范式普遍使用到位。
+- **但存在 1 个资损级缺陷 + 2 个高危正确性缺陷 + 1 个高危一致性缺陷**，需优先处理。
+- 监控/全链路基础框架完整，但存在 O1(userId 缺失) / O2(异步丢 traceId) 两处横切缺口。
+
+---
+
+## 二、P0 / 高危（资损 / 数据串台 / 超卖）
+
+### P0-A [资损·高] 优惠券下单从不核销 → 可无限复用（Coupon）
+- `OrderService` 只调 `getCouponDiscount`（算折扣）与 `returnCoupon`，**从不调用 `useCoupon`**；
+  `CouponFeignClient.useCoupon` 与 `CouponController /api/coupon/use` 均为**死代码**。
+- 后果：下单用券后 `user_coupon.status` 仍为 0、`used_order_id` 为空 → 同一张券可反复下单每单都减额 → 大额资损。
+- `returnCoupon` 依赖 `WHERE status=1 AND used_order_id=?`，因从未 markUsed 而恒为 no-op。
+- **修复**：下单创建订单时（事务消息本地事务内）调用 `useCoupon` 核销并绑定 orderId。
+
+### P0-B [高·正确性] IM 会话 ID 哈希碰撞 → 聊天串台（IM）
+- `generateConversationId = min*31 + max`（ChatService.java:446）非单射，已计算验证存在大量碰撞
+  （如 (1,34)→65 与 (2,3)→65）。conversationId 同时作 DB 持久化键与历史查询键 →
+  不同用户对共享同一会话历史/未读数。
+- **修复**：改用不碰撞编码（如 `min<<20|max` 并校验 max<2^20）或落库会话表分配唯一 ID。
+
+### P0-C [高·正确性] Feed 收件箱读取参数颠倒 → 普通用户推流恒空（Home）
+- `reverseRangeByScoreWithScores(inboxKey, minScore, 0, ...)`（FeedService.java:81-83）：max=0 使区间为空，
+  score 为正数时间戳 → 收件箱恒空，普通用户 Feed 只靠大V发件箱。
+- **修复**：`(inboxKey, 0, lastScore, 0, size)`。
+
+### P0-D [高·一致性] 本地消息表补发 = 每单必然重复投递（Order）
+- 事务消息 Commit 后，`t_local_message(status=0)` 状态不被联动置成功；`LocalMessageRetryJob` 每 30s 补发 →
+  每单 ORDER_TRANSACTION 投递 2 次。靠下游幂等兜底不超卖，但**每单重复消费**是确定浪费。
+- **修复**：事务提交后 markSuccess；或事务消息/本地表二选一。
+
+---
+
+## 三、P1 / 高危（微服务 / 资金 / 一致性）
+
+### P1-1 [高·资金] 已取消订单可支付、竞态无退款（Order + Payment）
+- `onPaymentSuccess` 捕获乐观锁冲突（取消/关单先赢）仅 return false（OrderService.java:642-647），**不发退款**。
+- Payment `pay()` 不校验订单存在/待付款 → 已取消订单仍可创建支付单。
+- **修复**：支付成功但订单非待付款 → 触发幂等退款；payment 下单前回查订单状态与金额。
+
+### P1-2 [高·资金/一致性] 补偿消费者忽略 action，统一走 closeTimeoutOrder → 已支付订单库存泄漏（Order）
+- `OrderCompensationConsumer` 对 RELEASE_STOCK/RETURN_COUPON 一律调 `closeTimeoutOrder`，
+  其只处理 status=0 → 已支付订单的释放库存补偿被跳过 → 库存永久泄漏。
+- **修复**：按 action 分发到 releaseInventory/returnCouponIfUsed，并对非待付款订单仍执行释放。
+
+### P1-3 [高·微服务] 服务端口信任 X-User-Id + X-Internal-Call 无统一强制（系统性）
+- 下游 controller 直接信任 `@RequestHeader("X-User-Id")`；X-Internal-Call 仅 Feign 客户端添加，
+  服务端逐端点手工 `token.equals(v)`（非恒定时间，易漏配）。
+- 整体安全依赖"服务端口防火墙封闭"这一前置假设；一旦 19001+ 可达即可伪造身份/越权。
+- **修复**：统一 InternalCall 过滤器 + 端口级网络安全兜底 + 恒定时间比较。
+
+### P1-4 [高·一致性] ES 补偿版本域与 Canal 版本域不一致（Search）
+- Canal 消费端用 `es`（小整数），补偿 job 用 `currentTimeMillis()`（~1.7e12）作 ExternalGte 版本。
+- 补偿后该文档 version 巨大 → 后续 Canal 增量更新被 ES 拒绝 → 索引停在补偿快照直到全量重建。
+- **修复**：统一版本域（补偿沿用 binlog/es 版本）。
+
+### P1-5 [高·一致性] 搜索增量补偿跨库查询缺库名前缀（Search）
+- `queryNotesByIds`/`queryProductsByIds` 裸查 `t_note`/`t_spu`，未带物理库前缀（笔记/商品分属不同库）。
+
+---
+
+## 四、P2 / 中危（性能 / 可扩展 / 正确性）
+
+| # | 模块 | 问题 |
+|---|------|------|
+| 1 | Product | `batchGetSkuDetails` 对每个 SKU 单独 `selectById` 查 SPU 取图 → N+1；应 collect distinct spuId 一次 IN |
+| 2 | Product | `getSpuDetail` 不过滤下架状态；布隆过滤器只 add 不 remove → 下架/删除商品仍可查 |
+| 3 | Home | Feed 逐条并行调 content/user 详情（20+ 次下游/页）无批量接口无缓存 → QPS 放大 |
+| 4 | Payment | `checkPaymentTimeout` 用 `keys()` 全量扫描（阻塞 Redis）；成功支付写永久无 TTL status key（内存无界） |
+| 5 | Payment | 真实第三方回调端点要求 X-Internal-Call（第三方无 token 会被拒）+ 无渠道签名验签（mock 实现，上生产需改造） |
+| 6 | Counter | 计数 Redis key 永久无 TTL → 内存无界 |
+| 7 | Cart | "Redis 丢失后以 MySQL 恢复"注释与实际不符：读路径只读 Redis，对账单向 Redis→MySQL，MySQL 备份不可读恢复 |
+| 8 | Cart | 对账以 MySQL userId 集为枚举源，纯 Redis 新用户永不补录 |
+| 9 | User | 登录锁定可被用于账号 DoS（5 次错密码锁 15 分钟，无 IP 维度） |
+| 10 | Gateway | 压测标记 IP 校验可被伪造（用客户端可控 X-Forwarded-For 而非 remoteAddress）；HMAC 不签名 body（P0-6a）|
+| 11 | Gateway | per-user HMAC secret 读取无 try/catch → Redis 故障 500；引号剥离 hack 脆弱 |
+| 12 | Order | pseudoOrderId=fold-hash(orderNo) 作库存幂等键，跨单碰撞风险 + orderNo 在 Redis 故障时降级随机可能撞号 |
+| 13 | Content | NOTE_LIST_USER 缓存只删不填（读路径无回填）→ 死缓存键 |
+| 14 | Notification | 聚合窗口实为"当天剩余"，与注释"5min"不符；模板 `{title}`/`{content}` 占位符语义错乱 |
+| 15 | User | login/register `@Transactional` 包裹 BCrypt 计算 + Redis 操作，长占 DB 连接 |
+
+---
+
+## 五、日志 / 监控 / 全链路（横切）
+
+- **基础框架完整**：6 维 TraceContext 经 HTTP + MQ + Feign 透传；ApiMetricsFilter URI 归一化 + 百分位；
+  BusinessMetrics/DlqMetrics/MyBatisMetrics 埋点齐全。
+- **O1 [中] MDC 未写 userId**（TraceIdConfig.java:84 只写 traceId）→ 按用户排查全链路日志困难。
+- **O2 [中] 异步线程池 MDC 支持不一致**：home 用 MdcAwareExecutorService（标准模板）；
+  product/inventory 裸 `new Thread`、order/cart 用 commonPool 的 `CompletableFuture.runAsync` → 异步链路丢 traceId。
+- **Gateway(WebFlux) 无等效 HTTP 指标**（ApiMetricsFilter 仅 Servlet 生效）。
+
+---
+
+## 六、做得好的（可作范本）
+- Inventory：分桶 + Lua 原子预扣 + 三级一致性 + Outbox + 动态扩容 + msgId 幂等/失败 removeMark 重试。
+- Counter/Analytics：Lua 原子去重 + Set 化 like 计数（抗乱序）+ 归零保护 + 双向对账。
+- Cart：Lua 三结构原子化 + 事件时间戳乱序保护 + 对账防"双份全丢"。
+- Order：事务消息 + 事件溯源 + 乐观锁状态机 + 幂等下单。
+- Home：双层 MdcAware 线程池隔离 + 超时降级。
+
+---
+
+## 七、建议修复顺序
+1. **P0-A 券核销**（资损）→ **P0-B IM 会话碰撞**（串台）→ **P0-C Feed 收件箱**（核心功能失效）
+2. **P1-1 支付退款竞态**、**P1-2 补偿分发**（资金/库存）
+3. **P1-3 端口信任模型**（安全）、**P1-4/5 ES 版本/跨库**（一致性）
+4. P2 清单逐项 + **O1/O2 日志横切补齐**
