@@ -109,6 +109,10 @@ public final class MqTraceHelper {
         if (ctx.getTraceId() != null && !ctx.getTraceId().isEmpty()) {
             MDC.put(TRACE_ID_MDC_KEY, ctx.getTraceId());
         }
+        // O1：MQ 消费日志也携带 userId
+        if (ctx.getUserId() != null && !ctx.getUserId().isEmpty()) {
+            MDC.put("userId", ctx.getUserId());
+        }
     }
 
     /**
@@ -138,6 +142,7 @@ public final class MqTraceHelper {
     public static void clearTraceContext() {
         TraceContextHolder.clear();
         MDC.remove(TRACE_ID_MDC_KEY);
+        MDC.remove("userId");
     }
 
     /**

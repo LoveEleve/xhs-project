@@ -83,6 +83,12 @@ public class TraceIdConfig implements WebMvcConfigurer {
             // 3. 注入 MDC（日志自动携带 traceId）
             MDC.put(TRACE_ID_MDC_KEY, traceId);
 
+            // O1 修复：同时写入 userId 到 MDC（logback 已声明 userId 字段，此前恒空导致无法按用户关联日志）
+            String userId = ctx.getUserId();
+            if (userId != null && !userId.isEmpty()) {
+                MDC.put("userId", userId);
+            }
+
             // 4. 设置到响应 Header（方便前端/调用方排查）
             response.setHeader(TRACE_ID_HEADER, traceId);
 
@@ -95,6 +101,7 @@ public class TraceIdConfig implements WebMvcConfigurer {
             // 必须清理，防止线程池复用时上下文串联
             TraceContextHolder.clear();
             MDC.remove(TRACE_ID_MDC_KEY);
+            MDC.remove("userId");
         }
 
         /**

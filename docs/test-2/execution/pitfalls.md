@@ -442,3 +442,10 @@ S03 API 返回 data=[]
   - 部署必须保证各服务 `jwt.secret` 配置（已在 yml 固化）；未配置时 JWT 分支退化为仅剥离伪造头。
   - 被剥离请求返回 500（MissingRequestHeaderException 未映射 400）——安全目标已达成，错误码可后续优化。
   - 修复过程发现：Maven `package` 因 target 缓存陈旧导致部分服务 fat jar 内嵌旧 common，需 `rm -rf target` 重建（user/gateway/im 均受影响）。
+
+---
+## #61 O1 MDC userId 恒空 — 已修复并验证（2026-08-11）
+
+- **根因**：`TraceIdConfig` 只 `MDC.put("traceId")`，从未写 userId（logback 已声明 userId 字段）→ Logstash 采集的 userId 恒空，日志无法按用户关联。
+- **修复**：`TraceIdConfig.TraceContextInterceptor` 写入 `MDC.put("userId", ctx.getUserId())`（有值才写，afterCompletion 清理）；`MqTraceHelper.restoreTraceContext` 同样为 MQ 消费日志填充 userId。
+- **验证**（全服务重打包重启）：登录后调 /me → `/logs/my-xhs-user.json` 中 `userId=2086729019870457858`（此前恒空）。
