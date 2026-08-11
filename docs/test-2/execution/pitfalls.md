@@ -372,3 +372,10 @@ S03 API 返回 data=[]
   - 下单(券满100减20, SKU199)：券 `status 0→1`，`used_order_id` 绑定，折扣20，实付179 ✅
   - 同券再下单：`30016 优惠券核销失败，订单已取消`，复用订单 `status=4(已取消)`，券仍绑定首单 ✅
 - **注意**：编译测试类有预存错误（OrderServiceTest/OrderTransactionServiceTest 引用旧构造签名，与本次改动无关），打包用 `-Dmaven.test.skip=true`。
+
+---
+## #54 P0-B IM 会话ID哈希碰撞（串台）— 已修复并验证（2026-08-11）
+
+- **根因**：`ChatService.generateConversationId = min*31 + max` 非单射。实测顺序 ID 1..3000 下 **440 万对**不同用户对算出同一 conversationId（如 (1,34)→65 与 (2,3)→65）。conversationId 同时作消息分片/持久化键与历史查询键 → 不同用户对共享聊天历史（私聊串台）。
+- **修复**：改用**会话关系表持有全局唯一 conversationId**——`resolveConversationId` 优先从 `ChatUserRelation(userId,peerId)` 取已分配ID（含反向查，防并发首消息分叉），无则分配雪花 ID（`IdWorker.getId()`）；`getMessageHistory` 同样从关系表解析，无会话返回空页。
+- **验证**（im 已重打包重启）：WS 发消息给碰撞对 (1→34) 与 (2→3) → DB 中 `conversation_id` 分别为 `2087150297253212161` 与 `2087150297974632450`（不同）；每对正反向复用同一ID。旧算法两者均为 65。

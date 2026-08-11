@@ -112,7 +112,9 @@ public class ChatService {
 
         // 生成消息 ID、会话 ID 和会话内序列号
         long msgId = IdWorker.getId();
-        long conversationId = generateConversationId(senderId, receiverId);
+        // 【P0-B 修复】会话ID不再用 min*31+max 哈希（存在确定性碰撞→跨用户串台），
+        // 改为复用关系表中已分配的全局唯一ID，无则分配雪花ID。
+        long conversationId = resolveConversationId(senderId, receiverId);
         // 【M8】会话级序列号（Redis INCR 原子递增，保证同会话消息严格有序）
         long seqNo = stringRedisTemplate.opsForValue().increment("myxhs:im:seq:" + conversationId);
         LocalDateTime now = LocalDateTime.now();
@@ -380,7 +382,12 @@ public class ChatService {
      * 获取与某人的聊天记录（按时间倒序分页）
      */
     public Page<ChatMessage> getMessageHistory(Long userId, Long peerId, int page, int size) {
-        long conversationId = generateConversationId(userId, peerId);
+        // 【P0-B 修复】从会话关系表取全局唯一 conversationId（避免 min*31+max 碰撞串台），
+        // 无会话关系则返回空列表。
+        Long conversationId = getExistingConversationId(userId, peerId);
+        if (conversationId == null) {
+            return new Page<>(page, size);
+        }
         return chatMessageMapper.selectPage(
                 new Page<>(page, size),
                 new LambdaQueryWrapper<ChatMessage>()
@@ -437,16 +444,40 @@ public class ChatService {
     // ==================== 工具方法 ====================
 
     /**
-     * 生成会话 ID：min * 31 + max（确定性哈希，防止位运算溢出）
+     * 从会话关系表获取已分配的全局唯一 conversationId（P0-B 修复）
      * <p>
-     * 【修复M19】旧公式 (min<<32)|max 当 userId > 2^32 时高位被覆盖导致碰撞。
-     * 新公式使用乘加哈希，64 位确定性映射，碰撞概率极低。
+     * 会话关系表 (ChatUserRelation) 在首条消息写入时记录 conversationId，
+     * 后续消息/历史查询复用，保证同一对用户的会话 ID 唯一且稳定。
      * </p>
+     *
+     * @return 已存在的 conversationId，不存在返回 null
      */
-    public static long generateConversationId(Long userIdA, Long userIdB) {
-        long min = Math.min(userIdA, userIdB);
-        long max = Math.max(userIdA, userIdB);
-        return min * 31 + max;
+    private Long getExistingConversationId(Long userA, Long userB) {
+        ChatUserRelation relation = chatUserRelationMapper.selectOne(
+                new LambdaQueryWrapper<ChatUserRelation>()
+                        .eq(ChatUserRelation::getUserId, userA)
+                        .eq(ChatUserRelation::getPeerId, userB));
+        if (relation != null && relation.getConversationId() != null) {
+            return relation.getConversationId();
+        }
+        // 反向再查一次：对方已先发过消息时，也复用同一会话 ID，避免并发首消息分配出两个 ID
+        ChatUserRelation reverse = chatUserRelationMapper.selectOne(
+                new LambdaQueryWrapper<ChatUserRelation>()
+                        .eq(ChatUserRelation::getUserId, userB)
+                        .eq(ChatUserRelation::getPeerId, userA));
+        return (reverse != null && reverse.getConversationId() != null)
+                ? reverse.getConversationId() : null;
+    }
+
+    /**
+     * 解析会话 ID：存在关系则复用其 conversationId；否则分配全局唯一雪花 ID（P0-B 修复）
+     */
+    private long resolveConversationId(Long senderId, Long receiverId) {
+        Long existing = getExistingConversationId(senderId, receiverId);
+        if (existing != null) {
+            return existing;
+        }
+        return IdWorker.getId();
     }
 
     private void sendJson(WebSocketSession session, Map<String, Object> data) {
