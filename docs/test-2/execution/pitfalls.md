@@ -379,3 +379,11 @@ S03 API 返回 data=[]
 - **根因**：`ChatService.generateConversationId = min*31 + max` 非单射。实测顺序 ID 1..3000 下 **440 万对**不同用户对算出同一 conversationId（如 (1,34)→65 与 (2,3)→65）。conversationId 同时作消息分片/持久化键与历史查询键 → 不同用户对共享聊天历史（私聊串台）。
 - **修复**：改用**会话关系表持有全局唯一 conversationId**——`resolveConversationId` 优先从 `ChatUserRelation(userId,peerId)` 取已分配ID（含反向查，防并发首消息分叉），无则分配雪花 ID（`IdWorker.getId()`）；`getMessageHistory` 同样从关系表解析，无会话返回空页。
 - **验证**（im 已重打包重启）：WS 发消息给碰撞对 (1→34) 与 (2→3) → DB 中 `conversation_id` 分别为 `2087150297253212161` 与 `2087150297974632450`（不同）；每对正反向复用同一ID。旧算法两者均为 65。
+
+---
+## #55 P0-C Feed 收件箱参数颠倒（推流恒空）— 已修复并验证（2026-08-11）
+
+- **根因**：`FeedService.getFollowFeed` 用 `reverseRangeByScoreWithScores(inboxKey, minScore, 0, ...)` 读收件箱。
+  Spring 签名 `(key, min, max,...)`，收件箱 score 是正数毫秒时间戳，传 `max=0` → 区间 [minScore,0] 恒空 → 普通用户推模式 Feed 恒空（只靠大V发件箱）。
+- **修复**：改为 `reverseRangeByScoreWithScores(inboxKey, 0, minScore, 0, size)`（score∈[0,minScore]，minScore 为 lastScore 开区间上界，倒序取 size 条）。
+- **验证**（home 已重打包重启）：向用户10002收件箱写入真实已发布笔记(最高分) → `GET /api/home/feed` 返回该笔记为唯一一条（修复前收件箱恒空，该笔记不出现）。

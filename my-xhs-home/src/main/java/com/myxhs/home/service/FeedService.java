@@ -79,8 +79,11 @@ public class FeedService {
         // 1a. 从收件箱拉取（推模式笔记）— Redis 7 开区间 (lastScore 避免跳过同分记录
         String inboxKey = RedisKeyConstants.FEED_INBOX + userId;
         double minScore = lastScore > 0 ? Double.longBitsToDouble(Double.doubleToLongBits(lastScore) - 1) : 0;
+        // 【P0-C 修复】reverseRangeByScoreWithScores(key, min, max,...) 参数 min/max 颠倒：
+        // 收件箱 score 是正数时间戳，原 (minScore, 0) 使区间 [minScore,0] 恒空 → 收件箱恒空。
+        // 应为 (0, minScore)：score ∈ [0, minScore]（minScore 为 lastScore 的开区间上界）倒序取 size 条。
         Set<ZSetOperations.TypedTuple<String>> inboxTuples = stringRedisTemplate.opsForZSet()
-                .reverseRangeByScoreWithScores(inboxKey, minScore, 0, 0, size);
+                .reverseRangeByScoreWithScores(inboxKey, 0, minScore, 0, size);
 
         // 1b. 获取用户关注的大V列表，从大V发件箱拉取
         List<ZSetOperations.TypedTuple<String>> bigVTuples = pullBigVOutbox(userId, lastScore, size);
