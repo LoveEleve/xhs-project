@@ -406,3 +406,14 @@ S03 API 返回 data=[]
 - **验证**（order+payment 重打包重启）：
   - 待付款订单 → 支付成功创建支付单 ✅；已取消订单 → `30009 订单当前状态不允许支付` 拒绝 ✅
   - SQL 构造"订单已取消但支付回调成功" → 自动退款触发：`t_refund status=1(成功) 299.00 reason=订单已取消自动退款` ✅
+
+---
+## #58 P1-4 ES 版本域混用 → 补偿后增量更新被永久拒绝 — 已修复并验证（2026-08-11）
+
+- **根因**：`IncrementalIndexSyncJob` 用 `System.currentTimeMillis()`(~1.7e12) 作 ExternalGte 版本；Canal 消费端用 `es`(小整数)。补偿一旦写入巨值版本 → 后续 Canal 增量(es 小)被 ES `version conflict` 永久拒绝，索引冻结在补偿快照。
+- **修复**（search 重打包重启）：
+  1. `NoteIndexSyncConsumer` Canal 版本改用 `ts`(毫秒)——与补偿统一版本域。
+  2. `IncrementalIndexSyncJob` 版本改为 DB 行 `updated_at`(毫秒)，删除 `version()`=now。
+  3. **顺带修复补偿必失败的既有缺陷**：`buildNoteDocument` 用 `Map.of` 遇 NULL 列(NPE)；bulk 用 `.withJson()`(错) 改 `.document(JsonData.of(map))`。
+- **验证**：触发补偿 → ES `_version=1783827196000` == 笔记 `updated_at` ✅；删除毒版本文档后补偿成功写入正确版本。
+- **注意**：已存在的高版本毒文档需依赖每日 4 点全量重建(IndexRebuildJob)恢复，新代码不再产生新的毒版本。

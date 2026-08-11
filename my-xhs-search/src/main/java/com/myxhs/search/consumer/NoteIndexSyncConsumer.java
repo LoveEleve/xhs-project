@@ -124,11 +124,12 @@ public class NoteIndexSyncConsumer implements RocketMQListener<MessageExt> {
     private void handleCanalMessage(JSONObject canalMsg, String msgId) throws Exception {
         String type = canalMsg.getString("type");
         JSONArray dataArray = canalMsg.getJSONArray("data");
-        // 优先使用 es（event sequence，严格递增），降级使用 ts（毫秒时间戳）
-        // es 字段在 Canal flatMessage 中是消息的全局序列号，保证不重复
-        long version = canalMsg.getLongValue("es", 0);
+        // P1-4：统一版本域为毫秒时间戳(ts)，与增量补偿(IncrementalIndexSyncJob 用 updated_at 毫秒)一致。
+        // 原实现优先用 es(Canal 全局事件序列,小整数)——一旦补偿任务用 currentTimeMillis(~1.7e12) 写过该文档，
+        // 后续 Canal 的 es(小整数) 会被 ES ExternalGte 永久拒绝，索引冻结在补偿快照。
+        long version = canalMsg.getLongValue("ts", System.currentTimeMillis());
         if (version == 0) {
-            version = canalMsg.getLongValue("ts", System.currentTimeMillis());
+            version = canalMsg.getLongValue("es", System.currentTimeMillis());
         }
 
         if (dataArray == null || dataArray.isEmpty()) {

@@ -66,7 +66,8 @@ public class IncrementalIndexSyncJob {
     private static final String FAILED_NOTE_KEY = "myxhs:es:sync:failed:note";
     private static final String FAILED_PRODUCT_KEY = "myxhs:es:sync:failed:product";
     private static final int MAX_BATCH = 50;
-    private long version() { return System.currentTimeMillis(); }
+    // P1-4：移除固定 currentTimeMillis() 版本。改为用 DB 行 updated_at(毫秒) 作为 ExternalGte 版本，
+    // 与 NoteIndexSyncConsumer 的 ts(毫秒) 统一版本域，避免补偿巨值版本永久拒绝后续 Canal 增量更新。
 
     /**
      * 定时增量补偿（每 5 分钟）
@@ -203,7 +204,7 @@ public class IncrementalIndexSyncJob {
         }
 
         String placeholders = String.join(",", ids.stream().map(id -> "?").toArray(String[]::new));
-        String sql = "SELECT id, user_id, title, content, cover_url, status, created_at " +
+        String sql = "SELECT id, user_id, title, content, cover_url, status, created_at, updated_at " +
                 "FROM t_note WHERE id IN (" + placeholders + ") AND deleted = 0";
 
         Object[] params = ids.toArray();
@@ -224,7 +225,7 @@ public class IncrementalIndexSyncJob {
         String placeholders = String.join(",", ids.stream().map(id -> "?").toArray(String[]::new));
         // t_spu 表实际字段：id, name, category_id, brand_id, description, images, status, deleted, created_at, updated_at
         // category_name/price/image 等需通过 product Feign 或 buildProductDocument 默认值补全
-        String sql = "SELECT id, name, category_id, brand_id, description, images, status, created_at " +
+        String sql = "SELECT id, name, category_id, brand_id, description, images, status, created_at, updated_at " +
                 "FROM t_spu WHERE id IN (" + placeholders + ") AND deleted = 0";
 
         Object[] params = ids.toArray();
@@ -243,15 +244,15 @@ public class IncrementalIndexSyncJob {
 
             for (Map<String, Object> note : notes) {
                 Long noteId = ((Number) note.get("id")).longValue();
-                String doc = buildNoteDocument(note);
+                Map<String, Object> doc = buildNoteDocument(note);
 
                 bulkBuilder.operations(op -> op
                         .index(idx -> idx
                                 .index(noteIndexName)
                                 .id(String.valueOf(noteId))
                                 .versionType(co.elastic.clients.elasticsearch._types.VersionType.ExternalGte)
-                                .version(version())
-                                .withJson(new StringReader(doc))));
+                                .version(toEpochMillis(note.get("updated_at")))
+                                .document(co.elastic.clients.json.JsonData.of(doc))));
             }
 
             BulkResponse response = esClient.bulk(bulkBuilder.build());
@@ -283,15 +284,15 @@ public class IncrementalIndexSyncJob {
 
             for (Map<String, Object> product : products) {
                 Long spuId = ((Number) product.get("id")).longValue();
-                String doc = buildProductDocument(product);
+                Map<String, Object> doc = buildProductDocument(product);
 
                 bulkBuilder.operations(op -> op
                         .index(idx -> idx
                                 .index(productIndexName)
                                 .id(String.valueOf(spuId))
                                 .versionType(co.elastic.clients.elasticsearch._types.VersionType.ExternalGte)
-                                .version(version())
-                                .withJson(new StringReader(doc))));
+                                .version(toEpochMillis(product.get("updated_at")))
+                                .document(co.elastic.clients.json.JsonData.of(doc))));
             }
 
             BulkResponse response = esClient.bulk(bulkBuilder.build());
@@ -315,6 +316,28 @@ public class IncrementalIndexSyncJob {
     }
 
     /**
+     * 将 DB 行 updated_at 转成毫秒时间戳（P1-4：与 Canal ts 版本域一致，避免补偿版本永久拦截后续增量）
+     */
+    private long toEpochMillis(Object v) {
+        if (v instanceof java.sql.Timestamp) return ((java.sql.Timestamp) v).getTime();
+        if (v instanceof java.util.Date) return ((java.util.Date) v).getTime();
+        if (v instanceof java.time.LocalDateTime) {
+            return ((java.time.LocalDateTime) v).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
+        }
+        if (v instanceof Number) return ((Number) v).longValue();
+        if (v instanceof String) {
+            try {
+                return java.time.LocalDateTime.parse((String) v,
+                                java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+                        .atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
+            } catch (Exception ignore) {
+                // fallthrough
+            }
+        }
+        return System.currentTimeMillis();
+    }
+
+    /**
      * 构建笔记 ES 文档 JSON
      * <p>
      * 参考 NoteIndexSyncConsumer#indexNoteFromCanal 的文档结构。
@@ -322,17 +345,18 @@ public class IncrementalIndexSyncJob {
      * 这些由计数器服务维护。
      * </p>
      */
-    private String buildNoteDocument(Map<String, Object> note) {
-        Map<String, Object> doc = Map.of(
-                "noteId", note.get("id"),
-                "userId", note.get("user_id"),
-                "title", note.getOrDefault("title", ""),
-                "content", note.getOrDefault("content", ""),
-                "coverImage", note.getOrDefault("cover_url", ""),
-                "status", note.getOrDefault("status", 1),
-                "createdAt", note.get("created_at") != null ? note.get("created_at").toString() : null
-        );
-        return com.alibaba.fastjson2.JSON.toJSONString(doc);
+    private Map<String, Object> buildNoteDocument(Map<String, Object> note) {
+        // 用 HashMap 而非 Map.of：Map.of 不允许 null 值，而 DB 行可能含 NULL 列（如 cover_url/user_id），
+        // 会直接 NPE 导致补偿必失败。
+        Map<String, Object> doc = new HashMap<>();
+        doc.put("noteId", note.get("id"));
+        doc.put("userId", note.get("user_id"));
+        doc.put("title", note.getOrDefault("title", ""));
+        doc.put("content", note.getOrDefault("content", ""));
+        doc.put("coverImage", note.get("cover_url"));
+        doc.put("status", note.getOrDefault("status", 1));
+        doc.put("createdAt", note.get("created_at") != null ? note.get("created_at").toString() : null);
+        return doc;
     }
 
     /**
@@ -341,7 +365,7 @@ public class IncrementalIndexSyncJob {
      * 参考 IndexRebuildJob#buildProductDocument 的文档结构。
      * </p>
      */
-    private String buildProductDocument(Map<String, Object> product) {
+    private Map<String, Object> buildProductDocument(Map<String, Object> product) {
         // 从 images JSON 数组提取第一张图片
         String firstImage = "";
         Object imagesObj = product.get("images");
@@ -368,6 +392,6 @@ public class IncrementalIndexSyncJob {
         doc.put("sales", 0);            // 无销量统计
         doc.put("status", product.getOrDefault("status", 1));
         doc.put("createdAt", product.get("created_at") != null ? product.get("created_at").toString() : null);
-        return JSON.toJSONString(doc);
+        return doc;
     }
 }
