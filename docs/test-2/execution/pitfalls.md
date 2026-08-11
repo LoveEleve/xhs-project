@@ -417,3 +417,10 @@ S03 API 返回 data=[]
   3. **顺带修复补偿必失败的既有缺陷**：`buildNoteDocument` 用 `Map.of` 遇 NULL 列(NPE)；bulk 用 `.withJson()`(错) 改 `.document(JsonData.of(map))`。
 - **验证**：触发补偿 → ES `_version=1783827196000` == 笔记 `updated_at` ✅；删除毒版本文档后补偿成功写入正确版本。
 - **注意**：已存在的高版本毒文档需依赖每日 4 点全量重建(IndexRebuildJob)恢复，新代码不再产生新的毒版本。
+
+---
+## #59 P1-5 商品补偿漏跨库前缀 → 商品补偿必失败 — 已修复并验证（2026-08-11）
+
+- **根因**：`IncrementalIndexSyncJob.queryProductsByIds` 裸查 `FROM t_spu`，而 search 数据源默认 schema 是 `my_xhs_content`（t_note 所在库）→ 实际解析为 `my_xhs_content.t_spu` → `Table doesn't exist`，商品增量补偿必失败。
+- **修复**：改 `FROM my_xhs_product.t_spu`（显式跨库前缀）。
+- **验证**（search 重打包重启）：SPU1 入失败集合 → 补偿执行 `商品=1` 成功，`product_index/_doc/1` 写入（name=2026夏季新款连衣裙，version=spu updated_at 毫秒）。

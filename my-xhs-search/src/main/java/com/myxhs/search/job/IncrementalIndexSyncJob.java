@@ -225,8 +225,10 @@ public class IncrementalIndexSyncJob {
         String placeholders = String.join(",", ids.stream().map(id -> "?").toArray(String[]::new));
         // t_spu 表实际字段：id, name, category_id, brand_id, description, images, status, deleted, created_at, updated_at
         // category_name/price/image 等需通过 product Feign 或 buildProductDocument 默认值补全
+        // P1-5：search 数据源默认 schema 是 my_xhs_content（t_note 所在库），t_spu 在 my_xhs_product，
+        // 必须显式加库前缀，否则商品补偿必失败（Table 'my_xhs_content.t_spu' doesn't exist）。
         String sql = "SELECT id, name, category_id, brand_id, description, images, status, created_at, updated_at " +
-                "FROM t_spu WHERE id IN (" + placeholders + ") AND deleted = 0";
+                "FROM my_xhs_product.t_spu WHERE id IN (" + placeholders + ") AND deleted = 0";
 
         Object[] params = ids.toArray();
         return jdbcTemplate.queryForList(sql, params);
