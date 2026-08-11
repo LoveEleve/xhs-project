@@ -73,6 +73,15 @@ public class OrderService {
     private static final String IDEMPOTENT_KEY_PREFIX = "myxhs:order:idempotent:";
     private static final String CREATE_LOCK_PREFIX = "myxhs:order:create:lock:";
     private static final String ORDER_CLOSE_TOPIC = "ORDER_CLOSE_TOPIC";
+
+    /** 【O2修复】异步补偿/联动任务线程池（MDC 感知，替代 CompletableFuture.runAsync 的 commonPool 丢 traceId） */
+    private static final java.util.concurrent.ExecutorService ORDER_ASYNC_EXECUTOR =
+            new com.myxhs.common.trace.MdcAwareExecutorService(
+                    new java.util.concurrent.ThreadPoolExecutor(
+                            2, 8, 60, java.util.concurrent.TimeUnit.SECONDS,
+                            new java.util.concurrent.LinkedBlockingQueue<>(100),
+                            r -> { Thread t = new Thread(r, "order-async"); t.setDaemon(true); return t; },
+                            new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy()));
     /** 事务消息 Topic：下单成功后通知下游服务（库存预扣、优惠券核销等） */
     public static final String ORDER_TRANSACTION_TOPIC = "ORDER_TRANSACTION_TOPIC";
     private static final DateTimeFormatter ORDER_NO_FORMAT = DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS");
@@ -453,8 +462,8 @@ public class OrderService {
         orderMapper.setCancelledAt(orderId, userId);
 
         // 联动释放库存 + 退还优惠券（并行执行，互不依赖，带超时控制）
-        CompletableFuture<Void> releaseFuture = CompletableFuture.runAsync(() -> releaseInventory(orderId, order.getOrderNo(), userId));
-        CompletableFuture<Void> returnFuture = CompletableFuture.runAsync(() -> returnCouponIfUsed(order));
+        CompletableFuture<Void> releaseFuture = CompletableFuture.runAsync(() -> releaseInventory(orderId, order.getOrderNo(), userId), ORDER_ASYNC_EXECUTOR);
+        CompletableFuture<Void> returnFuture = CompletableFuture.runAsync(() -> returnCouponIfUsed(order), ORDER_ASYNC_EXECUTOR);
         try {
             CompletableFuture.allOf(releaseFuture, returnFuture).get(3, TimeUnit.SECONDS);
         } catch (Exception e) {
@@ -711,7 +720,7 @@ public class OrderService {
             } catch (Exception e) {
                 log.error("[订单] 确认库存扣减异常，依赖对账兜底: orderId={}", orderId, e);
             }
-        });
+        }, ORDER_ASYNC_EXECUTOR);
     }
 
     // ==================== 超时关单 ====================
@@ -1092,8 +1101,8 @@ public class OrderService {
                 Map.of("cancelReason", "支付失败", "cancelTime", LocalDateTime.now().toString()));
 
         // 并行释放库存 + 退还优惠券
-        CompletableFuture<Void> releaseFuture = CompletableFuture.runAsync(() -> releaseInventory(orderId, order.getOrderNo(), userId));
-        CompletableFuture<Void> returnFuture = CompletableFuture.runAsync(() -> returnCouponIfUsed(order));
+        CompletableFuture<Void> releaseFuture = CompletableFuture.runAsync(() -> releaseInventory(orderId, order.getOrderNo(), userId), ORDER_ASYNC_EXECUTOR);
+        CompletableFuture<Void> returnFuture = CompletableFuture.runAsync(() -> returnCouponIfUsed(order), ORDER_ASYNC_EXECUTOR);
         try {
             CompletableFuture.allOf(releaseFuture, returnFuture).get(3, TimeUnit.SECONDS);
         } catch (Exception e) {

@@ -72,13 +72,15 @@ public class SpuService {
     private final IdGeneratorUtil idGeneratorUtil;
 
     /** 【修复m12】自定义有界线程池，替代 ForkJoinPool.commonPool()，避免阻塞公共线程池 */
+    /** 【O2修复】MdcAwareExecutorService 包装，异步任务（缓存刷新/延迟双删/布隆加载）日志携带 traceId */
     private static final java.util.concurrent.ExecutorService SPU_ASYNC_EXECUTOR =
-            new java.util.concurrent.ThreadPoolExecutor(
-                    2, 8, 60, java.util.concurrent.TimeUnit.SECONDS,
-                    new java.util.concurrent.LinkedBlockingQueue<>(100),
-                    r -> { Thread t = new Thread(r, "spu-async"); t.setDaemon(true); return t; },
-                    new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy()
-            );
+            new com.myxhs.common.trace.MdcAwareExecutorService(
+                    new java.util.concurrent.ThreadPoolExecutor(
+                            2, 8, 60, java.util.concurrent.TimeUnit.SECONDS,
+                            new java.util.concurrent.LinkedBlockingQueue<>(100),
+                            r -> { Thread t = new Thread(r, "spu-async"); t.setDaemon(true); return t; },
+                            new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy()
+                    ));
 
     /**
      * JVM 退出时关闭异步线程池，防止队列中未完成任务丢失

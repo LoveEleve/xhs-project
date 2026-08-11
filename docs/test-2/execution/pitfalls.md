@@ -449,3 +449,15 @@ S03 API 返回 data=[]
 - **根因**：`TraceIdConfig` 只 `MDC.put("traceId")`，从未写 userId（logback 已声明 userId 字段）→ Logstash 采集的 userId 恒空，日志无法按用户关联。
 - **修复**：`TraceIdConfig.TraceContextInterceptor` 写入 `MDC.put("userId", ctx.getUserId())`（有值才写，afterCompletion 清理）；`MqTraceHelper.restoreTraceContext` 同样为 MQ 消费日志填充 userId。
 - **验证**（全服务重打包重启）：登录后调 /me → `/logs/my-xhs-user.json` 中 `userId=2086729019870457858`（此前恒空）。
+
+---
+## #62 O2 异步线程池丢 traceId — 已修复并验证（2026-08-11）
+
+- **根因**：product `SPU_ASYNC_EXECUTOR`/inventory `inventoryAsyncExecutor` 为裸 ThreadPoolExecutor（无 MDC 传播）；order 多处 `CompletableFuture.runAsync` 走 ForkJoinPool.commonPool；cart 对账单线程池裸用 → 异步任务（缓存刷新/延迟双删/补偿/联动释放）日志丢失 traceId，全链路断链。
+- **修复**：新增 common `MdcAwareExecutorService`（每次 execute 捕获/恢复 MDC，参照 home 已验证实现），应用于：
+  - product `SPU_ASYNC_EXECUTOR`、inventory `inventoryAsyncExecutor`
+  - order 新增 `ORDER_ASYNC_EXECUTOR`，替换 5 处 `CompletableFuture.runAsync`（cancel/退款/关单联动、confirmInventoryDeduct）
+  - cart `RECONCILE_EXECUTOR`（对账单线程池）
+- **验证**：
+  - 独立 Java 测试：异步线程正确继承 traceId/userId，线程复用也拿到新上下文 ✅
+  - 端到端：带 traceId 下单→取消 → 异步释放库存运行于 `order-async` 线程且日志携带同一 traceId `o2e2e3-1786460315` ✅

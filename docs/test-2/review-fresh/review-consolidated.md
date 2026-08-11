@@ -152,4 +152,5 @@
 | P1-5 补偿漏跨库前缀 | ✅ 已修复+验证（2026-08-11，search 已重启） |
 | P1-3 端口信任模型 | ✅ 已修复+验证（2026-08-11，全服务重打包重启；GatewayAuthTrustFilter + 各服务 jwt.secret） |
 | O1 MDC userId | ✅ 已修复+验证（2026-08-11，TraceIdConfig/MqTraceHelper 写 userId 到 MDC） |
+| O2 异步线程池 traceId | ✅ 已修复+验证（2026-08-11，MdcAwareExecutorService 应用于 product/inventory/order/cart） |
 | P1-2 补偿忽略 action | ✅ 已修复+验证（2026-08-11，order 已重启） |

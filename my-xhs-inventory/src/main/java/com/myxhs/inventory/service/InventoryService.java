@@ -80,11 +80,13 @@ public class InventoryService {
     private final com.myxhs.inventory.hot.HotSkuDetector hotSkuDetector;
 
     /** 【M9】异步扩容线程池（核心2，最大4，队列50，CallerRunsPolicy 防 OOM） */
+    /** 【O2修复】MdcAwareExecutorService 包装，异步扩容日志携带 traceId */
     private static final java.util.concurrent.ExecutorService inventoryAsyncExecutor =
-            new java.util.concurrent.ThreadPoolExecutor(2, 4, 60, java.util.concurrent.TimeUnit.SECONDS,
-                    new java.util.concurrent.LinkedBlockingQueue<>(50),
-                    r -> { Thread t = new Thread(r, "inventory-async"); t.setDaemon(true); return t; },
-                    new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy());
+            new com.myxhs.common.trace.MdcAwareExecutorService(
+                    new java.util.concurrent.ThreadPoolExecutor(2, 4, 60, java.util.concurrent.TimeUnit.SECONDS,
+                            new java.util.concurrent.LinkedBlockingQueue<>(50),
+                            r -> { Thread t = new Thread(r, "inventory-async"); t.setDaemon(true); return t; },
+                            new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy()));
 
     /**
      * JVM 退出时关闭异步线程池，防止队列中未完成任务丢失

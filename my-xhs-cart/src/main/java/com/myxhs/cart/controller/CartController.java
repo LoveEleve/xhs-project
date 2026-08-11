@@ -145,12 +145,14 @@ public class CartController {
     }
 
     /** 全量对账专用线程池（单线程串行执行，避免阻塞 ForkJoinPool.commonPool 影响全 JVM） */
+    /** 【O2修复】MdcAwareExecutorService 包装，对账异步日志携带 traceId */
     private static final java.util.concurrent.ExecutorService RECONCILE_EXECUTOR =
-            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
-                Thread t = new Thread(r, "cart-reconcile");
-                t.setDaemon(true);
-                return t;
-            });
+            new com.myxhs.common.trace.MdcAwareExecutorService(
+                    java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                        Thread t = new Thread(r, "cart-reconcile");
+                        t.setDaemon(true);
+                        return t;
+                    }));
 
     /**
      * 手动触发购物车对账（管理接口，需 X-Admin-Call 校验）
