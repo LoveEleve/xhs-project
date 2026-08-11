@@ -394,3 +394,15 @@ S03 API 返回 data=[]
 - **根因**：`OrderCompensationConsumer` 对 RELEASE_STOCK/RETURN_COUPON 一律调 `closeTimeoutOrder`，其只处理 status==0；已付款/已退款/已取消订单被跳过 → 库存/券永久泄漏。
 - **修复**：按 action 分发——`RELEASE_STOCK→compensateReleaseStock`、`RETURN_COUPON→compensateReturnCoupon`、默认 `closeTimeoutOrder`。新增 public 补偿方法，加载订单取 orderNo 后释放，**不依赖订单状态**（幂等：库存按 pseudoOrderId、券按 markUsed WHERE status=1 AND orderId）。
 - **验证**（order 已重打包重启）：创建订单(sku4×2)预扣 → 订单状态置为5(已退款) → 向 ORDER_COMPENSATION_TOPIC 发 RELEASE_STOCK 补偿 → 消费者执行 `compensateReleaseStock 释放库存成功` → sku4 total 198→200、预扣记录清除。旧实现会因 status!=0 跳过。
+
+---
+## #57 P1-1 已取消订单可支付 / 竞态无退款（钱货两空）— 已修复并验证（2026-08-11）
+
+- **根因**：`PaymentService.pay` 不回查订单状态，已取消/已支付订单仍可创建支付单；`onPaymentSuccess` 在订单状态已非待付款（乐观锁失败）时仅 return false，无退款 → 用户付了钱但订单已取消 → 钱货两空。
+- **修复**：
+  1. **支付前回查**：`pay()` 经 `orderFeignClient.getOrderStatus` 校验订单状态==0(待付款)，非待付款/无法确认均拒绝（30009/30008，资金安全优先）。新增 order 内部端点 `/api/order/status` + service 方法。
+  2. **竞态自动退款**：order `notifyPaySuccess` 在订单非待付款时返回业务失败(30009)；payment `handlePaySuccessInternal` 收到该业务失败（区分瞬态503）→ 自动调 `refund()` 原路退回。
+- **修复期发现**：payment 的 `InternalCallFeignConfig` 条件拦截器未覆盖 `/status` 路径 → order 返回403；已补 `|| path.contains("status")`。
+- **验证**（order+payment 重打包重启）：
+  - 待付款订单 → 支付成功创建支付单 ✅；已取消订单 → `30009 订单当前状态不允许支付` 拒绝 ✅
+  - SQL 构造"订单已取消但支付回调成功" → 自动退款触发：`t_refund status=1(成功) 299.00 reason=订单已取消自动退款` ✅

@@ -164,6 +164,19 @@ public class PaymentService {
                 throw new BizException(ResultCode.IDEMPOTENT_REJECT, "请勿重复支付");
             }
 
+            // 【P1-1】支付前回查订单状态：仅待付款(0)订单可支付，防止对已取消/已支付的订单发起支付（钱货两空）
+            R<Integer> statusResp = orderFeignClient.getOrderStatus(orderId);
+            Integer orderStatus = (statusResp != null && statusResp.isSuccess()) ? statusResp.getData() : null;
+            if (orderStatus == null) {
+                // 订单不存在或订单服务不可用：无法确认订单可支付，为资金安全拒绝支付
+                log.warn("[支付] 无法确认订单状态，拒绝支付: orderId={}", orderId);
+                throw new BizException(ResultCode.ORDER_NOT_FOUND, "订单不存在或不可支付");
+            }
+            if (orderStatus != 0) {
+                log.warn("[支付] 订单状态非待付款，拒绝支付: orderId={}, orderStatus={}", orderId, orderStatus);
+                throw new BizException(ResultCode.ORDER_STATUS_ERROR, "订单当前状态不允许支付");
+            }
+
             // 设置 Redis 支付状态缓存（防重标记，TTL 与订单超时一致）
             stringRedisTemplate.opsForValue().set(payingKey, String.valueOf(userId), PAYING_KEY_TTL);
 
@@ -320,10 +333,30 @@ public class PaymentService {
         sendPayResultMq(orderId, userId, true, tradeNo);
 
         // 同步通知订单服务支付成功（Feign 直调，保证订单状态及时更新）
+        // P1-1：若订单明确返回业务失败（已取消/已支付，非瞬态503）→ 自动退款，避免钱货两空
+        boolean businessRejected = false;
         try {
-            orderFeignClient.notifyPaySuccess(orderId, tradeNo);
+            R<Void> nr = orderFeignClient.notifyPaySuccess(orderId, tradeNo);
+            businessRejected = (nr != null && !nr.isSuccess()
+                    && nr.getCode() != ResultCode.SERVICE_UNAVAILABLE.getCode());
         } catch (Exception e) {
             log.error("[支付成功] 通知订单服务失败(订单MQ消费者会兜底): orderId={}, tradeNo={}", orderId, tradeNo, e);
+        }
+        if (businessRejected) {
+            try {
+                Payment p = findByPaymentNo(paymentNo);
+                if (p != null && p.getUserId().equals(userId)) {
+                    log.warn("[支付成功] 订单状态不允许支付(竞态取消/关单)，自动退款: orderId={}, paymentId={}", orderId, p.getId());
+                    RefundRequest rr = new RefundRequest();
+                    rr.setPaymentId(p.getId());
+                    rr.setUserId(p.getUserId());
+                    rr.setRefundAmount(p.getAmount());
+                    rr.setReason("订单已取消/状态不允许支付，自动退款");
+                    refund(rr);
+                }
+            } catch (Exception re) {
+                log.error("[支付成功] 自动退款失败(需人工/对账处理): orderId={}", orderId, re);
+            }
         }
     }
 

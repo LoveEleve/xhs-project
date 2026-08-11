@@ -2,6 +2,7 @@ package com.myxhs.order.controller;
 
 import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
+import com.myxhs.common.response.ResultCode;
 import com.myxhs.order.dto.request.DeliverRequest;
 import com.myxhs.order.dto.request.OrderCreateRequest;
 import com.myxhs.order.dto.request.PayRequest;
@@ -195,7 +196,9 @@ public class OrderController {
         log.info("[订单回调] 收到支付成功通知: orderId={}, tradeNo={}", orderId, tradeNo);
         boolean success = orderService.onPaymentSuccess(orderId, null);
         if (!success) {
-            log.warn("[订单回调] 支付成功但订单状态更新失败: orderId={}", orderId);
+            // P1-1：订单已非待付款（竞态取消/关单/已支付）→ 返回业务失败，供支付侧触发自动退款
+            log.warn("[订单回调] 支付成功但订单状态不允许更新(已取消/已支付), orderId={}", orderId);
+            return R.fail(ResultCode.ORDER_STATUS_ERROR, "订单状态不允许支付（已取消/已支付）");
         }
         return R.ok();
     }
@@ -271,5 +274,16 @@ public class OrderController {
         if (!isInternalCall(internalCall)) return R.fail(403, "仅限内部服务调用");
         BigDecimal payAmount = orderService.getOrderPayAmount(orderId);
         return R.ok(payAmount);
+    }
+
+    /**
+     * 查询订单状态（P1-1：支付前回查订单是否待付款，需 X-Internal-Call）
+     */
+    @GetMapping("/status")
+    public R<Integer> getOrderStatus(
+            @RequestParam("orderId") Long orderId,
+            @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
+        if (!isInternalCall(internalCall)) return R.fail(403, "仅限内部服务调用");
+        return R.ok(orderService.getOrderStatus(orderId));
     }
 }

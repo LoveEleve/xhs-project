@@ -24,7 +24,7 @@ public class InternalCallFeignConfig {
             String path = template.path();
             if (path != null && (path.contains("pay-success") || path.contains("pay-fail")
                     || path.contains("refund-success") || path.contains("refund-fail")
-                    || path.contains("pay-amount"))) {
+                    || path.contains("pay-amount") || path.contains("status"))) {
                 template.header("X-Internal-Call", internalToken);
             }
         };

@@ -1134,4 +1134,21 @@ public class OrderService {
         }
         return order.getPayAmount();
     }
+
+    /**
+     * 查询订单状态（P1-1 修复：支付前回查订单是否待付款，防止对已取消/已支付的订单发起支付）
+     *
+     * @return 订单状态码（0=待付款），订单不存在返回 null
+     */
+    public Integer getOrderStatus(Long orderId) {
+        OrderNoMapping mapping = orderNoMappingRepository.selectByOrderId(orderId);
+        if (mapping == null) {
+            return null;
+        }
+        Order order = orderMapper.selectOne(
+                new LambdaQueryWrapper<Order>()
+                        .eq(Order::getUserId, mapping.getUserId())
+                        .eq(Order::getId, orderId));
+        return order != null ? order.getStatus() : null;
+    }
 }

@@ -83,4 +83,12 @@ public interface OrderFeignClient {
      */
     @GetMapping("/api/order/pay-amount")
     R<BigDecimal> getOrderPayAmount(@RequestParam("orderId") Long orderId);
+
+    /**
+     * 查询订单状态（P1-1：支付前回查订单是否待付款，防对已取消/已支付订单发起支付）
+     *
+     * @return 0=待付款；订单不存在返回 null
+     */
+    @GetMapping("/api/order/status")
+    R<Integer> getOrderStatus(@RequestParam("orderId") Long orderId);
 }

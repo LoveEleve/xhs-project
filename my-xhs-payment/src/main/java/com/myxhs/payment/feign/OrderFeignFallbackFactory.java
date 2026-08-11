@@ -68,6 +68,12 @@ public class OrderFeignFallbackFactory implements FallbackFactory<OrderFeignClie
                 log.error("[支付→订单] 查询支付金额降级: orderId={}, 拒绝支付", orderId);
                 return R.fail(ResultCode.SERVICE_UNAVAILABLE, "订单服务不可用，无法验证支付金额");
             }
+
+            @Override
+            public R<Integer> getOrderStatus(Long orderId) {
+                log.error("[支付→订单] 查询订单状态降级: orderId={}, 拒绝支付", orderId);
+                return R.fail(ResultCode.SERVICE_UNAVAILABLE, "订单服务不可用，无法校验订单状态");
+            }
         };
     }
 }
