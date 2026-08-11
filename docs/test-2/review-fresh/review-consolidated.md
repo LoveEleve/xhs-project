@@ -110,6 +110,30 @@
 
 ---
 
+## 六·附、与既往文档对齐 + 真实性确认（2026-08-11）
+
+> 本 fresh review 独立复跑，多数问题与 REVIEW-V2 / FIX-PLAN-V2-FULL 一致；并新发现 2 个**此前未记录**的高危项。
+> 关键项均已实测复核（见下）。
+
+| 本次编号 | 既往文档 | 是否已知 | 确认方式 |
+|:--:|------|:--:|------|
+| P0-A 券核销从不调用(useCoupon死代码) | **无**（此前只评"useCoupon非幂等"，假设其被调用）| **新** | 全仓 grep：`useCoupon` 仅定义，无任何调用方 |
+| P0-B IM 会话ID碰撞(min*31+max) | **无** | **新** | 实测：ID 1..3000 顺序下 **440 万对**不同用户对同 conversationId |
+| P0-C Feed 收件箱参数颠倒 | REVIEW-V2 七·H01 | 已知 | Redis `reverseRangeByScoreWithScores(key,min,max,...)` 实参 (minScore,0)→空区间 |
+| P0-D 本地消息表每单重复投递 | P0-8 | 已知 | 代码：事务提交后本地消息未标 status=1，RetryJob 30s 必重发 |
+| P1-1 已取消可支付/竞态无退款 | P0-2 | 已知 | 代码 onPaymentSuccess 捕获乐观锁冲突仅 return false |
+| P1-2 补偿忽略 action→库存泄漏 | P0-1 | 已知 | 代码一律走 closeTimeoutOrder，status!=0 跳过 |
+| P1-3 X-User-Id/Internal-Call 信任边界 | X1/X2、P0-7 | 已知 | — |
+| P1-4 ES 版本域混用 | REVIEW-V2 八 | 已知 | 补偿用 currentTimeMillis vs Canal 用 es |
+| P1-5 补偿漏跨库前缀 | P0-5 | 已知 | — |
+| HMAC 不签 body / Redis 故障 500 | P0-6a / P0-6b | 已知 | — |
+| O1 MDC userId 缺失 / O2 异步丢 traceId | 运维 O1/O2 | 已知 | — |
+
+**结论**：整体对齐（独立复跑互相印证）；**新增 2 个高危项 P0-A(资损)、P0-B(串台)**，未在既往清单中，
+建议纳入修复优先级前列（尤以 P0-A 券核销为资损最高）。
+
+---
+
 ## 七、建议修复顺序
 1. **P0-A 券核销**（资损）→ **P0-B IM 会话碰撞**（串台）→ **P0-C Feed 收件箱**（核心功能失效）
 2. **P1-1 支付退款竞态**、**P1-2 补偿分发**（资金/库存）
