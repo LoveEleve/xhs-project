@@ -119,14 +119,10 @@ public class NoteService {
         final Long localMsgId = localMsg.getId();
 
         // 5. 事务提交后：清除缓存 + 异步推送 Feed
-        final Long finalUserId = userId;
         final Long finalNoteId = note.getId();
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                // 清除用户笔记列表缓存
-                cacheHelper.delayDoubleDelete(RedisKeyConstants.NOTE_LIST_USER + finalUserId);
-
                 // 异步通知 Feed 服务
                 try {
                     rocketMQTemplate.asyncSend("FEED_TOPIC", 
@@ -172,15 +168,7 @@ public class NoteService {
         noteMapper.insert(note);
         log.info("[笔记] 草稿保存成功: noteId={}, userId={}", note.getId(), userId);
 
-        // 事务提交后清除用户笔记列表缓存
-        final Long finalUserId = userId;
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                cacheHelper.delayDoubleDelete(RedisKeyConstants.NOTE_LIST_USER + finalUserId);
-            }
-        });
-
+        // P2-13：NOTE_LIST_USER 缓存键只删不填（读路径无回填）→ 移除无效失效调用
         return note.getId();
     }
 
@@ -250,12 +238,10 @@ public class NoteService {
 
         // 5. 事务提交后清除缓存
         final Long finalNoteId = noteId;
-        final Long finalUserId = userId;
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.NOTE_DETAIL + finalNoteId);
-                cacheHelper.delayDoubleDelete(RedisKeyConstants.NOTE_LIST_USER + finalUserId);
             }
         });
     }
@@ -287,7 +273,6 @@ public class NoteService {
             @Override
             public void afterCommit() {
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.NOTE_DETAIL + finalNoteId);
-                cacheHelper.delayDoubleDelete(RedisKeyConstants.NOTE_LIST_USER + finalUserId);
                 // 补偿 counter：发送单条 UNCOMMENT 事件（带计数），避免循环发送 N 条独立 MQ
                 sendCounterEvent(finalNoteId, finalUserId, "UNCOMMENT", finalCommentCount);
                 // 通知 Feed 流清理已删除的笔记
@@ -427,11 +412,9 @@ public class NoteService {
         final Long draftLocalMsgId = localMsg.getId();
 
         // 事务提交后：清除缓存 + 推送 Feed
-        final Long finalUserId = userId;
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                cacheHelper.delayDoubleDelete(RedisKeyConstants.NOTE_LIST_USER + finalUserId);
                 // 清除笔记详情缓存（避免草稿时的空值占位符导致发布后 404）
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.NOTE_DETAIL + noteId);
                 try {

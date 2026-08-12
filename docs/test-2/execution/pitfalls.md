@@ -489,3 +489,10 @@ S03 API 返回 data=[]
   - 同 IP 20 次 → IP 锁（40203），换 IP 正常（200）✅
   - IP-A 3 次 + IP-B 3 次 → 账号锁（40106 账号已锁定）✅
 - **注意**：直连服务端口时 XFF 可伪造（P0-7 已由 gateway 覆盖防伪造；服务端口依赖 P1-3 信任模型）。
+
+---
+## #66 P2-13 NOTE_LIST_USER 死缓存键 — 已修复并验证（2026-08-11）
+
+- **根因**：content `NoteService` 5 处（publish/saveDraft/update/delete/publishDraft）对 `NOTE_LIST_USER` 做 delayDoubleDelete，但 `getUserNotes/getMyNotes` 读路径**从不回填**该缓存 → 缓存键只删不填（死缓存，纯 DEL 开销无收益）。
+- **修复**：移除 5 处无效失效调用 + 3 个随之无用的 finalUserId；`getUserNotes/getMyNotes` 保持直查 DB（避免引入分页缓存复杂度）。
+- **验证**（content 重打包重启）：发布笔记 ✅、用户笔记列表 ✅、无报错 ✅。
