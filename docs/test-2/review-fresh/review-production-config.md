@@ -374,3 +374,48 @@
 - Nacos `my-xhs-gateway.yaml` 明文存 **JWT secret + HMAC secret**（P-D1 补充实证：无鉴权 Nacos = 签名密钥全泄露）。
 - 微服务 JVM 堆：order 337MB/1GB、user 232MB/512MB（正常）；MySQL Threads_connected=100/500（正常）。
 - Sentinel 客户端端口 8721-8729 公网监听（dashboard 796 错误相关，但当前可连）。
+
+---
+
+## 十二、业务链路 × 配置问题影响矩阵（2026-08-12，第七轮·结合业务分析）
+
+> 前六轮是基础设施视角；本轮到业务视角：把每个配置问题落到**具体业务链路**的用户/资金/数据影响，并区分"已由进程内兜底 vs 真正失效"。
+
+### 关键修正（结合业务后的准确判定）
+- **@Scheduled（进程内）与 @XxlJob（调度中心）分布**：
+  - order 模块 **0 个 @Scheduled**、3 个 @XxlJob → orderCloseJob/localMessageRetryJob/deadLetterScanJob/orderMappingRepairJob 失效 = **无任何进程内兜底**（超时关单只剩 RocketMQ 延时消息一条腿）。
+  - inventory：4 @Scheduled（PreDeductTimeout/TccTimeout/Compensation/其他）+ 1 @XxlJob → **预扣 30min 超时释放、TCC 超时、补偿任务都在进程内跑**（补偿任务每 30s 执行但因 P-D22 SQL 错误失败）；仅 inventoryReconcileJob(@XxlJob) 失效。
+  - coupon：1 @Scheduled + 2 @XxlJob → CouponExpireJob/CouponReconcileJob(@XxlJob) 失效。
+  - cart/home：全 @XxlJob → cartReconcileJob/feedCleanupJob 失效（无兜底）。
+  - search：3 @Scheduled（增量补偿/重建等）+ recommend×3(@XxlJob) 失效。
+  - payment：4 @XxlJob 有效 ✅ + 1 @Scheduled。
+
+### 业务链路影响矩阵
+
+| 业务链路 | 相关配置问题 | 实际业务影响 | 兜底情况 |
+|---|---|---|---|
+| **下单→超时关单** | P-D20 orderCloseJob 失效 | 未支付订单**永不自动关闭** → 库存/券被无效订单长期占用（可用库存减少、用户买不到）；延时消息若丢失=永久 | ❌ 无（order 无 @Scheduled）|
+| **下单→库存预扣** | P-D22 补偿表 SQL 错 | 预扣回滚失败的补偿记录写不进/扫不出 → 极少数回滚失败=**库存永久丢失**（超卖/少卖累积） | ⚠️ 任务在跑但 SQL 全错 |
+| **库存一致性** | P-D20 inventoryReconcileJob 失效 | Redis/MySQL 库存漂移无对账 → 漂移累积不被发现（配合补偿失效放大）| ❌ 无 |
+| **支付/退款** | 无（payment 4 任务有效）| 支付超时检查/通知补偿/退款补偿正常 | ✅ 健全 |
+| **领券/用券** | P-D20 couponExpireJob 失效 | 过期券不标记（列表仍显示可用）；**用券时按模板 valid_end 即时校验会被拒** → 实际资损风险低，仅展示不准 | ⚠️ 业务层有即时校验保护 |
+| **优惠券对账** | couponReconcileJob 失效 | 券账漂移不修（低）| ❌ |
+| **购物车** | P-D20 cartReconcileJob 失效 | Redis 故障时购物车无法从 MySQL 恢复（叠加 P2-7）→ **用户购物车可能丢失** | ❌ 无 |
+| **Feed 流** | feedCleanupJob 失效 | feed Redis 数据不清理 → 膨胀（读取变慢，低频）| ❌ |
+| **推荐** | recommend×3 失效 | 推荐索引/热池/协同不更新 → 推荐页固定无个性化（功能降级）| ❌ |
+| **搜索** | 无（ES 索引链路正常）| 搜索功能正常 | ✅ |
+| **通知/社交/计数** | 无（unreadReconcile/followCounterRepair/counterReconcile 有效）| 正常 | ✅ |
+| **登录/资金安全** | P-D1 Nacos 无鉴权（含 JWT/HMAC secret 明文）| 内网可读/改配置 → 可改 DB 密码/限流/白名单；签名密钥泄露=HMAC 防篡改体系可被伪造 | ❌ |
+| **用户数据安全** | P-D19 无备份 | 订单/用户/券数据**不可恢复** | ❌ |
+| **业务监控** | P-D4 告警失效+P-D13 无出口 | 下单失败率/支付成功率/MQ 积压/DLQ 异常**无人知**（8/9 风暴 3 天无人发现就是后果）| ❌ |
+| **异步问题排查** | P-T1 SW 异步断链 | 关单/补偿/缓存刷新/聚合的异步段在 SW 断链 → 异步故障难定位 | ⚠️ |
+
+### 业务优先级结论（结合业务影响重排）
+1. **P-D20 关单/本地消息/对账任务恢复**（资金+库存，order 无兜底最痛）
+2. **P-D22 库存补偿表修复**（库存准确性）
+3. **P-D19 备份**（数据安全）
+4. **P-D1 Nacos 鉴权 + 密钥迁移**（资金/安全）
+5. **P-D4/P-D13 告警修复**（业务异常可见性）
+6. 其余（购物车对账/推荐/feed/日志清理等）按资源窗口
+
+> 说明：支付链路、搜索、通知/社交/计数链路当前**配置健全**；核心资金痛点集中在"关单兜底失效"与"库存补偿失效"。
