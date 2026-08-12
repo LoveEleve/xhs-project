@@ -22,11 +22,11 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 通知聚合器
  * <p>
- * 核心逻辑：5 分钟时间窗口内，同一类型 + 同一目标的通知合并为一条。
+ * 核心逻辑：当天（自然日）时间窗口内，同一类型 + 同一目标的通知合并为一条。
  * </p>
  * <p>
  * 实现方式：
- * 1. Redis SETNX 做窗口锁（Key = userId:type:targetId，TTL = 5 分钟）
+ * 1. Redis SETNX 做窗口锁（Key = userId:type:targetId，TTL = 当天剩余秒数）
  * 2. 窗口内第一条通知 → 直接 INSERT
  * 3. 窗口内后续通知 → 更新主通知的 aggregate_count 和 title
  * </p>
@@ -96,7 +96,7 @@ public class NotificationAggregator {
      */
     public Notification processWithAggregate(Notification notification) {
         // 聚合 Key = userId:type:targetId
-        // 同一用户 + 同一类型 + 同一目标 → 5 分钟内合并
+        // 同一用户 + 同一类型 + 同一目标 → 当天内合并（窗口=当天剩余秒数，对齐按天聚合索引）
         String aggregateKey = AGGREGATE_WINDOW_KEY +
                 notification.getUserId() + ":" +
                 notification.getType() + ":" +

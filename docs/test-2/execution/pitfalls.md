@@ -496,3 +496,11 @@ S03 API 返回 data=[]
 - **根因**：content `NoteService` 5 处（publish/saveDraft/update/delete/publishDraft）对 `NOTE_LIST_USER` 做 delayDoubleDelete，但 `getUserNotes/getMyNotes` 读路径**从不回填**该缓存 → 缓存键只删不填（死缓存，纯 DEL 开销无收益）。
 - **修复**：移除 5 处无效失效调用 + 3 个随之无用的 finalUserId；`getUserNotes/getMyNotes` 保持直查 DB（避免引入分页缓存复杂度）。
 - **验证**（content 重打包重启）：发布笔记 ✅、用户笔记列表 ✅、无报错 ✅。
+
+---
+## #67 P2-14 Notification 聚合窗口注释与实现不符 — 已修复并验证（2026-08-11）
+
+- **根因**：`NotificationAggregator` 类注释/内联注释称"5 分钟窗口"，但实现 `getAggregateWindow()` 为"当天剩余秒数"（对齐 `idx_user_type_target(user_id,type,target_id,notify_date)` 按天聚合索引）——注释陈旧误导。
+- **修复**：修正注释为"当天（自然日）窗口"（行为不变，实现本就是按天聚合，符合索引设计）。
+- **勘误**：原 review 记的"模板 `{title}`/`{content}` 占位符语义错乱"**不成立**——经核实 `NotificationEventDTO.targetName` 由 CommentService 设为笔记标题（`notification.put("targetName", noteTitle)`），`{title}`→targetName、`{content}`→event.content 均正确，非 bug。
+- **验证**（notification 重打包重启）：通知列表正常（200/5条）、无报错 ✅。
