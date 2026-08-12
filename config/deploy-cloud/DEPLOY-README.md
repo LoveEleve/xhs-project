@@ -66,3 +66,9 @@ curl -s http://127.0.0.1:18848/nacos/v1/ns/namespace/list
 3. **Nacos**：默认 `nacos/nacos` + **无鉴权**（P-D1 待办）——部署后建议立即开启鉴权或限制安全组。
 4. **中间件密码**：全部 `Xhs@2026#*` 明文（P-D5 待办）——生产建议随机化。
 5. **SkyWalking 版本**：agent 9.6.0 vs OAP 9.7.0 不匹配（P-T2）——若后续微服务接 SW，需对齐。
+
+## 六、部署包增强（2026-08-12 已并入 compose）
+
+1. **healthcheck 全覆盖**：22 个容器全部有 healthcheck（新增 nacos/rocketmq-namesrv/xxl-job-admin/prometheus/kibana/grafana/filebeat/victoria-metrics/sentinel-dashboard/skywalking-ui）。
+2. **依赖时序**：关键 `depends_on` 加 `condition: service_healthy`（mysql-slave→mysql、canal→mysql、nacos→mysql、xxl-job→mysql、broker/dashboard→namesrv、logstash/kibana→es、grafana→prometheus、filebeat→logstash）——首次部署并行启动时按序就绪。
+3. **Sentinel 限流规则**：`config/sentinel/*.json`（16 服务 flow/degrade 规则）**compose 不自动加载**——部署后需在 Sentinel Dashboard(http://IP:8858) 手动导入，否则限流不生效。gateway 的限流另受 Nacos 数据源/本地 metadata 影响（见应用层说明）。
