@@ -52,6 +52,8 @@ public class UserService {
 
     /** 登录失败最大次数 */
     private static final int MAX_LOGIN_FAIL = 5;
+    /** 单 IP 登录失败最大次数（P2-9：达到即锁 IP，防单源账号 DoS） */
+    private static final int MAX_IP_FAIL = 20;
     /** 账号锁定时间（分钟） */
     private static final int LOCK_MINUTES = 15;
 
@@ -151,21 +153,30 @@ public class UserService {
      * </p>
      */
     @Transactional(rollbackFor = Exception.class)
-    public TokenResponse login(LoginRequest request) {
+    public TokenResponse login(LoginRequest request, String clientIp) {
         // Redis 不可用时返回明确错误，而非 500
         try {
-            return doLogin(request);
+            return doLogin(request, clientIp);
         } catch (RedisUnavailableException e) {
             log.error("[登录] Redis 不可用, username={}", request.getUsername(), e);
             throw new BizException(ResultCode.SERVICE_UNAVAILABLE, "认证服务暂时不可用，请稍后重试");
         }
     }
 
-    private TokenResponse doLogin(LoginRequest request) {
+    private TokenResponse doLogin(LoginRequest request, String clientIp) {
         // 1. 校验验证码
         captchaService.verifyCaptcha(request.getCaptchaKey(), request.getCaptchaCode());
 
         String username = request.getUsername();
+
+        // 1.5 P2-9：IP 维度锁定检查（单源攻击先锁 IP，不锁账号，防账号 DoS）
+        if (clientIp != null && !clientIp.isEmpty()) {
+            String ipLockKey = RedisKeyConstants.USER_LOGIN_LOCK_IP + clientIp;
+            if (redisOperator.get(ipLockKey) != null) {
+                log.warn("[登录] IP 已被锁定(疑似攻击), ip={}, username={}", clientIp, username);
+                throw new BizException(ResultCode.LOCK_ACQUIRE_FAIL, "尝试过于频繁，请稍后再试");
+            }
+        }
 
         // 2. 检查账号是否被锁定
         String lockKey = RedisKeyConstants.USER_LOGIN_LOCK + username;
@@ -193,12 +204,12 @@ public class UserService {
         // 5. 校验密码
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             log.info("[登录] 密码错误, userId={}, username={}", user.getId(), username);
-            incrementLoginFail(username);
+            incrementLoginFail(username, clientIp);
             throw new BizException(ResultCode.PASSWORD_ERROR, "用户名或密码错误");
         }
 
         // 6. 登录成功，清除失败计数
-        clearLoginFail(username);
+        clearLoginFail(username, clientIp);
 
         // 7. 生成 Token 对
         TokenResponse tokenResponse = tokenService.generateTokenPair(user.getId());
@@ -340,33 +351,70 @@ public class UserService {
     // ==================== 私有方法 ====================
 
     /**
-     * 登录失败计数 + 1
+     * 登录失败计数 + 1（P2-9：增加 IP 维度，防单源账号 DoS）
+     * <p>
+     * 策略：
+     * - 按 IP 计数：同一 IP 失败达 {@link #MAX_IP_FAIL} 次 → 锁定该 IP（单源攻击先锁 IP，不锁账号）。
+     * - 按账号计数：仅当失败来源 IP 数 &gt;= 2（疑似分布式暴力破解）时才锁定账号；
+     *   单源攻击不会锁定账号（攻击者 IP 已被锁），避免账号被恶意锁死。
+     * </p>
      */
-    private void incrementLoginFail(String username) {
+    private void incrementLoginFail(String username, String clientIp) {
+        // 1. IP 维度计数（无 IP 时跳过 IP 维度，退化为原逻辑）
+        if (clientIp != null && !clientIp.isEmpty()) {
+            String ipFailKey = RedisKeyConstants.USER_LOGIN_FAIL_IP + clientIp;
+            Long ipFailCount = redisOperator.increment(ipFailKey);
+            if (ipFailCount != null && ipFailCount == 1) {
+                redisOperator.expire(ipFailKey, 30, TimeUnit.MINUTES);
+            }
+            if (ipFailCount != null && ipFailCount >= MAX_IP_FAIL) {
+                String ipLockKey = RedisKeyConstants.USER_LOGIN_LOCK_IP + clientIp;
+                redisOperator.set(ipLockKey, "1", LOCK_MINUTES, TimeUnit.MINUTES);
+                redisOperator.delete(ipFailKey);
+                log.warn("[登录] IP 已被锁定, ip={}, 失败{}次, 锁定{}分钟", clientIp, ipFailCount, LOCK_MINUTES);
+            }
+        }
+
+        // 2. 账号维度计数 + 记录失败来源 IP
         String failKey = RedisKeyConstants.USER_LOGIN_FAIL + username;
         Long failCount = redisOperator.increment(failKey);
 
-        log.info("[登录] 登录失败计数, username={}, 当前失败次数={}", username, failCount);
+        log.info("[登录] 登录失败计数, username={}, 当前失败次数={}, ip={}", username, failCount, clientIp);
 
-        if (failCount == 1) {
+        if (failCount != null && failCount == 1) {
             // 首次失败，设置过期时间
             redisOperator.expire(failKey, 30, TimeUnit.MINUTES);
         }
 
-        if (failCount >= MAX_LOGIN_FAIL) {
+        // 3. 记录失败来源 IP（判定是否为多 IP 暴力破解）
+        long distinctIps = 0;
+        if (clientIp != null && !clientIp.isEmpty()) {
+            String ipsKey = RedisKeyConstants.USER_LOGIN_FAIL_IPS + username;
+            redisOperator.sAdd(ipsKey, clientIp);
+            redisOperator.expire(ipsKey, 30, TimeUnit.MINUTES);
+            Set<Object> ips = redisOperator.sMembers(ipsKey);
+            distinctIps = ips == null ? 0 : ips.size();
+        }
+
+        // 4. 仅当失败次数达标 且 来自多个不同 IP（>=2）时才锁定账号
+        if (failCount != null && failCount >= MAX_LOGIN_FAIL && distinctIps >= 2) {
             // 锁定账号
             String lockKey = RedisKeyConstants.USER_LOGIN_LOCK + username;
             redisOperator.set(lockKey, "1", LOCK_MINUTES, TimeUnit.MINUTES);
             redisOperator.delete(failKey);
-            log.warn("[登录] 账号被锁定, username={}, 锁定{}分钟", username, LOCK_MINUTES);
+            redisOperator.delete(RedisKeyConstants.USER_LOGIN_FAIL_IPS + username);
+            log.warn("[登录] 账号被锁定(多IP暴力破解), username={}, 失败{}次, 来自{}个IP, 锁定{}分钟",
+                    username, failCount, distinctIps, LOCK_MINUTES);
         }
     }
 
     /**
      * 清除登录失败计数
      */
-    private void clearLoginFail(String username) {
+    private void clearLoginFail(String username, String clientIp) {
         redisOperator.delete(RedisKeyConstants.USER_LOGIN_FAIL + username);
+        redisOperator.delete(RedisKeyConstants.USER_LOGIN_FAIL_IPS + username);
+        // 登录成功不清理 IP 计数（IP 计数用于拦截攻击来源，独立于账号）
     }
 
     /**

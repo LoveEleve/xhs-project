@@ -41,10 +41,15 @@ public class AuthController {
 
     /**
      * 用户登录
+     * <p>
+     * P2-9：取客户端 IP（gateway TrafficColoringFilter 已把 X-Forwarded-For 覆盖为真实连接 IP）
+     * 用于 IP 维度登录失败锁定，防单源账号 DoS。
+     * </p>
      */
     @PostMapping("/login")
-    public R<TokenResponse> login(@Valid @RequestBody LoginRequest request) {
-        return R.ok(userService.login(request));
+    public R<TokenResponse> login(@Valid @RequestBody LoginRequest request,
+                                  @RequestHeader(value = "X-Forwarded-For", required = false) String clientIp) {
+        return R.ok(userService.login(request, clientIp));
     }
 
     /**

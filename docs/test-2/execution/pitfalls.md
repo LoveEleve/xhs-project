@@ -475,3 +475,17 @@ S03 API 返回 data=[]
 - **根因**：`SpuService.loadSpuDetailFromDb` 只过滤 SKU 状态、不过滤 SPU 状态 → 下架/删除商品详情仍对外返回（与 listSpus 仅上架不一致）。布隆过滤器只增不减（RBloomFilter 不支持 remove）。
 - **修复**：`loadSpuDetailFromDb` 增加 SPU 状态过滤（非 ON_SHELF → null → 404）；布隆旧条目经 updateSpuStatus 的 afterCommit evictSpuCache 后仅多一次缓存查询，命中空值缓存返回 null，不返回错误数据。
 - **验证**（product 重打包重启）：SPU2 下架 + 清缓存 → 详情 `30001 商品不存在` + 日志"SPU 非上架状态"✅；恢复上架 → 200 ✅。
+
+---
+## #65 P2-9 登录锁定可被滥用为账号 DoS — 已修复并验证（2026-08-11）
+
+- **根因**：`UserService.incrementLoginFail` 仅按用户名计数，5 次错密码即锁账号 15 分钟，无 IP 维度 → 攻击者可对任意账号恶意错密码将其锁死（账号 DoS）。
+- **修复**：
+  1. 新增 **IP 维度**：单 IP 失败 20 次 → 锁该 IP（`USER_LOGIN_LOCK_IP`），单源攻击先锁攻击者 IP 而非账号。
+  2. **账号锁定条件收紧**：仅当失败次数 ≥5 **且来源 IP ≥2 个**（分布式暴力破解）才锁账号（`USER_LOGIN_FAIL_IPS` 记录来源 IP 集合）。
+  3. 登录端点透传 `X-Forwarded-For`（gateway 已覆盖为真实连接 IP）。
+- **验证**（common+user 重打包重启）：
+  - 同 IP 5 次错密码 → 正确密码仍登录成功（账号未锁）✅
+  - 同 IP 20 次 → IP 锁（40203），换 IP 正常（200）✅
+  - IP-A 3 次 + IP-B 3 次 → 账号锁（40106 账号已锁定）✅
+- **注意**：直连服务端口时 XFF 可伪造（P0-7 已由 gateway 覆盖防伪造；服务端口依赖 P1-3 信任模型）。

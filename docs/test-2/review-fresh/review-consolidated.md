@@ -156,4 +156,5 @@
 | O2 异步线程池 traceId | ✅ 已修复+验证（2026-08-11，MdcAwareExecutorService 应用于 product/inventory/order/cart） |
 | P2-1 product SKU N+1 | ✅ 已修复+验证（2026-08-11，product 已重启） |
 | P2-2 product 下架详情可见 | ✅ 已修复+验证（2026-08-11，product 已重启） |
+| P2-9 登录锁定账号DoS | ✅ 已修复+验证（2026-08-11，user 已重启；IP 维度 + 多IP才锁账号） |
 | P1-2 补偿忽略 action | ✅ 已修复+验证（2026-08-11，order 已重启） |

@@ -54,6 +54,15 @@ public final class RedisKeyConstants {
     /** 账号锁定标记 myxhs:user:login:lock:{username} */
     public static final String USER_LOGIN_LOCK = PROJECT_PREFIX + "user:login:lock:";
 
+    /** IP 登录失败计数 myxhs:user:login:fail:ip:{ip}（P2-9：单源 DoS 拦截） */
+    public static final String USER_LOGIN_FAIL_IP = PROJECT_PREFIX + "user:login:fail:ip:";
+
+    /** IP 锁定标记 myxhs:user:login:lock:ip:{ip}（P2-9） */
+    public static final String USER_LOGIN_LOCK_IP = PROJECT_PREFIX + "user:login:lock:ip:";
+
+    /** 账号失败来源 IP 集合 myxhs:user:login:fail:ips:{username}（P2-9：仅多 IP 才锁账号） */
+    public static final String USER_LOGIN_FAIL_IPS = PROJECT_PREFIX + "user:login:fail:ips:";
+
     /** 用户屏蔽列表 myxhs:user:block:{userId} */
     public static final String USER_BLOCK_LIST = PROJECT_PREFIX + "user:block:";
 
