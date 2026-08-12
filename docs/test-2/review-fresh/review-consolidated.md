@@ -164,4 +164,5 @@
 | **生产配置二轮深挖** | ✅（2026-08-12）：修正 M-1 iptables实为收紧(P-D1暴露面下调)、M-2 P-D8撤销；新增 P-D13无Alertmanager/告警无出口、P-D14 ES日志无ILM无限增长、P-D15 mysql-slave内存97.5%濒危、P-D16 Kibana随机密钥、P-D17 残留topic与镜像、P-D18 404序列多 |
 | **生产配置三轮深挖** | ✅（2026-08-12）：P-D20 xxl-job调度严重错配（19任务仅~8可调度，order关单/本地消息/库存对账/券过期/购物车对账/feed清理/推荐计算全失效）、P-D19 MySQL无备份、P-D21 Redis HA名义化(单sentinel) |
 | **生产配置四轮深挖** | ✅（2026-08-12）：P-D22 t_inventory_compensation schema漂移→库存补偿机制全失效、P-D23 8/9全服务Redisson日志风暴9GB/天(已修复,跨机部署sentinel下发127.0.0.1)、P-D24 /logs无清理14GB、P-D25 脏表、时区混用 |
+| **生产配置五轮深挖** | ✅（2026-08-12）：P-D26 从库relay-log未固化(主机名变更断复制)、P-D27 Kibana monitoring指向不可解析地址、从库8-9曾尝试CHANGE SOURCE但当前仍不在运行(P-D2强化)、Nacos鉴权三度确认关闭 |
 | P1-2 补偿忽略 action | ✅ 已修复+验证（2026-08-11，order 已重启） |

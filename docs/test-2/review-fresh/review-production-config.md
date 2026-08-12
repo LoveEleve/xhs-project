@@ -330,3 +330,23 @@
 - **微服务机 = 21.214.97.212（本机）**，**中间件机 = 21.130.247.89**（跨机部署）。
 - iptables（中间件机）白名单 127.0.0.1 + 21.214.97.212 放行，其余 DROP —— 微服务→中间件走白名单，安全边界合理；**但微服务机侧是否有同等防护未确认**（快照仅含中间件机 iptables）。
 - **时区混用**：容器 TZ 三种（Asia/Shanghai×2、Etc/UTC、PRC）+ 微服务未显式 TZ（宿主 +08:00）→ 中间件日志 UTC 与业务日志 +08 混用，排查跨服务日志时区错乱。建议统一容器 TZ=Asia/Shanghai、微服务显式 `-Duser.timezone=Asia/Shanghai`。
+
+---
+
+## 十、第五轮深挖补充（2026-08-12）：容器内实际配置核对
+
+### P-D26【低】mysql-slave 未配置固定 relay-log 文件名
+- **根因确认**：slave 日志 `Neither --relay-log nor --relay-log-index were used; so replication may break when this MySQL server acts as a replica and has his hostname changed`——从库 relay log 用主机名默认命名，主机名变更即复制中断。
+- **修复**：从库参数加 `--relay-log=mysql-relay-bin --relay-log-index=mysql-relay-bin.index`（或 my.cnf 固化）。
+- **风险**：低。**验证**：重启从库后复制正常、主机名变更不中断。
+
+### P-D27【低】Kibana monitoring 指向不可解析地址
+- **根因确认**：kibana.yml 镜像默认 `elasticsearch.hosts: ["http://elasticsearch:9200"]` + `monitoring.ui.container.elasticsearch.enabled: true`——host 网络下 `elasticsearch` DNS 不可解析（实际 ES 在 127.0.0.1:19200，经 env ELASTICSEARCH_HOSTS 覆盖生效，但 **monitoring 组件仍走 yml 的 elasticsearch:9200**）→ Kibana 监控面板异常。
+- **修复**：kibana env 补 `MONITORING_UI_CONTAINER_ELASTICSEARCH_ENABLED: "false"`（host 网络下关闭容器监控），或改 kibana.yml。
+- **风险**：低。**验证**：Kibana monitoring 面板不再报连接错误。
+
+### 其他确认（第五轮）
+- **从库恢复轨迹**：8/9 03:01 曾 `CHANGE REPLICATION SOURCE TO (127.0.0.1:3306)` + START GTID 复制（尝试修复 1236），但**当前(8/12) 3307 无监听 → 从库容器仍未运行**，P-D2 需按"重建从库"执行（含 relay-log 参数）。
+- **Nacos 鉴权三度确认**：application.properties `NACOS_AUTH_TOKEN:` 空、`NACOS_AUTH_IDENTITY_KEY/VALUE:` 空 → 鉴权未开启（P-D1）。
+- filebeat 配置走命令行 -E 参数（yml 为默认），ES 有数据 → 采集正常。
+- gateway `/actuator` 的 discoveryClient services 子端点返回 500（快照）——网关 actuator discovery 子端点异常（低优先，排查）。
