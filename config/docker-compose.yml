@@ -194,8 +194,8 @@ services:
       start_period: 60s
     volumes:
       - mysql-slave-data:/var/lib/mysql
-      - ./sql/init-all.sql:/docker-entrypoint-initdb.d/01-init.sql
-      - ./sql/init-replication.sql:/docker-entrypoint-initdb.d/02-init-replication.sql
+      # 从库不跑 init-all.sql（避免 GTID 冲突，见 sql/init-replication.sql 注释），数据由主库 binlog 全量同步
+      - ./sql/init-replication.sql:/docker-entrypoint-initdb.d/01-init-replication.sql
     depends_on:
       - mysql
     restart: always

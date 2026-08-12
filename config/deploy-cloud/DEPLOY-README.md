@@ -61,7 +61,7 @@ curl -s http://127.0.0.1:18848/nacos/v1/ns/namespace/list
 
 ## 五、已知注意点（部署时对照）
 
-1. **从库初始化**：compose 从库挂 `init-all.sql`，首次部署会执行建库建表——若主库已初始化，从库应从主库 dump 恢复（`SHOW REPLICA STATUS` 确认 IO/SQL Running=Yes、Seconds_Behind=0）。
+1. **从库不执行 init-all.sql**（已修正 compose）：从库仅挂 `init-replication.sql`（CHANGE MASTER + START SLAVE），**建库建表/初始化数据全部由主库 binlog 通过 GTID 同步**——若从库误跑 init-all 会与复制 GTID 冲突（错误 1236/重复执行）。部署后验证：`SHOW REPLICA STATUS` 确认 IO/SQL Running=Yes、Seconds_Behind=0。
 2. **Redis announce-ip**：compose 已配 `--replica-announce-ip 21.130.247.89`（8/11 修复，勿回退）——若云主机 IP 不同且未用 EIP，需同步改。
 3. **Nacos**：默认 `nacos/nacos` + **无鉴权**（P-D1 待办）——部署后建议立即开启鉴权或限制安全组。
 4. **中间件密码**：全部 `Xhs@2026#*` 明文（P-D5 待办）——生产建议随机化。
