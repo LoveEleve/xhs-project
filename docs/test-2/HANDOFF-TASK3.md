@@ -121,6 +121,7 @@
 | **review-fresh/** | 全项目手把手 fresh Review（15模块 + 汇总）：`review-consolidated.md` 含 P0/P1/P2 优先级清单；每模块 `review-<module>.md` |
 | **FIX-PLAN-PRODUCTION-CONFIG.md** | 生产配置修复方案（P-D1~P-D12，按影响运转>安全重排；第一批零代码） |
 | **review-fresh/review-production-config.md** | 生产环境配置深度 Review（Nacos无鉴权/从库宕机/告警失效/VM空转等实证） |
+| **DEPLOY-CLOUD-GUIDE.md** | 云服务器按量计费部署清单（restart=always/docker自启/微服务systemd自启/IP稳定性/资源/备份/恢复演练） |
 
 ---
 
