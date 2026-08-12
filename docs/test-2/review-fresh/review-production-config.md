@@ -350,3 +350,27 @@
 - **Nacos 鉴权三度确认**：application.properties `NACOS_AUTH_TOKEN:` 空、`NACOS_AUTH_IDENTITY_KEY/VALUE:` 空 → 鉴权未开启（P-D1）。
 - filebeat 配置走命令行 -E 参数（yml 为默认），ES 有数据 → 采集正常。
 - gateway `/actuator` 的 discoveryClient services 子端点返回 500（快照）——网关 actuator discovery 子端点异常（低优先，排查）。
+
+---
+
+## 十一、第六轮深挖（2026-08-12）：微服务机安全边界 + actuator 暴露
+
+### P-D28【高·安全】微服务机无网络防护 + actuator loggers 端点可远程改日志级别
+- **根因确认**：
+  1. **微服务机(21.214.97.212，本机) iptables 完全为空**（无 INPUT 规则、无 MYXHS 类链）——与中间件机(21.130.247.89)的 MYXHS 白名单链**不对称**。微服务全端口 0.0.0.0 监听（19000-19016、sentinel 8721-8729、xxl-executor 9990-9999）在网络层**无任何拦截**（依赖云安全组兜底，本层未验证）。
+  2. **gateway /actuator/loggers 无鉴权且可写**：实测 `POST /actuator/loggers/<logger>` 未认证即 204 成功（可远程改日志级别→刷爆磁盘/掩盖攻击日志）。`/actuator/env` 未暴露（exposure 仅 health/info/prometheus/metrics/loggers），但 loggers 已构成风险。
+- **修复**：
+  1. 微服务机配置与中间件机同等 iptables 白名单（仅允许 gateway 对外端口 19000 + 运维 IP；19001-19016/872x/999x 仅内网）。
+  2. actuator 加固：`management.endpoints.web.exposure.include` 去掉 `loggers`（或加 `management.endpoint.loggers.enabled=false`）；生产建议仅暴露 health/prometheus，并加 `management.server.port` 独立端口 + 内网绑定。
+  3. 云安全组收紧（如腾讯云安全组只开 19000/8080 等必要端口）。
+- **风险**：低（配置级）。**验证**：外部 IP 访问 19001/actuator/loggers 被拒；改日志级别返回 401/404。
+
+### P-D29【低】MySQL 慢查询 11 次
+- **根因确认**：slow_query_log=ON、long_query_time=0.5s、Slow_queries=11（累计）。慢日志在 /var/lib/mysql/...-slow.log（未抓内容）。
+- **修复**：拉取慢日志分析（重点 t_order 分片查询、t_user_coupon 等）；如为分片路由问题（不带分片键的全库扫描）需优化 SQL/加映射表。
+- **风险**：低。**验证**：慢查询清零或确认无业务影响。
+
+### 其他确认（第六轮）
+- Nacos `my-xhs-gateway.yaml` 明文存 **JWT secret + HMAC secret**（P-D1 补充实证：无鉴权 Nacos = 签名密钥全泄露）。
+- 微服务 JVM 堆：order 337MB/1GB、user 232MB/512MB（正常）；MySQL Threads_connected=100/500（正常）。
+- Sentinel 客户端端口 8721-8729 公网监听（dashboard 796 错误相关，但当前可连）。
