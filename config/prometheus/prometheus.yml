@@ -4,7 +4,7 @@
 global:
   scrape_interval: 5s        # 采集间隔（高频采集，利于实时告警）
   evaluation_interval: 15s   # 告警规则评估间隔
-  scrape_timeout: 10s        # 采集超时
+  scrape_timeout: 4s         # 采集超时（必须 < scrape_interval）
 
 # 告警规则文件
 rule_files:

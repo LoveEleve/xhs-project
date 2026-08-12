@@ -84,24 +84,6 @@ version: '3.8'
 #              RocketMQ 双NS+主从→单NS+单Broker(9876/11911)
 #              应用代码零改动 — 仅改 yml 配置文件
 #
-# ============================= 部署注意事项 ================================
-#
-#   1. NACOS_SERVER_IP 部署时需改为宿主机实际 IP（当前: 21.130.247.89）
-#   2. Redis Sentinel sentinel.conf 需将 monitor IP 改为宿主机 IP
-#      （127.0.0.1 → 21.130.247.89），否则远程 Gateway 连不上 Redis
-#   3. JDK 依赖: /opt/kona-jdk17 (324MB) 和 /opt/kona-jdk8 (223MB)
-#   4. Canal 自定义镜像: docker save my-xhs-canal-server:v1.1.7-squashed
-#   5. MySQL 主从重建时 Slave 不应跑 init-all.sql，应从 Master dump 同步
-#   6. Nacos 需挂载 mysql-connector.jar 到 /home/nacos/plugins/mysql/
-#   7. Filebeat 挂载 /logs:/logs，需确保宿主机 /logs 目录存在
-#   8. Canal healthcheck 已改为进程检测（pgrep CanalLauncher），不再依赖端口
-#   9. Redis 从机默认广播 127.0.0.1 给 Sentinel，远程客户端连不上。
-#      需在 redis-slave 启动参数加 --replica-announce-ip <宿主机IP>
-#      和 --replica-announce-port 6380。Master 同理。已修复。
-#      改完后若 Sentinel 仍显示旧 127.0.0.1 条目，执行：
-#        docker exec my-xhs-redis-sentinel redis-cli -p 26379 SENTINEL RESET mymaster
-#      （Sentinel 会缓存旧 replica 信息，RESET 强制刷新）
-#
 # ========================================================================
 
 services:
@@ -148,7 +130,7 @@ services:
     volumes:
       - mysql-data:/var/lib/mysql
       - ./sql/init-all.sql:/docker-entrypoint-initdb.d/01-init.sql
-    restart: always
+    restart: unless-stopped
 
   # ==========================================
   # MySQL 从库 — GTID 主从复制（读写分离 + 多活演示）
@@ -194,11 +176,10 @@ services:
       start_period: 60s
     volumes:
       - mysql-slave-data:/var/lib/mysql
-      - ./sql/init-all.sql:/docker-entrypoint-initdb.d/01-init.sql
       - ./sql/init-replication.sql:/docker-entrypoint-initdb.d/02-init-replication.sql
     depends_on:
       - mysql
-    restart: always
+    restart: unless-stopped
 
   # ==========================================
   # Redis 主从 + Sentinel — 高可用多活演示
@@ -214,8 +195,6 @@ services:
       redis-server
       --port 6379 --bind 0.0.0.0 --requirepass Xhs@2026#Redis
       --masterauth Xhs@2026#Redis
-      --replica-announce-ip 21.130.247.89
-      --replica-announce-port 6379
       --appendonly yes --appendfsync everysec
       --maxmemory 256mb --maxmemory-policy allkeys-lru
       --save 900 1 --save 300 10
@@ -230,7 +209,7 @@ services:
       retries: 3
     volumes:
       - redis-master-data:/data
-    restart: always
+    restart: unless-stopped
 
   redis-slave:
     image: redis:7-alpine
@@ -241,8 +220,6 @@ services:
       --port 6380 --bind 0.0.0.0 --requirepass Xhs@2026#Redis
       --masterauth Xhs@2026#Redis
       --replicaof 127.0.0.1 6379
-      --replica-announce-ip 21.130.247.89
-      --replica-announce-port 6380
       --appendonly yes --appendfsync everysec
       --maxmemory 256mb --maxmemory-policy allkeys-lru
       --save 900 1 --save 300 10
@@ -259,7 +236,7 @@ services:
       - redis-slave-data:/data
     depends_on:
       - redis
-    restart: always
+    restart: unless-stopped
 
   redis-sentinel:
     image: redis:7-alpine
@@ -281,7 +258,7 @@ services:
     depends_on:
       - redis
       - redis-slave
-    restart: always
+    restart: unless-stopped
 
   # ==========================================
   # RocketMQ — 单 NameServer + 单 Broker
@@ -303,7 +280,7 @@ services:
       resources:
         limits: { cpus: '0.25', memory: 640m }
         reservations: { cpus: '0.1', memory: 192m }
-    restart: always
+    restart: unless-stopped
 
   rocketmq-broker:
     image: apache/rocketmq:5.1.4
@@ -331,7 +308,7 @@ services:
       - mq-broker-store:/home/rocketmq/store
     depends_on:
       - rocketmq-namesrv
-    restart: always
+    restart: unless-stopped
 
   rocketmq-dashboard:
     image: apacherocketmq/rocketmq-dashboard:latest
@@ -352,7 +329,7 @@ services:
       start_period: 30s
     depends_on:
       - rocketmq-namesrv
-    restart: always
+    restart: unless-stopped
 
   # ==========================================
   # Elasticsearch × 2
@@ -394,7 +371,7 @@ services:
       start_period: 60s
     volumes:
       - es-data:/usr/share/elasticsearch/data
-    restart: always
+    restart: unless-stopped
 
   elasticsearch-skywalking:
     image: elasticsearch:8.12.2
@@ -423,7 +400,7 @@ services:
       start_period: 60s
     volumes:
       - es-sw-data:/usr/share/elasticsearch/data
-    restart: always
+    restart: unless-stopped
 
   # ==========================================
   # Canal — MySQL Binlog → RocketMQ → ES/Redis
@@ -438,12 +415,11 @@ services:
     command: ["/home/admin/app.sh"]
     environment:
       JAVA_HOME: /opt/kona-jdk8
-      JAVA_OPTS: "-Xms256m -Xmx512m -Xmn128m -XX:SurvivorRatio=2 -XX:MaxTenuringThreshold=15 -XX:+DisableExplicitGC"
       PATH: /opt/kona-jdk8/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     deploy:
       resources:
-        limits: { cpus: '0.5', memory: 1024m }
-        reservations: { cpus: '0.1', memory: 256m }
+        limits: { cpus: '0.25', memory: 640m }
+        reservations: { cpus: '0.1', memory: 192m }
     volumes:
       - ./config/canal/conf/canal.properties:/home/admin/canal-server/conf/canal.properties
       - ./config/canal/conf/note_instance/instance.properties:/home/admin/canal-server/conf/note_instance/instance.properties
@@ -452,7 +428,7 @@ services:
       - /opt/kona-jdk8:/opt/kona-jdk8:ro
       - canal-data:/home/admin/canal-server/logs
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f CanalLauncher || exit 1"]
+      test: ["CMD-SHELL", "curl -s http://127.0.0.1:11111 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -460,7 +436,7 @@ services:
     depends_on:
       - mysql
       - rocketmq-broker
-    restart: always
+    restart: unless-stopped
 
   # ==========================================
   # Nacos — 注册中心 + 配置中心
@@ -483,14 +459,13 @@ services:
       JAVA_HOME: /opt/kona-jdk17
     volumes:
       - /opt/kona-jdk17:/opt/kona-jdk17:ro
-      - ./config/mysql-connector.jar:/home/nacos/plugins/mysql/mysql-connector.jar
     deploy:
       resources:
         limits: { cpus: '1', memory: 1536m }
         reservations: { cpus: '0.5', memory: 512m }
     depends_on:
       - mysql
-    restart: always
+    restart: unless-stopped
 
   # ==========================================
   # Sentinel Dashboard — 流控降级面板
@@ -509,7 +484,7 @@ services:
       resources:
         limits: { cpus: '0.25', memory: 256m }
         reservations: { cpus: '0.1', memory: 128m }
-    restart: always
+    restart: unless-stopped
 
   # ==========================================
   # XXL-Job Admin — 分布式任务调度中心
@@ -536,7 +511,7 @@ services:
         reservations: { cpus: '0.25', memory: 512m }
     depends_on:
       - mysql
-    restart: always
+    restart: unless-stopped
 
   # ==========================================
   # SkyWalking OAP + UI — 全链路追踪
@@ -572,7 +547,7 @@ services:
       start_period: 90s
     depends_on:
       - elasticsearch-skywalking
-    restart: always
+    restart: unless-stopped
 
   skywalking-ui:
     image: apache/skywalking-ui:9.7.0
@@ -587,7 +562,7 @@ services:
         reservations: { cpus: '0.1', memory: 192m }
     depends_on:
       - skywalking-oap
-    restart: always
+    restart: unless-stopped
 
   # ==========================================
   # VictoriaMetrics — 时序数据库（Prometheus 兼容）
@@ -607,7 +582,7 @@ services:
         reservations: { cpus: '0.1', memory: 192m }
     volumes:
       - vm-data:/victoria-metrics-data
-    restart: always
+    restart: unless-stopped
 
   # ==========================================
   # Prometheus — 指标采集
@@ -630,7 +605,7 @@ services:
       - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - ./config/prometheus/alert_rules:/etc/prometheus/alert_rules
       - prometheus-data:/prometheus
-    restart: always
+    restart: unless-stopped
 
   # ==========================================
   # Grafana — 可视化面板
@@ -656,7 +631,7 @@ services:
       - grafana-data:/var/lib/grafana
     depends_on:
       - prometheus
-    restart: always
+    restart: unless-stopped
 
   # ==========================================
   # Logstash — 日志管道
@@ -699,7 +674,7 @@ services:
       start_period: 30s
     depends_on:
       - elasticsearch
-    restart: always
+    restart: unless-stopped
 
   # ==========================================
   # Filebeat — 日志采集 → Logstash :15045
@@ -723,7 +698,7 @@ services:
       - /logs:/logs:ro  # 微服务 logback JSON_FILE 写 /logs/*.json
     depends_on:
       - logstash
-    restart: always
+    restart: unless-stopped
 
   # ==========================================
   # Kibana — 日志可视化
@@ -744,7 +719,7 @@ services:
         reservations: { cpus: '0.1', memory: 1024m }
     depends_on:
       - elasticsearch
-    restart: always
+    restart: unless-stopped
 
 # ==========================================
 # Volumes
