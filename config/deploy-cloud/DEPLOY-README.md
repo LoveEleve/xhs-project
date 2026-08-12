@@ -80,3 +80,7 @@ curl -s http://127.0.0.1:18848/nacos/v1/ns/namespace/list
 3. **ES IK 插件需外网**：ES 首次启动从 `get.infini.cloud` 下载 IK 插件——云主机需能访问该域名，否则 ES 启动卡死。
 4. **docker 镜像加速**：云主机 docker 配置镜像加速（国内拉 elasticsearch/kibana 8.x 大镜像）：`/etc/docker/daemon.json` 配 `registry-mirrors`（腾讯云/阿里云加速），然后 `systemctl restart docker`。
 5. **rocketmq-dashboard:latest**：compose 用 latest 标签（不可复现）——建议 `docker tag` 固定当前版本或改用具体 tag。
+
+## 八、试验验证清单
+
+完整版见 docs/test-2/HANDOFF-TASK4.md §七（A 前置/B 启动/C 中间件验证/D 重启与关机演练/E 部署后配置/F 判定）。核心：22 容器全 healthy + restart=always + 关机开机自动恢复 + 从库复制 Yes + Nacos 配置与 Sentinel 规则导入。

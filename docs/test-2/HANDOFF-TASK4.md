@@ -144,3 +144,55 @@ Token→/tmp/test_token.txt | 凭据: Xhs@2026#* / ADMIN_TOKEN / INTERNAL_TOKEN
 3. 中间件侧（docker 容器）只能给用户可执行脚本（本机无 docker/ssh 权限）。
 4. 云部署包（config/deploy-cloud/）任何改动需保持"上传即用"一致性（compose↔配置↔sql↔说明）。
 5. 业务数据实证优先：任何"配置问题"尽量落到生产库数据/日志证据（如 P-B1 支付卡单方式）。
+
+---
+
+## 七、远程试验部署验证清单（部署成功判定标准）
+
+> 用户在中间件机执行部署（config/ 部署包 + remote-upgrade.sh），按此清单逐项验证；**全部通过 = 试验成功**，方可作为云主机部署源。
+
+### A. 前置（部署前）
+- [ ] `/opt/kona-jdk17`、`/opt/kona-jdk8` 存在（compose 挂载）
+- [ ] canal 镜像已 load：`docker images | grep canal` → `my-xhs-canal-server:v1.1.7-squashed`
+- [ ] `systemctl enable docker` 后 `systemctl is-enabled docker` = enabled
+- [ ] docker 镜像加速已配（拉 ES/Kibana 大镜像不超时）
+- [ ] `docker compose version` 可用（v2）
+
+### B. 启动（docker compose up -d）
+- [ ] 无 compose 语法错误（YAML 已校验）
+- [ ] `docker ps | wc -l` = 22
+- [ ] 等待 3-5 分钟后 `docker compose ps`：**22 个全部 healthy**（healthcheck 全覆盖，无 unhealthy）
+
+### C. 关键中间件功能验证（预期值）
+| 验证项 | 命令 | 预期 |
+|---|---|---|
+| MySQL 主库 | `mysql -h127.0.0.1 -P3306 -uroot -p'Xhs@2026#MySQL' -e "SELECT 1"` | 1 |
+| 从库复制 | `mysql -h127.0.0.1 -P3307 ... -e "SHOW REPLICA STATUS\G"` | IO/SQL Running=Yes、Seconds_Behind=0 |
+| 建表补全 | `SHOW TABLES FROM xxl_job` / `nacos_config` | xxl 8 表、nacos 12 表存在 |
+| Redis | `redis-cli -p 6379 -a 'Xhs@2026#Redis' ping` | PONG |
+| Redis Sentinel | `redis-cli -p 26379 sentinel get-master-addr-by-name mymaster` | 21.130.247.89 6379 |
+| ES 业务 | `curl -s -u elastic:'Xhs@2026#Elastic' 127.0.0.1:19200/_cluster/health` | status=yellow 可接受（单节点副本） |
+| ES-SW | 同 19201（elastic/ElasticSW）| status=yellow/green |
+| Nacos | `curl -s 127.0.0.1:18848/nacos/v1/ns/namespace/list` | 200 且含 my-xhs 命名空间 |
+| RocketMQ | `curl -s "127.0.0.1:18081/..."`（dashboard）| 200；namesrv 9876 TCP 通 |
+| Canal | `docker exec my-xhs-canal pgrep -f CanalLauncher` | 有进程；日志无致命错误 |
+| SkyWalking | `curl -s 127.0.0.1:12800/graphql`（POST）| 非连接拒绝；UI 8080 可开 |
+| XXL-Job | `curl -s 127.0.0.1:18080/xxl-job-admin/login` | 200 |
+| Sentinel | `curl -s 127.0.0.1:8858/` | 200 |
+| Prometheus | `curl -s 127.0.0.1:19090/-/healthy` | Prometheus is Healthy |
+| Kibana | `curl -s 127.0.0.1:15601/api/status` | 200（若 000 则按 P-D7 修 kibana_system 密码）|
+
+### D. 重启策略与开机自恢复（试验核心）
+- [ ] `docker inspect <容器> --format '{{.HostConfig.RestartPolicy.Name}}'` → 全部 always
+- [ ] `docker restart <任一容器>` → 自动恢复（restart 策略生效）
+- [ ] **关机→开机演练**（最终判定）：正常关机（ACPI）→ 开机 → 等 3-5 分钟 → `docker ps` 22 个 Up、`docker compose ps` 全 healthy、从库复制 Yes
+- [ ] 若 IP 未绑 EIP 且变了：按 DEPLOY-README 第四节处理
+
+### E. 部署后业务配置（试验成功前必做）
+- [ ] Nacos 导入 my-xhs 命名空间 3 配置：my-xhs-common.yaml / my-xhs-gateway.yaml / my-xhs-redis.yaml（内容见 review-production-config.md §Nacos 或现环境导出）
+- [ ] Sentinel Dashboard 导入 config/sentinel/*.json（16 服务 flow/degrade 规则，compose 不自动加载）
+- [ ] 从库确认复制 Yes（若否：重建从库，勿跑 init-all.sql）
+
+### F. 判定
+- [ ] B/C/D/E 全部通过 → **试验成功**，config/ 即云主机部署源
+- [ ] 任一关键项失败 → 记录原因到 pitfalls.md，修复后复测
