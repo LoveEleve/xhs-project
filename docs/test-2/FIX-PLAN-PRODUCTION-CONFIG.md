@@ -206,3 +206,23 @@
 
 ### M-2 撤销项
 - P-D8 撤销（healthcheck 实际通过），保留建议：OAP healthcheck 改真实探测（POST /graphql）。
+
+---
+
+## 第一批补充（第三轮深挖新增）
+
+### P-D20 修复 xxl-job 调度错配（order/coupon/cart/home/search 任务全失效）
+- **改动**：
+  1. xxl-job-admin 建执行器组：my-xhs-order(9991)/my-xhs-coupon(9993)/my-xhs-cart(9995)/my-xhs-home(9997)/my-xhs-search(9994)（端口以实际为准）。
+  2. 修正任务 job_group：orderCloseJob/localMessageRetryJob/deadLetterScanJob/orderMappingRepairJob→order 组；inventoryReconcileJob→inventory 组(4)；couponReconcileJob→coupon 组。
+  3. 补建缺失任务：couponExpireJob、cartReconcileJob、feedCleanupJob、recommendFeatureJob/recommendHotPoolJob/recommendItemCFJob。
+  4. 逐个手动触发验证。
+- **风险**：中。**验证**：19 个任务均可调度且执行成功；orderCloseJob 触发后待付款订单关闭。
+
+### P-D19 配置 MySQL 备份
+- **改动**：cron 每日 mysqldump 全量 + binlog 增量备份脚本（保留 7d 全量/30d 增量）+ 恢复演练。
+- **风险**：低。**验证**：备份文件生成；restore 到临时实例校验一致性。
+
+### P-D21 Redis HA 增强（可选）
+- **改动**：compose 增加至 3 sentinel + 2 slave；或文档标注"演示级单点 HA"。
+- **风险**：低。**验证**：kill master → failover 成功。

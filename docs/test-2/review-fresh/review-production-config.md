@@ -243,3 +243,46 @@
 - OAP prometheus 指标文件存在（process/jvm 指标），但 **1234 端口未监听**（P-T3 待排查 telemetry 实际端口）；Prometheus 无 OAP job → OAP 指标未采集。
 - Prometheus TSDB：5803 序列；`rocketmq_dlq_backlog` 322 序列（DLQ 指标在采，但告警规则名不匹配仍失效）。
 - Sentinel-dashboard 796 条 MetricFetcher refused 为快照时刻（Aug10）状态，当前 8719-8729 端口在监听，需观察是否恢复。
+
+---
+
+## 八、第三轮深挖（2026-08-12）：xxl-job 调度配置严重错配 + 备份缺失 + Redis HA 名义化
+
+### P-D20【高】xxl-job 调度配置严重错配：19 个代码任务仅约 8 个可调度
+- **根因确认**（代码 @XxlJob 清单 vs xxl_job_info/xxl_job_group 快照）：
+  - 代码 19 个任务：cartReconcileJob/counterReconcileJob/couponExpireJob/couponReconcileJob/deadLetterScanJob/feedCleanupJob/followCounterRepairJob/inventoryReconcileJob/localMessageRetryJob/orderCloseJob/orderMappingRepairJob/paymentNotifyCompensateJob/paymentTimeoutCheckJob/recommendFeatureJob/recommendHotPoolJob/recommendItemCFJob/refundNotifyCompensateJob/refundTimeoutCheckJob/unreadReconcileJob
+  - xxl_job_group 只有 6 组：sample(地址NULL)/analytics(9999)/counter(9998)/inventory(9996)/notification(9990)/payment(9992)。**无 order/coupon/cart/home/search 组**（order 执行器 appname=my-xhs-order:9991 在监听但无对应组）。
+  - xxl_job_info 15 条中：**任务 10-15（orderCloseJob/localMessageRetryJob/deadLetterScanJob/orderMappingRepairJob/inventoryReconcileJob/couponReconcileJob）全部挂在 group 1(sample, 地址NULL)** → 永不调度。
+  - **couponExpireJob/cartReconcileJob/feedCleanupJob/recommendFeatureJob/recommendHotPoolJob/recommendItemCFJob 未创建任务**。
+- **影响**（失效的兜底机制）：
+  - `orderCloseJob` 失效 → 超时关单仅靠 RocketMQ 延时消息；延时消息丢失则订单永不关闭、库存/券不释放。
+  - `localMessageRetryJob`/`deadLetterScanJob` 失效 → 本地消息表补发/死信扫描机制失效。
+  - `inventoryReconcileJob` 失效 → 库存对账兜底失效（库存漂移/泄漏无对账）。
+  - `couponExpireJob`/`couponReconcileJob` 失效 → 过期券不标记过期、券账无对账。
+  - `cartReconcileJob` 失效 → 购物车 Redis/MySQL 对账失效。
+  - `feedCleanupJob` 失效 → feed 流清理失效。
+  - `recommend*`×3 失效 → 推荐索引/热池/协同不更新。
+- **修复**：
+  1. 为 order/coupon/cart/home/search 建执行器组（xxl-job-admin 手动加组 + address 指向对应 executor 端口 9991/9993/9995/9997/9994 等）。
+  2. 任务表修正 job_group：order 4 个→order 组；inventoryReconcileJob→inventory 组(4)；couponReconcileJob→coupon 组。
+  3. 补建缺失任务：couponExpireJob/cartReconcileJob/feedCleanupJob/recommend×3（按各模块 cron 语义）。
+  4. 核对各模块 executor appname/port 与组一致。
+- **风险**：中（涉及调度配置与任务创建，改后需验证每个任务能触发）。
+- **验证**：xxl-job-admin 手动触发每个任务 → 执行成功；orderCloseJob 触发后待付款订单被关闭。
+
+### P-D19【高】MySQL 无任何备份
+- **根因确认**：宿主机 cron 仅腾讯云 agent；无 mysqldump/备份脚本/备份容器；binlog 保留 30 天但无离线备份机制。
+- **影响**：主库数据丢失（误删/故障）不可恢复（从库数据也不可靠——复制曾中断）。
+- **修复**：配置每日 mysqldump 全量 + binlog 增量（或至少 `xtrabackup` 全量 + cron），备份到独立目录/对象存储；保留 7 天全量 + 30 天增量。
+- **风险**：低。**验证**：手动执行备份脚本 → 恢复演练（restore 到临时实例校验）。
+
+### P-D21【低】Redis 高可用名义化（单 Sentinel 单从）
+- **根因确认**：sentinel 只有 1 个（sentinels=1, quorum=1）；master 仅 1 从；单 sentinel 单点，其自身故障即 HA 失效；且主从 announce-ip 均指公网 IP。
+- **影响**：主节点故障时 failover 依赖唯一 sentinel（单点），且从库 6380 上 announce 正常；实际 HA 能力弱。
+- **修复**：至少 3 个 sentinel + 2 从（compose 加容器）；或明确接受"单点演示级"HA 并在文档标注。
+- **风险**：低（增强）。**验证**：停 master → sentinel 自动 failover 到从。
+
+### 其他确认（本轮）
+- order/inventory executor 均在监听（9991/9996），注册正常但**组缺失/错配**（P-D20 根因）。
+- Prometheus 采集正常（16 targets up）；业务指标在采（myxhs_http_request_duration_seconds 824 序列、rocketmq_dlq_backlog 322 序列）——P-D4 只修规则名即可让部分告警复活。
+- xxl-job 任务 trigger_status：demo/followCounterRepair 重复项停用（0），业务任务启用（1）。
