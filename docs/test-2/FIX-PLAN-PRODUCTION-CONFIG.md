@@ -181,3 +181,28 @@
 
 ### P-T5 排查 11800 杂散 HTTP 请求
 - **改动**：确认无 HTTP 探针打 11800（healthcheck 应走 12800）；必要时防火墙限制。
+
+---
+
+## 第一批补充（第二轮深挖新增）
+
+### P-D13 补 Alertmanager（告警出口）
+- **改动**：compose 加 alertmanager 容器 + prometheus.yml `alerting.alertmanagers` + 通知渠道（webhook/企业微信）。
+- **风险**：低。**验证**：触发一条测试告警 → 收到通知。
+
+### P-D14 ES 日志索引加 ILM（30d 删除）
+- **改动**：`PUT _ilm/policy/myxhs-logs-policy`（hot 30d + delete）+ myxhs-logs-* 模板挂 policy + `number_of_replicas:0`（单节点）。
+- **风险**：低。**验证**：policy 生效；旧索引按 30d 自动删除。
+
+### P-D15 上调 mysql-slave/logstash 内存限制
+- **改动**：compose mysql-slave `memory: 1.5g`、logstash `memory: 1g` + LS_JAVA_OPTS 调整。
+- **风险**：低（宿主 61G 内存充足）。**验证**：容器 MEM% 下降、无 OOM kill 记录。
+
+### P-D16 固定 Kibana encryptionKey
+- **改动**：kibana env/yml 固定 `XPACK_SECURITY_ENCRYPTIONKEY`。**验证**：重启后 session 不失效。
+
+### P-D17 清理 RocketMQ 残留 topic + 未使用镜像
+- **改动**：删 BenchmarkTest/SELF_TEST_TOPIC；`docker image prune`。**验证**：topic 列表干净、磁盘释放。
+
+### M-2 撤销项
+- P-D8 撤销（healthcheck 实际通过），保留建议：OAP healthcheck 改真实探测（POST /graphql）。

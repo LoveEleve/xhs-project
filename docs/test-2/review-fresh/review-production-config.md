@@ -191,3 +191,55 @@
 
 ### 结论
 - **全链路"有数据但异步断链"**：HTTP/Feign/MQ 同步链路 trace 完整（sw_segment 每天百万级），但**线程池/ForkJoin 异步段全部断链**（P-T1 插件未启用）+ **agent/OAP 版本漂移**（P-T2）。修 P-T1/T2 后全链路才真正闭环。
+
+---
+
+## 七、第二轮深挖修正与新增（2026-08-12）
+
+### ✅ 修正（推翻/下调此前判断）
+
+**M-1【修正】iptables 实际是收紧的 → P-D1 公网暴露面下调**
+- 之前仅看 MYXHS 链首行，误判"公网裸奔"。实际 MYXHS 链对**每个端口**均为 `ACCEPT 127.0.0.1 + ACCEPT 21.214.97.212 + DROP 其余来源 state NEW`（中间件端口全部有 DROP 兜底），INPUT policy ACCEPT 但先跳 MYXHS 链。
+- **结论**：MySQL/Redis/ES/Nacos/RocketMQ 等仅本机(127.0.0.1)与微服务机(21.214.97.212)可达，公网直连被挡。P-D1（Nacos 无鉴权）仍成立但**暴露面限于本机/微服务机**——风险从"公网可读"降为"本机进程/容器可读 + 凭据明文入库"。
+
+**M-2【修正】P-D8 OAP healthcheck 并非恒 unhealthy**
+- compose healthcheck `curl -s http://127.0.0.1:12800/healthCheck || exit 1`：curl 对 HTTP 404 **exit 0**（未加 -f）→ healthcheck 实际通过，容器非恒 unhealthy。
+- **结论**：P-D8 撤销为建议项——端点不存在但探测逻辑能过，建议改为真实探测（POST /graphql 或 TCP 探测）以反映真实健康。
+
+### 🆕 新增
+
+### P-D13【高·监控闭环】Prometheus 无 Alertmanager → 告警无出口
+- **根因确认**：prometheus.yml 无 `alerting:` 段、无 alertmanager 容器；flags `alertmanager.timeout` 为空。
+- **影响**：P-D4 修好后即使告警触发，**也没有任何通知接收方**（无 webhook/邮箱）→ 监控闭环最后一块缺失。
+- **修复**：部署 alertmanager 容器（compose）+ prometheus.yml `alerting.alertmanagers` + 通知渠道（webhook/企业微信/邮箱），或至少 webhook 到内部通知端点。
+
+### P-D14【高·存储】ES 业务日志索引无 ILM/生命周期 → 无限增长
+- **根因确认**：ES 模板列表无 myxhs 专属模板/ILM policy；`myxhs-logs-YYYY.MM.DD` 每天一个索引（峰值 152 万条/1GB/天）**永不过期**。
+- **影响**：磁盘 100G（当前 30% 用），按 1GB/天 约 70 天后满；无清理=定时炸弹。
+- **修复**：
+  ```
+  PUT _ilm/policy/myxhs-logs-policy
+  { "policy": { "phases": { "hot": {...}, "delete": { "min_age": "30d", "actions": { "delete": {} } } } } }
+  # 并为 myxhs-logs-* 建索引模板挂 policy + number_of_replicas:0（单节点）
+  ```
+  或 Logstash 输出按天索引 + 定时删除 30 天前索引（cron/curator）。
+
+### P-D15【高·可用性】mysql-slave 内存 97.5%、logstash 94% 濒临 OOM（宿主无 Swap）
+- **根因确认**：docker-stats 显示 mysql-slave 749MiB/768MiB(97.5%)、logstash 721.6/768(94%)；宿主 Swap=0 → 内存打满直接 OOM kill（此前从库宕机/复制中断很可能与此相关）。
+- **修复**：① 从库 memory 限制上调（768m→1.5g）；② logstash 上调（768m→1g）+ `LS_JAVA_OPTS` 堆限制；③ 宿主机评估加 Swap 或扩容。
+
+### P-D16【中·安全】Kibana 随机 encryptionKey + session cookie 无 HTTPS
+- **根因确认**：kibana 日志 `Generating a random key for xpack.security.encryptionKey`（重启后 session 全失效）+ `Session cookies will be transmitted over insecure connections`（HTTP 明文）。
+- **修复**：kibana.yml 固定 `xpack.security.encryptionKey`；控制台访问走 HTTPS 或至少限内网。
+
+### P-D17【低·治理】RocketMQ 测试 topic 残留 + 未使用镜像
+- RocketMQ 有 `BenchmarkTest`/`SELF_TEST_TOPIC` 残留；docker 有 seata×3、旧 kibana 8.13.1、旧 logstash 8.12.2、alpine、codev-agent 等未使用镜像（约 5-6GB 可回收）。
+- **修复**：删残留 topic（`autoCreateTopicEnable=false` 后）；`docker image prune` 清理。
+
+### P-D18【低】Prometheus TSDB 404 序列 510 个
+- `status=404` 序列最多（510）——大量 404 请求被采集（可能是扫描/探测打到微服务）。建议排查 404 来源（可能是公网扫描被 iptables 挡后仍打到微服务机 21.214.97.212）。
+
+### 其他确认
+- OAP prometheus 指标文件存在（process/jvm 指标），但 **1234 端口未监听**（P-T3 待排查 telemetry 实际端口）；Prometheus 无 OAP job → OAP 指标未采集。
+- Prometheus TSDB：5803 序列；`rocketmq_dlq_backlog` 322 序列（DLQ 指标在采，但告警规则名不匹配仍失效）。
+- Sentinel-dashboard 796 条 MetricFetcher refused 为快照时刻（Aug10）状态，当前 8719-8729 端口在监听，需观察是否恢复。

@@ -161,4 +161,5 @@
 | P2-14 Notification 聚合窗口注释 | ✅ 已修复+验证（2026-08-11，notification 已重启；注释勘误：占位符非bug） |
 | **生产配置 Review** | ✅ 已出报告（2026-08-12）：`review-production-config.md` — Nacos无鉴权/从库宕机/告警指标名失效/VM空转/Kibana不可用 等 P-D1~P-D12 |
 | **SkyWalking 全链路深审** | ✅（2026-08-12）：P-T1 线程池/ForkJoin 插件未启用→异步链路断链、P-T2 agent9.6vsOAP9.7、P-T3 telemetry未接入、P-T4 全采样、P-T5 gRPC杂散请求；修复方案已入 FIX-PLAN-PRODUCTION-CONFIG |
+| **生产配置二轮深挖** | ✅（2026-08-12）：修正 M-1 iptables实为收紧(P-D1暴露面下调)、M-2 P-D8撤销；新增 P-D13无Alertmanager/告警无出口、P-D14 ES日志无ILM无限增长、P-D15 mysql-slave内存97.5%濒危、P-D16 Kibana随机密钥、P-D17 残留topic与镜像、P-D18 404序列多 |
 | P1-2 补偿忽略 action | ✅ 已修复+验证（2026-08-11，order 已重启） |
