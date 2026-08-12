@@ -149,3 +149,35 @@
 - **第二批（安全，需联动+全量重启）**：P-D1、P-D5
 - **第三批（治理）**：P-D9、P-D10、P-D11、P-D12
 - 每项完成后更新 pitfalls.md 并标注修复状态。
+
+---
+
+## 第一批补充：SkyWalking 全链路修复（零代码 · 运维）
+
+### P-T1 启用 JDK 线程池/ForkJoinPool 传播插件（异步链路断链）
+- **根因确认**：`apm-jdk-threadpool-plugin`、`apm-jdk-forkjoinpool-plugin` 在 bootstrap-plugins（默认禁用）。
+- **改动**（零代码）：
+  ```
+  mv skywalking-agent-9.6.0/bootstrap-plugins/apm-jdk-threadpool-plugin-9.6.0.jar skywalking-agent-9.6.0/plugins/
+  mv skywalking-agent-9.6.0/bootstrap-plugins/apm-jdk-forkjoinpool-plugin-9.6.0.jar skywalking-agent-9.6.0/plugins/
+  ```
+  重启全部微服务（start-all.sh）。
+- **影响**：全微服务重启。
+- **风险**：低（插件与 agent 同版本 9.6.0）。
+- **验证**：UI 中一条含异步任务的请求（下单→取消→异步释放库存）异步 span 挂同一 trace。
+
+### P-T2 agent 9.6.0 → 9.7.0（与 OAP 对齐）
+- **改动**：下载 skywalking-java-agent-9.7.0 替换 `skywalking-agent-9.6.0` 目录 + start-all.sh 路径同步；重启全微服务。
+- **风险**：中（agent 替换需回归）。
+- **验证**：agent 启动无版本告警；UI trace 正常。
+
+### P-T3 OAP telemetry 接入 Prometheus
+- **改动**：排查 OAP 9.7 `SW_TELEMETRY=prometheus` 未生效原因（1234 未监听）；prometheus.yml 加 `- job_name: skywalking-oap, targets: ['21.130.247.89:1234']`。
+- **验证**：1234 有 /metrics 输出；Prometheus 采集到 skywalking_* 指标。
+
+### P-T4 trace 降采样
+- **改动**：compose OAP env 加 `SW_TRACE_SAMPLE_RATE: 10`。
+- **验证**：sw_segment 日增量下降约 90%；关键链路仍可查。
+
+### P-T5 排查 11800 杂散 HTTP 请求
+- **改动**：确认无 HTTP 探针打 11800（healthcheck 应走 12800）；必要时防火墙限制。
