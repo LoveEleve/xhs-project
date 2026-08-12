@@ -19,7 +19,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -101,8 +105,14 @@ public class SkuService {
                 .in(Sku::getId, skuIds)
                 .eq(Sku::getStatus, ProductStatus.ON_SHELF.getCode());
         List<Sku> skuList = skuMapper.selectList(wrapper);
+        if (skuList.isEmpty()) {
+            return List.of();
+        }
+        // P2-1：批量预取 SPU 首图（一次 IN 查询），消除每 SKU 单独查 SPU 的 N+1
+        Map<Long, String> spuImageMap = buildSpuImageMap(
+                skuList.stream().map(Sku::getSpuId).collect(Collectors.toSet()));
         return skuList.stream()
-                .map(this::toSkuVO)
+                .map(sku -> toSkuVO(sku, spuImageMap.get(sku.getSpuId())))
                 .collect(Collectors.toList());
     }
 
@@ -116,12 +126,48 @@ public class SkuService {
                         .eq(Sku::getStatus, ProductStatus.ON_SHELF.getCode())
                         .orderByAsc(Sku::getId));
 
+        if (skuList.isEmpty()) {
+            return List.of();
+        }
+        // P2-1：批量预取 SPU 首图，消除 N+1
+        Map<Long, String> spuImageMap = buildSpuImageMap(
+                skuList.stream().map(Sku::getSpuId).collect(Collectors.toSet()));
         return skuList.stream()
-                .map(this::toSkuVO)
+                .map(sku -> toSkuVO(sku, spuImageMap.get(sku.getSpuId())))
                 .collect(Collectors.toList());
     }
 
+    /**
+     * 批量构建 SPU 首图 Map（P2-1：一次 IN 查询替代 N 次单查）
+     */
+    private Map<Long, String> buildSpuImageMap(Set<Long> spuIds) {
+        if (spuIds == null || spuIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<Spu> spuList = spuMapper.selectBatchIds(spuIds);
+        Map<Long, String> result = new HashMap<>();
+        for (Spu spu : spuList) {
+            if (spu.getImages() == null) {
+                continue;
+            }
+            try {
+                List<String> images = objectMapper.readValue(spu.getImages(),
+                        objectMapper.getTypeFactory().constructCollectionType(List.class, String.class));
+                if (images != null && !images.isEmpty()) {
+                    result.put(spu.getId(), images.get(0));
+                }
+            } catch (Exception e) {
+                log.warn("[商品] SPU images 解析失败, spuId={}", spu.getId(), e);
+            }
+        }
+        return result;
+    }
+
     private SkuVO toSkuVO(Sku sku) {
+        return toSkuVO(sku, resolveSpuImage(sku.getSpuId()));
+    }
+
+    private SkuVO toSkuVO(Sku sku, String firstImage) {
         SkuVO vo = new SkuVO();
         vo.setId(sku.getId());
         vo.setSpuId(sku.getSpuId());
@@ -130,7 +176,7 @@ public class SkuService {
         vo.setOriginalPrice(sku.getOriginalPrice());
         // stock 字段已从 SkuVO 剔除：SKU 表 stock 是冗余占位值，真实库存以 inventory 服务为准
         vo.setSpecs(sku.getSpecs());
-        vo.setImage(resolveSpuImage(sku.getSpuId()));
+        vo.setImage(firstImage);
         vo.setStatus(sku.getStatus());
         return vo;
     }

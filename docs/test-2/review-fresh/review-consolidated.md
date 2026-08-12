@@ -147,10 +147,12 @@
 | P0-A 券核销 | ✅ 已修复+验证（2026-08-11，order 已重启） |
 | P0-B IM 会话ID碰撞 | ✅ 已修复+验证（2026-08-11，im 已重启） |
 | P0-C Feed 收件箱 | ✅ 已修复+验证（2026-08-11，home 已重启） |
+| P1-2 补偿忽略 action | ✅ 已修复+验证（2026-08-11，order 已重启） |
 | P1-1 支付退款竞态 | ✅ 已修复+验证（2026-08-11，order+payment 已重启） |
 | P1-4 ES 版本域混用 | ✅ 已修复+验证（2026-08-11，search 已重启；含补偿 Map.of/bulk 既有缺陷） |
 | P1-5 补偿漏跨库前缀 | ✅ 已修复+验证（2026-08-11，search 已重启） |
 | P1-3 端口信任模型 | ✅ 已修复+验证（2026-08-11，全服务重打包重启；GatewayAuthTrustFilter + 各服务 jwt.secret） |
 | O1 MDC userId | ✅ 已修复+验证（2026-08-11，TraceIdConfig/MqTraceHelper 写 userId 到 MDC） |
 | O2 异步线程池 traceId | ✅ 已修复+验证（2026-08-11，MdcAwareExecutorService 应用于 product/inventory/order/cart） |
+| P2-1 product SKU N+1 | ✅ 已修复+验证（2026-08-11，product 已重启） |
 | P1-2 补偿忽略 action | ✅ 已修复+验证（2026-08-11，order 已重启） |

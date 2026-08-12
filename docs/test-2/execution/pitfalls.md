@@ -461,3 +461,10 @@ S03 API 返回 data=[]
 - **验证**：
   - 独立 Java 测试：异步线程正确继承 traceId/userId，线程复用也拿到新上下文 ✅
   - 端到端：带 traceId 下单→取消 → 异步释放库存运行于 `order-async` 线程且日志携带同一 traceId `o2e2e3-1786460315` ✅
+
+---
+## #63 P2-1 product batchGetSkuDetails N+1 — 已修复并验证（2026-08-11）
+
+- **根因**：`SkuService.toSkuVO` → `resolveSpuImage` 对每个 SKU 单独 `spuMapper.selectById` 取 SPU 首图；`batchGetSkuDetails`/`listSkusBySpuId` 批量 SKU 时 N+1 次 SPU 查询（购物车/下单热路径放大）。
+- **修复**：新增 `buildSpuImageMap`（distinct spuIds 一次 `selectBatchIds`），批量路径预取 SPU 首图 Map 后 `toSkuVO(sku, image)`；单查 `getSkuDetail` 保留原逻辑。
+- **验证**（product 重打包重启）：`GET /api/product/sku/batch?skuIds=1,2,4,6`（跨 SPU 1/2/3）→ 各 SKU 返回正确首图（spu1_1/spu2_1/spu3_1.jpg）✅；SPU 查询由 N 次降为 1 次。
