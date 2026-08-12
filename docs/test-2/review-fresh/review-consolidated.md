@@ -159,4 +159,5 @@
 | P2-9 登录锁定账号DoS | ✅ 已修复+验证（2026-08-11，user 已重启；IP 维度 + 多IP才锁账号） |
 | P2-13 NOTE_LIST_USER 死缓存键 | ✅ 已修复+验证（2026-08-11，content 已重启） |
 | P2-14 Notification 聚合窗口注释 | ✅ 已修复+验证（2026-08-11，notification 已重启；注释勘误：占位符非bug） |
+| **生产配置 Review** | ✅ 已出报告（2026-08-12）：`review-production-config.md` — Nacos无鉴权/从库宕机/告警指标名失效/VM空转/Kibana不可用 等 P-D1~P-D12 |
 | P1-2 补偿忽略 action | ✅ 已修复+验证（2026-08-11，order 已重启） |
