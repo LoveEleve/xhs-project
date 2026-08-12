@@ -72,3 +72,11 @@ curl -s http://127.0.0.1:18848/nacos/v1/ns/namespace/list
 1. **healthcheck 全覆盖**：22 个容器全部有 healthcheck（新增 nacos/rocketmq-namesrv/xxl-job-admin/prometheus/kibana/grafana/filebeat/victoria-metrics/sentinel-dashboard/skywalking-ui）。
 2. **依赖时序**：关键 `depends_on` 加 `condition: service_healthy`（mysql-slave→mysql、canal→mysql、nacos→mysql、xxl-job→mysql、broker/dashboard→namesrv、logstash/kibana→es、grafana→prometheus、filebeat→logstash）——首次部署并行启动时按序就绪。
 3. **Sentinel 限流规则**：`config/sentinel/*.json`（16 服务 flow/degrade 规则）**compose 不自动加载**——部署后需在 Sentinel Dashboard(http://IP:8858) 手动导入，否则限流不生效。gateway 的限流另受 Nacos 数据源/本地 metadata 影响（见应用层说明）。
+
+## 七、从零部署初始化补充（2026-08-12）
+
+1. **nacos_config/xxl_job 表已补全**：原 init-all.sql 只建库未建表（全新部署 Nacos/xxl-job 连空库会失败）；已把 xxl_job 8 表（含 schedule_lock/admin 初始数据）+ nacos 12 表并入 `sql/init-all.sql` 末尾，**临时库实测通过（20 表）**。
+2. **Nacos 配置需导入**：从零部署后 Nacos 的 `my-xhs` 命名空间配置为空——需从现环境导出导入（my-xhs-common.yaml / my-xhs-gateway.yaml / my-xhs-redis.yaml），否则微服务用本地 yml 默认值（含 DB/Redis 密码一致，但 redis 端口/sentinel 等以 Nacos 为准）。
+3. **ES IK 插件需外网**：ES 首次启动从 `get.infini.cloud` 下载 IK 插件——云主机需能访问该域名，否则 ES 启动卡死。
+4. **docker 镜像加速**：云主机 docker 配置镜像加速（国内拉 elasticsearch/kibana 8.x 大镜像）：`/etc/docker/daemon.json` 配 `registry-mirrors`（腾讯云/阿里云加速），然后 `systemctl restart docker`。
+5. **rocketmq-dashboard:latest**：compose 用 latest 标签（不可复现）——建议 `docker tag` 固定当前版本或改用具体 tag。
