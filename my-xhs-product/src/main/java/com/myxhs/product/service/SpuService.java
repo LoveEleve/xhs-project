@@ -610,10 +610,21 @@ public class SpuService {
 
     /**
      * 从 DB 加载 SPU 详情（含 SKU 列表）
+     * <p>
+     * P2-2：仅返回上架商品——下架/删除的 SPU 返回 null（详情 404），
+     * 与 listSpus（仅 ON_SHELF）保持一致。布隆过滤器只增不减，但下架时
+     * updateSpuStatus 已 afterCommit evictSpuCache，旧布隆条目仅多一次缓存查询，
+     * 命中后按空值缓存（防穿透）返回 null，不会返回错误数据。
+     * </p>
      */
     private SpuDetailVO loadSpuDetailFromDb(Long spuId) {
         Spu spu = spuMapper.selectById(spuId);
         if (spu == null) {
+            return null;
+        }
+        // P2-2：下架/删除商品详情不可见
+        if (spu.getStatus() == null || spu.getStatus() != ProductStatus.ON_SHELF.getCode()) {
+            log.info("[多级缓存] SPU 非上架状态, 详情不可见, spuId={}, status={}", spuId, spu.getStatus());
             return null;
         }
 

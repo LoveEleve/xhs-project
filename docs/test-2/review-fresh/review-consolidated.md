@@ -155,4 +155,5 @@
 | O1 MDC userId | ✅ 已修复+验证（2026-08-11，TraceIdConfig/MqTraceHelper 写 userId 到 MDC） |
 | O2 异步线程池 traceId | ✅ 已修复+验证（2026-08-11，MdcAwareExecutorService 应用于 product/inventory/order/cart） |
 | P2-1 product SKU N+1 | ✅ 已修复+验证（2026-08-11，product 已重启） |
+| P2-2 product 下架详情可见 | ✅ 已修复+验证（2026-08-11，product 已重启） |
 | P1-2 补偿忽略 action | ✅ 已修复+验证（2026-08-11，order 已重启） |

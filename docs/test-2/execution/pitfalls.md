@@ -468,3 +468,10 @@ S03 API 返回 data=[]
 - **根因**：`SkuService.toSkuVO` → `resolveSpuImage` 对每个 SKU 单独 `spuMapper.selectById` 取 SPU 首图；`batchGetSkuDetails`/`listSkusBySpuId` 批量 SKU 时 N+1 次 SPU 查询（购物车/下单热路径放大）。
 - **修复**：新增 `buildSpuImageMap`（distinct spuIds 一次 `selectBatchIds`），批量路径预取 SPU 首图 Map 后 `toSkuVO(sku, image)`；单查 `getSkuDetail` 保留原逻辑。
 - **验证**（product 重打包重启）：`GET /api/product/sku/batch?skuIds=1,2,4,6`（跨 SPU 1/2/3）→ 各 SKU 返回正确首图（spu1_1/spu2_1/spu3_1.jpg）✅；SPU 查询由 N 次降为 1 次。
+
+---
+## #64 P2-2 product 下架商品详情仍可见 — 已修复并验证（2026-08-11）
+
+- **根因**：`SpuService.loadSpuDetailFromDb` 只过滤 SKU 状态、不过滤 SPU 状态 → 下架/删除商品详情仍对外返回（与 listSpus 仅上架不一致）。布隆过滤器只增不减（RBloomFilter 不支持 remove）。
+- **修复**：`loadSpuDetailFromDb` 增加 SPU 状态过滤（非 ON_SHELF → null → 404）；布隆旧条目经 updateSpuStatus 的 afterCommit evictSpuCache 后仅多一次缓存查询，命中空值缓存返回 null，不返回错误数据。
+- **验证**（product 重打包重启）：SPU2 下架 + 清缓存 → 详情 `30001 商品不存在` + 日志"SPU 非上架状态"✅；恢复上架 → 200 ✅。
