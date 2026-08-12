@@ -8,9 +8,10 @@
 ## 零、当前状态速览
 
 ```
-15 微服务 UP（本机 21.214.97.212 开发容器内） | 中间件 22 容器（远程机 21.130.247.89，无 docker 访问权限）
+15 微服务 UP（本机 21.214.97.212 开发容器内） | 中间件 22 容器（远程机 21.130.247.89，无 docker/ssh 权限）
 应用层 P0×4+P1×5+O1+O2 已修复闭环 | 生产配置发现 34 项（P-D1~D29+P-T1~T5+P-B1~B3）未修复
 云部署包已改造（config/ 下，上传即用，含 restart:always/healthcheck/建表补全）
+【用户最新指示】部署优先级最高：先在远程服务器试验成功 → 后上传云主机。不代为部署，由用户上传。
 Token→/tmp/test_token.txt | 凭据: Xhs@2026#* / ADMIN_TOKEN / INTERNAL_TOKEN
 ```
 
@@ -83,11 +84,19 @@ Token→/tmp/test_token.txt | 凭据: Xhs@2026#* / ADMIN_TOKEN / INTERNAL_TOKEN
 ### 2.4 应用层剩余 P2（review-consolidated.md §四，fresh review 发现未修复）
 - P2-3 home Feed 下游放大（无批量接口无缓存）| P2-4 payment keys() 全扫+永久 key | P2-5 第三方回调 X-Internal-Call+无验签（与 P-B1 关联）| P2-6 counter key 无 TTL | P2-7/8 cart Redis 恢复注释不符/对账枚举源 | P2-10/11 gateway 压测标记 XFF 伪造/HMAC secret 无 try-catch | P2-12 order pseudoOrderId 碰撞 | P2-15 user @Transactional 长占连接
 
-### 2.5 修复优先级（业务视角，最终版）
-1. **P-B1 支付卡单 + P-D20 关单/对账任务恢复**（资金）
-2. **P-D22 库存补偿表修复**（库存）
-3. **P-D19 备份** → 4. **P-D1 Nacos 鉴权** → 5. **P-D4/P-D13 告警** → 6. 其余
-7. P-T1/P-T2（SW 全链路闭环）→ P2 应用层 → P-D2~D18 其余
+### 2.5 修复优先级（用户最新指示调整：部署第一）
+**第一批【部署优先】（先把部署跑通，用户自行上传执行）**
+1. 远程中间件机试验部署成功（用户上传 config/ 部署包并执行）：
+   - 前置：JDK17/8、canal 镜像 docker load、systemctl enable docker、镜像加速、EIP 决策
+   - 执行：docker compose up -d（restart:always + healthcheck 已内置）
+   - 部署后必做：Nacos 导入 my-xhs 命名空间 3 配置、Sentinel Dashboard 导入 config/sentinel/*.json（16 服务）、从库验证（SHOW REPLICA STATUS）
+   - 工具：config/deploy-cloud/remote-upgrade.sh（用户在中间件机执行，含 restart 应用/docker enable/验证）
+2. 试验通过后 → 上传云主机部署（config/deploy-cloud/DEPLOY-README.md 全流程）
+**第二批【部署成功后业务修复】**
+3. **P-B1 支付卡单 + P-D20 关单/对账任务恢复**（资金）→ **P-D22 库存补偿表修复**（库存）
+4. **P-D19 备份** → **P-D1 Nacos 鉴权** → **P-D4/P-D13 告警**
+**第三批**
+5. P-T1/P-T2（SW 全链路闭环）→ P2 应用层 → P-D2~D18 其余（从库重建等与部署相关项可并入第一批）
 
 ---
 
@@ -129,7 +138,8 @@ Token→/tmp/test_token.txt | 凭据: Xhs@2026#* / ADMIN_TOKEN / INTERNAL_TOKEN
 
 ## 六、给下一个 AI 的要求
 
-1. **先读 §二待修复清单 + FIX-PLAN-PRODUCTION-CONFIG.md**，按 §2.5 优先级逐个修复（改码→重打包→重启→验证→记录闭环）。
+1. **第一优先是部署（用户明确指示）**：协助用户把中间件部署先在远程机试验成功（提供/核对 config/deploy-cloud 部署包、remote-upgrade.sh、DEPLOY-README.md 的前置与验证），试验通过后作为云主机上传源。**不要代为部署（无 docker/ssh 权限），只给脚本与验证支持**。
+2. **部署跑通后再按 §2.5 第二批起修复**（改码→重打包→重启→验证→记录闭环）；先读 FIX-PLAN-PRODUCTION-CONFIG.md。
 2. 继续深挖生产快照时，**先读 review-production-config.md 避免重复**（已 7 轮）；新发现请追加 §八+，勿覆盖已有结论，修正旧结论时标注。
 3. 中间件侧（docker 容器）只能给用户可执行脚本（本机无 docker/ssh 权限）。
 4. 云部署包（config/deploy-cloud/）任何改动需保持"上传即用"一致性（compose↔配置↔sql↔说明）。
