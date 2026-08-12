@@ -286,3 +286,47 @@
 - order/inventory executor 均在监听（9991/9996），注册正常但**组缺失/错配**（P-D20 根因）。
 - Prometheus 采集正常（16 targets up）；业务指标在采（myxhs_http_request_duration_seconds 824 序列、rocketmq_dlq_backlog 322 序列）——P-D4 只修规则名即可让部分告警复活。
 - xxl-job 任务 trigger_status：demo/followCounterRepair 重复项停用（0），业务任务启用（1）。
+
+---
+
+## 九、第四轮深挖（2026-08-12）：schema 漂移 + 日志风暴历史 + 部署拓扑
+
+### P-D22【高】t_inventory_compensation schema 漂移 → 库存回滚补偿机制全失效
+- **根因确认**（生产 DB vs init-all.sql vs 代码三边对比）：
+  - 生产表：`id,order_id,sku_id,quantity,action,status,created_at`（**有 action，无 retry_count/fail_reason**）
+  - init-all.sql：`id,order_id,sku_id,quantity,fail_reason,status,retry_count,created_at`（有 retry_count/fail_reason）
+  - 代码 InventoryMapper：insert 引用 `fail_reason`、select/increment 引用 `retry_count` → **写/读/重试/标记 4 个方法全部 SQL 错误**
+- **实证**：当前 inventory 日志持续 `Unknown column 'retry_count' in 'where clause'`（scheduled task ERROR）。
+- **影响**：库存预扣回滚失败的补偿记录**写不进去、扫不出来、重试不了** → 回滚失败=永久丢失（依赖对账也救不了已丢记录）；InventoryCompensationJob 每天空转报错。
+- **修复**：按 init-all.sql/代码结构重建表（生产表是旧版）：
+  ```sql
+  ALTER TABLE my_xhs_inventory.t_inventory_compensation
+    ADD COLUMN fail_reason VARCHAR(512) NOT NULL DEFAULT '' AFTER quantity,
+    ADD COLUMN retry_count INT NOT NULL DEFAULT 0 AFTER status,
+    DROP COLUMN action,
+    ADD INDEX idx_status_retry_created (status, retry_count, created_at);
+  ```
+  （或先备份旧数据再按 init-all.sql 重建）
+- **风险**：低-中（需确认无在用 action 列）。
+- **验证**：InventoryCompensationJob 执行成功；手工 insert/select 补偿记录正常。
+
+### P-D23【中·已修复的历史故障】8/9 全服务 Redisson 日志风暴（9GB/天）
+- **根因确认**：微服务(21.214.97.212)与中间件(21.130.247.89)**分机部署**；当时微服务 Redis 配置残留旧端口 16379 + Sentinel 下发 `127.0.0.1:6379`（指向微服务本机，无 Redis）→ 所有服务 Redisson 循环重连失败（`Unable to change master...16379`、`Unable to add slave 127.0.0.1:6380`），8/8-8/10 全服务 ERROR 刷屏（单服务 12 万行/天、~5KB/行堆栈，**全服务单日 ~9GB**）。
+- **现状**：8/11 配置修复（Nacos my-xhs-redis.yaml port=6379、sentinel announce 21.130.247.89）+ 服务重启后风暴消失（当前 0 Redisson ERROR）✅。
+- **经验**：跨机部署下 Sentinel 必须 `announce-ip 中间件机IP`，禁止下发 127.0.0.1；Redis 端口配置变更需全链路核对。
+- **遗留**：无监控导致风暴持续 3 天未发现（P-D4/P-D13 失效的直接后果）。
+
+### P-D24【中】/logs 日志无清理策略（14GB 累积）
+- **根因确认**：/logs 自 8/5 累积 **14GB**（单日峰值 9GB/8-9）；logback JSON_FILE RollingFileAppender 只按天滚动**不删除**（无 maxHistory/cleanHistoryOnStart）。
+- **影响**：磁盘 100G（当前 30%）会被日志持续吃满；叠加 ES myxhs-logs 双份存储。
+- **修复**：各服务 logback-spring.xml JSON_FILE 加 `maxHistory=7` + `totalSizeCap=2GB`（或统一 logstash 侧 ILM）；清理历史 14GB。
+- **风险**：低。**验证**：滚动后旧日志自动删除。
+
+### P-D25【低】脏表 my_xhs_order.t_local_message（5 列残留）
+- 生产 `my_xhs_order.t_local_message`（id/order_id/order_no/user_id/created_at）为旧版残留，代码实际用分片表 `t_local_message_0..3`（10 列，结构一致✅）。
+- **修复**：确认无引用后 drop。
+
+### 部署拓扑确认（本轮）
+- **微服务机 = 21.214.97.212（本机）**，**中间件机 = 21.130.247.89**（跨机部署）。
+- iptables（中间件机）白名单 127.0.0.1 + 21.214.97.212 放行，其余 DROP —— 微服务→中间件走白名单，安全边界合理；**但微服务机侧是否有同等防护未确认**（快照仅含中间件机 iptables）。
+- **时区混用**：容器 TZ 三种（Asia/Shanghai×2、Etc/UTC、PRC）+ 微服务未显式 TZ（宿主 +08:00）→ 中间件日志 UTC 与业务日志 +08 混用，排查跨服务日志时区错乱。建议统一容器 TZ=Asia/Shanghai、微服务显式 `-Duser.timezone=Asia/Shanghai`。

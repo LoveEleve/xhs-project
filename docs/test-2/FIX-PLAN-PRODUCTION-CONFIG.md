@@ -226,3 +226,26 @@
 ### P-D21 Redis HA 增强（可选）
 - **改动**：compose 增加至 3 sentinel + 2 slave；或文档标注"演示级单点 HA"。
 - **风险**：低。**验证**：kill master → failover 成功。
+
+---
+
+## 第一批补充（第四轮深挖新增）
+
+### P-D22 修复 t_inventory_compensation schema 漂移（库存补偿机制恢复）
+- **改动**：ALTER TABLE 补 fail_reason/retry_count 列、删 action、加索引（或备份后按 init-all.sql 重建）。
+- **风险**：低-中。**验证**：InventoryCompensationJob 执行成功；手工插补偿记录→扫描→重试→标记闭环。
+
+### P-D24 /logs 日志清理策略
+- **改动**：各服务 logback JSON_FILE 加 `maxHistory=7 totalSizeCap=2GB`；清理历史 14GB；叠加 ES ILM（P-D14）。
+- **风险**：低。**验证**：7 天后旧日志自动删除。
+
+### P-D25 清理脏表
+- **改动**：确认无引用后 `DROP TABLE my_xhs_order.t_local_message`（旧 5 列残留）。
+- **风险**：低。
+
+### 时区统一
+- **改动**：compose 全部容器 `TZ: Asia/Shanghai`；微服务 start-all.sh 加 `-Duser.timezone=Asia/Shanghai`。
+- **风险**：低。**验证**：容器/微服务日志时间戳一致 +08:00。
+
+### P-D23 经验固化（已修复，仅记录）
+- Redis 配置变更全链路核对（Nacos/yml/sentinel announce）；跨机部署禁止 127.0.0.1 地址下发；补监控（P-D4/P-D13）防风暴再发生 3 天无人知。
