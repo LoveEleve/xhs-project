@@ -8,31 +8,38 @@
 ---
 
 ## 0. 关键新发现（探索中证实，修正原判断）
-1. **`t_user_behavior.behavior_type` 语义冲突是"数据已错标"的 bug（非二选一）**：代码 `BehaviorRequest.java:20` = `1曝光/2点击/3点赞/4收藏/5评论/6分享/7停留`（`@Max=7`），而 SQL 表注释 = `1浏览…6搜索`。代码按 code 枚举写库 → **现存数据可能已错标，需先对账 + 统一枚举**，否则 A5/A6 建立在错数据上。
+1. **`t_user_behavior.behavior_type` 结论已勘误（2026-08-13 业务方实证）——原"写读不一致"不成立**：
+   - **写库枚举** = `1曝光/2点击/3点赞/4收藏/5评论/6分享/7停留`（`BehaviorRequest.java`，`BehaviorReportConsumer` 直写）。
+   - **消费端与写库一致**：`RecommendComputeJob.java:79`（正向 `IN(3,4,5,6) OR (7 AND duration>10)`）与 `:426-430` 权重（2点击1/3点赞3/4收藏5/5评论4/6分享6）**与 API 枚举吻合**；ItemCF 只用 user_id/note_id 不受影响。
+   - **唯一不一致**：`t_user_behavior` **建表注释**（6 值错位 "1-浏览…6-搜索"）——**仅需修表注释**，热榜 SQL 不修。
+   - **P1 修复**（业务方）：表原建在 `my_xhs_analytics`，search 数据源=`my_xhs_content` → 写入 1146 失败、行为链路全丢 → 已在 content 库建表（7 值注释）+ 删空表 + init-all 修正 + 验证落库。上报端点 `POST /api/recommend/behavior`。
+   - **决策**：统一 API 7 值枚举 + 修表注释；A3 互动/曝光就绪度 ⚠️→✅。
 2. **浏览/曝光的实际落库点在 `my-xhs-search`（`BehaviorReportConsumer`）**，content/home 均无直写点。
 3. **A2 无独立审核写点**：`auditStatus` 在发布时直接置 APPROVED，无异步审核通过路径（`NoteService.publishNote/publishDraft`）。
 4. **Follow / Cart 均 Redis 权威**：MySQL t_follow / t_cart_item 是异步兜底（try-catch"不影响结果"）→ **取关/加购事件须记在 Redis 权威点，不能依赖 MySQL 写点**。
 5. **A6 曝光有两个表面**：`behavior_type=1=曝光` 只覆盖**推荐流**（RecommendService），`getFollowFeed` 是**关注流**——关注流曝光需自建，不能只"复用"。
 6. **A1 failCode 来源未定义**：`handlePayFailInternal` 只收 (orderId,userId,paymentNo)，失败原因需从支付渠道回调(pay())透传。
+7. **观测缺口已由部署包复核为"基本就绪"**（mysql/redis/canal/rocketmq/es/node exporter + alertmanager + grafana + VM + innodb_print + deadlock 脚本），真正开放仅 B4 DLQ + B10 线程转储 + B2/B7 管道确认（见 D0-audit）。
 
 ---
 
 ## 1. 实施排序与依赖
 
-### Phase 1 —— 🔴 高（阻塞 A1/A2/B1/B2/B4 场景，D1 前）
+> ⚠️ **2026-08-13 部署包复核**：观测缺口 B1/B3/B5/B6/B8/B9 **已部署**（见 D0-audit），剩余真正要做的是**业务侧 A1-A6** + **B4 DLQ 消费者** + **B10 线程转储** + **B2/B7 管道确认**。
+
+### Phase 1 —— 🔴 高（阻塞 A1/A2 场景，D1 前）
 | 顺序 | 缺口 | 依赖 | 为什么先做 |
 |:--:|------|------|-----------|
 | 1 | **A1 支付失败事件** | — | A2 场景核心数据 |
 | 2 | **A5 电商漏斗（商品浏览+加购）** | 先统一 behavior_type 枚举 | A1 场景核心数据 |
-| 3 | **B1 mysql-exporter（含 B6 复制延迟）** | — | B1/B4 排障数据 |
-| 4 | **B2 slow_query_log 管道** | — | B1/B4 排障数据 |
-| 5 | **B7 MySQL error log / innodb** | — | 死锁定位 |
+| 3 | **确认 B2 slow_query→ES 管道** | 已开启日志，管道未确认 | B1 排障数据链路 |
+| 4 | **确认 B7 error log→观测** | innodb_print 已开 | 死锁定位 |
 
 ### Phase 2 —— 🟡 中（D2 前）
-A2 published_at / A3 取关流水 / A4 退款sku / A6 曝光 / B3 redis-exporter / B4 DLQ消费者 / B8 RocketMQ / B9 Canal / B10 线程转储
+A2 published_at / A3 取关流水 / A4 退款sku / A6 曝光 / B4 DLQ消费者 / B10 线程转储
 
-### Phase 3 —— 🟢 低（D6/D7 前）
-B5 VictoriaMetrics remote_write
+### ✅ 已部署（无需动作）
+B1 mysql-exporter / B3 redis-exporter / B5 VM remote_write / B6 复制延迟 / B8 RocketMQ textfile / B9 Canal / alertmanager / Grafana 9 看板 / innodb_print + 死锁脚本
 
 ---
 
@@ -91,36 +98,24 @@ B5 VictoriaMetrics remote_write
 
 ---
 
-## 3. 观测缺口明细
+## 3. 观测缺口明细（2026-08-13 部署包复核后）
 
-### B1+B6. mysql-exporter（含复制延迟指标）
-- **现状**：Prometheus（`config/prometheus/prometheus.yml`）只 scrape 服务端口，无 mysql-exporter target。
-- **改动**：docker-compose 加 mysqld_exporter（**需 MySQL 账号授权：PROCESS / REPLICATION CLIENT / REPLICATION SLAVE / performance_schema**）→ 采集 `mysql_slave_status_seconds_behind_master` / `Io_Running` / `Sql_Running`（B6）；prometheus.yml 加 target。
-- **归属**：基建/config。
-- **验证**：Prometheus 查到复制延迟指标；B4 场景可查。
+### ✅ 已部署（原缺口已填，仅记录，无需动作）
+- **B1 mysql-exporter**（9104）+ **B6 复制延迟**（`mysqld-exporter-slave` 9105 连 3307 collect.slave_status）→ Prometheus job `mysql`/`mysql-slave`。
+- **B3 redis-exporter**（9151）→ job `redis`。
+- **B5 VictoriaMetrics** remote_write → 8428。
+- **B8 RocketMQ**：textfile collector（`rocketmq-metrics.sh` cron + node-exporter 挂载 `/data/rocketmq-textfile`）→ `rocketmq_broker_*`/`rocketmq_consumer_*`。
+- **B9 Canal**：job `canal` → 11112。
+- **死锁**：`--innodb-print-all-deadlocks=ON` + `mysql-deadlock-metrics.sh`（cron）→ `mysql_innodb_deadlock_total`。
+- **告警/看板**：alertmanager(19093) + `myxhs_rules.yml` + Grafana 9 看板。
 
-### B2. slow_query_log 管道
-- **改动**：MySQL 开 `slow_query_log=ON, long_query_time=0.5` → 日志采集 → Logstash（`config/logstash/logstash.conf` 已有，15044 tcp / 15045 beats）→ ES。
-- **⚠️ Filebeat 未确认**：compose 仅有 Logstash，未发现 filebeat 服务/配置；慢查询需确认日志采集器（Filebeat 或 微服务直写 Logstash TCP），否则管道缺一环。
-- **归属**：基建/config。
-- **验证**：慢查询进 Kibana；B1 场景可查。
+### ⚠️ 需确认（半就绪）
+- **B2 slow_query_log → ES 管道**：`--slow-query-log=1 --long-query-time=0.5` 已开启，但慢查询→ES/Kibana 管道未在部署包确认（filebeat 已移除，Logstash 15044 为微服务 TCP）。
+- **B7 error log → 观测**：innodb_print 已开，error log 采集管道未确认。
 
-### B7. MySQL error log / innodb status
-- **改动**：error log 采集管道 + 开 `innodb_status_output`（或 performance_schema 锁等待）。
-- **归属**：基建/config。
-- **验证**：死锁 ERROR 1213 可定位。
-
-### B3. redis-exporter / B8. RocketMQ exporter / B9. Canal metrics / B10. JVM 线程转储
-- **B3**：redis_exporter 接入 Prometheus（Redis 内存/命中/淘汰）。
-- **B8**：RocketMQ exporter（broker 主从/切换指标）接入 Prometheus。
-- **B9**：Canal server metrics + 告警（binlog→MQ 延迟/断连）。
-- **B10**：按需 jstack/Arthas（`/data/workspace/arthas` 已有源码）死锁检测；SegmentIdGenerator/DynamicDataSource 热点。
-- **归属**：基建/config（B10 各服务）。
-- **验证**：各指标在 Prometheus/Grafana 可见。
-
-### B4. DLQ 消费者 / B5. VictoriaMetrics
-- **B4**：基于 `my-xhs-common/mq/DlqMessageHandler` 基类建实际 `%DLQ%` 消费者 + 告警钩子。
-- **B5**：prometheus.yml 加 remote_write → VM 8428。
+### 仍开放（代码侧）
+- **B4 DLQ 消费者**：基于 `DlqMessageHandler` 基类建实际 `%DLQ%` 消费者 + 告警钩子。
+- **B10 JVM 线程转储**：按需 jstack/Arthas（`/data/workspace/arthas` 已有源码）死锁检测。
 
 ---
 
@@ -132,7 +127,7 @@ B5 VictoriaMetrics remote_write
 ## 5. 待决策 / 风险
 | # | 项 | 说明 | 需拍板 |
 |:--:|----|------|:--:|
-| 1 | **behavior_type 枚举统一 + 现存数据对账** | 代码 1曝光…7停留 vs SQL 1浏览…6搜索；**现存 t_user_behavior 可能已错标**，非二选一，须先对账 | ✅ 需定+对账 |
+| 1 | **behavior_type 统一枚举（已勘误+业务方拍板）** | 统一 **API 7 值枚举**；**仅修表注释**，热榜 SQL 不修（写读一致实证）；A3 就绪度 ⚠️→✅ | ✅ 已定 |
 | 2 | A5 漏斗"浏览"口径（sku 商品浏览 vs 复用曝光）| 决定漏斗第一环语义 | ✅ 需定 |
 | 3 | A6 曝光：关注流自建 + 推荐流复用 | 两套表面分开 | ✅ 需定 |
 | 4 | A3 取关事件记 Redis 权威点 + t_follow 可靠性确认 | 关注关系权威是 Redis | ✅ 需定 |

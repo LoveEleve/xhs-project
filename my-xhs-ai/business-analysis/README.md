@@ -26,9 +26,13 @@ business-analysis/
 │   └── architecture-design.md # ★ 详细架构设计(DAD)：组件/时序/数据模型/接口/韧性/待定
 ├── 05-decisions/          # ADR 决策记录（随开发增长）
 │   └── README.md + ADR-001~004
-├── 06-d0/                 # D0 阶段工程产物
-│   ├── D0-audit.md            # 数据/观测缺口审计（12项）
-│   └── D0-tech-verification.md # 技术核验（模型接入已打通）
+├── 06-d0/                 # D0 阶段工程产物（实际目录 d0/）
+│   ├── D0-audit.md            # 数据/观测缺口审计（A1-A6+B1-B10，含部署包复核）
+│   ├── D0-scenarios.md        # 6 场景验收规格（A1-A3/B1-B4）
+│   ├── D0-distributed-diagnosis.md # 分布式/工程排障能力清单
+│   ├── D0-gapfill-plan.md     # 缺口补齐实施方案
+│   ├── D0-tech-verification.md # 技术核验（模型打通 + 框架实证）
+│   └── D1-skeleton-verification.md # ★ LangChain4j 1.0 实证（4 探针全过）
 ├── 07-conventions/        # 全局约定
 │   ├── 00-conventions.md      # 口径/时区/鉴权/权限分级/数据边界
 │   └── 01-operation-discipline.md # ★ 操作纪律卡（盘问闸/小步review/事实vs决策/标记）
@@ -56,6 +60,14 @@ business-analysis/
 - **硬缺口**（D0 门禁）：支付失败码、published_at、漏斗/曝光、mysql/redis exporter、慢查询管道、DLQ。
 - **安全基调**：固定只读工具 + deny-by-default + L1/L2/L3 分级；V1 无写工具。
 - **建设者无 AI 基础**：从概念词典 + 学习路线 L0 起步。
+
+## 前序规划（重要！docs/ 与 本目录 的关系）
+
+> ⚠️ **`../../docs/` 是更早且更完整的学习/交付规划（v5，833 行 + 17 个 phase）**——本目录 `business-analysis/` 是**当前架构/审计/决策**的权威，二者互补，**不要丢弃 docs/**：
+> - **docs/PLAN.md**：v5 总规划（双轨 D/L + 研究实验轨、9 道面试题、作品集、技术雷达）。
+> - **docs/phase-00~16**：17 个 phase 学习结构（含 **MemoryOS 三层记忆**、AgentScope 2.0 深学、MCP、Skills、多Agent、评测、安全、部署、微调、AI编程）。
+> - **分工**：`docs/` 管"学什么/顺序"（学习轨 L0-L7 的素材库）；`business-analysis/` 管"当前怎么建"（PLAN-v6/DAD/D0 审计/ADR/架构图）。
+> - 已把 docs/ 的关键内容（MemoryOS 三层记忆、pi agent、AgentScope 深学）接入 `tech/architecture-diagram.md` 与 `09-reference/source-study/README.md`。
 
 ## 面向 AI 消费者的统一模板
 ```

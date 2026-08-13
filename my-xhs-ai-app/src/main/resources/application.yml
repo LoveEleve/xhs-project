@@ -1,0 +1,40 @@
+server:
+  port: 19020
+
+spring:
+  application:
+    name: my-xhs-ai-app
+  # 指标工具读 my-xhs 真实 MySQL（云主机 21.130.247.89:3306，见部署包）
+  # 安全（D2 Gate）：只读账号 myxhs_ai_ro（GRANT SELECT），密码走环境变量，不落库
+  datasource:
+    url: ${MYXHS_DB_URL:jdbc:mysql://21.130.247.89:3306/my_xhs_order_0?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai}
+    username: ${MYXHS_DB_USER:myxhs_ai_ro}
+    password: ${MYXHS_DB_PASSWORD:}
+    hikari:
+      maximum-pool-size: 5
+
+myxhs:
+  ai:
+    teamo:
+      base-url: https://api.teamorouter.com/v1
+      # deepseek-v4-flash（付费档，2026-08-10 起）；密钥不落库，走环境变量 TEAMO_API_KEY
+      model: deepseek-v4-flash
+    router:
+      llm-fallback:
+        # 规则模糊（0 或多个指标词命中）时才走 LLM 分类；默认关保持确定性、无模型依赖/成本
+        enabled: false
+    tools:
+      # 指标工具访问：mcp（默认，经 my-xhs-ai-mcp 取数）/ direct（直连 MySQL，测试/降级）
+      mode: mcp
+    rag:
+      es-url: ${MYXHS_ES_URL:http://21.130.247.89:19200}
+      es-user: ${MYXHS_ES_USER:elastic}
+      es-pass: ${MYXHS_ES_PASS:}
+      # dense 检索 embedding（火山 Agent Plan 专属端点，doubao-embedding-vision-large 2048 维）
+      embedding-url: ${ARK_PLAN_BASE_URL:https://ark.cn-beijing.volces.com/api/plan/v3}
+      embedding-key: ${ARK_PLAN_API_KEY:}
+      embedding-model: ${ARK_EMBEDDING_MODEL:doubao-embedding-vision-large}
+
+logging:
+  level:
+    root: info

@@ -7,38 +7,49 @@
 
 ## 1. 模型接入现状 —— ✅ 已打通（D1 卡点解除）
 
-### 1.1 最终接入信息（2026-08-10 实测可用）
+> ⚠️ **2026-08-10 更新：Provider 已切换 火山方舟 → TeamoRouter**（用户指定，用免费档试跑）。
+> 两者均为 OpenAI 兼容端点，LangChain4j `OpenAiChatModel` 仅改 baseUrl/model/key 即可切换。
+
+### 1.1 当前生效接入信息（TeamoRouter，2026-08-10 实测）
 | 项 | 值 |
 |----|-----|
-| Provider | 火山方舟（Volcano Ark） |
+| Provider | TeamoRouter（多模型网关） |
+| Base URL（OpenAI 兼容）| `https://api.teamorouter.com/v1` |
+| 认证 | `Authorization: Bearer`，key 走环境变量 `TEAMO_API_KEY`（不落库） |
+| 当前模型 | **`deepseek-v4-flash`（付费档，2026-08-10 充值后切换）** |
+| 历史 | ~~`deepseek-v4-flash-free`~~（免费档，工具调用可靠性不稳——曾出现虚构工具调用，见 `08-execution/d2/D2-status-blocker.md` §三第四轮）|
+
+> 已实测：chat / 结构化输出 / 工具循环 / 流式 **4 项全过**（`labs/d1-skeleton/`，探针见 `D1-skeleton-verification.md`）。
+
+### 1.2 历史接入（火山方舟，已切换，保留备查）
+| 项 | 值 |
+|----|-----|
 | Base URL | `https://ark.cn-beijing.volces.com/api/v3` |
-| 推理接入点 | `ep-20260810195949-k9lkt` |
-| 绑定模型 | `deepseek-v4-flash-260425` |
-| 认证 | ARK key（环境变量 `ARK_API_KEY`，不落库） |
+| 推理接入点 | `ep-20260810195949-k9lkt`（绑定 `deepseek-v4-flash-260425`） |
+| 认证 | `ARK_API_KEY` 环境变量（不落库） |
 
-> 已实测：chat/completions 返回正常（`deepseek-v4-flash-260425`，content 有效）。**D1 模型卡点解除。**
+> 切换验证：`my-xhs-ai-app` 用 TeamoRouter 启动成功，`/api/ai/chat` 返回真实模型回复；免费档足够 D1 开发期使用。
 
-### 1.2 经验记录（避免再踩）
+### 1.3 经验记录（避免再踩）
 - `models` 列表是**平台全量目录**，≠ 账号已开通；不可用的返回 `NotFound`，存在但未开通的返回 `ModelNotOpen`。
 - 本账号**不可用** seed-1-6/pro-*/deepseek-v3；**可开通/可用** seed-2-0/2-1、deepseek-v4 系列。
 - **正规且最稳的用法是"推理接入点(ep-xxx)"**，直接用 ep- ID 调，绕开"模型 ID 是否开通"的纠结。
-
-### 1.3 后续模型选型（D3/D4 再开对应接入点）
-| 用途 | 候选 | 何时 |
-|------|------|------|
-| 主对话/Agent | `deepseek-v4-flash-260425`（已用） | D1 起 |
-| 推理 | `doubao-seed-2-x-thinking` / `deepseek-r1` 系 | D4 排障 |
-| RAG embedding | `doubao-embedding-*`（需另建接入点） | D3 检索 |
+- TeamoRouter 免费档 `deepseek-v4-flash-free`：DeepSeek 模型走 **OpenAI 兼容格式**（`/v1/chat/completions`），Claude 才需 Anthropic 原生格式（`/v1/messages`）。
 
 ---
 
 ## 2. 框架/版本兼容性核验项（D1 引入前逐一执行）
 
-> 版本以 Maven Central 实测为准，此处列核验项与命令，不承诺具体版本号（防止过时）。
+> ✅ **2026-08-10 已用 `labs/d1-skeleton/` 实证 LangChain4j 1.0.0**（报告见 `D1-skeleton-verification.md`）：
+> - LangChain4j 1.0.0 + JDK17 **独立工程可编译可运行**；4 项能力（chat/结构化/工具循环/流式）**全部实证通过**。
+> - ⚠️ 1.0 API 大改：`ChatModel`/`ChatRequest`/`StreamingChatResponseHandler`；`@Tool` 在 core、`AiServices` 在聚合模块。
+> - ⏳ 待验：Spring Boot 3.2.5 starter 集成 + MCP jackson2 依赖树（建 app/mcp 模块时做）。
+
+> 以下为其余核验项与命令（不承诺具体版本号，防止过时）：
 
 | 核验项 | 关键点 | 检查命令/方法 |
 |--------|--------|--------------|
-| LangChain4j vs Boot 3.2.5/JDK17 | 框架层 Spring 无关；starter 兼容性 | 查 Maven Central 最新版 + release notes |
+| ~~LangChain4j vs Boot 3.2.5/JDK17~~ | 已实证独立运行；Boot 集成待验 | 建 my-xhs-ai-app 时跑 `mvn dependency:tree` + release notes |
 | AgentScope Java 2.0 | 需 JDK17+；模型模块化 | 查 io.agentscope 最新版；注意 2.0.1 是否支持 Boot 3.2 |
 | MCP Java SDK | 必须用 **jackson2** 模块(mcp-json-jackson2) | 查 io.modelcontextprotocol 版本 |
 | Jackson 2.16.1 冲突 | 项目 Jackson 2，避免引 Jackson 3 | 依赖树检查 `mvn dependency:tree` |
@@ -65,7 +76,8 @@
 | 项 | 状态 |
 |----|------|
 | 模型接入 | ✅ **已打通**（火山方舟 ep-20260810195949-k9lkt，实测可用） |
-| 框架版本 | ⏳ 引入前执行 §2 核验项 + 兼容性报告 |
+| 模型能力（chat/结构化/工具调用/流式）| ✅ **已实证**（`labs/d1-skeleton/` 4 探针全过，见 `D1-skeleton-verification.md`）|
+| 框架版本 | ✅ LangChain4j 1.0.0 + JDK17 独立跑通；⏳ Boot 3.2.5 集成 + MCP jackson2 待验 |
 | 首批 ADR | ✅ ADR-001~004 已定稿（见 ../decisions/） |
 
-> **下一步动作**：① 建 `my-xhs-ai` 聚合模块 ② 跑依赖树核对版本兼容 ③ 进入 D1 最小切片。
+> **下一步动作**：① 用 Spring Boot 3.2.5 建 `my-xhs-ai-app`（A1 补齐）② 建 MCP 模块验依赖树 ③ 真实指标工具接数。

@@ -1,6 +1,16 @@
 # 后端排查任务书：t_user_behavior.behavior_type 语义不一致
 
-> 交给后端 AI 排查。目的：确认 my-xhs 现有代码里 `t_user_behavior.behavior_type` 的**真实语义定义**，以及历史数据是否被"错标"。这是 AI 诊断 Agent（A5 漏斗 / A3/A6 曝光互动）能信任该表的前提。
+> ⚠️ **状态：结论已勘误（2026-08-13），原"热榜读库错位/写读不一致"不成立。**
+> - **写库枚举** = `1曝光/2点击/3点赞/4收藏/5评论/6分享/7停留`（`BehaviorRequest.java`，`BehaviorReportConsumer` 直写）
+> - **消费端（推荐计算）与写库一致**：`RecommendComputeJob.java:79`（`IN (3,4,5,6) OR (7 AND duration>10)`）与 `:426-430` 权重（2点击1/3点赞3/4收藏5/5评论4/6分享6）——**与 API 7 值枚举吻合**；`ItemCFRecallStrategy:90` 同
+> - **唯一不一致**：`t_user_behavior` **建表注释**（6 值错位："1-浏览 2-点赞 3-收藏 4-评论 5-分享 6-搜索"）——**仅需修表注释**
+> - **P1 修复（2026-08-13）**：表原建在 `my_xhs_analytics`，search 服务数据源=`my_xhs_content` → 写入 1146 失败、行为链路全丢、RecommendComputeJob 每 10min 降级跳过 → **已在 content 库建表（7 值枚举注释）+ 删 analytics 空表 + init-all.sql 修正 + 运行态验证上报落库成功**
+> - 上报端点实测：**`POST /api/recommend/behavior`**（非 /api/search/behavior）
+> 本文件保留原调查问题备查；原"修热榜 SQL"决策项撤销。
+
+---
+
+> 交给后端 AI 排查（备用）。目的：确认 my-xhs 现有代码里 `t_user_behavior.behavior_type` 的**真实语义定义**，以及历史数据是否被"错标"。这是 AI 诊断 Agent（A5 漏斗 / A3/A6 曝光互动）能信任该表的前提。
 > 请逐项排查并回报，不要改代码。
 
 ---

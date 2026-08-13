@@ -44,7 +44,7 @@
 - **影响场景**：A1 订单下降归因（漏斗断点）。
 - **方案**：补 **sku 维度商品浏览事件** + **加购事件流**（append-only，与内容行为分开的电商漏斗事件表）。
 - **归属**：my-xhs-analytics / home | **优先级：🔴 高**（A1 是核心场景）
-- **附带发现**：代码 `BehaviorRequest` 提到 type7（停留时长），与 SQL 建表 1-6 不一致，需一并核对。
+- **附带发现（已解决 2026-08-13）**：`BehaviorRequest` 用 type7（停留时长）+ 7 值枚举，与 SQL 建表注释 1-6 不一致 → **业务方拍板：统一 API 7 值枚举，仅修表注释**（写读一致实证）；且 **P1 修复**：表原建在 my_xhs_analytics、search 数据源=content → 写入 1146 全丢 → 已迁 content 库 + 删空表 + init-all 修正 + 验证落库。
 
 ### A6. 曝光 / Feed 分发数据 —— ⚠️ 覆盖缺口（审计补入）
 - **证据**：全仓库无 impression/exposure 表（grep 无结果）；Feed 收件箱(t_user_feed_inbox/feed:timeline) 只记录投递，无"曝光→互动"记录。
@@ -54,67 +54,57 @@
 
 ---
 
-## B. 观测缺口（5 项）
+## B. 观测缺口（基于部署包 `my-xhs-deploy-package.zip` 复核，2026-08-13）
 
-### B1. mysql-exporter —— ✅ 确认缺失
-- **证据**：config/deploy/docker-compose 无 exporter。
-- **影响**：死锁/慢查询/锁等待不可采集（B1 排障无数据）。
-- **方案**：部署 mysqld_exporter，接入 Prometheus。
-- **优先级：🔴 高**
+> ⚠️ **重大更正**：本 B 段原按**本地 `config/`** 判断为"缺失"，但**实际部署包（330 文件）已实现绝大多数**。以下按部署包实测更新。证据：`config/mysqld-exporter/*`、`config/alertmanager/`、`config/deploy-cloud/`、`DEPLOY-NOTES.md`、`README-METRICS.md`、`docker-compose.yml`。
 
-### B2. slow_query_log 管道 —— ✅ 确认缺失
-- **证据**：无 slow_query / long_query_time 配置。
-- **影响**：慢查询无法进 Kibana（B1 排障无数据）。
-- **方案**：开启 slow_query_log(≥0.5s) → Filebeat → Logstash → ES。
-- **优先级：🔴 高**
+### B1. mysql-exporter —— ✅ 已部署（更正）
+- **证据**：compose 有 `mysqld-exporter`（9104，`config/mysqld-exporter/my.cnf`）；Prometheus job `mysql` → 9104。
+- **影响**：死锁/慢查询/锁等待可采集。
+- **优先级：🔴 高 → 已满足**
 
-### B3. redis-exporter —— ✅ 确认缺失
-- **证据**：无 redis_exporter 配置。
-- **影响**：Redis 内存/命中/淘汰不可采集。
-- **方案**：部署 redis_exporter 接入 Prometheus。
-- **优先级：🟡 中**
+### B2. slow_query_log 管道 —— ⚠️ 半就绪（更正）
+- **证据**：MySQL command 含 `--slow-query-log=1 --long-query-time=0.5`（**已开启**）；但**慢查询 → ES/Kibana 管道未在部署包确认**（Logstash 15044 是微服务 TCP 直连；filebeat 已按基线移除）。
+- **待确认**：慢查询日志如何进 ES？若无管道，需补采集（或日志读源）。
+- **优先级：🔴 高（管道未确认）**
 
-### B4. DLQ 消费者 —— ⚠️ 部分存在（基础在，无实际消费）
-- **证据**：`my-xhs-common/mq/DlqMessageHandler.java` 是**模板基类**（日志 + DLQ 指标），但仅被 `MetricsAutoConfiguration` 注入；**无服务继承并订阅 `%DLQ%` topic 实际消费**。
-- **影响**：死信消息只记录/计数，无法自动排查重投（B2 部分）。
-- **方案**：基于 DlqMessageHandler 基类建实际 DLQ 消费者（订阅各 `%DLQ%` 组）+ 告警钩子。
-- **优先级：🟡 中**
+### B3. redis-exporter —— ✅ 已部署（更正）
+- **证据**：compose 有 `redis-exporter`（9151，oliver006）；Prometheus job `redis` → 9151。
+- **优先级：🟡 中 → 已满足**
 
-### B5. VictoriaMetrics 未接线 —— ✅ 确认缺失
-- **证据**：config/prometheus 无 remote_write 到 8428。
-- **影响**：长期趋势/容量分析缺失。
-- **方案**：加 remote_write → `http://...:8428/api/v1/write`。
-- **优先级：🟢 低**
+### B4. DLQ 消费者 —— ⚠️ 仍缺（代码侧，未变）
+- **证据**：`my-xhs-common/mq/DlqMessageHandler.java` 基类+指标；**无服务继承订阅 `%DLQ%` 实际消费**（部署包不涉及）。
+- **方案**：基于基类建实际 DLQ 消费者 + 告警钩子。
+- **优先级：🟡 中（仍开放）**
 
-### B6. 主从复制延迟指标 —— ✅ 确认缺失（新增，B4 场景）
-- **证据**：`sql/init-replication-{user,content,order,inventory}.sql` 有主从(GTID)，但 Prometheus 无 mysql-exporter → **无 replication lag 指标**。
-- **影响**：B4 主从复制延迟归因无数据。
-- **方案**：mysql-exporter 采 `Seconds_Behind_Master` / Io_Running / Sql_Running。
-- **优先级：🔴 高**
+### B5. VictoriaMetrics remote_write —— ✅ 已部署（更正）
+- **证据**：prometheus.yml 有 `remote_write → http://127.0.0.1:8428/api/v1/write`；compose 有 `victoria-metrics`。
+- **优先级：🟢 低 → 已满足**
 
-### B7. MySQL error log / innodb status 采集 —— ✅ 确认缺失（新增）
-- **证据**：无 error log 采集管道；未开 innodb_status_output。
-- **影响**：MySQL 死锁（ERROR 1213）无法定位。
-- **方案**：error log → 采集管道 + 开启 innodb_status_output / performance_schema 锁等待。
-- **优先级：🔴 高**
+### B6. 主从复制延迟指标 —— ✅ 已部署（更正）
+- **证据**：compose 有 `mysqld-exporter-slave`（**9105，连 3307，collect.slave_status**，`my-slave.cnf`）；Prometheus job `mysql-slave` → 9105。DEPLOY-NOTES §三.10。
+- **优先级：🔴 高 → 已满足**（B4 复制延迟场景数据就绪）
 
-### B8. RocketMQ broker 指标（主从/切换）—— ✅ 确认缺失（新增）
-- **证据**：`config/rocketmq/broker.conf`(ASYNC_MASTER) + `broker-slave.conf`(SLAVE)，但无 broker exporter 指标接入。
-- **影响**：RocketMQ 主从选举/切换无法诊断。
-- **方案**：RocketMQ exporter / Dashboard 指标接入 Prometheus。
-- **优先级：🟡 中**
+### B7. MySQL error log / innodb status —— ⚠️ 半就绪（更正）
+- **证据**：`--innodb-print-all-deadlocks=ON`（死锁写 error log）+ `mysql-deadlock-metrics.sh`（cron，对比 LATEST DETECTED DEADLOCK 时间戳 → `mysql_innodb_deadlock_total`，已实测造死锁验证）。**error log → 采集管道未确认**。
+- **待确认**：error log 如何进 ES/观测？若只在容器内，死锁定位需按需抓取。
+- **优先级：🔴 高（管道未确认）**
 
-### B9. Canal 监控指标 —— ✅ 确认缺失（新增）
-- **证据**：`config/canal/conf/{inventory,note,product}_instance`，无 Canal server metrics 接入。
-- **影响**：binlog→MQ 断连/延迟无法诊断（下游同步失效）。
-- **方案**：Canal server metrics + 告警。
-- **优先级：🟡 中**
+### B8. RocketMQ broker 指标 —— ✅ 已部署（textfile 方案，更正）
+- **证据**：官方 5.1.4 无内置 metrics + exporter 客户端不兼容 → 用 `rocketmq-metrics.sh`（cron，textfile collector）+ node-exporter 挂载 `/data/rocketmq-textfile`；指标 `rocketmq_broker_*`/`rocketmq_consumer_*`。README-METRICS §1。
+- **优先级：🟡 中 → 已满足**
 
-### B10. JVM 线程转储 —— ⚠️ 需补（新增）
-- **证据**：`SegmentIdGenerator`/`DynamicDataSource` 有 synchronized/锁竞争热点；无自动线程转储。
-- **影响**：Java 死锁无法定位。
-- **方案**：按需 jstack/Arthas + 死锁检测（arthas 已在 `../arthas`）。
-- **优先级：🟡 中**
+### B9. Canal 监控指标 —— ✅ 已部署（更正）
+- **证据**：Prometheus job `canal` → **11112**（Canal server metrics）。
+- **优先级：🟡 中 → 已满足**
+
+### B10. JVM 线程转储 —— ⚠️ 需补（未变）
+- **证据**：`SegmentIdGenerator`/`DynamicDataSource` 有 synchronized/锁竞争热点；部署包无自动线程转储。
+- **方案**：按需 jstack/Arthas（`/data/workspace/arthas` 已有源码）+ 死锁检测。
+- **优先级：🟡 中（仍开放）**
+
+### 附：告警与看板（部署包已有）
+- `alertmanager`（19093，webhook 占位需配渠道）+ Prometheus alert_rules（`myxhs_rules.yml`）+ **Grafana 9 个看板**（JVM/MQ/MySQL含复制+锁/ES/node/redis/api/biz/tomcat）+ node-exporter(9100) + ES exporter(9114) + SkyWalking OAP telemetry(1234)。
 
 ---
 
@@ -125,34 +115,33 @@
 | DLQ 消费者 | "无 DLQ 消费者" | **有基类+指标，但无实际消费者**；需基于基类补消费端 |
 | 转化漏斗(A5) | "无行为表" | **t_user_behavior 存在**，但只覆盖内容行为(note 维度)；**电商漏斗缺：sku 商品浏览事件 + 加购事件流**（且笔记浏览不可用于电商漏斗——领域错配）|
 | 曝光数据(A6) | 未审计 | **补入**：无曝光/Feed分发数据，A3 需 |
+| **观测 B 面（2026-08-13 部署包复核）** | "全部缺失" | **多数已部署**：mysql-exporter(9104)+slave(9105)、redis-exporter(9151)、VM remote_write、Canal(11112)、RocketMQ textfile、innodb_print_all_deadlocks+deadlock脚本、alertmanager、Grafana 9 看板；**仍缺**：DLQ 消费者、JVM 线程转储、slow_query→ES 管道与 error log→ES 管道未确认 |
 
-> 其余 8 项与 §8 一致，均为确认缺失。
+> 其余 A 面 8 项与 §8 一致，均为确认缺失（业务数据侧）。
 
 ---
 
-## D. 可执行清单（优先级排序）
+## D. 可执行清单（优先级排序，按部署包复核后）
 
-### 🔴 高（阻塞 A1/A2/B1/B2/B4，D1 前必须就绪）
+### 🔴 高（阻塞 A1/A2 场景，D1 前必须就绪——业务侧）
 - [ ] A1 支付失败事件流水（payment）→ A2 场景数据
 - [ ] A5 电商漏斗：补 **sku 商品浏览事件 + 加购事件流**（append-only，与内容行为分开）（analytics/home）→ A1 场景数据
-- [ ] B1 部署 mysql-exporter（含 **B6 复制延迟指标**）→ B1/B4 排障数据
-- [ ] B2 开启 slow_query_log + Filebeat 管道 → B1/B4 排障数据
-- [ ] B7 MySQL error log / innodb status 采集 → 死锁定位
+- [ ] ⚠️ 确认 B2 slow_query_log → ES 管道是否接通（已开启未确认管道）
+- [ ] ⚠️ 确认 B7 MySQL error log → 观测（innodb_print 已开，管道未确认）
 
 ### 🟡 中（D2 前就绪）
 - [ ] A2 note.published_at/audited_at（content）
 - [ ] A3 关注/取关事件流水（analytics）
 - [ ] A4 退款商品明细（payment）
 - [ ] A6 曝光/Feed 分发数据（home/content）→ A3 场景
-- [ ] B3 redis-exporter
 - [ ] B4 基于基类建实际 DLQ 消费者
-- [ ] B8 RocketMQ broker 指标（主从/切换）
-- [ ] B9 Canal 监控指标
 - [ ] B10 JVM 线程转储（jstack/Arthas 死锁检测）
 
-### 🟢 低（D6/D7 前）
-- [ ] B5 VictoriaMetrics remote_write
+### ✅ 已部署（无需动作，部署包已含）
+- [x] B1 mysql-exporter(9104) | B3 redis-exporter(9151) | B5 VM remote_write | B6 复制延迟(9105) | B8 RocketMQ textfile | B9 Canal(11112) | alertmanager | Grafana 9 看板 | innodb_print_all_deadlocks + deadlock 脚本
 
-> 附带：核对 t_user_behavior 的 behaviorType 1-6（SQL）vs 7（代码）不一致。
+> ✅ 已解决（2026-08-13 业务方拍板）：统一 API 7 值枚举，仅修表注释；P1 表迁 content 库。
+
+> ✅ 已解决（2026-08-13 业务方拍板）：统一 API 7 值枚举，仅修表注释；P1 表迁 content 库。
 
 > 每项补齐后需重跑受影响链路 full-chain-test（回归门禁），确保不破坏既有 46 项 P0 修复。补齐后 §1.5 六场景必须都有事实数据 + 人工基线，才允许进入 D1。
