@@ -18,4 +18,7 @@ public interface MetricToolAccess {
 
     @Tool("查询内容互动量（口径：点赞/收藏/评论/分享，曝光单列）")
     String contentInteraction(@P("时间窗，格式 yyyy-MM-dd~yyyy-MM-dd") String window);
+
+    @Tool("计算对比基线窗口（上一同长窗口，确定性；模型不得自行推算基线）")
+    String baselineWindow(@P("当前时间窗，格式 yyyy-MM-dd~yyyy-MM-dd") String window);
 }

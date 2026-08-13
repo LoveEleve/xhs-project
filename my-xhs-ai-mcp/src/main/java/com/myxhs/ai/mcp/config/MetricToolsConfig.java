@@ -1,5 +1,6 @@
 package com.myxhs.ai.mcp.config;
 
+import com.myxhs.ai.tools.BaselineWindowTool;
 import com.myxhs.ai.tools.ContentInteractionTool;
 import com.myxhs.ai.tools.OrderMetricsTool;
 import com.myxhs.ai.tools.PaymentMetricsTool;
@@ -28,5 +29,10 @@ public class MetricToolsConfig {
     @Bean
     public ContentInteractionTool contentInteractionTool(JdbcTemplate jdbc) {
         return new ContentInteractionTool(jdbc);
+    }
+
+    @Bean
+    public BaselineWindowTool baselineWindowTool() {
+        return new BaselineWindowTool();
     }
 }

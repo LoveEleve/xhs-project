@@ -49,6 +49,11 @@ class AgentHarnessTest {
         public String contentInteraction(String window) {
             return "interaction=48 window=" + window;
         }
+
+        @Override
+        public String baselineWindow(String window) {
+            return "baseline.window current=" + window;
+        }
     }
 
     /** 假模型：按对话内容确定性返回决策 JSON；"THROW" 前缀=模拟模型故障 */
@@ -104,6 +109,18 @@ class AgentHarnessTest {
         return found;
     }
 
+    /** 从对话中取全部工具结果证据 id（按出现顺序） */
+    private static List<String> allEvIds(List<String> texts) {
+        List<String> ids = new java.util.ArrayList<>();
+        for (String t : texts) {
+            Matcher m = EV_PATTERN.matcher(t);
+            while (m.find()) {
+                ids.add(m.group(1));
+            }
+        }
+        return ids;
+    }
+
     private static String toolCallJson(String tool, String window) {
         return "{\"action\":\"TOOL_CALL\",\"tool\":\"" + tool
                 + "\",\"args\":{\"window\":\"" + window + "\"},\"reasoning\":\"查窗口数据\"}";
@@ -132,6 +149,32 @@ class AgentHarnessTest {
         assertTrue(run.finalAnswer().contains("证据链"));
         assertTrue(run.finalAnswer().contains("反证：无"));
         assertEquals(1, run.evidenceChain().size());
+    }
+
+    @Test
+    void 基线确定性化_先算基线窗口再对比() {
+        AgentHarness h = harness(texts -> {
+            long toolResults = texts.stream().filter(t -> t.contains("证据 id=")).count();
+            if (toolResults == 0) {
+                return toolCallJson("baselineWindow", "2026-08-01~2026-08-07");
+            }
+            if (toolResults == 1) {
+                return toolCallJson("queryOrderVolume", "2026-08-01~2026-08-07");
+            }
+            if (toolResults == 2) {
+                return toolCallJson("queryOrderVolume", "2026-07-25~2026-07-31");
+            }
+            List<String> evs = allEvIds(texts);
+            String refs = String.join("\",\"", evs);
+            return "{\"action\":\"ANSWER\",\"conclusion\":\"基线窗口由 baselineWindow 确定，两窗口订单量可比\","
+                    + "\"evidenceRefs\":[\"" + refs + "\"],\"counterEvidence\":\"\",\"uncertainty\":\"\"}";
+        }, AgentBudget.defaults());
+
+        AgentRun run = h.run("为什么订单量下降了");
+
+        assertEquals(RunStatus.SUCCEEDED, run.status());
+        assertEquals(3, run.evidenceChain().size());
+        assertTrue(run.finalAnswer().contains("baselineWindow"));
     }
 
     @Test
@@ -233,6 +276,11 @@ class AgentHarnessTest {
             @Override
             public String contentInteraction(String window) {
                 return "interaction=48";
+            }
+
+            @Override
+            public String baselineWindow(String window) {
+                return "baseline.window";
             }
         };
         AgentHarness h = new AgentHarness(new FakeDecisionModel(texts -> {

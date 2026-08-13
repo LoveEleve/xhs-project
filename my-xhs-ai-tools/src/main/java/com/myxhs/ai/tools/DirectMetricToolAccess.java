@@ -13,11 +13,18 @@ public class DirectMetricToolAccess implements MetricToolAccess {
     private final OrderMetricsTool order;
     private final PaymentMetricsTool payment;
     private final ContentInteractionTool content;
+    private final BaselineWindowTool baseline;
 
     public DirectMetricToolAccess(OrderMetricsTool order, PaymentMetricsTool payment, ContentInteractionTool content) {
+        this(order, payment, content, new BaselineWindowTool());
+    }
+
+    public DirectMetricToolAccess(OrderMetricsTool order, PaymentMetricsTool payment, ContentInteractionTool content,
+                                  BaselineWindowTool baseline) {
         this.order = order;
         this.payment = payment;
         this.content = content;
+        this.baseline = baseline;
     }
 
     @Override
@@ -39,5 +46,12 @@ public class DirectMetricToolAccess implements MetricToolAccess {
     public String contentInteraction(
             @P("时间窗，格式 yyyy-MM-dd~yyyy-MM-dd") String window) {
         return content.contentInteraction(window);
+    }
+
+    @Override
+    @Tool("计算对比基线窗口（上一同长窗口，确定性；模型不得自行推算基线）")
+    public String baselineWindow(
+            @P("当前时间窗，格式 yyyy-MM-dd~yyyy-MM-dd") String window) {
+        return baseline.baselineWindow(window);
     }
 }

@@ -101,19 +101,33 @@ class McpContractTest {
     }
 
     @Test
-    void tools_list_返回三个工具() throws Exception {
+    void tools_list_返回四个工具() throws Exception {
         send("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\","
                 + "\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},"
                 + "\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}");
         send("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{}}");
         JsonNode resp = send("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}");
         JsonNode tools = resp.path("result").path("tools");
-        assertTrue(tools.size() == 3, "应 3 个工具: " + tools);
+        assertTrue(tools.size() == 4, "应 4 个工具: " + tools);
         assertEquals("order.query_volume", tools.get(0).path("name").asText());
         assertEquals("payment.success_rate", tools.get(1).path("name").asText());
         assertEquals("content.interaction", tools.get(2).path("name").asText());
+        assertEquals("baseline.window", tools.get(3).path("name").asText());
         assertTrue(tools.get(0).path("inputSchema").path("properties").has("window"),
                 "应声明 window 参数 schema");
+    }
+
+    @Test
+    void tools_call_baseline_返回上一同长窗口() throws Exception {
+        send("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\","
+                + "\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},"
+                + "\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}");
+        send("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{}}");
+        JsonNode resp = send("{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\","
+                + "\"params\":{\"name\":\"baseline.window\",\"arguments\":{\"window\":\"2026-08-01~2026-08-07\"}}}");
+        String text = resp.path("result").path("content").get(0).path("text").asText();
+        assertTrue(text.contains("\"baseline\":\"2026-07-25~2026-07-31\""), "应返回上一同长窗口: " + text);
+        assertEquals(false, resp.path("result").path("isError").asBoolean(false));
     }
 
     @Test

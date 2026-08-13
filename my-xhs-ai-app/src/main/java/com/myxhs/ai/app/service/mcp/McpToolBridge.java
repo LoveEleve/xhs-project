@@ -91,6 +91,13 @@ public class McpToolBridge implements MetricToolAccess {
         return callTool("content.interaction", window);
     }
 
+    @Override
+    @Tool("计算对比基线窗口（经 MCP：上一同长窗口，确定性；模型不得自行推算基线）")
+    public String baselineWindow(
+            @P("当前时间窗，格式 yyyy-MM-dd~yyyy-MM-dd") String window) {
+        return callTool("baseline.window", window);
+    }
+
     private String callTool(String name, String window) {
         try {
             ensureInitialized();

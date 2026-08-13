@@ -108,6 +108,7 @@ class HarnessCoreTest {
         assertEquals(true, guard.evaluate("queryOrderVolume", window("2026-08-01~2026-08-07")).allowed());
         assertEquals(true, guard.evaluate("paymentSuccessRate", window("2026-08-01~2026-08-07")).allowed());
         assertEquals(true, guard.evaluate("contentInteraction", window("2026-08-01~2026-08-07")).allowed());
+        assertEquals(true, guard.evaluate("baselineWindow", window("2026-08-01~2026-08-07")).allowed());
     }
 
     @Test

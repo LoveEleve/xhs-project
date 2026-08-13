@@ -16,9 +16,10 @@ public class PolicyGuard {
     public static final String TOOL_ORDER_VOLUME = "queryOrderVolume";
     public static final String TOOL_PAYMENT_RATE = "paymentSuccessRate";
     public static final String TOOL_CONTENT_INTERACTION = "contentInteraction";
+    public static final String TOOL_BASELINE_WINDOW = "baselineWindow";
 
     private static final Set<String> ALLOWED_TOOLS = Set.of(
-            TOOL_ORDER_VOLUME, TOOL_PAYMENT_RATE, TOOL_CONTENT_INTERACTION);
+            TOOL_ORDER_VOLUME, TOOL_PAYMENT_RATE, TOOL_CONTENT_INTERACTION, TOOL_BASELINE_WINDOW);
 
     /** L3 高危动作（V1 一律人工审批；不在 allowlist，Agent 无法执行） */
     private static final Set<String> L3_TOOLS = Set.of("service.restart", "dlq.redeliver", "order.refund");

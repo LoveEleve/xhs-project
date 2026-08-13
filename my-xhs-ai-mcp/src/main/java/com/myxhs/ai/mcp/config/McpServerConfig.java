@@ -1,6 +1,7 @@
 package com.myxhs.ai.mcp.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.myxhs.ai.tools.BaselineWindowTool;
 import com.myxhs.ai.tools.ContentInteractionTool;
 import com.myxhs.ai.tools.OrderMetricsTool;
 import com.myxhs.ai.tools.PaymentMetricsTool;
@@ -60,7 +61,8 @@ public class McpServerConfig {
                                        McpJsonMapper jsonMapper,
                                        OrderMetricsTool orderMetricsTool,
                                        PaymentMetricsTool paymentMetricsTool,
-                                       ContentInteractionTool contentInteractionTool) {
+                                       ContentInteractionTool contentInteractionTool,
+                                       BaselineWindowTool baselineWindowTool) {
         return McpServer.sync(transport)
                 .serverInfo("my-xhs-ai-mcp", "1.0.0")
                 .tools(
@@ -72,7 +74,10 @@ public class McpServerConfig {
                                 paymentMetricsTool::paymentSuccessRate),
                         toolSpec(jsonMapper, "content.interaction",
                                 "查询内容互动量（口径：点赞/收藏/评论/分享，曝光单列）",
-                                contentInteractionTool::contentInteraction)
+                                contentInteractionTool::contentInteraction),
+                        toolSpec(jsonMapper, "baseline.window",
+                                "计算对比基线窗口（上一同长窗口，确定性，模型不得自行推算）",
+                                baselineWindowTool::baselineWindow)
                 )
                 .build();
     }

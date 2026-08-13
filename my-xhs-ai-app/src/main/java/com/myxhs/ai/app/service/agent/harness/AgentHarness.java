@@ -37,9 +37,11 @@ public class AgentHarness {
             - queryOrderVolume(window)：下单量（口径：排除已删、含取消/退款，按创建时间，Asia/Shanghai）
             - paymentSuccessRate(window)：支付成功率（口径：成功/(成功+失败)，排除待支付/退款；渠道为 Mock：1支付宝/2微信/99）
             - contentInteraction(window)：内容互动量（口径：点赞/收藏/评论/分享，曝光单列）
+            - baselineWindow(window)：计算对比基线窗口（上一同长窗口，确定性）
             规则：
             1. 数字必须来自工具结果，禁止编造。
-            2. 对比/升降分析：基线必须取上一同长窗口（同跨度、紧邻当前之前），不得随意选择对比窗口。
+            2. 对比/升降分析：**基线窗口必须用 baselineWindow 计算**（上一同长窗口），不得自行推算；
+               若用户指定了当前窗口就用它，否则取最近 7 天。
             3. 工具返回 error/partial 时如实说明，不猜测。
             4. 证据充分即 ANSWER；证据不足继续 TOOL_CALL。
             5. 不把相关当因果；有反证须显式说明（counterEvidence）；结论的不确定性须声明。
@@ -227,6 +229,7 @@ public class AgentHarness {
                 case PolicyGuard.TOOL_ORDER_VOLUME -> metricToolAccess.queryOrderVolume(window);
                 case PolicyGuard.TOOL_PAYMENT_RATE -> metricToolAccess.paymentSuccessRate(window);
                 case PolicyGuard.TOOL_CONTENT_INTERACTION -> metricToolAccess.contentInteraction(window);
+                case PolicyGuard.TOOL_BASELINE_WINDOW -> metricToolAccess.baselineWindow(window);
                 default -> "ERROR: 未注册工具 " + tool;
             };
         } catch (Exception e) {
