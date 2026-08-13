@@ -26,6 +26,13 @@ myxhs:
     tools:
       # 指标工具访问：mcp（默认，经 my-xhs-ai-mcp 取数）/ direct（直连 MySQL，测试/降级）
       mode: mcp
+    agent:
+      # D4 受限诊断 Agent：预算三重封顶（设计 §3）+ 成本单价 + 非法输出容忍次数
+      max-steps: 15
+      max-tokens: 30000
+      max-cost: 1.0
+      price-per-1k-tokens: 0.002
+      max-invalid-answers: 2
     rag:
       es-url: ${MYXHS_ES_URL:http://21.130.247.89:19200}
       es-user: ${MYXHS_ES_USER:elastic}

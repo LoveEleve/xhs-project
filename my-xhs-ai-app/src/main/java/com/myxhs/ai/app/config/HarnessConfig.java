@@ -1,0 +1,29 @@
+package com.myxhs.ai.app.config;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.myxhs.ai.app.service.agent.harness.AgentBudget;
+import com.myxhs.ai.app.service.agent.harness.AgentHarness;
+import com.myxhs.ai.tools.MetricToolAccess;
+import dev.langchain4j.model.chat.ChatModel;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+
+/**
+ * D4 Agent Harness 装配：预算默认值/成本单价/非法输出容忍次数均可配置。
+ */
+@Configuration
+public class HarnessConfig {
+
+    @Bean
+    public AgentHarness agentHarness(ChatModel chatModel, MetricToolAccess metricToolAccess,
+                                     ObjectMapper mapper,
+                                     @Value("${myxhs.ai.agent.max-steps:15}") int maxSteps,
+                                     @Value("${myxhs.ai.agent.max-tokens:30000}") long maxTokens,
+                                     @Value("${myxhs.ai.agent.max-cost:1.0}") double maxCost,
+                                     @Value("${myxhs.ai.agent.price-per-1k-tokens:0.002}") double pricePer1k,
+                                     @Value("${myxhs.ai.agent.max-invalid-answers:2}") int maxInvalidAnswers) {
+        return new AgentHarness(chatModel, metricToolAccess, mapper,
+                new AgentBudget(maxSteps, maxTokens, maxCost), pricePer1k, maxInvalidAnswers);
+    }
+}
