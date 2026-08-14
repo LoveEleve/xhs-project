@@ -60,6 +60,7 @@ class AgentHarnessTest {
     private static final class FakeDecisionModel implements ChatModel {
         private final Function<List<String>, String> responder;
         private final AtomicInteger calls = new AtomicInteger();
+        private volatile List<String> lastTexts;
 
         FakeDecisionModel(Function<List<String>, String> responder) {
             this.responder = responder;
@@ -68,8 +69,8 @@ class AgentHarnessTest {
         @Override
         public ChatResponse chat(ChatRequest request) {
             calls.incrementAndGet();
-            List<String> texts = request.messages().stream().map(AgentHarnessTest::messageText).toList();
-            String json = responder.apply(texts);
+            lastTexts = request.messages().stream().map(AgentHarnessTest::messageText).toList();
+            String json = responder.apply(lastTexts);
             if (json.startsWith("THROW")) {
                 throw new RuntimeException("模型服务不可用");
             }
@@ -78,6 +79,10 @@ class AgentHarnessTest {
                     .metadata(ChatResponseMetadata.builder()
                             .tokenUsage(new TokenUsage(10, 5)).modelName("fake").build())
                     .build();
+        }
+
+        List<String> lastTexts() {
+            return lastTexts;
         }
     }
 
@@ -175,6 +180,48 @@ class AgentHarnessTest {
         assertEquals(RunStatus.SUCCEEDED, run.status());
         assertEquals(3, run.evidenceChain().size());
         assertTrue(run.finalAnswer().contains("baselineWindow"));
+    }
+
+    @Test
+    void 注入确定性当前窗口_显式指定优先() {
+        FakeDecisionModel model = new FakeDecisionModel(texts -> {
+            String ev = lastEvId(texts);
+            if (ev == null) {
+                return toolCallJson("queryOrderVolume", "2026-08-01~2026-08-07");
+            }
+            return answerJson("ok", ev);
+        });
+        AgentHarness h = new AgentHarness(model, new FakeMetricTools(), MAPPER,
+                AgentBudget.defaults(), 0.002, 2);
+
+        h.run("为什么 2026-08-10 到 2026-08-13 订单量下降了");
+
+        String injected = model.lastTexts().stream()
+                .filter(t -> t.contains("当前窗口已确定 ="))
+                .findFirst().orElseThrow();
+        assertTrue(injected.contains("2026-08-10~2026-08-13"), "应注入用户显式窗口: " + injected);
+    }
+
+    @Test
+    void 注入确定性当前窗口_无指定取最近7天() {
+        FakeDecisionModel model = new FakeDecisionModel(texts -> {
+            String ev = lastEvId(texts);
+            if (ev == null) {
+                return toolCallJson("queryOrderVolume", "2026-08-01~2026-08-07");
+            }
+            return answerJson("ok", ev);
+        });
+        AgentHarness h = new AgentHarness(model, new FakeMetricTools(), MAPPER,
+                AgentBudget.defaults(), 0.002, 2);
+
+        h.run("为什么订单量下降了");
+
+        String injected = model.lastTexts().stream()
+                .filter(t -> t.contains("当前窗口已确定 ="))
+                .findFirst().orElseThrow();
+        String expected = java.time.LocalDate.now(com.myxhs.ai.app.service.QueryWindowExtractor.zone())
+                .minusDays(6) + "~" + java.time.LocalDate.now(com.myxhs.ai.app.service.QueryWindowExtractor.zone());
+        assertTrue(injected.contains(expected), "应注入最近 7 天窗口: " + injected);
     }
 
     @Test

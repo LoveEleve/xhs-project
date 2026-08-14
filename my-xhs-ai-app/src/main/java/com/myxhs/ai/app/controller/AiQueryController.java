@@ -12,14 +12,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.time.DayOfWeek;
-import java.time.LocalDate;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.time.temporal.TemporalAdjusters;
 import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * 意图路由端点（D1）：固定指标 → 确定性工具直取（不走 LLM）；开放问题 → Agent。
@@ -30,10 +23,6 @@ import java.util.regex.Pattern;
 public class AiQueryController {
 
     private static final Logger log = LoggerFactory.getLogger(AiQueryController.class);
-
-    private static final DateTimeFormatter FMT = DateTimeFormatter.ISO_LOCAL_DATE;
-    private static final Pattern DATE_PATTERN = Pattern.compile("(\\d{4}-\\d{2}-\\d{2})");
-    private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
     private final IntentRouter intentRouter;
     private final MetricToolAccess metricToolAccess;
@@ -113,35 +102,9 @@ public class AiQueryController {
     /**
      * 从消息提取时间窗 "yyyy-MM-dd~yyyy-MM-dd"（半开）。
      * 支持：两个日期（任意分隔）/ 单个日期（当日）/ 今天 / 昨天 / 本周 / 上周；无则默认最近 7 天。
-     * 时区固定 Asia/Shanghai。
+     * 时区固定 Asia/Shanghai。规则单一事实源 = QueryWindowExtractor（与 AgentHarness 共用）。
      */
     static String extractWindow(String message) {
-        LocalDate today = LocalDate.now(ZONE);
-        if (message == null) {
-            return today.minusDays(6) + "~" + today;
-        }
-        Matcher m = DATE_PATTERN.matcher(message);
-        if (m.find()) {
-            String first = m.group(1);
-            if (m.find()) {
-                return first + "~" + m.group(1);
-            }
-            return first + "~" + first; // 单日期 → 当日
-        }
-        if (message.contains("上周")) {
-            LocalDate monday = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)).minusWeeks(1);
-            return monday + "~" + monday.plusDays(6);
-        }
-        if (message.contains("本周")) {
-            LocalDate monday = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
-            return monday + "~" + today;
-        }
-        if (message.contains("昨天")) {
-            return today.minusDays(1) + "~" + today.minusDays(1);
-        }
-        if (message.contains("今天")) {
-            return today + "~" + today;
-        }
-        return today.minusDays(6) + "~" + today;
+        return com.myxhs.ai.app.service.QueryWindowExtractor.extract(message);
     }
 }

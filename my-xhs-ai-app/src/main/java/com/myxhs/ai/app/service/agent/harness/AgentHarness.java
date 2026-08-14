@@ -1,6 +1,7 @@
 package com.myxhs.ai.app.service.agent.harness;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.myxhs.ai.app.service.QueryWindowExtractor;
 import com.myxhs.ai.tools.MetricToolAccess;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
@@ -40,8 +41,8 @@ public class AgentHarness {
             - baselineWindow(window)：计算对比基线窗口（上一同长窗口，确定性）
             规则：
             1. 数字必须来自工具结果，禁止编造。
-            2. 对比/升降分析：**基线窗口必须用 baselineWindow 计算**（上一同长窗口），不得自行推算；
-               若用户指定了当前窗口就用它，否则取最近 7 天。
+            2. 对比/升降分析：**当前窗口以系统注入的时间窗规则为准**（见消息中的"当前窗口已确定"）；
+               基线窗口必须用 baselineWindow 工具计算（上一同长窗口），不得自行推算。
             3. 工具返回 error/partial 时如实说明，不猜测。
             4. 证据充分即 ANSWER；证据不足继续 TOOL_CALL。
             5. 不把相关当因果；有反证须显式说明（counterEvidence）；结论的不确定性须声明。
@@ -79,10 +80,16 @@ public class AgentHarness {
         LoopDetector loop = new LoopDetector();
         List<ChatMessage> messages = new ArrayList<>();
         messages.add(SystemMessage.from(SYSTEM_PROMPT));
+        // 确定性当前窗口注入（QueryWindowExtractor 单一事实源）：消除"最近 7 天"由模型自选的软约束
+        String currentWindow = QueryWindowExtractor.extract(query);
+        messages.add(SystemMessage.from("时间窗规则（确定性，Asia/Shanghai）：用户显式指定优先，否则取最近 7 天。"
+                + "当前窗口已确定 = " + currentWindow
+                + "；对比基线必须用 baselineWindow 工具计算（上一同长窗口），不得自行推算。"));
         messages.add(UserMessage.from("用户问题：" + query));
         int invalidOutputs = 0;
 
-        log.info("[harness] run={} start query={} budget={}", run.runId(), query, budget);
+        log.info("[harness] run={} start query={} budget={} currentWindow={}",
+                run.runId(), query, budget, currentWindow);
 
         while (true) {
             TerminationReason pre = ctrl.checkBeforeStep();
