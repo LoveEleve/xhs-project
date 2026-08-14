@@ -9,7 +9,7 @@
 ## 0. 项目一句话与当前状态
 
 > 给 my-xhs 电商平台建**运营/运维诊断 AI Agent**：查订单/支付/内容/系统指标，多步归因，带证据链、可追溯、不越权、不编造。
-> **当前状态：D1-D4 核心 + M5（Durable）+ M6（评测/可观测/门禁）+ M7（安全实证）+ M8-1/2（容器化/故障演练）已完成**（155 测试全绿）。生产路线图 M5-M9 已交付过半。
+> **当前状态：D1-D4 核心 + M5（Durable）+ M6（评测/可观测/门禁）+ M7（安全实证）+ M8-1/2（容器化/故障演练）已完成**（169 个 @Test 方法全绿）。生产路线图 M5-M9 已交付过半。
 > **下一步**：M8-3 gateway 接入（外部依赖）、M8-4 UI 薄壳、CI 门禁接入；M9 深化。
 
 ---
@@ -84,6 +84,7 @@
 | `GET /api/ai/health` | 健康 |
 | `POST /api/ai/chat` `/chat/stream` | 对话/SSE（D1 保留）|
 | `POST /api/ai/agent` | AiServices 旧 agent 路径（D1 保留）|
+| `POST /api/ai/mcp/check` | MCP 全链路验证（app→桥→mcp→真库）|
 | `POST /api/ai/query` | 主路由（metric→确定性 / agent→调查）|
 | `POST /api/ai/agent/run` | **同步 Harness 端点**（D4）|
 | `POST /api/ai/agent/run/stream` | **同步 SSE**（D4，fixed 20 并发）|
@@ -154,7 +155,7 @@
 - **M8-2 故障演练**：MCP 不可用（ERROR 回填+零编造+不确定性）、模型不可用（FAILED 明确降级）实测通过
 
 ### 测试
-**155 测试全绿**（tools 39 + app 106 + mcp 10；169 个 @Test 方法）。真库集成测试需 `.env.local` 注入（CI 无凭据自动跳过/排除）。**评测测试（EvalSmokeRunTest/EvalGateRunTest）@Tag(eval-gate) 默认排除，-Peval-gate 才跑**。
+**169 个 @Test 方法全绿**（tools 39 + app 118 + mcp 12）。surefire 运行数略少（评测测试 @Tag(eval-gate) 默认排除、真库集成测试无凭据自动跳过）——**测试数随演进变化，以最新 `mvn test` 为准，不写死**。真库集成测试需 `.env.local` 注入（CI 无凭据自动跳过/排除）。**评测测试（EvalSmokeRunTest/EvalGateRunTest）@Tag(eval-gate) 默认排除，-Peval-gate 才跑**。
 
 ---
 
@@ -259,7 +260,7 @@
 cd /data/workspace/my-xhs
 set -a; source .env.local; set +a    # 注入全部凭据（gitignored）
 
-# 全量测试（155，不含真库评测）
+# 全量测试（不含真库评测；数字以输出为准）
 mvn test -pl my-xhs-ai-tools,my-xhs-ai-app,my-xhs-ai-mcp
 
 # 真库评测门禁（需真 key，20-40 分钟；EvalSmokeRunTest+EvalGateRunTest）
