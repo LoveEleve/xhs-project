@@ -13,6 +13,14 @@ spring:
     hikari:
       maximum-pool-size: 5
 
+  # M5 Run Store：AI 自有库（my_xhs_ai，写账号 myxhs_ai_rw，与业务只读账号物理隔离）
+  ai-datasource:
+    url: ${MYXHS_AI_DB_URL:jdbc:mysql://21.130.247.89:3306/my_xhs_ai?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai}
+    username: ${MYXHS_AI_DB_USER:myxhs_ai_rw}
+    password: ${MYXHS_AI_DB_PASSWORD:}
+    hikari:
+      maximum-pool-size: 3
+
 myxhs:
   ai:
     teamo:

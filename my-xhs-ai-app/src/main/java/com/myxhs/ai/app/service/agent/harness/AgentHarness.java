@@ -2,6 +2,7 @@ package com.myxhs.ai.app.service.agent.harness;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.ai.app.service.QueryWindowExtractor;
+import com.myxhs.ai.app.service.store.RunStore;
 import com.myxhs.ai.tools.MetricToolAccess;
 import com.myxhs.ai.tools.ObsToolAccess;
 import dev.langchain4j.data.message.AiMessage;
@@ -74,9 +75,18 @@ public class AgentHarness {
     private final AgentBudget defaultBudget;
     private final double pricePer1kTokens;
     private final int maxInvalidAnswers;
+    private final RunStore store;
+    private final ObjectMapper om;
 
     public AgentHarness(ChatModel chatModel, MetricToolAccess metricToolAccess, ObsToolAccess obsToolAccess,
                         ObjectMapper mapper, AgentBudget defaultBudget, double pricePer1kTokens, int maxInvalidAnswers) {
+        this(chatModel, metricToolAccess, obsToolAccess, mapper, defaultBudget, pricePer1kTokens, maxInvalidAnswers, null);
+    }
+
+    /** 带 RunStore 的构造（M5 Durable：run/step 落库；store=null 不持久化，兼容测试） */
+    public AgentHarness(ChatModel chatModel, MetricToolAccess metricToolAccess, ObsToolAccess obsToolAccess,
+                        ObjectMapper mapper, AgentBudget defaultBudget, double pricePer1kTokens, int maxInvalidAnswers,
+                        RunStore store) {
         this.chatModel = chatModel;
         this.metricToolAccess = metricToolAccess;
         this.obsToolAccess = obsToolAccess;
@@ -84,6 +94,8 @@ public class AgentHarness {
         this.defaultBudget = defaultBudget;
         this.pricePer1kTokens = pricePer1kTokens;
         this.maxInvalidAnswers = maxInvalidAnswers;
+        this.store = store;
+        this.om = mapper;
     }
 
     public AgentRun run(String query) {
@@ -103,6 +115,16 @@ public class AgentHarness {
     public AgentRun run(String query, AgentBudget budget, java.util.function.Consumer<HarnessEvent> listener) {
         AgentRun run = new AgentRun("run_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12),
                 query, budget);
+        if (store != null) {
+            try {
+                store.createRun(run.runId(), "anonymous", null, query,
+                        "{\"maxSteps\":" + budget.maxSteps() + ",\"maxTokens\":" + budget.maxTokens()
+                                + ",\"maxCost\":" + budget.maxCost() + "}",
+                        versionsJson());
+            } catch (Exception e) {
+                log.warn("[harness] run={} 创建 run 落库失败: {}", run.runId(), e.getMessage());
+            }
+        }
         LoopCtrl ctrl = new LoopCtrl(budget);
         LoopDetector loop = new LoopDetector();
         List<ChatMessage> messages = new ArrayList<>();
@@ -132,6 +154,7 @@ public class AgentHarness {
                 run.terminate(TerminationReason.MODEL_UNAVAILABLE, "模型暂不可用，请稍后重试（调查未完成）");
                 emit(listener, new HarnessEvent(run.runId(), "FAILED", ctrl.steps(), null, null, null,
                         TerminationReason.MODEL_UNAVAILABLE.name(), run.finalAnswer()));
+                storeRunFinish(run, ctrl);
                 return run;
             }
             int tokens = tokensOf(response);
@@ -140,7 +163,7 @@ public class AgentHarness {
 
             AgentDecision decision = codec.parse(response.aiMessage().text());
             if (decision == null) {
-                run.recordStep(AgentStep.think(ctrl.steps(), null, tokens));
+                recordAndStore(run, AgentStep.think(ctrl.steps(), null, tokens), messages);
                 messages.add(UserMessage.from(AgentDecisionCodec.malformedOutputMessage()));
                 log.warn("[harness] run={} 模型输出非 JSON，反馈重想", run.runId());
                 emit(listener, new HarnessEvent(run.runId(), "THINK", ctrl.steps(), null, null, null, null,
@@ -151,7 +174,7 @@ public class AgentHarness {
                 }
                 continue;
             }
-            run.recordStep(AgentStep.think(ctrl.steps(), decision, tokens));
+            recordAndStore(run, AgentStep.think(ctrl.steps(), decision, tokens), messages);
             messages.add(AiMessage.from(response.aiMessage().text()));
             emit(listener, new HarnessEvent(run.runId(), "THINK", ctrl.steps(), decision.tool(),
                     decision.args() == null ? null : decision.args().get("window"), null, null,
@@ -164,7 +187,7 @@ public class AgentHarness {
                 PolicyDecision pd = policyGuard.evaluate(decision.tool(), decision.args());
                 if (!pd.allowed()) {
                     ctrl.recordPolicyDenied();
-                    run.recordStep(AgentStep.policyDenied(ctrl.steps(), decision, pd.reason()));
+                    recordAndStore(run, AgentStep.policyDenied(ctrl.steps(), decision, pd.reason()), messages);
                     String note = pd.requiresApproval()
                             ? pd.reason() + "（L3 需人工审批，V1 不可执行）" : pd.reason();
                     messages.add(UserMessage.from(AgentDecisionCodec.feedback(decision, note)));
@@ -183,7 +206,7 @@ public class AgentHarness {
                 String evidenceId = run.registry().register(decision.tool(), decision.args(), result);
                 String window = decision.args() == null ? null : decision.args().get("window");
                 run.evidenceChain().add(evidenceId, decision.tool(), window, result);
-                run.recordStep(AgentStep.tool(ctrl.steps(), decision, result, List.of(evidenceId)));
+                recordAndStore(run, AgentStep.tool(ctrl.steps(), decision, result, List.of(evidenceId)), messages);
                 messages.add(UserMessage.from("工具 " + decision.tool() + " 结果（证据 id=" + evidenceId + "）：" + result));
                 log.info("[harness] run={} tool={} window={} ev={} result={}", run.runId(),
                         decision.tool(), window, evidenceId, result);
@@ -200,7 +223,7 @@ public class AgentHarness {
                 // 存在性校验（确定性兜底，不靠模型自觉）
                 String invalid = validateAnswer(run, decision);
                 if (invalid == null) {
-                    run.recordStep(AgentStep.answer(ctrl.steps(), decision));
+                    recordAndStore(run, AgentStep.answer(ctrl.steps(), decision), messages);
                     String answer = composeAnswer(decision, run);
                     run.terminate(TerminationReason.COMPLETED, answer);
                     log.info("[harness] run={} COMPLETED ev={} answer={}", run.runId(),
@@ -209,10 +232,11 @@ public class AgentHarness {
                             decision.evidenceRefs(), null, decision.conclusion()));
                     emit(listener, new HarnessEvent(run.runId(), "COMPLETED", ctrl.steps(), null, null,
                             decision.evidenceRefs(), TerminationReason.COMPLETED.name(), answer));
+                    storeRunFinish(run, ctrl);
                     return run;
                 }
                 invalidOutputs++;
-                run.recordStep(AgentStep.answer(ctrl.steps(), decision));
+                recordAndStore(run, AgentStep.answer(ctrl.steps(), decision), messages);
                 messages.add(UserMessage.from(AgentDecisionCodec.feedback(decision, invalid)));
                 log.warn("[harness] run={} 证据校验失败: {}", run.runId(), invalid);
                 emit(listener, new HarnessEvent(run.runId(), "ANSWER", ctrl.steps(), null, null,
@@ -236,6 +260,52 @@ public class AgentHarness {
                 }
             }
         }
+    }
+
+    /** 落 step 记录 + 可选持久化（messages 快照 checkpoint）；持久化失败不影响执行 */
+    private void recordAndStore(AgentRun run, AgentStep step, List<ChatMessage> messages) {
+        run.recordStep(step);
+        if (store != null) {
+            try {
+                store.saveStep(run.runId(), step, snapshot(messages));
+            } catch (Exception e) {
+                log.warn("[harness] run={} step 落库失败: {}", run.runId(), e.getMessage());
+            }
+        }
+    }
+
+    /** 记录最终状态（COMPLETED/PARTIAL/FAILED 共用）；store 为空或失败不阻塞 */
+    private void storeRunFinish(AgentRun run, LoopCtrl ctrl) {
+        if (store == null) {
+            return;
+        }
+        try {
+            store.updateRunStatus(run.runId(), run.status().name(),
+                    run.terminationReason() == null ? null : run.terminationReason().name(),
+                    ctrl.tokens(), 0, ctrl.cost());
+        } catch (Exception e) {
+            log.warn("[harness] run={} 终态落库失败: {}", run.runId(), e.getMessage());
+        }
+    }
+
+    /** LLM 对话上下文快照（{type,text} 列表，恢复时按 type 重建） */
+    private String snapshot(List<ChatMessage> messages) {
+        try {
+            List<Map<String, String>> list = messages.stream().map(m -> {
+                String text = m instanceof AiMessage a ? a.text()
+                        : m instanceof UserMessage u ? u.singleText()
+                        : m instanceof SystemMessage s ? s.text() : "";
+                return Map.of("type", m.type().name(), "text", text == null ? "" : text);
+            }).toList();
+            return om.writeValueAsString(list);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** model/prompt/tool 版本（M5 版本追溯；prompt 版本化抽文件待 M6） */
+    private static String versionsJson() {
+        return "{\"model\":\"deepseek-v4-flash\",\"prompt\":\"SYSTEM_PROMPT.v1\",\"tools\":13}";
     }
 
     private static void emit(java.util.function.Consumer<HarnessEvent> listener, HarnessEvent event) {
@@ -351,6 +421,7 @@ public class AgentHarness {
         log.info("[harness] run={} {} answer={}", run.runId(), reason, answer);
         emit(listener, new HarnessEvent(run.runId(), "PARTIAL", ctrl.steps(), null, null, null,
                 reason.name(), answer));
+        storeRunFinish(run, ctrl);
         return run;
     }
 

@@ -1,6 +1,8 @@
 package com.myxhs.ai.app.service.agent.harness;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.myxhs.ai.app.service.store.JdbcRunStore;
+import com.myxhs.ai.app.service.store.RunStore;
 import com.myxhs.ai.tools.MetricToolAccess;
 import com.myxhs.ai.tools.ObsToolAccess;
 import dev.langchain4j.data.message.AiMessage;
@@ -290,6 +292,42 @@ class AgentHarnessTest {
         PolicyDecision ok = new PolicyGuard().evaluate("mqConsumerLag",
                 Map.of("group", "cart-sync-consumer-group"));
         assertEquals(true, ok.allowed());
+    }
+
+    @Test
+    void 落库集成_run和step持久化() {
+        var ds = new org.springframework.jdbc.datasource.DriverManagerDataSource(
+                "jdbc:h2:mem:harnessstore;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
+        var jdbc = new org.springframework.jdbc.core.JdbcTemplate(ds);
+        jdbc.execute("CREATE TABLE IF NOT EXISTS ai_run (run_id VARCHAR(32) PRIMARY KEY, user_id VARCHAR(64),"
+                + " session_id VARCHAR(64), query TEXT NOT NULL, status VARCHAR(16) NOT NULL,"
+                + " termination_reason VARCHAR(32), budget_json TEXT, versions_json TEXT, tokens_in BIGINT DEFAULT 0,"
+                + " tokens_out BIGINT DEFAULT 0, cost_est DOUBLE DEFAULT 0, started_at DATETIME(3), ended_at DATETIME(3))");
+        jdbc.execute("CREATE TABLE IF NOT EXISTS ai_step (id BIGINT AUTO_INCREMENT PRIMARY KEY, run_id VARCHAR(32),"
+                + " step_no INT, state VARCHAR(24), decision_json TEXT, tool_result MEDIUMTEXT,"
+                + " evidence_ids VARCHAR(512), messages_snapshot MEDIUMTEXT, created_at DATETIME(3))");
+        RunStore store = new JdbcRunStore(jdbc, MAPPER);
+        AgentHarness h = new AgentHarness(new FakeDecisionModel(texts -> {
+            String ev = lastEvId(texts);
+            if (ev == null) {
+                return toolCallJson("queryOrderVolume", "2026-08-01~2026-08-07");
+            }
+            return answerJson("下单量为61", ev);
+        }), new FakeMetricTools(), new FakeObsTools(), MAPPER, AgentBudget.defaults(), 0.002, 2, store);
+
+        AgentRun run = h.run("为什么订单量下降了");
+
+        var rec = store.loadRun(run.runId()).orElseThrow();
+        assertEquals("SUCCEEDED", rec.status());
+        assertEquals("COMPLETED", rec.terminationReason());
+        assertTrue(rec.versionsJson().contains("deepseek-v4-flash"), rec.versionsJson());
+        assertTrue(rec.tokensIn() > 0, "应累计 token: " + rec.tokensIn());
+
+        var steps = store.loadSteps(run.runId());
+        assertTrue(steps.size() >= 3, "应有 THINK/TOOL/ANSWER 步骤: " + steps.size());
+        assertEquals("TOOL", steps.stream().filter(s -> "TOOL".equals(s.state())).findFirst().orElseThrow().state());
+        var cp = store.lastCheckpoint(run.runId()).orElseThrow();
+        assertTrue(cp.messagesSnapshot().contains("用户问题"), "checkpoint 应含对话快照");
     }
 
     @Test

@@ -41,27 +41,28 @@ class MetricRealDbIntegrationTest {
     }
 
     @Test
-    void 真实库_order_query_volume_61() throws Exception {
+    void 真实库_order_query_volume_46() throws Exception {
+        // 基线复核 2026-08-14：对方重部署后 08-01~08-07 16 节点全量 = 46（此前 61）；数据再变时按实际 SQL 更新
         OrderMetricsTool tool = new OrderMetricsTool(jdbc, "");
         String raw = tool.queryOrderVolume("2026-08-01~2026-08-07");
         System.out.println("[real-order] " + raw);
         JsonNode node = om.readTree(raw);
         assertTrue(node.path("status").asText().equals("ok") || node.path("status").asText().equals("partial"),
                 "status 应为 ok/partial: " + raw);
-        assertTrue(node.path("value").asLong() == 61L,
-                "value 应为 61（16 节点全量），实际: " + raw);
+        assertTrue(node.path("value").asLong() == 46L,
+                "value 应为 46（16 节点全量），实际: " + raw);
     }
 
     @Test
-    void 真实库_payment_success_rate_05() throws Exception {
+    void 真实库_payment_success_rate_00() throws Exception {
+        // 基线复核 2026-08-14：08-10~08-13 窗口已无已决支付（0/0，rate=0）——此前 4/4=0.5
         PaymentMetricsTool tool = new PaymentMetricsTool(jdbc);
         String raw = tool.paymentSuccessRate("2026-08-10~2026-08-13");
         System.out.println("[real-payment] " + raw);
         JsonNode node = om.readTree(raw);
         assertTrue(node.path("status").asText().equals("ok"), "status 应为 ok: " + raw);
-        assertTrue(node.path("success").asLong() == 4L, "success 应为 4: " + raw);
-        assertTrue(node.path("fail").asLong() == 4L, "fail 应为 4: " + raw);
-        assertTrue(Math.abs(node.path("value").asDouble() - 0.5) < 1e-9, "value 应为 0.5: " + raw);
+        assertTrue(node.path("success").asLong() == 0L, "success 应为 0: " + raw);
+        assertTrue(node.path("fail").asLong() == 0L, "fail 应为 0: " + raw);
     }
 
     @Test
