@@ -40,4 +40,8 @@ public class ToolResultRegistry {
     public int size() {
         return records.size();
     }
+
+    public java.util.Collection<ToolCallRecord> records() {
+        return records.values();
+    }
 }

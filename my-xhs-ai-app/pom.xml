@@ -58,6 +58,11 @@
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-open-ai</artifactId>
         </dependency>
+        <!-- YAML 评测集（M6；版本由 Boot BOM 管理） -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+        </dependency>
 
         <!-- 共享指标工具（D2：tools 模块）-->
         <dependency>
