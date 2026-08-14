@@ -44,7 +44,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "spring.datasource.password=",
         "myxhs.ai.tools.mode=direct",
         "MCP_API_KEY=",
-        "myxhs.ai.teamo.api-key=test-key",
+        "myxhs.ai.llm.api-key=test-key",
         "spring.ai-datasource.url=jdbc:h2:mem:runctlai;MODE=MySQL;DB_CLOSE_DELAY=-1",
         "spring.ai-datasource.username=sa",
         "spring.ai-datasource.password=sa"
