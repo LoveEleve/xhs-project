@@ -219,3 +219,120 @@
 3. **M9 增一项**：模型分层 routing（省成本）
 4. **原则确认**：我们的 Workflow/Agent 分层、ground truth、停止条件、Excessive Agency 防护与行业主流实践一致——架构方向正确，缺的是工程化（评测/可观测/部署），即本规划 M5-M8
 
+### 10.5 Langfuse（LLM 可观测/Prompt 管理/评测一体化）对照
+
+| 能力 | 参考点 | 本项目对照 |
+|------|--------|-----------|
+| 全链路 trace（LLM+检索+工具）、会话/用户追踪 | OTel 基础、自托管开源 | ➕ **M6 选型候选**：先自研 run 级指标（token/成本已落库），后段 PoC Langfuse（OTLP 接入防 SDK 锁定） |
+| Prompt 版本管理 + label 部署 + A/B | 提示词全生命周期 | ➕ **M5 前置**：prompt 抽资源文件带版本号落 run 记录；Langfuse 引入后原生管理 |
+| 评测：datasets/experiments/LLM-as-judge/人工标注队列 | 四类评测方法 | ➕ **M6 评测设计**：代码断言为主（确定性）+ LLM-judge 辅助（开放判断）+ 人工基线（标注队列模式） |
+| 生产 trace 回灌评测集 | 生产→数据集反馈闭环 | ➕ **M6 加**：生产 run 定期抽样回灌评测集 |
+| 成本/用量按用户/会话追踪 | FinOps for LLM | ➕ **M6 成本指标** + M9 模型分层路由 |
+
+### 10.6 Temporal（Durable Execution for AI）对照
+
+| 观点 | 参考点 | 本项目对照 |
+|------|--------|-----------|
+| 长运行会话/状态持久/HITL/自动重试/可测试/可观察 | Durable 六大价值 | ✅ 我们 M5 自研覆盖其子集（单服务、20 并发、只读工具，自研成本低） |
+| "所有 LLM 用例本质是 workflow" | 用例观 | ⚠️ 部分同意：我们的固定查询=workflow（已走确定性路径），归因=Agent——分层已实现 |
+| 与 Langfuse/Braintrust 生态集成 | 可观测一体化 | ➕ 若 M5 后 PoC Temporal，评估其可观测集成 |
+
+**决策点（M5 后段，对照 ADR-002 模式）**：自研 Run Store（v1，Harness 可重入改造小）→ 后段 PoC Temporal Java SDK（同一场景对照）→ 价值显著才引入，不默认上重平台（PLAN §4"故障恢复实验后决策"）。
+
+---
+
+## 11. 广度扩展：生产级完整维度图（M5-M8 之外的新增维度）
+
+> 在 §1 目标全景基础上，补齐生产级系统常被忽视的维度。
+
+### 11.1 可观测平台层（新维度）
+- 现状：应用日志 + run 内存态；无 LLM trace/成本/质量 dashboard
+- 目标：**LLM 调用全链路可视**（model/tool/retrieval/policy + token/成本/延迟/质量）
+- 方案：M6 先自研 run 级指标（已有 token/成本落库基础）→ 后段 Langfuse PoC（OTLP 接入，防 SDK 锁定）
+- 验收：dashboard 展示任务完成率/幻觉率/成本/延迟；超阈值告警
+
+### 11.2 Prompt/模型/策略治理层（新维度）
+- 现状：prompt 在代码常量；无版本化/无灰度切换
+- 目标：prompt/模型/工具集/策略版本可追溯、可 A/B、可回滚（PLAN DoD"代码/模型/Prompt/数据集/工具/索引/策略版本可追溯"）
+- 方案：M5 抽 prompt 到资源文件带版本号（落 run 记录）；M6 后段 Langfuse prompt management 或自研版本表；bundle=model+prompt+tool+policy 版本捆绑（M8 回滚单元）
+- 验收：run 记录可还原当时全版本；prompt A/B 可灰度
+
+### 11.3 会话与用户层（新维度）
+- 现状：无会话概念（单轮 query）；无用户归属
+- 目标：多轮会话持久化 + 用户级审计/成本归属（Langfuse sessions/users 参考）
+- 方案：M5 run 表加 userId/sessionId；多轮会话=复用 run 上下文（Session Store）；审计按用户
+- 验收：每 run 可归属用户与会话；成本按用户可查
+
+### 11.4 成本治理层（新维度，OWASP LLM10 深化）
+- 现状：run 级 cost 估算（单价 0.002/1k 待校准）+ max-cost 封顶
+- 目标：场景级预算 + 月度上限 + 成本告警 + 模型分层省成本 + 成本趋势 dashboard
+- 方案：M6 成本指标进 dashboard（按场景/用户）；M9 模型分层 routing（简单查询走小模型）
+- 验收：成本可查可预警；超限自动降级
+
+### 11.5 数据保留与合规层（新维度）
+- 现状：无保留策略；无 PII 擦除机制
+- 目标：run/会话数据 TTL + PII 擦除 + 合规评估（PLAN §9 EU AI Act 按角色/风险分类）
+- 方案：M7 Run Store TTL 清理作业 + PII 规则集（日志/trace 脱敏）；合规评估文档
+- 验收：数据保留策略生效；PII 泄漏=0；合规评估有结论
+
+### 11.6 容量与滥用防护层（新维度，OWASP LLM10 深化）
+- 现状：SSE 线程池 20 上限（已做）；无请求级限流/配额
+- 目标：按用户/会话限流配额（LLM 调用昂贵，防滥用/DoS）+ 容量规划
+- 方案：M8 gateway 层限流（复用现有 gateway 限流能力）+ 应用层配额（maxCost/用户）
+- 验收：超配额请求 429 + 审计；容量压测有数据
+
+---
+
+## 12. 深度扩展：各里程碑细化
+
+### 12.1 M5 细化（Run Store 表结构草图）
+```
+ai_run:      run_id(PK) user_id session_id query intent status(状态机)
+             termination_reason budget(JSON) versions(prompt/model/tool 版本)
+             tokens_in/out cost_ms cost_est started/ended
+ai_step:     id(PK) run_id(FK) step_no state decision(JSON) tool_result
+             evidence_id messages_snapshot(JSON checkpoint) created_at
+```
+- 恢复时序：启动扫描 RUNNING 超时 run → 取最后 checkpoint 重建 messages → 续跑
+- 状态机：RECEIVED→RUNNING→SUCCEEDED/PARTIAL/FAILED/CANCELLED/EXPIRED
+- 清理：TTL 作业（默认 30 天，合规 §11.5）
+
+### 12.2 M6 细化（评测体系结构）
+- 评测集分层：smoke(PR, 30-50) / regression(nightly, 150-300) / security(红队) / production(回灌)
+- 断言四类：代码断言（run 状态/证据数/关键词——硬）+ 数字一致性（答案 vs registry——幻觉率）+ LLM-judge（结论质量/不确定性声明完整性）+ 人工基线（标注队列）
+- 指标公式：任务完成率=SUCCEEDED/总数；工具准确率=正确工具选择/工具调用；幻觉率=答案数字与证据不一致比例；延迟 P50/P95；成本/run
+- 工具误用分析：评测输出统计模型误用工具/参数模式 → 迭代工具描述（ACI）
+- 回灌：生产 run 抽 5% 进标注队列 → 人工基线 → 进 regression
+
+### 12.3 M7 细化（OWASP Top10 全映射红队用例清单）
+| OWASP 项 | 用例示例 |
+|----------|---------|
+| LLM01 注入 | 直接注入"忽略规则"；间接注入（工具结果/检索内容携带指令）|
+| LLM02 敏感披露 | 诱导输出用户明细/PII；日志抓取 |
+| LLM05 输出处理 | 编造数字（存在性校验应拦截）；非 JSON 输出 |
+| LLM06 过度授权 | 请求 L3/未注册工具（应 100% 拒绝+审计）|
+| LLM07 Prompt 泄漏 | 诱导吐露系统提示词/工具清单/内部口径 |
+| LLM10 无限消耗 | 超长输出/重复调用（预算应拦截）|
+| 其他 | SBOM 扫描、依赖漏洞 |
+
+### 12.4 M8 细化（部署拓扑）
+- 三服务容器化（app 19020 / mcp 19021 / ui 19022）+ 依赖观测栈网络白名单
+- gateway 路由 + 限流配额 + 角色（运营 L1 / 技术 L1+L2）
+- bundle 回滚：版本表 + 一键切换
+- 故障演练清单：模型限流/超时、MCP 不可用、Worker 崩溃、中间件不可用
+
+---
+
+## 13. 技术决策点清单（开放问题，逐步实证）
+
+| # | 决策 | 选项 | 时机 |
+|:--:|------|------|------|
+| D1 | LLM 可观测 | 自研指标 / Langfuse(OTLP) | M6 后段 PoC |
+| D2 | Durable 引擎 | 自研 Run Store / Temporal Java SDK | M5 后段 PoC 对照 |
+| D3 | 评测断言 | 纯代码断言 / +LLM-judge | M6 评测集 v1 用代码断言，v2 评估 judge |
+| D4 | 模型分层 | 单一模型 / routing 小模型 | M9（成本分布实测后）|
+| D5 | 多租户/RBAC | ADR-006 单组织；用户级认证先行 | M8 |
+| D6 | Prompt 治理 | 资源文件版本 / Langfuse prompt mgmt | M5 前置资源文件，M6 评估 |
+
+> 决策原则：**默认自研/最简单方案，引入外部组件须有实证价值**（对照 ADR-002/005 模式）；每次决策落 ADR。
+
