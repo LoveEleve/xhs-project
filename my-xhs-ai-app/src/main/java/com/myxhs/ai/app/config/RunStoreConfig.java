@@ -22,6 +22,9 @@ public class RunStoreConfig {
             @Value("${spring.ai-datasource.url}") String url,
             @Value("${spring.ai-datasource.username}") String username,
             @Value("${spring.ai-datasource.password}") String password) {
+        if (url != null && url.startsWith("jdbc:mysql") && (password == null || password.isBlank())) {
+            throw new IllegalStateException("spring.ai-datasource.password 未配置（AI 自有库写账号），密钥不得落库");
+        }
         HikariDataSource ds = new HikariDataSource();
         ds.setJdbcUrl(url);
         ds.setUsername(username);

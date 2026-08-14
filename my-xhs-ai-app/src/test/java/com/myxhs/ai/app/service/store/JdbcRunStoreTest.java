@@ -31,9 +31,9 @@ class JdbcRunStoreTest {
                 CREATE TABLE IF NOT EXISTS ai_run (
                   run_id VARCHAR(32) PRIMARY KEY, user_id VARCHAR(64), session_id VARCHAR(64),
                   query TEXT NOT NULL, status VARCHAR(16) NOT NULL, termination_reason VARCHAR(32),
-                  budget_json TEXT, versions_json TEXT, tokens_in BIGINT DEFAULT 0,
+                  budget_json TEXT, versions_json TEXT, tokens_total BIGINT DEFAULT 0,
                   tokens_out BIGINT DEFAULT 0, cost_est DOUBLE DEFAULT 0,
-                  started_at DATETIME(3), ended_at DATETIME(3)
+                  started_at DATETIME(3), ended_at DATETIME(3), last_activity_at DATETIME(3)
                 )""");
         jdbc.execute("""
                 CREATE TABLE IF NOT EXISTS ai_step (
@@ -49,12 +49,12 @@ class JdbcRunStoreTest {
     void 创建run并落终态() {
         store.createRun("run_abc", "u1", null, "为什么订单量下降",
                 "{\"maxSteps\":15}", "{\"model\":\"m1\",\"prompt\":\"v1\",\"tools\":13}");
-        store.updateRunStatus("run_abc", "SUCCEEDED", "COMPLETED", 1200, 0, 0.5);
+        store.updateRunStatus("run_abc", "SUCCEEDED", "COMPLETED", 1200, 0.5);
 
         var run = store.loadRun("run_abc").orElseThrow();
         assertEquals("SUCCEEDED", run.status());
         assertEquals("COMPLETED", run.terminationReason());
-        assertEquals(1200, run.tokensIn());
+        assertEquals(1200, run.tokensTotal());
         assertEquals("为什么订单量下降", run.query());
     }
 

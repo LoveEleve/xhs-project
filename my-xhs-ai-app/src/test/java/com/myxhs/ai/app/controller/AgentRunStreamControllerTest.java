@@ -47,7 +47,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "myxhs.ai.teamo.api-key=test-key",
         "spring.ai-datasource.url=jdbc:h2:mem:aise;MODE=MySQL;DB_CLOSE_DELAY=-1",
         "spring.ai-datasource.username=sa",
-        "spring.ai-datasource.password="
+        "spring.ai-datasource.password=sa"
 })
 class AgentRunStreamControllerTest {
 

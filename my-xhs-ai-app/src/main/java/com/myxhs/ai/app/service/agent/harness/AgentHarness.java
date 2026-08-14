@@ -77,16 +77,18 @@ public class AgentHarness {
     private final int maxInvalidAnswers;
     private final RunStore store;
     private final ObjectMapper om;
+    private final String modelName;
 
     public AgentHarness(ChatModel chatModel, MetricToolAccess metricToolAccess, ObsToolAccess obsToolAccess,
                         ObjectMapper mapper, AgentBudget defaultBudget, double pricePer1kTokens, int maxInvalidAnswers) {
-        this(chatModel, metricToolAccess, obsToolAccess, mapper, defaultBudget, pricePer1kTokens, maxInvalidAnswers, null);
+        this(chatModel, metricToolAccess, obsToolAccess, mapper, defaultBudget, pricePer1kTokens, maxInvalidAnswers,
+                null, "unknown");
     }
 
     /** 带 RunStore 的构造（M5 Durable：run/step 落库；store=null 不持久化，兼容测试） */
     public AgentHarness(ChatModel chatModel, MetricToolAccess metricToolAccess, ObsToolAccess obsToolAccess,
                         ObjectMapper mapper, AgentBudget defaultBudget, double pricePer1kTokens, int maxInvalidAnswers,
-                        RunStore store) {
+                        RunStore store, String modelName) {
         this.chatModel = chatModel;
         this.metricToolAccess = metricToolAccess;
         this.obsToolAccess = obsToolAccess;
@@ -96,6 +98,7 @@ public class AgentHarness {
         this.maxInvalidAnswers = maxInvalidAnswers;
         this.store = store;
         this.om = mapper;
+        this.modelName = modelName;
     }
 
     public AgentRun run(String query) {
@@ -282,7 +285,7 @@ public class AgentHarness {
         try {
             store.updateRunStatus(run.runId(), run.status().name(),
                     run.terminationReason() == null ? null : run.terminationReason().name(),
-                    ctrl.tokens(), 0, ctrl.cost());
+                    ctrl.tokens(), ctrl.cost());
         } catch (Exception e) {
             log.warn("[harness] run={} 终态落库失败: {}", run.runId(), e.getMessage());
         }
@@ -303,9 +306,11 @@ public class AgentHarness {
         }
     }
 
-    /** model/prompt/tool 版本（M5 版本追溯；prompt 版本化抽文件待 M6） */
-    private static String versionsJson() {
-        return "{\"model\":\"deepseek-v4-flash\",\"prompt\":\"SYSTEM_PROMPT.v1\",\"tools\":13}";
+    /** model/prompt/tool 版本（M5 版本追溯；model 名来自配置，工具数自动计数；prompt 版本化抽文件待 M6） */
+    private String versionsJson() {
+        return "{\"model\":\"" + modelName + "\",\"prompt\":\"SYSTEM_PROMPT.v1\",\"tools\":"
+                + PolicyGuard.allowedToolCount()
+                + "}";
     }
 
     private static void emit(java.util.function.Consumer<HarnessEvent> listener, HarnessEvent event) {

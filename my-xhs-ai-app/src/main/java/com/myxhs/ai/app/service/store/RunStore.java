@@ -17,8 +17,8 @@ public interface RunStore {
             String runId, String userId, String sessionId, String query,
             String status, String terminationReason,
             String budgetJson, String versionsJson,
-            long tokensIn, long tokensOut, double costEst,
-            Instant startedAt, Instant endedAt) {
+            long tokensTotal, double costEst,
+            Instant startedAt, Instant endedAt, Instant lastActivityAt) {
     }
 
     record StepRecord(
@@ -33,7 +33,7 @@ public interface RunStore {
     void saveStep(String runId, AgentStep step, String messagesSnapshot);
 
     void updateRunStatus(String runId, String status, String terminationReason,
-                         long tokensIn, long tokensOut, double costEst);
+                         long tokensTotal, double costEst);
 
     Optional<RunRecord> loadRun(String runId);
 

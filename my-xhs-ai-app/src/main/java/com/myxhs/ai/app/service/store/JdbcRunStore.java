@@ -40,21 +40,25 @@ public class JdbcRunStore implements RunStore {
 
     @Override
     public void saveStep(String runId, AgentStep step, String messagesSnapshot) {
+        Instant now = Instant.now();
         jdbc.update("INSERT INTO ai_step (run_id, step_no, state, decision_json, tool_result,"
                         + " evidence_ids, messages_snapshot, created_at) VALUES (?,?,?,?,?,?,?,?)",
                 runId, step.stepNumber(), step.state(),
                 json(step.decision()), step.toolResult(),
                 step.evidenceRefs() == null ? null : String.join(",", step.evidenceRefs()),
-                messagesSnapshot, Timestamp.from(Instant.now()));
+                messagesSnapshot, Timestamp.from(now));
+        // 心跳：更新最后活动时间（崩溃恢复判定：RUNNING 且 last_activity_at 超时）
+        jdbc.update("UPDATE ai_run SET last_activity_at=? WHERE run_id=?",
+                Timestamp.from(now), runId);
     }
 
     @Override
     public void updateRunStatus(String runId, String status, String terminationReason,
-                                long tokensIn, long tokensOut, double costEst) {
-        jdbc.update("UPDATE ai_run SET status=?, termination_reason=?, tokens_in=?, tokens_out=?,"
-                        + " cost_est=?, ended_at=? WHERE run_id=?",
-                status, terminationReason, tokensIn, tokensOut, costEst,
-                Timestamp.from(Instant.now()), runId);
+                                long tokensTotal, double costEst) {
+        jdbc.update("UPDATE ai_run SET status=?, termination_reason=?, tokens_total=?,"
+                        + " cost_est=?, ended_at=?, last_activity_at=? WHERE run_id=?",
+                status, terminationReason, tokensTotal, costEst,
+                Timestamp.from(Instant.now()), Timestamp.from(Instant.now()), runId);
     }
 
     @Override
@@ -84,8 +88,9 @@ public class JdbcRunStore implements RunStore {
                 rs.getString("run_id"), rs.getString("user_id"), rs.getString("session_id"),
                 rs.getString("query"), rs.getString("status"), rs.getString("termination_reason"),
                 rs.getString("budget_json"), rs.getString("versions_json"),
-                rs.getLong("tokens_in"), rs.getLong("tokens_out"), rs.getDouble("cost_est"),
-                ts(rs.getTimestamp("started_at")), ts(rs.getTimestamp("ended_at")));
+                rs.getLong("tokens_total"), rs.getDouble("cost_est"),
+                ts(rs.getTimestamp("started_at")), ts(rs.getTimestamp("ended_at")),
+                ts(rs.getTimestamp("last_activity_at")));
     }
 
     private StepRecord toStep(ResultSet rs) throws SQLException {

@@ -50,6 +50,11 @@ public class PolicyGuard {
     /** L3 高危动作（V1 一律人工审批；不在 allowlist，Agent 无法执行） */
     private static final Set<String> L3_TOOLS = Set.of("service.restart", "dlq.redeliver", "order.refund");
 
+    /** Agent 可调用工具数（版本追溯用；不含 L3） */
+    public static int allowedToolCount() {
+        return ALLOWED_TOOLS.size();
+    }
+
     public PolicyDecision evaluate(String tool, Map<String, String> args) {
         if (tool == null || tool.isBlank()) {
             return PolicyDecision.deny("tool 为空");

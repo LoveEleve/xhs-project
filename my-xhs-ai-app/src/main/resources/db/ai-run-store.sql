@@ -18,11 +18,11 @@ CREATE TABLE IF NOT EXISTS ai_run (
   termination_reason VARCHAR(32)  DEFAULT NULL COMMENT '终止原因(COMPLETED/BUDGET_STEPS/...)',
   budget_json        TEXT         DEFAULT NULL COMMENT '预算(JSON)',
   versions_json      TEXT         DEFAULT NULL COMMENT 'model/prompt/tool版本(JSON)',
-  tokens_in          BIGINT       DEFAULT 0 COMMENT '输入token',
-  tokens_out         BIGINT       DEFAULT 0 COMMENT '输出token',
+  tokens_total       BIGINT       DEFAULT 0 COMMENT 'token 合计(输入+输出)',
   cost_est           DOUBLE       DEFAULT 0 COMMENT '成本估算',
   started_at         DATETIME(3)  DEFAULT NULL,
   ended_at           DATETIME(3)  DEFAULT NULL,
+  last_activity_at   DATETIME(3)  DEFAULT NULL COMMENT '最后活动时间(每step更新，崩溃恢复判定)',
   KEY idx_status_started (status, started_at)
 ) COMMENT 'AI 诊断 Run 记录';
 

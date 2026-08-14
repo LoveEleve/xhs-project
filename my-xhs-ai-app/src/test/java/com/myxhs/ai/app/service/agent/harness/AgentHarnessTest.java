@@ -301,8 +301,8 @@ class AgentHarnessTest {
         var jdbc = new org.springframework.jdbc.core.JdbcTemplate(ds);
         jdbc.execute("CREATE TABLE IF NOT EXISTS ai_run (run_id VARCHAR(32) PRIMARY KEY, user_id VARCHAR(64),"
                 + " session_id VARCHAR(64), query TEXT NOT NULL, status VARCHAR(16) NOT NULL,"
-                + " termination_reason VARCHAR(32), budget_json TEXT, versions_json TEXT, tokens_in BIGINT DEFAULT 0,"
-                + " tokens_out BIGINT DEFAULT 0, cost_est DOUBLE DEFAULT 0, started_at DATETIME(3), ended_at DATETIME(3))");
+                + " termination_reason VARCHAR(32), budget_json TEXT, versions_json TEXT, tokens_total BIGINT DEFAULT 0,"
+                + " tokens_out BIGINT DEFAULT 0, cost_est DOUBLE DEFAULT 0, started_at DATETIME(3), ended_at DATETIME(3), last_activity_at DATETIME(3))");
         jdbc.execute("CREATE TABLE IF NOT EXISTS ai_step (id BIGINT AUTO_INCREMENT PRIMARY KEY, run_id VARCHAR(32),"
                 + " step_no INT, state VARCHAR(24), decision_json TEXT, tool_result MEDIUMTEXT,"
                 + " evidence_ids VARCHAR(512), messages_snapshot MEDIUMTEXT, created_at DATETIME(3))");
@@ -313,15 +313,15 @@ class AgentHarnessTest {
                 return toolCallJson("queryOrderVolume", "2026-08-01~2026-08-07");
             }
             return answerJson("下单量为61", ev);
-        }), new FakeMetricTools(), new FakeObsTools(), MAPPER, AgentBudget.defaults(), 0.002, 2, store);
+        }), new FakeMetricTools(), new FakeObsTools(), MAPPER, AgentBudget.defaults(), 0.002, 2, store, "fake-model");
 
         AgentRun run = h.run("为什么订单量下降了");
 
         var rec = store.loadRun(run.runId()).orElseThrow();
         assertEquals("SUCCEEDED", rec.status());
         assertEquals("COMPLETED", rec.terminationReason());
-        assertTrue(rec.versionsJson().contains("deepseek-v4-flash"), rec.versionsJson());
-        assertTrue(rec.tokensIn() > 0, "应累计 token: " + rec.tokensIn());
+        assertTrue(rec.versionsJson().contains("fake-model"), "model 名应来自构造配置: " + rec.versionsJson());
+        assertTrue(rec.tokensTotal() > 0, "应累计 token: " + rec.tokensTotal());
 
         var steps = store.loadSteps(run.runId());
         assertTrue(steps.size() >= 3, "应有 THINK/TOOL/ANSWER 步骤: " + steps.size());
