@@ -183,6 +183,56 @@ class AgentHarnessTest {
     }
 
     @Test
+    void 事件流_完整序列推送() {
+        AgentHarness h = harness(texts -> {
+            String ev = lastEvId(texts);
+            if (ev == null) {
+                return toolCallJson("queryOrderVolume", "2026-08-01~2026-08-07");
+            }
+            return answerJson("下单量为61", ev);
+        }, AgentBudget.defaults());
+
+        java.util.List<HarnessEvent> events = new java.util.ArrayList<>();
+        h.run("为什么订单量下降了", AgentBudget.defaults(), events::add);
+
+        java.util.List<String> types = events.stream().map(HarnessEvent::type).toList();
+        assertEquals(java.util.List.of("RUN_STARTED", "THINK", "TOOL", "THINK", "ANSWER", "COMPLETED"), types);
+        HarnessEvent tool = events.stream().filter(e -> "TOOL".equals(e.type())).findFirst().orElseThrow();
+        assertEquals("queryOrderVolume", tool.tool());
+        assertEquals("2026-08-01~2026-08-07", tool.window());
+        assertEquals(1, tool.evidenceRefs().size());
+        HarnessEvent done = events.get(events.size() - 1);
+        assertEquals("COMPLETED", done.type());
+        assertEquals("COMPLETED", done.terminationReason());
+        assertTrue(done.message().contains("下单量为61"));
+    }
+
+    @Test
+    void 事件流_partial终止推送终态() {
+        AgentHarness h = harness(texts -> toolCallJson("queryOrderVolume", "2026-08-01~2026-08-07"),
+                AgentBudget.defaults());
+
+        java.util.List<HarnessEvent> events = new java.util.ArrayList<>();
+        h.run("为什么订单量下降了", AgentBudget.defaults(), events::add);
+
+        HarnessEvent last = events.get(events.size() - 1);
+        assertEquals("PARTIAL", last.type());
+        assertEquals(TerminationReason.LOOP_REPEATED_CALL.name(), last.terminationReason());
+    }
+
+    @Test
+    void 事件流_模型故障推送FAILED() {
+        AgentHarness h = harness(texts -> "THROW model down", AgentBudget.defaults());
+
+        java.util.List<HarnessEvent> events = new java.util.ArrayList<>();
+        h.run("为什么订单量下降了", AgentBudget.defaults(), events::add);
+
+        HarnessEvent last = events.get(events.size() - 1);
+        assertEquals("FAILED", last.type());
+        assertEquals(TerminationReason.MODEL_UNAVAILABLE.name(), last.terminationReason());
+    }
+
+    @Test
     void 注入确定性当前窗口_显式指定优先() {
         FakeDecisionModel model = new FakeDecisionModel(texts -> {
             String ev = lastEvId(texts);

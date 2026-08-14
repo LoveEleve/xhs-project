@@ -70,10 +70,19 @@ public class AgentHarness {
     }
 
     public AgentRun run(String query) {
-        return run(query, defaultBudget);
+        return run(query, defaultBudget, null);
     }
 
     public AgentRun run(String query, AgentBudget budget) {
+        return run(query, budget, null);
+    }
+
+    public AgentBudget defaultBudgetSafe() {
+        return defaultBudget;
+    }
+
+    /** 带事件回调的 run（SSE 流式推送用；listener 异常不影响执行，仅记录） */
+    public AgentRun run(String query, AgentBudget budget, java.util.function.Consumer<HarnessEvent> listener) {
         AgentRun run = new AgentRun("run_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12),
                 query, budget);
         LoopCtrl ctrl = new LoopCtrl(budget);
@@ -88,19 +97,23 @@ public class AgentHarness {
         messages.add(UserMessage.from("用户问题：" + query));
         int invalidOutputs = 0;
 
+        emit(listener, new HarnessEvent(run.runId(), "RUN_STARTED", 0, null, null, null, null,
+                "开始调查：当前窗口已确定 = " + currentWindow));
         log.info("[harness] run={} start query={} budget={} currentWindow={}",
                 run.runId(), query, budget, currentWindow);
 
         while (true) {
             TerminationReason pre = ctrl.checkBeforeStep();
             if (pre != null) {
-                return terminatePartial(run, pre, ctrl);
+                return terminatePartial(run, pre, ctrl, listener);
             }
 
             // THINK：模型决策（JSON 结构化输出；失败重试一次，仍失败 → 明确降级 FAILED，不瞎编）
             ChatResponse response = callModel(run.runId(), messages);
             if (response == null) {
                 run.terminate(TerminationReason.MODEL_UNAVAILABLE, "模型暂不可用，请稍后重试（调查未完成）");
+                emit(listener, new HarnessEvent(run.runId(), "FAILED", ctrl.steps(), null, null, null,
+                        TerminationReason.MODEL_UNAVAILABLE.name(), run.finalAnswer()));
                 return run;
             }
             int tokens = tokensOf(response);
@@ -112,14 +125,19 @@ public class AgentHarness {
                 run.recordStep(AgentStep.think(ctrl.steps(), null, tokens));
                 messages.add(UserMessage.from(AgentDecisionCodec.malformedOutputMessage()));
                 log.warn("[harness] run={} 模型输出非 JSON，反馈重想", run.runId());
+                emit(listener, new HarnessEvent(run.runId(), "THINK", ctrl.steps(), null, null, null, null,
+                        "模型输出非合法 JSON，已反馈重想"));
                 invalidOutputs++;
                 if (invalidOutputs >= maxInvalidAnswers) {
-                    return terminatePartial(run, TerminationReason.EVIDENCE_INVALID, ctrl);
+                    return terminatePartial(run, TerminationReason.EVIDENCE_INVALID, ctrl, listener);
                 }
                 continue;
             }
             run.recordStep(AgentStep.think(ctrl.steps(), decision, tokens));
             messages.add(AiMessage.from(response.aiMessage().text()));
+            emit(listener, new HarnessEvent(run.runId(), "THINK", ctrl.steps(), decision.tool(),
+                    decision.args() == null ? null : decision.args().get("window"), null, null,
+                    decision.isAnswer() ? decision.conclusion() : decision.reasoning()));
 
             if (decision.isToolCall()) {
                 // VALIDATE：deny-by-default
@@ -133,9 +151,11 @@ public class AgentHarness {
                             ? pd.reason() + "（L3 需人工审批，V1 不可执行）" : pd.reason();
                     messages.add(UserMessage.from(AgentDecisionCodec.feedback(decision, note)));
                     log.info("[harness] run={} policy_denied tool={} reason={}", run.runId(), decision.tool(), pd.reason());
+                    emit(listener, new HarnessEvent(run.runId(), "POLICY_DENIED", ctrl.steps(),
+                            decision.tool(), null, null, null, note));
                     TerminationReason loopReason = loop.recordStep(run.evidenceChain().hash());
                     if (loopReason != null) {
-                        return terminatePartial(run, loopReason, ctrl);
+                        return terminatePartial(run, loopReason, ctrl, listener);
                     }
                     continue;
                 }
@@ -149,12 +169,14 @@ public class AgentHarness {
                 messages.add(UserMessage.from("工具 " + decision.tool() + " 结果（证据 id=" + evidenceId + "）：" + result));
                 log.info("[harness] run={} tool={} window={} ev={} result={}", run.runId(),
                         decision.tool(), window, evidenceId, result);
+                emit(listener, new HarnessEvent(run.runId(), "TOOL", ctrl.steps(), decision.tool(),
+                        window, List.of(evidenceId), null, result));
 
                 // LOOPCHECK
                 TerminationReason loopReason = loop.recordToolCall(decision.tool(), decision.args(),
                         run.evidenceChain().hash());
                 if (loopReason != null) {
-                    return terminatePartial(run, loopReason, ctrl);
+                    return terminatePartial(run, loopReason, ctrl, listener);
                 }
             } else if (decision.isAnswer()) {
                 // 存在性校验（确定性兜底，不靠模型自觉）
@@ -165,30 +187,49 @@ public class AgentHarness {
                     run.terminate(TerminationReason.COMPLETED, answer);
                     log.info("[harness] run={} COMPLETED ev={} answer={}", run.runId(),
                             run.evidenceChain().size(), answer);
+                    emit(listener, new HarnessEvent(run.runId(), "ANSWER", ctrl.steps(), null, null,
+                            decision.evidenceRefs(), null, decision.conclusion()));
+                    emit(listener, new HarnessEvent(run.runId(), "COMPLETED", ctrl.steps(), null, null,
+                            decision.evidenceRefs(), TerminationReason.COMPLETED.name(), answer));
                     return run;
                 }
                 invalidOutputs++;
                 run.recordStep(AgentStep.answer(ctrl.steps(), decision));
                 messages.add(UserMessage.from(AgentDecisionCodec.feedback(decision, invalid)));
                 log.warn("[harness] run={} 证据校验失败: {}", run.runId(), invalid);
+                emit(listener, new HarnessEvent(run.runId(), "ANSWER", ctrl.steps(), null, null,
+                        decision.evidenceRefs(), null, "证据校验失败: " + invalid));
                 if (invalidOutputs >= maxInvalidAnswers) {
-                    return terminatePartial(run, TerminationReason.EVIDENCE_INVALID, ctrl);
+                    return terminatePartial(run, TerminationReason.EVIDENCE_INVALID, ctrl, listener);
                 }
                 TerminationReason loopReason = loop.recordStep(run.evidenceChain().hash());
                 if (loopReason != null) {
-                    return terminatePartial(run, loopReason, ctrl);
+                    return terminatePartial(run, loopReason, ctrl, listener);
                 }
             } else {
                 invalidOutputs++;
                 messages.add(UserMessage.from(AgentDecisionCodec.feedback(decision, "action 必须是 TOOL_CALL 或 ANSWER")));
                 if (invalidOutputs >= maxInvalidAnswers) {
-                    return terminatePartial(run, TerminationReason.EVIDENCE_INVALID, ctrl);
+                    return terminatePartial(run, TerminationReason.EVIDENCE_INVALID, ctrl, listener);
                 }
                 TerminationReason loopReason = loop.recordStep(run.evidenceChain().hash());
                 if (loopReason != null) {
-                    return terminatePartial(run, loopReason, ctrl);
+                    return terminatePartial(run, loopReason, ctrl, listener);
                 }
             }
+        }
+    }
+
+    private static void emit(java.util.function.Consumer<HarnessEvent> listener, HarnessEvent event) {
+        if (listener == null) {
+            return;
+        }
+        try {
+            listener.accept(event);
+        } catch (Exception e) {
+            // 推送失败（客户端断开等）不影响执行；终态由 run 结果兜底
+            org.slf4j.LoggerFactory.getLogger(AgentHarness.class)
+                    .warn("[harness] 事件推送失败 type={} err={}", event.type(), e.getMessage());
         }
     }
 
@@ -261,7 +302,8 @@ public class AgentHarness {
     }
 
     /** partial 终止：确定性摘要（已收集证据 + 终止原因），不调模型、不假装全成 */
-    private AgentRun terminatePartial(AgentRun run, TerminationReason reason, LoopCtrl ctrl) {
+    private AgentRun terminatePartial(AgentRun run, TerminationReason reason, LoopCtrl ctrl,
+                                      java.util.function.Consumer<HarnessEvent> listener) {
         StringBuilder sb = new StringBuilder();
         sb.append("调查在 ").append(reason.name()).append(" 时终止（未完成归因）")
                 .append("，已用步骤 ").append(ctrl.steps()).append("/").append(ctrl.budget().maxSteps())
@@ -279,6 +321,8 @@ public class AgentHarness {
         String answer = sb.toString();
         run.terminate(reason, answer);
         log.info("[harness] run={} {} answer={}", run.runId(), reason, answer);
+        emit(listener, new HarnessEvent(run.runId(), "PARTIAL", ctrl.steps(), null, null, null,
+                reason.name(), answer));
         return run;
     }
 
