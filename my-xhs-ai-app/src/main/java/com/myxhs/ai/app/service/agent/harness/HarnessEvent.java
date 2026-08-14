@@ -18,8 +18,4 @@ public record HarnessEvent(
         java.util.List<String> evidenceRefs,
         String terminationReason,
         String message) {
-
-    public static HarnessEvent simple(String runId, String type, int stepNumber, String message) {
-        return new HarnessEvent(runId, type, stepNumber, null, null, null, null, message);
-    }
 }

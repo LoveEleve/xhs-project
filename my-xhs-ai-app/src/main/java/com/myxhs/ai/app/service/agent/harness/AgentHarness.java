@@ -77,8 +77,9 @@ public class AgentHarness {
         return run(query, budget, null);
     }
 
-    public AgentBudget defaultBudgetSafe() {
-        return defaultBudget;
+    /** 带事件回调的 run（SSE 流式推送用，默认预算；listener 异常不影响执行，仅记录） */
+    public AgentRun run(String query, java.util.function.Consumer<HarnessEvent> listener) {
+        return run(query, defaultBudget, listener);
     }
 
     /** 带事件回调的 run（SSE 流式推送用；listener 异常不影响执行，仅记录） */
@@ -228,8 +229,7 @@ public class AgentHarness {
             listener.accept(event);
         } catch (Exception e) {
             // 推送失败（客户端断开等）不影响执行；终态由 run 结果兜底
-            org.slf4j.LoggerFactory.getLogger(AgentHarness.class)
-                    .warn("[harness] 事件推送失败 type={} err={}", event.type(), e.getMessage());
+            log.warn("[harness] 事件推送失败 type={} err={}", event.type(), e.getMessage());
         }
     }
 

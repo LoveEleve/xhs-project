@@ -33,7 +33,8 @@ public class AgentRunStreamController {
 
     private final AgentHarness agentHarness;
     private final ObjectMapper om;
-    private final ExecutorService executor = Executors.newCachedThreadPool();
+    /** 设计 §8：中等并发上限（20），超出拒绝（防无限线程+长 run 耗尽资源） */
+    private final ExecutorService executor = Executors.newFixedThreadPool(20);
 
     public AgentRunStreamController(AgentHarness agentHarness, ObjectMapper om) {
         this.agentHarness = agentHarness;
@@ -50,22 +51,27 @@ public class AgentRunStreamController {
         String traceId = java.util.UUID.randomUUID().toString().replace("-", "");
         emitter.onCompletion(() -> log.info("[sse] run 流完成 traceId={}", traceId));
         emitter.onTimeout(() -> log.warn("[sse] run 流超时 traceId={}", traceId));
-        executor.submit(() -> {
-            MDC.put("traceId", traceId);
-            try {
-                agentHarness.run(message, agentHarness.defaultBudgetSafe(), event -> send(emitter, event, traceId));
-                emitter.complete();
-            } catch (Exception e) {
-                log.warn("[sse] run 执行异常 traceId={} err={}", traceId, e.getMessage());
+        try {
+            executor.submit(() -> {
+                MDC.put("traceId", traceId);
                 try {
-                    emitter.completeWithError(e);
-                } catch (Exception ignored) {
-                    // 客户端已断开
+                    agentHarness.run(message, event -> send(emitter, event, traceId));
+                    emitter.complete();
+                } catch (Exception e) {
+                    log.warn("[sse] run 执行异常 traceId={} err={}", traceId, e.getMessage());
+                    try {
+                        emitter.completeWithError(e);
+                    } catch (Exception ignored) {
+                        // 客户端已断开
+                    }
+                } finally {
+                    MDC.remove("traceId");
                 }
-            } finally {
-                MDC.remove("traceId");
-            }
-        });
+            });
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            log.warn("[sse] 并发超限拒绝 traceId={}", traceId);
+            throw new IllegalStateException("并发已满（上限 20），请稍后重试");
+        }
         return emitter;
     }
 
