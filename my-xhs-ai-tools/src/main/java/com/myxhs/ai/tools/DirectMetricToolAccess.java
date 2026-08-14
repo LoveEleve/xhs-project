@@ -14,18 +14,27 @@ public class DirectMetricToolAccess implements MetricToolAccess {
     private final PaymentMetricsTool payment;
     private final ContentInteractionTool content;
     private final BaselineWindowTool baseline;
+    private final EventAnalyticsTool events;
 
     public DirectMetricToolAccess(OrderMetricsTool order, PaymentMetricsTool payment, ContentInteractionTool content) {
-        this(order, payment, content, new BaselineWindowTool());
+        this(order, payment, content, new BaselineWindowTool(), null);
     }
 
     public DirectMetricToolAccess(OrderMetricsTool order, PaymentMetricsTool payment, ContentInteractionTool content,
                                   BaselineWindowTool baseline) {
+        this(order, payment, content, baseline, null);
+    }
+
+    public DirectMetricToolAccess(OrderMetricsTool order, PaymentMetricsTool payment, ContentInteractionTool content,
+                                  BaselineWindowTool baseline, EventAnalyticsTool events) {
         this.order = order;
         this.payment = payment;
         this.content = content;
         this.baseline = baseline;
+        this.events = events;
     }
+
+    private static final String EVENTS_NOT_ASSEMBLED = "{\"status\":\"error\",\"error\":\"事件分析工具未装配\"}";
 
     @Override
     @Tool("查询下单量（口径：排除已删、含取消/退款，按创建时间，Asia/Shanghai，窗口≤31天）")
@@ -53,5 +62,26 @@ public class DirectMetricToolAccess implements MetricToolAccess {
     public String baselineWindow(
             @P("当前时间窗，格式 yyyy-MM-dd~yyyy-MM-dd") String window) {
         return baseline.baselineWindow(window);
+    }
+
+    @Override
+    @Tool("查询电商漏斗各环节量（浏览/加购/下单/支付，窗口内）")
+    public String funnelConversion(
+            @P("时间窗，格式 yyyy-MM-dd~yyyy-MM-dd") String window) {
+        return events == null ? EVENTS_NOT_ASSEMBLED : events.funnelConversion(window);
+    }
+
+    @Override
+    @Tool("查询支付失败事件（按失败码聚合，窗口内）")
+    public String paymentFailures(
+            @P("时间窗，格式 yyyy-MM-dd~yyyy-MM-dd") String window) {
+        return events == null ? EVENTS_NOT_ASSEMBLED : events.paymentFailures(window);
+    }
+
+    @Override
+    @Tool("查询内容发布事件数（按天，窗口内）")
+    public String notePublishEvents(
+            @P("时间窗，格式 yyyy-MM-dd~yyyy-MM-dd") String window) {
+        return events == null ? EVENTS_NOT_ASSEMBLED : events.notePublishEvents(window);
     }
 }

@@ -51,4 +51,25 @@ public class McpToolBridge implements MetricToolAccess {
             @P("当前时间窗，格式 yyyy-MM-dd~yyyy-MM-dd") String window) {
         return client.callTool("baseline.window", Map.of("window", window));
     }
+
+    @Override
+    @Tool("查询电商漏斗各环节量（经 MCP：浏览/加购/下单/支付，窗口内）")
+    public String funnelConversion(
+            @P("时间窗，格式 yyyy-MM-dd~yyyy-MM-dd") String window) {
+        return client.callTool("funnel.conversion", Map.of("window", window));
+    }
+
+    @Override
+    @Tool("查询支付失败事件（经 MCP：按失败码聚合，窗口内）")
+    public String paymentFailures(
+            @P("时间窗，格式 yyyy-MM-dd~yyyy-MM-dd") String window) {
+        return client.callTool("payment.failures", Map.of("window", window));
+    }
+
+    @Override
+    @Tool("查询内容发布事件数（经 MCP：按天，窗口内）")
+    public String notePublishEvents(
+            @P("时间窗，格式 yyyy-MM-dd~yyyy-MM-dd") String window) {
+        return client.callTool("content.publish_events", Map.of("window", window));
+    }
 }

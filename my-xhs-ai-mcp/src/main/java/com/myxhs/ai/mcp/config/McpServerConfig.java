@@ -3,6 +3,7 @@ package com.myxhs.ai.mcp.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.ai.tools.BaselineWindowTool;
 import com.myxhs.ai.tools.ContentInteractionTool;
+import com.myxhs.ai.tools.EventAnalyticsTool;
 import com.myxhs.ai.tools.OrderMetricsTool;
 import com.myxhs.ai.tools.PaymentMetricsTool;
 import com.myxhs.ai.tools.PrometheusQueryTool;
@@ -77,7 +78,8 @@ public class McpServerConfig {
                                        PaymentMetricsTool paymentMetricsTool,
                                        ContentInteractionTool contentInteractionTool,
                                        BaselineWindowTool baselineWindowTool,
-                                       PrometheusQueryTool prometheusQueryTool) {
+                                       PrometheusQueryTool prometheusQueryTool,
+                                       EventAnalyticsTool eventAnalyticsTool) {
         return McpServer.sync(transport)
                 .serverInfo("my-xhs-ai-mcp", "1.0.0")
                 .tools(
@@ -93,6 +95,15 @@ public class McpServerConfig {
                         toolSpec(jsonMapper, "baseline.window",
                                 "计算对比基线窗口（上一同长窗口，确定性，模型不得自行推算）",
                                 baselineWindowTool::baselineWindow),
+                        toolSpec(jsonMapper, "funnel.conversion",
+                                "电商漏斗各环节量（浏览/加购/下单/支付，窗口内）",
+                                eventAnalyticsTool::funnelConversion),
+                        toolSpec(jsonMapper, "payment.failures",
+                                "支付失败事件（PAY_FAIL 按失败码聚合，窗口内）",
+                                eventAnalyticsTool::paymentFailures),
+                        toolSpec(jsonMapper, "content.publish_events",
+                                "内容发布事件数（PUBLISH 按天，窗口内）",
+                                eventAnalyticsTool::notePublishEvents),
                         obsToolSpec(jsonMapper, "service.http_errors",
                                 "服务 HTTP 5xx 错误统计（按 uri 聚合，最近 N 小时）",
                                 (args) -> prometheusQueryTool.httpErrors(str(args.get("service")), str(args.get("hours")))),

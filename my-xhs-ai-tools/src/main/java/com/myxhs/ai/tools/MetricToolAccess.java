@@ -21,4 +21,13 @@ public interface MetricToolAccess {
 
     @Tool("计算对比基线窗口（上一同长窗口，确定性；模型不得自行推算基线）")
     String baselineWindow(@P("当前时间窗，格式 yyyy-MM-dd~yyyy-MM-dd") String window);
+
+    @Tool("查询电商漏斗各环节量（浏览/加购/下单/支付，窗口内）")
+    String funnelConversion(@P("时间窗，格式 yyyy-MM-dd~yyyy-MM-dd") String window);
+
+    @Tool("查询支付失败事件（按失败码聚合，窗口内）")
+    String paymentFailures(@P("时间窗，格式 yyyy-MM-dd~yyyy-MM-dd") String window);
+
+    @Tool("查询内容发布事件数（按天，窗口内）")
+    String notePublishEvents(@P("时间窗，格式 yyyy-MM-dd~yyyy-MM-dd") String window);
 }

@@ -25,15 +25,20 @@ public class PolicyGuard {
     public static final String TOOL_MQ_DLQ = "mqDlqBacklog";
     public static final String TOOL_MYSQL_REPLICA_LAG = "mysqlReplicationLag";
     public static final String TOOL_MYSQL_DEADLOCKS = "mysqlDeadlocks";
+    public static final String TOOL_FUNNEL = "funnelConversion";
+    public static final String TOOL_PAY_FAILURES = "paymentFailures";
+    public static final String TOOL_NOTE_PUBLISH = "notePublishEvents";
 
     private static final Set<String> ALLOWED_TOOLS = Set.of(
             TOOL_ORDER_VOLUME, TOOL_PAYMENT_RATE, TOOL_CONTENT_INTERACTION, TOOL_BASELINE_WINDOW,
             TOOL_HTTP_ERRORS, TOOL_HTTP_LATENCY, TOOL_MQ_LAG, TOOL_MQ_DLQ,
-            TOOL_MYSQL_REPLICA_LAG, TOOL_MYSQL_DEADLOCKS);
+            TOOL_MYSQL_REPLICA_LAG, TOOL_MYSQL_DEADLOCKS,
+            TOOL_FUNNEL, TOOL_PAY_FAILURES, TOOL_NOTE_PUBLISH);
 
-    /** 需要 window 参数的工具（业务+基线） */
+    /** 需要 window 参数的工具（业务+基线+事件流水） */
     private static final Set<String> WINDOW_TOOLS = Set.of(
-            TOOL_ORDER_VOLUME, TOOL_PAYMENT_RATE, TOOL_CONTENT_INTERACTION, TOOL_BASELINE_WINDOW);
+            TOOL_ORDER_VOLUME, TOOL_PAYMENT_RATE, TOOL_CONTENT_INTERACTION, TOOL_BASELINE_WINDOW,
+            TOOL_FUNNEL, TOOL_PAY_FAILURES, TOOL_NOTE_PUBLISH);
 
     /** 需要 hours 参数的工具（L2 观测） */
     private static final Set<String> HOURS_TOOLS = Set.of(TOOL_HTTP_ERRORS, TOOL_HTTP_LATENCY);

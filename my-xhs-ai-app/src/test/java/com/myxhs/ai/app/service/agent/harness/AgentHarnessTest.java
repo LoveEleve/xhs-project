@@ -56,6 +56,21 @@ class AgentHarnessTest {
         public String baselineWindow(String window) {
             return "baseline.window current=" + window;
         }
+
+        @Override
+        public String funnelConversion(String window) {
+            return "funnel browse=10 cartAdd=5 order=3 pay=2 window=" + window;
+        }
+
+        @Override
+        public String paymentFailures(String window) {
+            return "failures total=2 byErrorCode=[CHANNEL_REJECT:2] window=" + window;
+        }
+
+        @Override
+        public String notePublishEvents(String window) {
+            return "publishes total=4 window=" + window;
+        }
     }
 
     /** 假模型：按对话内容确定性返回决策 JSON；"THROW" 前缀=模拟模型故障 */
@@ -473,6 +488,21 @@ class AgentHarnessTest {
             @Override
             public String baselineWindow(String window) {
                 return "baseline.window";
+            }
+
+            @Override
+            public String funnelConversion(String window) {
+                return "funnel";
+            }
+
+            @Override
+            public String paymentFailures(String window) {
+                return "failures";
+            }
+
+            @Override
+            public String notePublishEvents(String window) {
+                return "publishes";
             }
         };
         AgentHarness h = new AgentHarness(new FakeDecisionModel(texts -> {

@@ -3,6 +3,7 @@ package com.myxhs.ai.mcp.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.ai.tools.BaselineWindowTool;
 import com.myxhs.ai.tools.ContentInteractionTool;
+import com.myxhs.ai.tools.EventAnalyticsTool;
 import com.myxhs.ai.tools.OrderMetricsTool;
 import com.myxhs.ai.tools.PaymentMetricsTool;
 import com.myxhs.ai.tools.PrometheusQueryTool;
@@ -43,5 +44,12 @@ public class MetricToolsConfig {
     public PrometheusQueryTool prometheusQueryTool(ObjectMapper objectMapper,
                                                    @Value("${myxhs.ai.obs.prometheus-url:http://21.130.247.89:19090}") String prometheusUrl) {
         return new PrometheusQueryTool(prometheusUrl, objectMapper);
+    }
+
+    /** A 面事件流水工具（A1 漏斗 / A2 支付失败 / A3 发布） */
+    @Bean
+    public EventAnalyticsTool eventAnalyticsTool(JdbcTemplate jdbc, OrderMetricsTool orderMetricsTool,
+                                                 PaymentMetricsTool paymentMetricsTool) {
+        return new EventAnalyticsTool(jdbc, orderMetricsTool, paymentMetricsTool);
     }
 }

@@ -28,8 +28,9 @@ myxhs:
       mode: mcp
     agent:
       # D4 受限诊断 Agent：预算三重封顶（设计 §3）+ 成本单价 + 非法输出容忍次数
+      # 校准（2026-08-14 实测）：12 条工具结果全文进上下文累计超 30k → 调 100k（步骤预算 15 为主约束）
       max-steps: 15
-      max-tokens: 30000
+      max-tokens: 100000
       max-cost: 1.0
       price-per-1k-tokens: 0.002
       max-invalid-answers: 2

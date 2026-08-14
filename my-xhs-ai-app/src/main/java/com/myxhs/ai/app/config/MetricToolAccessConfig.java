@@ -3,6 +3,7 @@ package com.myxhs.ai.app.config;
 import com.myxhs.ai.app.service.mcp.McpToolBridge;
 import com.myxhs.ai.tools.ContentInteractionTool;
 import com.myxhs.ai.tools.DirectMetricToolAccess;
+import com.myxhs.ai.tools.EventAnalyticsTool;
 import com.myxhs.ai.tools.MetricToolAccess;
 import com.myxhs.ai.tools.OrderMetricsTool;
 import com.myxhs.ai.tools.PaymentMetricsTool;
@@ -25,9 +26,11 @@ public class MetricToolAccessConfig {
             McpToolBridge mcpToolBridge,
             OrderMetricsTool orderMetricsTool,
             PaymentMetricsTool paymentMetricsTool,
-            ContentInteractionTool contentInteractionTool) {
+            ContentInteractionTool contentInteractionTool,
+            EventAnalyticsTool eventAnalyticsTool) {
         if ("direct".equalsIgnoreCase(mode)) {
-            return new DirectMetricToolAccess(orderMetricsTool, paymentMetricsTool, contentInteractionTool);
+            return new DirectMetricToolAccess(orderMetricsTool, paymentMetricsTool,
+                    contentInteractionTool, new com.myxhs.ai.tools.BaselineWindowTool(), eventAnalyticsTool);
         }
         return mcpToolBridge;
     }
@@ -47,5 +50,11 @@ public class MetricToolAccessConfig {
     @Bean
     public ContentInteractionTool contentInteractionTool(JdbcTemplate jdbc) {
         return new ContentInteractionTool(jdbc);
+    }
+
+    @Bean
+    public EventAnalyticsTool eventAnalyticsTool(JdbcTemplate jdbc, OrderMetricsTool orderMetricsTool,
+                                                 PaymentMetricsTool paymentMetricsTool) {
+        return new EventAnalyticsTool(jdbc, orderMetricsTool, paymentMetricsTool);
     }
 }

@@ -46,6 +46,11 @@ public class AgentHarness {
             - mqDlqBacklog(consumerGroup)：RocketMQ 死信积压（空=全部；**-1 为应用侧哨兵值=无 DLQ 或查询失败，非真实积压**）
             - mysqlReplicationLag()：MySQL 主从复制延迟（Seconds_Behind_Master，全部从库）
             - mysqlDeadlocks()：MySQL 死锁事件（累计 total + 最新 new_events）
+            - funnelConversion(window)：电商漏斗各环节量（商品浏览/加购/下单/支付，窗口内）
+            - paymentFailures(window)：支付失败事件（PAY_FAIL 按失败码聚合，窗口内）
+            - notePublishEvents(window)：内容发布事件数（PUBLISH 按天，窗口内）
+            排障提示：gateway 5xx 若 uri=/** 且非业务链路（traceId=null）为扫描/探测噪音，勿归因；
+            /api/coupon/*、/api/cart/* 的 [Gateway-异常] WARN 日志非 5xx
             已知服务名（L2 观测可用）：my-xhs-gateway / my-xhs-order / my-xhs-payment / my-xhs-content /
             my-xhs-user / my-xhs-inventory / my-xhs-product / my-xhs-search / my-xhs-cart / my-xhs-coupon 等
             规则：
@@ -53,7 +58,8 @@ public class AgentHarness {
             2. 对比/升降分析：**当前窗口以系统注入的时间窗规则为准**（见消息中的"当前窗口已确定"）；
                基线窗口必须用 baselineWindow 工具计算（上一同长窗口），不得自行推算。
             3. 工具返回 error/partial 时如实说明，不猜测。
-            4. 证据充分即 ANSWER；证据不足继续 TOOL_CALL。
+            4. 证据充分即 ANSWER：典型调查 5~10 步工具调用；不要为求全面反复查同一指标的不同窗口
+              （有当前+基线对比即可）；业务/观测两面各覆盖关键指标后即收敛。
             5. 不把相关当因果；有反证须显式说明（counterEvidence）；结论的不确定性须声明。
             6. 每次输出必须是合法 JSON（不要 markdown 代码块），格式：
             {"action":"TOOL_CALL","tool":"queryOrderVolume","args":{"window":"2026-08-01~2026-08-07"},"reasoning":"为什么查"}
@@ -297,6 +303,9 @@ public class AgentHarness {
                 case PolicyGuard.TOOL_MQ_DLQ -> obsToolAccess.mqDlqBacklog(args == null ? null : args.get("consumerGroup"));
                 case PolicyGuard.TOOL_MYSQL_REPLICA_LAG -> obsToolAccess.mysqlReplicationLag();
                 case PolicyGuard.TOOL_MYSQL_DEADLOCKS -> obsToolAccess.mysqlDeadlocks();
+                case PolicyGuard.TOOL_FUNNEL -> metricToolAccess.funnelConversion(window);
+                case PolicyGuard.TOOL_PAY_FAILURES -> metricToolAccess.paymentFailures(window);
+                case PolicyGuard.TOOL_NOTE_PUBLISH -> metricToolAccess.notePublishEvents(window);
                 default -> "ERROR: 未注册工具 " + tool;
             };
         } catch (Exception e) {
