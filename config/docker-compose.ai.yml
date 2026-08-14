@@ -1,0 +1,52 @@
+# my-xhs AI 服务部署（M8-1；与观测栈同机/同网段，需先起 my-xhs-ai-mcp）
+# 使用：docker compose -f config/docker-compose.ai.yml up -d
+# 构建：docker build --build-arg MODULE=my-xhs-ai-app -f Dockerfile.template -t myxhs/ai-app:1.0.0 .
+#        docker build --build-arg MODULE=my-xhs-ai-mcp -f Dockerfile.template -t myxhs/ai-mcp:1.0.0 .
+services:
+  ai-mcp:
+    image: myxhs/ai-mcp:1.0.0
+    container_name: my-xhs-ai-mcp
+    network_mode: host
+    environment:
+      TZ: Asia/Shanghai
+      MYXHS_DB_URL: jdbc:mysql://127.0.0.1:3306/my_xhs_order_0?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+      MYXHS_DB_USER: myxhs_ai_ro
+      MYXHS_DB_PASSWORD: "${MYXHS_DB_PASSWORD}"
+      MYXHS_ES_PASS: "${MYXHS_ES_PASS}"
+      MCP_API_KEY: "${MCP_API_KEY}"          # 生产必设；未设 dev 放行（WARN）
+      MYXHS_AI_DB_URL: jdbc:mysql://127.0.0.1:3306/my_xhs_ai?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+      MYXHS_AI_DB_USER: myxhs_ai_rw
+      MYXHS_AI_DB_PASSWORD: "${MYXHS_AI_DB_PASSWORD}"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:19021/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  ai-app:
+    image: myxhs/ai-app:1.0.0
+    container_name: my-xhs-ai-app
+    network_mode: host
+    depends_on:
+      ai-mcp:
+        condition: service_healthy
+    environment:
+      TZ: Asia/Shanghai
+      MYXHS_DB_URL: jdbc:mysql://127.0.0.1:3306/my_xhs_order_0?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+      MYXHS_DB_USER: myxhs_ai_ro
+      MYXHS_DB_PASSWORD: "${MYXHS_DB_PASSWORD}"
+      MYXHS_AI_DB_URL: jdbc:mysql://127.0.0.1:3306/my_xhs_ai?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+      MYXHS_AI_DB_USER: myxhs_ai_rw
+      MYXHS_AI_DB_PASSWORD: "${MYXHS_AI_DB_PASSWORD}"
+      MYXHS_LLM_API_KEY: "${MYXHS_LLM_API_KEY}"   # OpenCode Go（仅 deepseek-v4-flash，成本红线）
+      MYXHS_ES_URL: http://127.0.0.1:19200
+      MYXHS_ES_USER: elastic
+      MYXHS_ES_PASS: "${MYXHS_ES_PASS}"
+      ARK_PLAN_BASE_URL: https://ark.cn-beijing.volces.com/api/plan/v3
+      ARK_PLAN_API_KEY: "${ARK_PLAN_API_KEY}"
+      MCP_API_KEY: "${MCP_API_KEY}"                # 与 ai-mcp 一致（认证）
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:19020/api/ai/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
