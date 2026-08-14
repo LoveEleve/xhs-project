@@ -8,17 +8,20 @@
 - **内容**：AI 模块全依赖清单（LangChain4j/MCP SDK/Spring Boot/Jackson/micrometer…）带版本
 - **使用**：CI 或交付时归档；漏洞比对（NVD）可接 `dependency-check-maven`（CI 可选 job，慢）或第三方扫描（Trivy/Snyk）
 - **AI 模块依赖锁定**：根 pom BOM 管理（Boot 3.2.5 / Jackson 2.16.1 / MCP 0.18.3 / LangChain4j 1.0.0）
+- **插件版本状态**：cyclonedx-maven-plugin 2.7.10（本地 m2 可用、生成已验证）；
+  升级前需联网核验最新版（2026-08-14 网络受限未核验）——SBOM 功能不受版本影响
 - **待办**：`mvn -pl my-xhs-ai-app package` 后验证 bom.json 生成；依赖漏洞扫描进 CI（模板见下）
 
 ```yaml
 # CI 可选 job：依赖漏洞扫描（慢，nightly 跑）
+# 输入用 CycloneDX SBOM（dependency-check 原生支持，比依赖树文本可靠）
 ai-dependency-scan:
   stage: test
   image: owasp/dependency-check:latest
   script:
-    - mvn -pl my-xhs-ai-app dependency:tree -DoutputType=text > /tmp/deps.txt
+    - mvn -pl my-xhs-ai-app package -DskipTests   # 生成 target/bom.json
     - /usr/share/dependency-check/bin/dependency-check.sh --project my-xhs-ai \
-        --scan /tmp/deps.txt --format JSON --out target/dc-report.json
+        --scan my-xhs-ai-app/target/bom.json --format JSON --out target/dc-report.json
   artifacts:
     when: always
     paths: [ my-xhs-ai-app/target/dc-report.json ]
