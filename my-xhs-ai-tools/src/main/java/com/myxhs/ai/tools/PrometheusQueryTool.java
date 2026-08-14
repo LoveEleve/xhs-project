@@ -1,0 +1,164 @@
+package com.myxhs.ai.tools;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Prometheus 观测查询工具（D4 B3 面：5xx/慢端点，L2 只读）。
+ * 纯 JDK HttpClient 查 PromQL HTTP API，无 DB；结果 JSON 聚合（按 service/uri/status）。
+ * 指标源：Spring Boot Actuator http_server_requests（my-xhs 服务已接入）。
+ * 窗口语义：最近 N 小时（观测数据是近期时间序列，与业务日期窗不同）。
+ */
+public class PrometheusQueryTool {
+
+    public static final String METRIC_HTTP_ERRORS = "service.http_errors";
+    public static final String METRIC_HTTP_LATENCY = "service.http_latency";
+
+    private final HttpClient http;
+    private final ObjectMapper om;
+    private final String prometheusUrl;
+
+    public PrometheusQueryTool(String prometheusUrl) {
+        this(prometheusUrl, new ObjectMapper());
+    }
+
+    public PrometheusQueryTool(String prometheusUrl, ObjectMapper om) {
+        this.prometheusUrl = prometheusUrl;
+        this.om = om;
+        this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+    }
+
+    /** 5xx 错误统计（按 uri+status 聚合，最近 N 小时）；service 为空则查全部 */
+    public String httpErrors(String service, String hours) {
+        ObjectNode node = om.createObjectNode();
+        node.put("status", "ok");
+        node.put("metric", METRIC_HTTP_ERRORS);
+        node.put("asOf", java.time.Instant.now().toString());
+        int h;
+        try {
+            h = Integer.parseInt(hours);
+            if (h <= 0 || h > 168) {
+                return error("hours 必须在 1~168 之间: " + hours);
+            }
+        } catch (NumberFormatException e) {
+            return error("hours 必须为整数（最近 N 小时）: " + hours);
+        }
+        node.put("hours", h);
+        String range = h + "h";
+        String svcFilter = (service == null || service.isBlank()) ? "" : "service=\"" + service + "\",";
+        Map<String, Double> byUri = new LinkedHashMap<>();
+        try {
+            // 最近 N 小时 5xx 错误总数（按 uri+status+service 聚合）
+            JsonNode resp = query("sum by (uri,status,service) (increase(http_server_requests_seconds_count{"
+                    + svcFilter + "status=~\"5..\"}[" + range + "]))");
+            double total5xx = 0;
+            for (JsonNode s : resp) {
+                double v = s.path("value").get(1).asDouble();
+                total5xx += v;
+                byUri.merge(s.path("metric").path("uri").asText(), v, Double::sum);
+            }
+            node.put("total5xx", round(total5xx));
+            node.put("window", "最近 " + h + " 小时（错误总数）");
+            ArrayNode uris = node.putArray("byUri");
+            byUri.entrySet().stream()
+                    .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                    .limit(10)
+                    .forEach(e -> uris.addObject().put("uri", e.getKey()).put("rate5xxPerSec", round(e.getValue())));
+        } catch (Exception e) {
+            return error("Prometheus 查询失败: " + e.getMessage());
+        }
+        return write(node);
+    }
+
+    /** 慢端点 top N（P95 延迟，最近 N 小时） */
+    public String httpLatency(String service, String hours) {
+        ObjectNode node = om.createObjectNode();
+        node.put("status", "ok");
+        node.put("metric", METRIC_HTTP_LATENCY);
+        node.put("asOf", java.time.Instant.now().toString());
+        int h;
+        try {
+            h = Integer.parseInt(hours);
+            if (h <= 0 || h > 168) {
+                return error("hours 必须在 1~168 之间: " + hours);
+            }
+        } catch (NumberFormatException e) {
+            return error("hours 必须为整数（最近 N 小时）: " + hours);
+        }
+        node.put("hours", h);
+        String range = h + "h";
+        String svcFilter = (service == null || service.isBlank()) ? "" : "service=\"" + service + "\",";
+        try {
+            String q = "histogram_quantile(0.95, sum by (le,uri,service) (rate(http_server_requests_seconds_bucket{"
+                    + svcFilter + "}[" + range + "])))";
+            JsonNode resp = query(q);
+            List<JsonNode> sorted = new ArrayList<>();
+            for (JsonNode s : resp) {
+                sorted.add(s);
+            }
+            sorted.sort((a, b) -> Double.compare(
+                    b.path("value").get(1).asDouble(), a.path("value").get(1).asDouble()));
+            node.put("window", "最近 " + h + " 小时（P95 延迟）");
+            ArrayNode uris = node.putArray("topLatency");
+            for (JsonNode s : sorted.stream().limit(10).toList()) {
+                double v = s.path("value").get(1).asDouble();
+                if (v <= 0) {
+                    continue;
+                }
+                uris.addObject()
+                        .put("service", s.path("metric").path("service").asText())
+                        .put("uri", s.path("metric").path("uri").asText())
+                        .put("p95Seconds", round(v));
+            }
+        } catch (Exception e) {
+            return error("Prometheus 查询失败: " + e.getMessage());
+        }
+        return write(node);
+    }
+
+    /** 执行 PromQL 查询，返回 result 数组 */
+    private JsonNode query(String promql) throws Exception {
+        String url = prometheusUrl + "/api/v1/query?query=" + java.net.URLEncoder.encode(promql, "UTF-8");
+        HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+                .timeout(Duration.ofSeconds(15))
+                .GET().build();
+        HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
+        JsonNode body = om.readTree(resp.body());
+        if (!"success".equals(body.path("status").asText())) {
+            throw new IllegalStateException("PromQL 返回非 success: " + body);
+        }
+        return body.path("data").path("result");
+    }
+
+    private String error(String msg) {
+        ObjectNode node = om.createObjectNode();
+        node.put("status", "error");
+        node.put("metric", METRIC_HTTP_ERRORS);
+        node.put("error", msg);
+        return write(node);
+    }
+
+    private String write(ObjectNode node) {
+        try {
+            return om.writeValueAsString(node);
+        } catch (Exception e) {
+            return "{\"status\":\"error\",\"error\":\"序列化失败\"}";
+        }
+    }
+
+    private static double round(double v) {
+        return Math.round(v * 1000.0) / 1000.0;
+    }
+}

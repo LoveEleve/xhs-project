@@ -2,6 +2,7 @@ package com.myxhs.ai.app.service.agent.harness;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.ai.tools.MetricToolAccess;
+import com.myxhs.ai.tools.ObsToolAccess;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.UserMessage;
@@ -13,6 +14,7 @@ import dev.langchain4j.model.output.TokenUsage;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.regex.Matcher;
@@ -97,8 +99,21 @@ class AgentHarnessTest {
         return m.toString();
     }
 
+    /** 假观测工具：固定返回，含 service 便于区分 */
+    private static final class FakeObsTools implements ObsToolAccess {
+        @Override
+        public String httpErrors(String service, String hours) {
+            return "5xx total=3 service=" + service + " hours=" + hours;
+        }
+
+        @Override
+        public String httpLatency(String service, String hours) {
+            return "p95=0.8 service=" + service + " hours=" + hours;
+        }
+    }
+
     private static AgentHarness harness(Function<List<String>, String> responder, AgentBudget budget) {
-        return new AgentHarness(new FakeDecisionModel(responder), new FakeMetricTools(),
+        return new AgentHarness(new FakeDecisionModel(responder), new FakeMetricTools(), new FakeObsTools(),
                 MAPPER, budget, 0.002, 2);
     }
 
@@ -183,6 +198,37 @@ class AgentHarnessTest {
     }
 
     @Test
+    void 观测工具_5xx归因走L2工具() {
+        AgentHarness h = harness(texts -> {
+            long toolResults = texts.stream().filter(t -> t.contains("证据 id=")).count();
+            if (toolResults == 0) {
+                return "{\"action\":\"TOOL_CALL\",\"tool\":\"httpErrors\","
+                        + "\"args\":{\"service\":\"my-xhs-gateway\",\"hours\":\"6\"},\"reasoning\":\"查 5xx\"}";
+            }
+            String ev = lastEvId(texts);
+            return answerJson("gateway 近 6 小时有 5xx 错误", ev);
+        }, AgentBudget.defaults());
+
+        AgentRun run = h.run("为什么最近有 5xx");
+
+        assertEquals(RunStatus.SUCCEEDED, run.status());
+        assertTrue(run.finalAnswer().contains("5xx 错误"));
+        var ev = run.evidenceChain().entries().get(0);
+        assertEquals("httpErrors", ev.tool());
+        assertTrue(run.registry().get(ev.evidenceId()).orElseThrow().result().contains("my-xhs-gateway"));
+    }
+
+    @Test
+    void 观测工具_hours非法被策略拒绝() {
+        AgentHarness h = harness(texts -> toolCallJson("httpErrors", "6"), AgentBudget.defaults());
+        // 用 PolicyGuard 直接验证 hours 校验
+        PolicyDecision d = new PolicyGuard().evaluate("httpErrors", Map.of("service", "my-xhs-gateway", "hours", "0"));
+        assertEquals(false, d.allowed());
+        PolicyDecision ok = new PolicyGuard().evaluate("httpErrors", Map.of("service", "my-xhs-gateway", "hours", "6"));
+        assertEquals(true, ok.allowed());
+    }
+
+    @Test
     void 事件流_完整序列推送() {
         AgentHarness h = harness(texts -> {
             String ev = lastEvId(texts);
@@ -241,7 +287,7 @@ class AgentHarnessTest {
             }
             return answerJson("ok", ev);
         });
-        AgentHarness h = new AgentHarness(model, new FakeMetricTools(), MAPPER,
+        AgentHarness h = new AgentHarness(model, new FakeMetricTools(), new FakeObsTools(), MAPPER,
                 AgentBudget.defaults(), 0.002, 2);
 
         h.run("为什么 2026-08-10 到 2026-08-13 订单量下降了");
@@ -261,7 +307,7 @@ class AgentHarnessTest {
             }
             return answerJson("ok", ev);
         });
-        AgentHarness h = new AgentHarness(model, new FakeMetricTools(), MAPPER,
+        AgentHarness h = new AgentHarness(model, new FakeMetricTools(), new FakeObsTools(), MAPPER,
                 AgentBudget.defaults(), 0.002, 2);
 
         h.run("为什么订单量下降了");
@@ -386,7 +432,7 @@ class AgentHarnessTest {
                 return toolCallJson("queryOrderVolume", "2026-08-01~2026-08-07");
             }
             return answerJson("工具不可用，无法获取下单量", ev);
-        }), broken, MAPPER, AgentBudget.defaults(), 0.002, 2);
+        }), broken, new FakeObsTools(), MAPPER, AgentBudget.defaults(), 0.002, 2);
 
         AgentRun run = h.run("为什么订单量下降了");
 
@@ -401,7 +447,7 @@ class AgentHarnessTest {
         // 单价 1000000/1k tokens：第一步即超 maxCost=1 → 第二步 checkBeforeStep 触发 BUDGET_COST
         AgentHarness h = new AgentHarness(new FakeDecisionModel(texts ->
                         toolCallJson("queryOrderVolume", "2026-08-01~2026-08-07")),
-                new FakeMetricTools(), MAPPER, new AgentBudget(100, 100_000, 1.0), 1_000_000, 2);
+                new FakeMetricTools(), new FakeObsTools(), MAPPER, new AgentBudget(100, 100_000, 1.0), 1_000_000, 2);
 
         AgentRun run = h.run("为什么订单量下降了");
 

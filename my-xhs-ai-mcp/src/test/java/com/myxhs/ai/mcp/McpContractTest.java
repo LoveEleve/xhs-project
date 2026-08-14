@@ -102,20 +102,24 @@ class McpContractTest {
     }
 
     @Test
-    void tools_list_返回四个工具() throws Exception {
+    void tools_list_返回六个工具() throws Exception {
         send("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\","
                 + "\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},"
                 + "\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}");
         send("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{}}");
         JsonNode resp = send("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}");
         JsonNode tools = resp.path("result").path("tools");
-        assertTrue(tools.size() == 4, "应 4 个工具: " + tools);
+        assertTrue(tools.size() == 6, "应 6 个工具: " + tools);
         assertEquals("order.query_volume", tools.get(0).path("name").asText());
         assertEquals("payment.success_rate", tools.get(1).path("name").asText());
         assertEquals("content.interaction", tools.get(2).path("name").asText());
         assertEquals("baseline.window", tools.get(3).path("name").asText());
+        assertEquals("service.http_errors", tools.get(4).path("name").asText());
+        assertEquals("service.http_latency", tools.get(5).path("name").asText());
         assertTrue(tools.get(0).path("inputSchema").path("properties").has("window"),
                 "应声明 window 参数 schema");
+        assertTrue(tools.get(4).path("inputSchema").path("properties").has("hours"),
+                "观测工具应声明 hours 参数 schema");
     }
 
     @Test
@@ -144,6 +148,17 @@ class McpContractTest {
         assertTrue(text.contains("\"status\":\"error\""), "应返回 error JSON: " + text);
         assertTrue(text.contains("格式必须为"), "应带错误原因: " + text);
         assertEquals(false, resp.path("result").path("isError").asBoolean(false));
+    }
+
+    @Test
+    void tools_call_观测工具缺hours返回错误() throws Exception {
+        send("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\","
+                + "\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},"
+                + "\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}");
+        send("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{}}");
+        JsonNode resp = send("{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\","
+                + "\"params\":{\"name\":\"service.http_errors\",\"arguments\":{\"service\":\"my-xhs-gateway\"}}}");
+        assertEquals(true, resp.path("result").path("isError").asBoolean(false), "缺 hours 应报错");
     }
 
     @Test

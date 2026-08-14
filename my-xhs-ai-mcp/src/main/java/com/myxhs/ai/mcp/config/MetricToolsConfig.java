@@ -5,6 +5,7 @@ import com.myxhs.ai.tools.BaselineWindowTool;
 import com.myxhs.ai.tools.ContentInteractionTool;
 import com.myxhs.ai.tools.OrderMetricsTool;
 import com.myxhs.ai.tools.PaymentMetricsTool;
+import com.myxhs.ai.tools.PrometheusQueryTool;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -35,5 +36,12 @@ public class MetricToolsConfig {
     @Bean
     public BaselineWindowTool baselineWindowTool(ObjectMapper objectMapper) {
         return new BaselineWindowTool(objectMapper);
+    }
+
+    /** B3 面观测工具（L2 只读，PromQL 查 Prometheus；URL 指向远端 19090） */
+    @Bean
+    public PrometheusQueryTool prometheusQueryTool(ObjectMapper objectMapper,
+                                                   @Value("${myxhs.ai.obs.prometheus-url:http://21.130.247.89:19090}") String prometheusUrl) {
+        return new PrometheusQueryTool(prometheusUrl, objectMapper);
     }
 }

@@ -5,6 +5,7 @@ import com.myxhs.ai.tools.BaselineWindowTool;
 import com.myxhs.ai.tools.ContentInteractionTool;
 import com.myxhs.ai.tools.OrderMetricsTool;
 import com.myxhs.ai.tools.PaymentMetricsTool;
+import com.myxhs.ai.tools.PrometheusQueryTool;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
@@ -37,6 +38,11 @@ public class McpServerConfig {
             {"type":"object","properties":{"window":{"type":"string","description":"时间窗 yyyy-MM-dd~yyyy-MM-dd，跨度≤31天"}},"required":["window"]}
             """;
 
+    /** 观测工具参数 schema（service+hours，B3 面） */
+    private static final String OBS_SCHEMA = """
+            {"type":"object","properties":{"service":{"type":"string","description":"服务名，如 my-xhs-order；空=全部"},"hours":{"type":"string","description":"最近小时数 1~168"}},"required":["hours"]}
+            """;
+
     @Bean
     public McpJsonMapper mcpJsonMapper(ObjectMapper objectMapper) {
         return new JacksonMcpJsonMapper(objectMapper);
@@ -62,7 +68,8 @@ public class McpServerConfig {
                                        OrderMetricsTool orderMetricsTool,
                                        PaymentMetricsTool paymentMetricsTool,
                                        ContentInteractionTool contentInteractionTool,
-                                       BaselineWindowTool baselineWindowTool) {
+                                       BaselineWindowTool baselineWindowTool,
+                                       PrometheusQueryTool prometheusQueryTool) {
         return McpServer.sync(transport)
                 .serverInfo("my-xhs-ai-mcp", "1.0.0")
                 .tools(
@@ -77,7 +84,13 @@ public class McpServerConfig {
                                 contentInteractionTool::contentInteraction),
                         toolSpec(jsonMapper, "baseline.window",
                                 "计算对比基线窗口（上一同长窗口，确定性，模型不得自行推算）",
-                                baselineWindowTool::baselineWindow)
+                                baselineWindowTool::baselineWindow),
+                        obsToolSpec(jsonMapper, "service.http_errors",
+                                "服务 HTTP 5xx 错误统计（按 uri 聚合，最近 N 小时）",
+                                (args) -> prometheusQueryTool.httpErrors(str(args.get("service")), str(args.get("hours")))),
+                        obsToolSpec(jsonMapper, "service.http_latency",
+                                "服务 HTTP 慢端点 top（P95 延迟秒，最近 N 小时）",
+                                (args) -> prometheusQueryTool.httpLatency(str(args.get("service")), str(args.get("hours"))))
                 )
                 .build();
     }
@@ -109,5 +122,38 @@ public class McpServerConfig {
                     }
                 })
                 .build();
+    }
+
+    /** 观测工具（多参数 service+hours） */
+    private static McpServerFeatures.SyncToolSpecification obsToolSpec(McpJsonMapper mapper, String name, String desc,
+                                                                       Function<Map<String, Object>, String> fn) {
+        McpSchema.Tool tool = McpSchema.Tool.builder()
+                .name(name)
+                .description(desc)
+                .inputSchema(mapper, OBS_SCHEMA)
+                .build();
+        return McpServerFeatures.SyncToolSpecification.builder()
+                .tool(tool)
+                .callHandler((exchange, request) -> {
+                    try {
+                        Map<String, Object> args = request.arguments();
+                        if (args == null || args.get("hours") == null) {
+                            return new McpSchema.CallToolResult("缺少参数 hours（1~168）", true);
+                        }
+                        long start = System.currentTimeMillis();
+                        String result = fn.apply(args);
+                        log.info("[mcp-audit] tool={} service={} hours={} ok costMs={}", name,
+                                args.get("service"), args.get("hours"), System.currentTimeMillis() - start);
+                        return new McpSchema.CallToolResult(result, false);
+                    } catch (Exception e) {
+                        log.warn("[mcp-audit] tool={} error: {}", name, e.getMessage());
+                        return new McpSchema.CallToolResult("工具调用失败: " + e.getMessage(), true);
+                    }
+                })
+                .build();
+    }
+
+    private static String str(Object o) {
+        return o == null ? null : String.valueOf(o);
     }
 }

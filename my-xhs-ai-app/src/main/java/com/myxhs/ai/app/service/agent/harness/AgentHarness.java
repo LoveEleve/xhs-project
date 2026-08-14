@@ -3,6 +3,7 @@ package com.myxhs.ai.app.service.agent.harness;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.ai.app.service.QueryWindowExtractor;
 import com.myxhs.ai.tools.MetricToolAccess;
+import com.myxhs.ai.tools.ObsToolAccess;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
@@ -39,6 +40,10 @@ public class AgentHarness {
             - paymentSuccessRate(window)：支付成功率（口径：成功/(成功+失败)，排除待支付/退款；渠道为 Mock：1支付宝/2微信/99）
             - contentInteraction(window)：内容互动量（口径：点赞/收藏/评论/分享，曝光单列）
             - baselineWindow(window)：计算对比基线窗口（上一同长窗口，确定性）
+            - httpErrors(service, hours)：服务 HTTP 5xx 错误统计（按 uri 聚合，最近 N 小时；service 如 my-xhs-gateway，空=全部）
+            - httpLatency(service, hours)：服务 HTTP 慢端点 top（P95 延迟秒，最近 N 小时）
+            已知服务名（L2 观测可用）：my-xhs-gateway / my-xhs-order / my-xhs-payment / my-xhs-content /
+            my-xhs-user / my-xhs-inventory / my-xhs-product / my-xhs-search / my-xhs-cart / my-xhs-coupon 等
             规则：
             1. 数字必须来自工具结果，禁止编造。
             2. 对比/升降分析：**当前窗口以系统注入的时间窗规则为准**（见消息中的"当前窗口已确定"）；
@@ -53,16 +58,18 @@ public class AgentHarness {
 
     private final ChatModel chatModel;
     private final MetricToolAccess metricToolAccess;
+    private final ObsToolAccess obsToolAccess;
     private final PolicyGuard policyGuard = new PolicyGuard();
     private final AgentDecisionCodec codec;
     private final AgentBudget defaultBudget;
     private final double pricePer1kTokens;
     private final int maxInvalidAnswers;
 
-    public AgentHarness(ChatModel chatModel, MetricToolAccess metricToolAccess, ObjectMapper mapper,
-                        AgentBudget defaultBudget, double pricePer1kTokens, int maxInvalidAnswers) {
+    public AgentHarness(ChatModel chatModel, MetricToolAccess metricToolAccess, ObsToolAccess obsToolAccess,
+                        ObjectMapper mapper, AgentBudget defaultBudget, double pricePer1kTokens, int maxInvalidAnswers) {
         this.chatModel = chatModel;
         this.metricToolAccess = metricToolAccess;
+        this.obsToolAccess = obsToolAccess;
         this.codec = new AgentDecisionCodec(mapper);
         this.defaultBudget = defaultBudget;
         this.pricePer1kTokens = pricePer1kTokens;
@@ -272,12 +279,16 @@ public class AgentHarness {
     /** 工具执行（只经 allowlist；异常→ERROR 结果如实回填，不抛出） */
     private String callTool(String tool, Map<String, String> args) {
         String window = args == null ? null : args.get("window");
+        String service = args == null ? null : args.get("service");
+        String hours = args == null ? null : args.get("hours");
         try {
             return switch (tool) {
                 case PolicyGuard.TOOL_ORDER_VOLUME -> metricToolAccess.queryOrderVolume(window);
                 case PolicyGuard.TOOL_PAYMENT_RATE -> metricToolAccess.paymentSuccessRate(window);
                 case PolicyGuard.TOOL_CONTENT_INTERACTION -> metricToolAccess.contentInteraction(window);
                 case PolicyGuard.TOOL_BASELINE_WINDOW -> metricToolAccess.baselineWindow(window);
+                case PolicyGuard.TOOL_HTTP_ERRORS -> obsToolAccess.httpErrors(service, hours);
+                case PolicyGuard.TOOL_HTTP_LATENCY -> obsToolAccess.httpLatency(service, hours);
                 default -> "ERROR: 未注册工具 " + tool;
             };
         } catch (Exception e) {
