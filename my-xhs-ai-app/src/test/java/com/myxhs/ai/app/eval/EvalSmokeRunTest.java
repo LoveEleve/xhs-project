@@ -1,6 +1,7 @@
 package com.myxhs.ai.app.eval;
 
 import com.myxhs.ai.app.service.agent.harness.AgentHarness;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,8 +29,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
         "spring.ai-datasource.url=jdbc:h2:mem:evalsmokeai;MODE=MySQL;DB_CLOSE_DELAY=-1",
         "spring.ai-datasource.username=sa",
         "spring.ai-datasource.password=sa",
-        "myxhs.ai.llm.api-key=test-key"
+        "myxhs.ai.llm.api-key=${MYXHS_LLM_API_KEY:test-key}"
 })
+@Tag("eval-gate")
 @EnabledIfEnvironmentVariable(named = "MYXHS_LLM_API_KEY", matches = ".+")
 class EvalSmokeRunTest {
 

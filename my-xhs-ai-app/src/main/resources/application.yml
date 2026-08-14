@@ -48,6 +48,12 @@ myxhs:
       max-cost: 1.0
       price-per-1k-tokens: 0.002
       max-invalid-answers: 2
+    eval:
+      # M6-4 评测门禁阈值（PR 放行红线；实测校准后收紧）
+      gate:
+        max-hallucination-rate: 10
+        min-pass-rate: 60
+        min-completion-rate: 40
     rag:
       es-url: ${MYXHS_ES_URL:http://21.130.247.89:19200}
       es-user: ${MYXHS_ES_USER:elastic}

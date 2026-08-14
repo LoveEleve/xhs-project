@@ -94,8 +94,36 @@
         </dependency>
     </dependencies>
 
+    <profiles>
+        <!-- M6-4 PR 门禁：真库+真模型评测（需 MYXHS_LLM_API_KEY；CI 无凭据自动跳过；
+             默认 mvn test 排除，仅 -Peval-gate 触发） -->
+        <profile>
+            <id>eval-gate</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <groups>eval-gate</groups>
+                            <excludedGroups></excludedGroups>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- 默认排除真库评测（eval-gate tag；-Peval-gate 才跑） -->
+                    <excludedGroups>eval-gate</excludedGroups>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
