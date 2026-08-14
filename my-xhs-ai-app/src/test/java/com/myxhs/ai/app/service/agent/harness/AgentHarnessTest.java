@@ -317,6 +317,26 @@ class AgentHarnessTest {
     }
 
     @Test
+    void 取消事件流_终态事件为CANCELLED() {
+        java.util.concurrent.atomic.AtomicBoolean token = new java.util.concurrent.atomic.AtomicBoolean(false);
+        AgentHarness h = harness(texts -> {
+            String ev = lastEvId(texts);
+            if (ev == null) {
+                return toolCallJson("queryOrderVolume", "2026-08-01~2026-08-07");
+            }
+            token.set(true);
+            return toolCallJson("paymentSuccessRate", "2026-08-01~2026-08-07");
+        }, AgentBudget.defaults());
+
+        java.util.List<HarnessEvent> events = new java.util.ArrayList<>();
+        h.run("为什么订单量下降了", AgentBudget.defaults(), events::add, "anonymous", token);
+
+        HarnessEvent last = events.get(events.size() - 1);
+        assertEquals("CANCELLED", last.type(), "终态事件应与 run 状态一致: " + events);
+        assertEquals("CANCELLED", last.terminationReason());
+    }
+
+    @Test
     void 落库集成_run和step持久化() {
         var ds = new org.springframework.jdbc.datasource.DriverManagerDataSource(
                 "jdbc:h2:mem:harnessstore;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");

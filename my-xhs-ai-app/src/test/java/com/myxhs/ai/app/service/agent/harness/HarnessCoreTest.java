@@ -208,7 +208,8 @@ class HarnessCoreTest {
         assertEquals(TerminationReason.BUDGET_STEPS, run.terminationReason());
 
         AgentRun run2 = new AgentRun("r2", "q", AgentBudget.defaults());
-        run2.cancel();
+        run2.terminate(TerminationReason.CANCELLED, "已取消");
         assertEquals(RunStatus.CANCELLED, run2.status());
+        assertEquals(TerminationReason.CANCELLED, run2.terminationReason());
     }
 }

@@ -443,7 +443,9 @@ public class AgentHarness {
         String answer = sb.toString();
         run.terminate(reason, answer);
         log.info("[harness] run={} {} answer={}", run.runId(), reason, answer);
-        emit(listener, new HarnessEvent(run.runId(), "PARTIAL", ctrl.steps(), null, null, null,
+        // 终态事件 type 与 run 状态一致（取消=CANCELLED，其余=PARTIAL）
+        String eventType = run.status() == RunStatus.CANCELLED ? "CANCELLED" : "PARTIAL";
+        emit(listener, new HarnessEvent(run.runId(), eventType, ctrl.steps(), null, null, null,
                 reason.name(), answer));
         storeRunFinish(run, ctrl);
         return run;

@@ -47,14 +47,6 @@ public class AgentRun {
         this.endedAt = Instant.now();
     }
 
-    /** 用户取消（设计 §6.1#6）：仅 V1 同步执行前的入口，预留 D5 异步化 */
-    public void cancel() {
-        this.status = RunStatus.CANCELLED;
-        this.terminationReason = null;
-        this.finalAnswer = null;
-        this.endedAt = Instant.now();
-    }
-
     public String runId() {
         return runId;
     }
