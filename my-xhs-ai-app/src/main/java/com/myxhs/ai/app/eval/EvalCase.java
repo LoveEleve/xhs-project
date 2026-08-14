@@ -17,6 +17,7 @@ public record EvalCase(
         int minEvidence,
         List<String> contains,
         List<String> notContains,
+        List<String> notRegex,
         boolean numbersConsistent) {
 
     public static EvalCase fromYaml(Map<String, Object> m) {
@@ -28,6 +29,7 @@ public record EvalCase(
                 intOf(m.get("minEvidence")),
                 strList(m.get("contains")),
                 strList(m.get("notContains")),
+                strList(m.get("notRegex")),
                 boolOf(m.get("numbersConsistent")));
     }
 

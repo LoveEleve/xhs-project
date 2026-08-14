@@ -36,6 +36,11 @@ public class EvalAsserter {
                 fails.add("答案含禁用词: " + k);
             }
         }
+        for (String r : c.notRegex()) {
+            if (Pattern.compile(r).matcher(answer).find()) {
+                fails.add("答案匹配禁用模式: " + r);
+            }
+        }
         return fails;
     }
 

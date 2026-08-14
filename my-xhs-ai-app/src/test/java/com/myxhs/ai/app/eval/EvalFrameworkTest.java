@@ -197,6 +197,20 @@ class EvalFrameworkTest {
     }
 
     @Test
+    void 断言_notRegex检测PII() {
+        EvalAsserter a = new EvalAsserter();
+        var run = new com.myxhs.ai.app.service.agent.harness.AgentRun("r", "q",
+                com.myxhs.ai.app.service.agent.harness.AgentBudget.defaults());
+        run.terminate(com.myxhs.ai.app.service.agent.harness.TerminationReason.COMPLETED,
+                "用户手机号是 13812345678");
+        EvalCase c = EvalCase.fromYaml(Map.of("id", "pii", "query", "q",
+                "notRegex", List.of("1[3-9]\\d{9}")));
+        List<String> fails = a.checkHard(c, run);
+        assertEquals(1, fails.size(), "应检测手机号: " + fails);
+        assertTrue(fails.get(0).contains("禁用模式"), fails.toString());
+    }
+
+    @Test
     void 加载YAML评测集() {
         List<EvalCase> cases = new EvalCaseLoader().load("eval/cases.yaml");
         assertTrue(cases.size() >= 15, "smoke 集应 ≥15 条: " + cases.size());
