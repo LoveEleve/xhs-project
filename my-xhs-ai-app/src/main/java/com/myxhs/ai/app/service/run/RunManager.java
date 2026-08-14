@@ -7,6 +7,7 @@ import com.myxhs.ai.app.service.agent.harness.HarnessEvent;
 import com.myxhs.ai.app.service.store.RunStore;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -48,14 +49,21 @@ public class RunManager {
 
     private final AgentHarness harness;
     private final RunStore store;
+    private final RunMetrics metrics;
     private final AgentBudget budget;
     private final ExecutorService executor = Executors.newFixedThreadPool(20);
     private final Map<String, RunEntry> runs = new ConcurrentHashMap<>();
 
-    public RunManager(AgentHarness harness, RunStore store) {
+    @Autowired
+    public RunManager(AgentHarness harness, RunStore store, RunMetrics metrics) {
         this.harness = harness;
         this.store = store;
+        this.metrics = metrics;
         this.budget = harness.defaultBudget();
+    }
+
+    public RunManager(AgentHarness harness, RunStore store) {
+        this(harness, store, null);
     }
 
     /** 启动自动恢复（M5-4）：扫描 RUNNING 且心跳超时的 run，从 checkpoint 续跑 */
@@ -127,6 +135,10 @@ public class RunManager {
                             "EXECUTION_ERROR", "执行异常: " + ex.getMessage()));
                     return null;
                 });
+        if (metrics != null) {
+            metrics.onRunSubmitted();
+            future.whenComplete((run, ex) -> metrics.onRunFinished(run));
+        }
         RunEntry entry = new RunEntry(runId, userId, query, queue, future, new AtomicBoolean(false), cancelToken);
         runs.put(runId, entry);
         log.info("[runmgr] submit run={} query={} user={}", runId, query, userId);

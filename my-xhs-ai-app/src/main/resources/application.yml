@@ -57,6 +57,15 @@ myxhs:
       embedding-key: ${ARK_PLAN_API_KEY:}
       embedding-model: ${ARK_EMBEDDING_MODEL:doubao-embedding-vision-large}
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: prometheus,health
+  metrics:
+    tags:
+      application: my-xhs-ai-app
+
 logging:
   level:
     root: info
