@@ -10,6 +10,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import javax.sql.DataSource;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * EventAnalyticsTool 单测（H2 五表：漏斗/支付事件/笔记事件/订单/支付）。
@@ -100,5 +101,15 @@ class EventAnalyticsToolTest {
         assertEquals(0, r.path("browse").asInt());
         assertEquals(0, r.path("cartAdd").asInt());
         assertEquals(0, r.path("order").asInt());
+    }
+
+    @Test
+    void 子指标失败_漏斗整体报错不静默负值() throws Exception {
+        // order 表缺失 → OrderMetricsTool 返回 error → funnel 应 error 而非 order=-1
+        jdbc.execute("DROP TABLE IF EXISTS t_order_0");
+        JsonNode r = om.readTree(tool.funnelConversion("2026-08-01~2026-08-07"));
+        assertEquals("error", r.path("status").asText());
+        assertTrue(r.path("error").asText().contains("失败"), "应说明失败: " + r.path("error").asText());
+        assertEquals(false, r.has("order"), "不得输出静默负值 order 字段");
     }
 }

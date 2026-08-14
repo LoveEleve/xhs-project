@@ -1,5 +1,6 @@
 package com.myxhs.ai.tools;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -67,8 +68,8 @@ public class EventAnalyticsTool {
                     "SELECT COUNT(*) FROM my_xhs_cart.t_cart_event"
                             + " WHERE action = 'ADD' AND event_time >= ? AND event_time < ?",
                     Long.class, bounds[0], bounds[1]);
-            long order = parseLong(orderTool.queryOrderVolume(window), "value");
-            long paySuccess = parseLong(paymentTool.paymentSuccessRate(window), "success");
+            long order = parseLongOrFail(orderTool.queryOrderVolume(window), "value");
+            long paySuccess = parseLongOrFail(paymentTool.paymentSuccessRate(window), "success");
             long b = browse == null ? 0 : browse;
             long c = cartAdd == null ? 0 : cartAdd;
             node.put("browse", b);
@@ -148,11 +149,20 @@ public class EventAnalyticsTool {
         return write(node);
     }
 
-    private long parseLong(String json, String field) {
+    /** 解析子指标 JSON 的数值字段；status!=ok 或值非法 → 抛异常（漏斗整体 error，防静默负值） */
+    private long parseLongOrFail(String json, String field) {
         try {
-            return om.readTree(json).path(field).asLong();
+            JsonNode n = om.readTree(json);
+            if (!"ok".equals(n.path("status").asText())) {
+                throw new IllegalStateException("子指标 status=" + n.path("status").asText());
+            }
+            long v = n.path(field).asLong();
+            if (v < 0) {
+                throw new IllegalStateException("子指标 " + field + "=" + v + " 非法");
+            }
+            return v;
         } catch (Exception e) {
-            return -1;
+            throw new IllegalStateException("解析子指标 " + field + " 失败: " + e.getMessage());
         }
     }
 

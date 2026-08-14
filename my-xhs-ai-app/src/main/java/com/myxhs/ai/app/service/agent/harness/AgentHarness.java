@@ -49,7 +49,7 @@ public class AgentHarness {
             - funnelConversion(window)：电商漏斗各环节量（商品浏览/加购/下单/支付，窗口内）
             - paymentFailures(window)：支付失败事件（PAY_FAIL 按失败码聚合，窗口内）
             - notePublishEvents(window)：内容发布事件数（PUBLISH 按天，窗口内）
-            排障提示：gateway 5xx 若 uri=/** 且非业务链路（traceId=null）为扫描/探测噪音，勿归因；
+            排障提示：httpErrors 的 uri=/** 已由工具单列为 noiseScanRoutes（扫描/探测噪音），归因时排除；
             /api/coupon/*、/api/cart/* 的 [Gateway-异常] WARN 日志非 5xx
             已知服务名（L2 观测可用）：my-xhs-gateway / my-xhs-order / my-xhs-payment / my-xhs-content /
             my-xhs-user / my-xhs-inventory / my-xhs-product / my-xhs-search / my-xhs-cart / my-xhs-coupon 等

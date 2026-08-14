@@ -72,12 +72,20 @@ public class PrometheusQueryTool {
             JsonNode resp = query("sum by (uri,status,service) (increase(http_server_requests_seconds_count{"
                     + svcFilter + "status=~\"5..\"}[" + range + "]))");
             double total5xx = 0;
+            double noiseScan = 0;
             for (JsonNode s : resp) {
                 double v = s.path("value").get(1).asDouble();
                 total5xx += v;
-                byUri.merge(s.path("metric").path("uri").asText(), v, Double::sum);
+                String uri = s.path("metric").path("uri").asText();
+                if ("/**".equals(uri)) {
+                    // 扫描/探测噪音（Gateway NoResourceFoundException 兜底）：单列，不并入业务归因
+                    noiseScan += v;
+                } else {
+                    byUri.merge(uri, v, Double::sum);
+                }
             }
             node.put("total5xx", round(total5xx));
+            node.put("noiseScanRoutes", round(noiseScan));
             node.put("window", "最近 " + h + " 小时（错误总数）");
             ArrayNode uris = node.putArray("byUri");
             byUri.entrySet().stream()

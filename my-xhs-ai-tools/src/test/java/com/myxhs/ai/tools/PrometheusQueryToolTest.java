@@ -34,11 +34,19 @@ class PrometheusQueryToolTest {
             if (q.contains("status=~\"5..\"")) {
                 // 模拟 Prometheus 语义：带 service 过滤时只返回该服务（order 12+3=15），否则全部（+gateway 1=16）
                 boolean orderOnly = q.contains("service=\"my-xhs-order\"");
-                body = "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":["
-                        + "{\"metric\":{\"uri\":\"/api/orders\",\"status\":\"500\",\"service\":\"my-xhs-order\"},\"value\":[1,\"12\"]},"
-                        + "{\"metric\":{\"uri\":\"/api/orders\",\"status\":\"503\",\"service\":\"my-xhs-order\"},\"value\":[1,\"3\"]}"
-                        + (orderOnly ? "" : ",{\"metric\":{\"uri\":\"/health\",\"status\":\"500\",\"service\":\"my-xhs-gateway\"},\"value\":[1,\"1\"]}")
-                        + "]}}";
+                boolean gatewayOnly = q.contains("service=\"my-xhs-gateway\"");
+                if (gatewayOnly) {
+                    // gateway 噪音场景：只有 uri=/** 的 5xx（扫描探测）
+                    body = "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":["
+                            + "{\"metric\":{\"uri\":\"/**\",\"status\":\"500\",\"service\":\"my-xhs-gateway\"},\"value\":[1,\"9\"]}"
+                            + "]}}";
+                } else {
+                    body = "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":["
+                            + "{\"metric\":{\"uri\":\"/api/orders\",\"status\":\"500\",\"service\":\"my-xhs-order\"},\"value\":[1,\"12\"]},"
+                            + "{\"metric\":{\"uri\":\"/api/orders\",\"status\":\"503\",\"service\":\"my-xhs-order\"},\"value\":[1,\"3\"]}"
+                            + (orderOnly ? "" : ",{\"metric\":{\"uri\":\"/health\",\"status\":\"500\",\"service\":\"my-xhs-gateway\"},\"value\":[1,\"1\"]}")
+                            + "]}}";
+                }
             } else if (q.contains("rocketmq_consumer_lag")) {
                 body = "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":["
                         + "{\"metric\":{\"group\":\"cart-sync-consumer-group\"},\"value\":[1,\"120\"]},"
@@ -91,12 +99,23 @@ class PrometheusQueryToolTest {
         var r = om.readTree(tool.httpErrors("my-xhs-order", "6"));
         assertEquals("ok", r.path("status").asText());
         assertEquals(15, r.path("total5xx").asInt());
+        assertEquals(0, r.path("noiseScanRoutes").asInt());
         assertEquals(1, r.path("byUri").size()); // 500+503 同 uri 合并
         assertEquals("/api/orders", r.path("byUri").get(0).path("uri").asText());
         assertEquals(15, r.path("byUri").get(0).path("rate5xxPerSec").asInt());
         assertTrue(lastQuery.contains("increase("), "应使用 increase 窗口查询: " + lastQuery);
         assertTrue(lastQuery.contains("status=~\"5..\""), "应过滤 5xx: " + lastQuery);
         assertTrue(lastQuery.contains("service=\"my-xhs-order\""), "应过滤服务: " + lastQuery);
+    }
+
+    @Test
+    void 查询5xx_UNKNOWN路由单列为噪音() throws Exception {
+        // mock 返回 uri=/** 的 5xx（gateway 扫描噪音），应进 noiseScanRoutes 而非 byUri
+        var r = om.readTree(tool.httpErrors("my-xhs-gateway", "24"));
+        assertEquals("ok", r.path("status").asText());
+        assertEquals(9, r.path("noiseScanRoutes").asInt());
+        assertEquals(0, r.path("byUri").size());
+        assertEquals(9, r.path("total5xx").asInt());
     }
 
     @Test
