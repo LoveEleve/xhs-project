@@ -39,7 +39,7 @@ class AgentHarnessTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     /** 假工具：同参数返回同结果（保证语义去重生效），带 window 便于区分证据 */
-    private static final class FakeMetricTools implements MetricToolAccess {
+    private static class FakeMetricTools implements MetricToolAccess {
         @Override
         public String queryOrderVolume(String window) {
             return "volume=61 window=" + window;
@@ -483,6 +483,46 @@ class AgentHarnessTest {
         assertEquals("TOOL", steps.stream().filter(s -> "TOOL".equals(s.state())).findFirst().orElseThrow().state());
         var cp = store.lastCheckpoint(run.runId()).orElseThrow();
         assertTrue(cp.messagesSnapshot().contains("用户问题"), "checkpoint 应含对话快照");
+    }
+
+    @Test
+    void 工具结果截断_长JSON仅上下文截断() throws Exception {
+        var ds = new org.springframework.jdbc.datasource.DriverManagerDataSource(
+                "jdbc:h2:mem:trunc;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
+        var jdbc = new org.springframework.jdbc.core.JdbcTemplate(ds);
+        jdbc.execute("CREATE TABLE IF NOT EXISTS ai_run (run_id VARCHAR(32) PRIMARY KEY, user_id VARCHAR(64),"
+                + " session_id VARCHAR(64), query TEXT NOT NULL, status VARCHAR(16) NOT NULL,"
+                + " termination_reason VARCHAR(32), budget_json TEXT, versions_json TEXT, tokens_total BIGINT DEFAULT 0,"
+                + " cost_est DOUBLE DEFAULT 0, started_at DATETIME(3), ended_at DATETIME(3), last_activity_at DATETIME(3))");
+        jdbc.execute("CREATE TABLE IF NOT EXISTS ai_step (id BIGINT AUTO_INCREMENT PRIMARY KEY, run_id VARCHAR(32),"
+                + " step_no INT, state VARCHAR(24), decision_json TEXT, tool_result MEDIUMTEXT,"
+                + " evidence_ids VARCHAR(512), messages_snapshot MEDIUMTEXT, tokens_used BIGINT DEFAULT 0, created_at DATETIME(3))");
+        RunStore store = new JdbcRunStore(jdbc, MAPPER);
+        // 长工具结果（模拟 16 分片明细）
+        String longResult = "{\"value\":61,\"window\":\"2026-08-01~2026-08-07\"," + "\"shardDetails\":\"" + "x".repeat(800) + "\"}";
+        MetricToolAccess longTools = new FakeMetricTools() {
+            @Override
+            public String queryOrderVolume(String window) {
+                return longResult;
+            }
+        };
+        AgentHarness h = new AgentHarness(new FakeDecisionModel(texts -> {
+            String ev = lastEvId(texts);
+            if (ev == null) {
+                return toolCallJson("queryOrderVolume", "2026-08-01~2026-08-07");
+            }
+            return answerJson("下单量为61", ev);
+        }), longTools, new FakeObsTools(), MAPPER, AgentBudget.defaults(), 0.002, 2, store, "fake");
+
+        AgentRun run = h.run("为什么订单量下降了");
+
+        assertEquals(RunStatus.SUCCEEDED, run.status());
+        // registry 保留完整结果（存在性校验/幻觉检测数据源）
+        assertEquals(longResult, run.registry().records().iterator().next().result());
+        // 快照中模型可见文本已截断
+        var cp = store.lastCheckpoint(run.runId()).orElseThrow();
+        assertTrue(cp.messagesSnapshot().contains("结果已截断"), "模型可见文本应截断");
+        assertEquals(false, cp.messagesSnapshot().contains(longResult), "快照不应含完整长结果");
     }
 
     @Test

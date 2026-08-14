@@ -236,7 +236,8 @@ public class AgentHarness {
                 String window = decision.args() == null ? null : decision.args().get("window");
                 run.evidenceChain().add(evidenceId, decision.tool(), window, result);
                 recordAndStore(run, AgentStep.tool(ctrl.steps(), decision, result, List.of(evidenceId)), messages);
-                messages.add(UserMessage.from("工具 " + decision.tool() + " 结果（证据 id=" + evidenceId + "）：" + result));
+                messages.add(UserMessage.from("工具 " + decision.tool() + " 结果（证据 id=" + evidenceId + "）："
+                        + truncateToolResult(result)));
                 log.info("[harness] run={} tool={} window={} ev={} result={}", run.runId(),
                         decision.tool(), window, evidenceId, result);
                 emit(listener, new HarnessEvent(run.runId(), "TOOL", ctrl.steps(), decision.tool(),
@@ -441,6 +442,20 @@ public class AgentHarness {
             // 推送失败（客户端断开等）不影响执行；终态由 run 结果兜底
             log.warn("[harness] 事件推送失败 type={} err={}", event.type(), e.getMessage());
         }
+    }
+
+    /**
+     * 工具结果进上下文的截断（M7 性能优化）：registry/证据链保留完整结果（存在性校验/幻觉检测
+     * 不受影响），仅模型可见文本截断——大幅降上下文体积（15 步 × 400+ 字符 JSON 的冗余）。
+     * 截断保留头部（value/window/status 等核心字段在 JSON 前端）。
+     */
+    private static final int TOOL_RESULT_MAX_LEN = 400;
+
+    private static String truncateToolResult(String result) {
+        if (result == null || result.length() <= TOOL_RESULT_MAX_LEN) {
+            return result;
+        }
+        return result.substring(0, TOOL_RESULT_MAX_LEN) + "...(结果已截断，完整值见证据记录)";
     }
 
     /** 模型调用：失败重试一次（设计 §6.1#3 retryable），仍失败返回 null（调用方降级） */
