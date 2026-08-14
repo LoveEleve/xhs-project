@@ -75,7 +75,8 @@ class McpContractTest {
         if (sid != null && !sid.isBlank()) {
             sessionId = sid;
         }
-        String raw = r.getResponse().getContentAsString();
+        // 显式 UTF-8（MockMvc 默认 ISO-8859-1 会乱码中文；真实 HTTP 无此问题）
+        String raw = r.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
         // Streamable HTTP：异步响应以 SSE 返回（event:message / data:{...}）；汇总 data: 行
         StringBuilder data = new StringBuilder();
         for (String line : raw.split("\n")) {
@@ -127,6 +128,21 @@ class McpContractTest {
                 + "\"params\":{\"name\":\"baseline.window\",\"arguments\":{\"window\":\"2026-08-01~2026-08-07\"}}}");
         String text = resp.path("result").path("content").get(0).path("text").asText();
         assertTrue(text.contains("\"baseline\":\"2026-07-25~2026-07-31\""), "应返回上一同长窗口: " + text);
+        assertEquals(false, resp.path("result").path("isError").asBoolean(false));
+    }
+
+    @Test
+    void tools_call_baseline_非法参数返回errorJSON() throws Exception {
+        send("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\","
+                + "\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},"
+                + "\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}");
+        send("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{}}");
+        JsonNode resp = send("{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\","
+                + "\"params\":{\"name\":\"baseline.window\",\"arguments\":{\"window\":\"20260801\"}}}");
+        String text = resp.path("result").path("content").get(0).path("text").asText();
+        // 契约：参数错误以 error JSON 文本返回（与指标工具一致，非异常/非 isError）；模型如实说明
+        assertTrue(text.contains("\"status\":\"error\""), "应返回 error JSON: " + text);
+        assertTrue(text.contains("格式必须为"), "应带错误原因: " + text);
         assertEquals(false, resp.path("result").path("isError").asBoolean(false));
     }
 

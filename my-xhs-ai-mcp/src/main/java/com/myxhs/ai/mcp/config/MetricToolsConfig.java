@@ -1,5 +1,6 @@
 package com.myxhs.ai.mcp.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.ai.tools.BaselineWindowTool;
 import com.myxhs.ai.tools.ContentInteractionTool;
 import com.myxhs.ai.tools.OrderMetricsTool;
@@ -32,7 +33,7 @@ public class MetricToolsConfig {
     }
 
     @Bean
-    public BaselineWindowTool baselineWindowTool() {
-        return new BaselineWindowTool();
+    public BaselineWindowTool baselineWindowTool(ObjectMapper objectMapper) {
+        return new BaselineWindowTool(objectMapper);
     }
 }
