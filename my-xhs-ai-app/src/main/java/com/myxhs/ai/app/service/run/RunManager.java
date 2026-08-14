@@ -113,6 +113,10 @@ public class RunManager {
                             "EXECUTION_ERROR", "恢复执行异常: " + ex.getMessage()));
                     return null;
                 });
+        if (metrics != null) {
+            metrics.onRunSubmitted();
+            future.whenComplete((run, ex) -> metrics.onRunFinished(run));
+        }
         RunEntry entry = new RunEntry(runId, userId, query, queue, future,
                 new AtomicBoolean(false), cancelToken);
         runs.put(runId, entry);

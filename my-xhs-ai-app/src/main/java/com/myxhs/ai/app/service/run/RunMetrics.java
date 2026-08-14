@@ -63,23 +63,28 @@ public class RunMetrics {
         running.incrementAndGet();
     }
 
-    /** run 结束时调用（运行中 -1 + 各计数；token/成本从 steps 汇总） */
+    /** run 结束时调用（运行中 -1 + 各计数；token/成本从 steps 汇总）。
+     *  内部 try-catch：指标故障不影响主流程且可见（whenComplete handler 异常默认被吞）。 */
     public void onRunFinished(AgentRun run) {
-        running.decrementAndGet();
-        if (run == null) {
-            runsTotal("FAILED").increment();
-            return;
+        try {
+            running.decrementAndGet();
+            if (run == null) {
+                runsTotal("FAILED").increment();
+                return;
+            }
+            String status = run.status() == null ? "UNKNOWN" : run.status().name();
+            runsTotal(status).increment();
+            long tokens = run.steps().stream().mapToLong(s -> s.tokensUsed()).sum();
+            double cost = tokens / 1000.0 * pricePer1kTokens;
+            long durationMs = run.endedAt() != null && run.startedAt() != null
+                    ? Duration.between(run.startedAt(), run.endedAt()).toMillis() : 0;
+            tokensTotal.increment(tokens);
+            costTotal.increment(cost);
+            runDuration.record(Duration.ofMillis(Math.max(1, durationMs)));
+            log.info("[metrics] run={} status={} tokens={} cost={} durationMs={}",
+                    run.runId(), status, tokens, cost, durationMs);
+        } catch (Exception e) {
+            log.warn("[metrics] 指标记录失败: {}", e.getMessage());
         }
-        String status = run.status() == null ? "UNKNOWN" : run.status().name();
-        runsTotal(status).increment();
-        long tokens = run.steps().stream().mapToLong(s -> s.tokensUsed()).sum();
-        double cost = tokens / 1000.0 * pricePer1kTokens;
-        long durationMs = run.endedAt() != null && run.startedAt() != null
-                ? Duration.between(run.startedAt(), run.endedAt()).toMillis() : 0;
-        tokensTotal.increment(tokens);
-        costTotal.increment(cost);
-        runDuration.record(Duration.ofMillis(Math.max(1, durationMs)));
-        log.info("[metrics] run={} status={} tokens={} cost={} durationMs={}",
-                run.runId(), status, tokens, cost, durationMs);
     }
 }
