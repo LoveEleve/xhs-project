@@ -455,7 +455,13 @@ public class AgentHarness {
         if (result == null || result.length() <= TOOL_RESULT_MAX_LEN) {
             return result;
         }
-        return result.substring(0, TOOL_RESULT_MAX_LEN) + "...(结果已截断，完整值见证据记录)";
+        // 字段边界截断：避免把 JSON 截在字段中间（模型读到不完整字段值会误读）
+        String cut = result.substring(0, TOOL_RESULT_MAX_LEN);
+        int boundary = Math.max(cut.lastIndexOf(','), cut.lastIndexOf('}'));
+        if (boundary > TOOL_RESULT_MAX_LEN / 2) {
+            cut = cut.substring(0, boundary + 1);
+        }
+        return cut + "...(结果已截断，仅保留核心字段)";
     }
 
     /** 模型调用：失败重试一次（设计 §6.1#3 retryable），仍失败返回 null（调用方降级） */
@@ -551,7 +557,7 @@ public class AgentHarness {
                 var rec = run.registry().get(e.evidenceId());
                 sb.append("\n[").append(e.evidenceId()).append("] ").append(e.tool())
                         .append(" window=").append(e.window())
-                        .append(" 结果=").append(rec.map(r -> r.result()).orElse("(无记录)"));
+                        .append(" 结果=").append(rec.map(r -> truncateToolResult(r.result())).orElse("(无记录)"));
             }
         }
         String answer = sb.toString();

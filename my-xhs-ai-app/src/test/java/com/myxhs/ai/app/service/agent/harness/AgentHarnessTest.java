@@ -523,6 +523,10 @@ class AgentHarnessTest {
         var cp = store.lastCheckpoint(run.runId()).orElseThrow();
         assertTrue(cp.messagesSnapshot().contains("结果已截断"), "模型可见文本应截断");
         assertEquals(false, cp.messagesSnapshot().contains(longResult), "快照不应含完整长结果");
+        // 截断应在字段边界：截断文本末尾应是完整 JSON 值（逗号或 } 结尾）
+        String truncated = cp.messagesSnapshot();
+        String tail = truncated.substring(truncated.length() - 100);
+        assertTrue(tail.contains(",\"" ) || tail.contains("}\"" ) || tail.contains("}"), "应在字段边界截断: " + tail);
     }
 
     @Test
