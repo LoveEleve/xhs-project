@@ -30,4 +30,18 @@ public class DirectObsToolAccess implements ObsToolAccess {
             @P("最近小时数（1~168）") String hours) {
         return tool.httpLatency(service, hours);
     }
+
+    @Override
+    @Tool("查询 RocketMQ 消费积压（直连 Prometheus，按消费组聚合 lag）")
+    public String mqConsumerLag(
+            @P("消费组名，空字符串=全部消费组") String group) {
+        return tool.mqConsumerLag(group);
+    }
+
+    @Override
+    @Tool("查询 RocketMQ 死信积压（直连 Prometheus，按 consumer_group 聚合 backlog）")
+    public String mqDlqBacklog(
+            @P("消费组名，空字符串=全部消费组") String consumerGroup) {
+        return tool.mqDlqBacklog(consumerGroup);
+    }
 }

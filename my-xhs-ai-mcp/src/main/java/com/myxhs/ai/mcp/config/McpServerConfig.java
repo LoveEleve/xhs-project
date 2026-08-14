@@ -43,6 +43,11 @@ public class McpServerConfig {
             {"type":"object","properties":{"service":{"type":"string","description":"服务名，如 my-xhs-order；空=全部"},"hours":{"type":"string","description":"最近小时数 1~168"}},"required":["hours"]}
             """;
 
+    /** MQ 工具参数 schema（可选单参数，B2 面） */
+    private static final String MQ_SCHEMA = """
+            {"type":"object","properties":{"group":{"type":"string","description":"消费组名，如 cart-sync-consumer-group；空=全部"}}}
+            """;
+
     @Bean
     public McpJsonMapper mcpJsonMapper(ObjectMapper objectMapper) {
         return new JacksonMcpJsonMapper(objectMapper);
@@ -90,7 +95,13 @@ public class McpServerConfig {
                                 (args) -> prometheusQueryTool.httpErrors(str(args.get("service")), str(args.get("hours")))),
                         obsToolSpec(jsonMapper, "service.http_latency",
                                 "服务 HTTP 慢端点 top（P95 延迟秒，最近 N 小时）",
-                                (args) -> prometheusQueryTool.httpLatency(str(args.get("service")), str(args.get("hours"))))
+                                (args) -> prometheusQueryTool.httpLatency(str(args.get("service")), str(args.get("hours")))),
+                        mqToolSpec(jsonMapper, "mq.consumer_lag",
+                                "RocketMQ 消费积压（按消费组聚合 lag，空=全部）",
+                                (args) -> prometheusQueryTool.mqConsumerLag(str(args.get("group")))),
+                        mqToolSpec(jsonMapper, "mq.dlq_backlog",
+                                "RocketMQ 死信积压（按 consumer_group 聚合 backlog，空=全部）",
+                                (args) -> prometheusQueryTool.mqDlqBacklog(str(args.get("consumerGroup"))))
                 )
                 .build();
     }
@@ -144,6 +155,31 @@ public class McpServerConfig {
                         String result = fn.apply(args);
                         log.info("[mcp-audit] tool={} service={} hours={} ok costMs={}", name,
                                 args.get("service"), args.get("hours"), System.currentTimeMillis() - start);
+                        return new McpSchema.CallToolResult(result, false);
+                    } catch (Exception e) {
+                        log.warn("[mcp-audit] tool={} error: {}", name, e.getMessage());
+                        return new McpSchema.CallToolResult("工具调用失败: " + e.getMessage(), true);
+                    }
+                })
+                .build();
+    }
+
+    /** MQ 工具（可选单参数 group/consumerGroup） */
+    private static McpServerFeatures.SyncToolSpecification mqToolSpec(McpJsonMapper mapper, String name, String desc,
+                                                                      Function<Map<String, Object>, String> fn) {
+        McpSchema.Tool tool = McpSchema.Tool.builder()
+                .name(name)
+                .description(desc)
+                .inputSchema(mapper, MQ_SCHEMA)
+                .build();
+        return McpServerFeatures.SyncToolSpecification.builder()
+                .tool(tool)
+                .callHandler((exchange, request) -> {
+                    try {
+                        Map<String, Object> args = request.arguments();
+                        long start = System.currentTimeMillis();
+                        String result = fn.apply(args == null ? Map.of() : args);
+                        log.info("[mcp-audit] tool={} args={} ok costMs={}", name, args, System.currentTimeMillis() - start);
                         return new McpSchema.CallToolResult(result, false);
                     } catch (Exception e) {
                         log.warn("[mcp-audit] tool={} error: {}", name, e.getMessage());

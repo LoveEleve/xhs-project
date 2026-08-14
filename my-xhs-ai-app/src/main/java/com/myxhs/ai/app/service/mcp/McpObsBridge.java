@@ -39,6 +39,20 @@ public class McpObsBridge implements ObsToolAccess {
         return client.callTool("service.http_latency", Map.of("service", str(service), "hours", str(hours)));
     }
 
+    @Override
+    @Tool("查询 RocketMQ 消费积压（经 MCP，按消费组聚合 lag）")
+    public String mqConsumerLag(
+            @P("消费组名，空字符串=全部消费组") String group) {
+        return client.callTool("mq.consumer_lag", Map.of("group", str(group)));
+    }
+
+    @Override
+    @Tool("查询 RocketMQ 死信积压（经 MCP，按 consumer_group 聚合 backlog）")
+    public String mqDlqBacklog(
+            @P("消费组名，空字符串=全部消费组") String consumerGroup) {
+        return client.callTool("mq.dlq_backlog", Map.of("consumerGroup", str(consumerGroup)));
+    }
+
     private static String str(String s) {
         return s == null ? "" : s;
     }

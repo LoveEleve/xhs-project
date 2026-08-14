@@ -21,10 +21,12 @@ public class PolicyGuard {
     public static final String TOOL_BASELINE_WINDOW = "baselineWindow";
     public static final String TOOL_HTTP_ERRORS = "httpErrors";
     public static final String TOOL_HTTP_LATENCY = "httpLatency";
+    public static final String TOOL_MQ_LAG = "mqConsumerLag";
+    public static final String TOOL_MQ_DLQ = "mqDlqBacklog";
 
     private static final Set<String> ALLOWED_TOOLS = Set.of(
             TOOL_ORDER_VOLUME, TOOL_PAYMENT_RATE, TOOL_CONTENT_INTERACTION, TOOL_BASELINE_WINDOW,
-            TOOL_HTTP_ERRORS, TOOL_HTTP_LATENCY);
+            TOOL_HTTP_ERRORS, TOOL_HTTP_LATENCY, TOOL_MQ_LAG, TOOL_MQ_DLQ);
 
     /** 需要 window 参数的工具（业务+基线） */
     private static final Set<String> WINDOW_TOOLS = Set.of(
@@ -32,6 +34,10 @@ public class PolicyGuard {
 
     /** 需要 hours 参数的工具（L2 观测） */
     private static final Set<String> HOURS_TOOLS = Set.of(TOOL_HTTP_ERRORS, TOOL_HTTP_LATENCY);
+
+    /** 组名标签过滤白名单（防 PromQL 注入；与 PrometheusQueryTool 同规则） */
+    private static final java.util.regex.Pattern GROUP_PATTERN =
+            java.util.regex.Pattern.compile("[A-Za-z0-9_-]+");
 
     /** L3 高危动作（V1 一律人工审批；不在 allowlist，Agent 无法执行） */
     private static final Set<String> L3_TOOLS = Set.of("service.restart", "dlq.redeliver", "order.refund");
@@ -55,6 +61,14 @@ public class PolicyGuard {
             String invalid = validateHours(args == null ? null : args.get("hours"));
             if (invalid != null) {
                 return PolicyDecision.deny(tool + " 参数非法: " + invalid);
+            }
+        } else if (tool.equals(TOOL_MQ_LAG) || tool.equals(TOOL_MQ_DLQ)) {
+            // MQ 组名可选；若有值必须符合白名单（防 PromQL 注入，与工具侧同规则）
+            String g = tool.equals(TOOL_MQ_LAG)
+                    ? (args == null ? null : args.get("group"))
+                    : (args == null ? null : args.get("consumerGroup"));
+            if (g != null && !g.isBlank() && !GROUP_PATTERN.matcher(g.trim()).matches()) {
+                return PolicyDecision.deny(tool + " 参数非法: 组名仅允许字母数字下划线连字符");
             }
         }
         return PolicyDecision.allow();

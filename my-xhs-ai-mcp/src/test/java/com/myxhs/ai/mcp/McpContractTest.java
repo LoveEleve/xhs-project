@@ -102,24 +102,28 @@ class McpContractTest {
     }
 
     @Test
-    void tools_list_返回六个工具() throws Exception {
+    void tools_list_返回八个工具() throws Exception {
         send("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\","
                 + "\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},"
                 + "\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}");
         send("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{}}");
         JsonNode resp = send("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}");
         JsonNode tools = resp.path("result").path("tools");
-        assertTrue(tools.size() == 6, "应 6 个工具: " + tools);
+        assertTrue(tools.size() == 8, "应 8 个工具: " + tools);
         assertEquals("order.query_volume", tools.get(0).path("name").asText());
         assertEquals("payment.success_rate", tools.get(1).path("name").asText());
         assertEquals("content.interaction", tools.get(2).path("name").asText());
         assertEquals("baseline.window", tools.get(3).path("name").asText());
         assertEquals("service.http_errors", tools.get(4).path("name").asText());
         assertEquals("service.http_latency", tools.get(5).path("name").asText());
+        assertEquals("mq.consumer_lag", tools.get(6).path("name").asText());
+        assertEquals("mq.dlq_backlog", tools.get(7).path("name").asText());
         assertTrue(tools.get(0).path("inputSchema").path("properties").has("window"),
                 "应声明 window 参数 schema");
         assertTrue(tools.get(4).path("inputSchema").path("properties").has("hours"),
                 "观测工具应声明 hours 参数 schema");
+        assertTrue(tools.get(6).path("inputSchema").path("properties").has("group"),
+                "MQ 工具应声明 group 参数 schema");
     }
 
     @Test

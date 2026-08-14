@@ -42,6 +42,8 @@ public class AgentHarness {
             - baselineWindow(window)：计算对比基线窗口（上一同长窗口，确定性）
             - httpErrors(service, hours)：服务 HTTP 5xx 错误统计（按 uri 聚合，最近 N 小时；service 如 my-xhs-gateway，空=全部）
             - httpLatency(service, hours)：服务 HTTP 慢端点 top（P95 延迟秒，最近 N 小时）
+            - mqConsumerLag(group)：RocketMQ 消费积压（按消费组聚合 lag；空=全部）
+            - mqDlqBacklog(consumerGroup)：RocketMQ 死信积压（空=全部）
             已知服务名（L2 观测可用）：my-xhs-gateway / my-xhs-order / my-xhs-payment / my-xhs-content /
             my-xhs-user / my-xhs-inventory / my-xhs-product / my-xhs-search / my-xhs-cart / my-xhs-coupon 等
             规则：
@@ -289,6 +291,8 @@ public class AgentHarness {
                 case PolicyGuard.TOOL_BASELINE_WINDOW -> metricToolAccess.baselineWindow(window);
                 case PolicyGuard.TOOL_HTTP_ERRORS -> obsToolAccess.httpErrors(service, hours);
                 case PolicyGuard.TOOL_HTTP_LATENCY -> obsToolAccess.httpLatency(service, hours);
+                case PolicyGuard.TOOL_MQ_LAG -> obsToolAccess.mqConsumerLag(args == null ? null : args.get("group"));
+                case PolicyGuard.TOOL_MQ_DLQ -> obsToolAccess.mqDlqBacklog(args == null ? null : args.get("consumerGroup"));
                 default -> "ERROR: 未注册工具 " + tool;
             };
         } catch (Exception e) {

@@ -25,6 +25,12 @@ public class PrometheusQueryTool {
 
     public static final String METRIC_HTTP_ERRORS = "service.http_errors";
     public static final String METRIC_HTTP_LATENCY = "service.http_latency";
+    public static final String METRIC_MQ_LAG = "mq.consumer_lag";
+    public static final String METRIC_MQ_DLQ = "mq.dlq_backlog";
+
+    /** MQ 组名/标签过滤白名单（防 PromQL 注入：组名只允许字母数字下划线连字符） */
+    private static final java.util.regex.Pattern GROUP_PATTERN =
+            java.util.regex.Pattern.compile("[A-Za-z0-9_-]+");
 
     private final HttpClient http;
     private final ObjectMapper om;
@@ -126,6 +132,81 @@ public class PrometheusQueryTool {
             return error("Prometheus 查询失败: " + e.getMessage());
         }
         return write(node);
+    }
+
+    /** RocketMQ 消费积压（按 group 聚合；group 空=全部，top 15） */
+    public String mqConsumerLag(String group) {
+        ObjectNode node = om.createObjectNode();
+        node.put("status", "ok");
+        node.put("metric", METRIC_MQ_LAG);
+        node.put("asOf", java.time.Instant.now().toString());
+        String filter = safeGroupFilter(group, "group");
+        if (filter == null) {
+            return error("group 含非法字符（仅允许字母数字下划线连字符）: " + group);
+        }
+        try {
+            JsonNode resp = query("sum by (group) (rocketmq_consumer_lag{" + filter + "})");
+            double total = 0;
+            java.util.List<Map.Entry<String, Double>> lags = new ArrayList<>();
+            for (JsonNode s : resp) {
+                double v = s.path("value").get(1).asDouble();
+                total += v;
+                lags.add(Map.entry(s.path("metric").path("group").asText(), v));
+            }
+            node.put("totalLag", round(total));
+            node.put("groupCount", lags.size());
+            node.put("window", "当前时点（textfile 管道每 5 分钟采集）");
+            ArrayNode groups = node.putArray("topGroups");
+            lags.stream().sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                    .limit(15)
+                    .forEach(e -> groups.addObject().put("group", e.getKey()).put("lag", round(e.getValue())));
+        } catch (Exception e) {
+            return error("Prometheus 查询失败: " + e.getMessage());
+        }
+        return write(node);
+    }
+
+    /** RocketMQ 死信积压（按 consumer_group 聚合；空=全部，top 15） */
+    public String mqDlqBacklog(String consumerGroup) {
+        ObjectNode node = om.createObjectNode();
+        node.put("status", "ok");
+        node.put("metric", METRIC_MQ_DLQ);
+        node.put("asOf", java.time.Instant.now().toString());
+        String filter = safeGroupFilter(consumerGroup, "consumer_group");
+        if (filter == null) {
+            return error("consumerGroup 含非法字符（仅允许字母数字下划线连字符）: " + consumerGroup);
+        }
+        try {
+            JsonNode resp = query("sum by (consumer_group) (rocketmq_dlq_backlog{" + filter + "})");
+            double total = 0;
+            java.util.List<Map.Entry<String, Double>> lags = new ArrayList<>();
+            for (JsonNode s : resp) {
+                double v = s.path("value").get(1).asDouble();
+                total += v;
+                lags.add(Map.entry(s.path("metric").path("consumer_group").asText(), v));
+            }
+            node.put("totalDlqBacklog", round(total));
+            node.put("groupCount", lags.size());
+            node.put("window", "当前时点（客户端指标）");
+            ArrayNode groups = node.putArray("topGroups");
+            lags.stream().sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                    .limit(15)
+                    .forEach(e -> groups.addObject().put("group", e.getKey()).put("backlog", round(e.getValue())));
+        } catch (Exception e) {
+            return error("Prometheus 查询失败: " + e.getMessage());
+        }
+        return write(node);
+    }
+
+    /** 组名标签过滤器；非法返回 null（防 PromQL 注入） */
+    private static String safeGroupFilter(String group, String label) {
+        if (group == null || group.isBlank()) {
+            return "";
+        }
+        if (!GROUP_PATTERN.matcher(group.trim()).matches()) {
+            return null;
+        }
+        return label + "=\"" + group.trim() + "\"";
     }
 
     /** 执行 PromQL 查询，返回 result 数组 */

@@ -39,6 +39,15 @@ class PrometheusQueryToolTest {
                         + "{\"metric\":{\"uri\":\"/api/orders\",\"status\":\"503\",\"service\":\"my-xhs-order\"},\"value\":[1,\"3\"]}"
                         + (orderOnly ? "" : ",{\"metric\":{\"uri\":\"/health\",\"status\":\"500\",\"service\":\"my-xhs-gateway\"},\"value\":[1,\"1\"]}")
                         + "]}}";
+            } else if (q.contains("rocketmq_consumer_lag")) {
+                body = "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":["
+                        + "{\"metric\":{\"group\":\"cart-sync-consumer-group\"},\"value\":[1,\"120\"]},"
+                        + "{\"metric\":{\"group\":\"order-event-consumer-group\"},\"value\":[1,\"5\"]}"
+                        + "]}}";
+            } else if (q.contains("rocketmq_dlq_backlog")) {
+                body = "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":["
+                        + "{\"metric\":{\"consumer_group\":\"order-event-consumer-group\"},\"value\":[1,\"42\"]}"
+                        + "]}}";
             } else if (q.contains("histogram_quantile")) {
                 body = "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":["
                         + "{\"metric\":{\"uri\":\"/api/orders\",\"service\":\"my-xhs-order\"},\"value\":[1,\"0.85\"]},"
@@ -92,6 +101,31 @@ class PrometheusQueryToolTest {
         assertEquals("error", om.readTree(tool.httpErrors("my-xhs-order", "0")).path("status").asText());
         assertEquals("error", om.readTree(tool.httpErrors("my-xhs-order", "169")).path("status").asText());
         assertEquals("error", om.readTree(tool.httpErrors("my-xhs-order", "abc")).path("status").asText());
+    }
+
+    @Test
+    void 查询消费积压_按组聚合排序() throws Exception {
+        var r = om.readTree(tool.mqConsumerLag(""));
+        assertEquals("ok", r.path("status").asText());
+        assertEquals(125, r.path("totalLag").asInt());
+        assertEquals(2, r.path("groupCount").asInt());
+        assertEquals("cart-sync-consumer-group", r.path("topGroups").get(0).path("group").asText());
+        assertEquals(120, r.path("topGroups").get(0).path("lag").asInt());
+        assertTrue(lastQuery.contains("rocketmq_consumer_lag"), lastQuery);
+    }
+
+    @Test
+    void 查询死信积压() throws Exception {
+        var r = om.readTree(tool.mqDlqBacklog("order-event-consumer-group"));
+        assertEquals("ok", r.path("status").asText());
+        assertEquals(42, r.path("totalDlqBacklog").asInt());
+        assertTrue(lastQuery.contains("consumer_group=\"order-event-consumer-group\""), lastQuery);
+    }
+
+    @Test
+    void 组名注入防护_非法字符拒绝() throws Exception {
+        var r = om.readTree(tool.mqConsumerLag("a\";drop"));
+        assertEquals("error", r.path("status").asText());
     }
 
     @Test

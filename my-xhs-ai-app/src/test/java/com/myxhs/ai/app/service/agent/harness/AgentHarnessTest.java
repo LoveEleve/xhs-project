@@ -99,7 +99,7 @@ class AgentHarnessTest {
         return m.toString();
     }
 
-    /** 假观测工具：固定返回，含 service 便于区分 */
+    /** 假观测工具：固定返回，含参数便于区分 */
     private static final class FakeObsTools implements ObsToolAccess {
         @Override
         public String httpErrors(String service, String hours) {
@@ -109,6 +109,16 @@ class AgentHarnessTest {
         @Override
         public String httpLatency(String service, String hours) {
             return "p95=0.8 service=" + service + " hours=" + hours;
+        }
+
+        @Override
+        public String mqConsumerLag(String group) {
+            return "lag total=120 group=" + group;
+        }
+
+        @Override
+        public String mqDlqBacklog(String consumerGroup) {
+            return "dlq backlog=42 group=" + consumerGroup;
         }
     }
 
@@ -225,6 +235,35 @@ class AgentHarnessTest {
         PolicyDecision d = new PolicyGuard().evaluate("httpErrors", Map.of("service", "my-xhs-gateway", "hours", "0"));
         assertEquals(false, d.allowed());
         PolicyDecision ok = new PolicyGuard().evaluate("httpErrors", Map.of("service", "my-xhs-gateway", "hours", "6"));
+        assertEquals(true, ok.allowed());
+    }
+
+    @Test
+    void MQ积压归因_走L2工具() {
+        AgentHarness h = harness(texts -> {
+            long toolResults = texts.stream().filter(t -> t.contains("证据 id=")).count();
+            if (toolResults == 0) {
+                return "{\"action\":\"TOOL_CALL\",\"tool\":\"mqConsumerLag\","
+                        + "\"args\":{\"group\":\"cart-sync-consumer-group\"},\"reasoning\":\"查积压\"}";
+            }
+            String ev = lastEvId(texts);
+            return answerJson("cart-sync 消费组积压 120", ev);
+        }, AgentBudget.defaults());
+
+        AgentRun run = h.run("为什么 MQ 有消费积压");
+
+        assertEquals(RunStatus.SUCCEEDED, run.status());
+        assertTrue(run.finalAnswer().contains("积压 120"));
+        assertEquals("mqConsumerLag", run.evidenceChain().entries().get(0).tool());
+    }
+
+    @Test
+    void MQ组名注入_被策略拒绝() {
+        PolicyDecision d = new PolicyGuard().evaluate("mqConsumerLag",
+                Map.of("group", "a\";drop;"));
+        assertEquals(false, d.allowed());
+        PolicyDecision ok = new PolicyGuard().evaluate("mqConsumerLag",
+                Map.of("group", "cart-sync-consumer-group"));
         assertEquals(true, ok.allowed());
     }
 
