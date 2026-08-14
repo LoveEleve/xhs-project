@@ -2,6 +2,7 @@ package com.myxhs.ai.app.eval;
 
 import com.myxhs.ai.app.service.agent.harness.AgentHarness;
 import com.myxhs.ai.app.service.agent.harness.AgentRun;
+import com.myxhs.ai.app.service.agent.harness.AgentStep;
 import com.myxhs.ai.app.service.agent.harness.RunStatus;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -54,6 +55,9 @@ public class EvalRunner {
                 r.put("evidenceCount", run.evidenceChain().size());
                 r.put("steps", run.steps().size());
                 r.put("finalAnswer", run.finalAnswer());
+                r.put("durationMs", System.currentTimeMillis() - t0);
+                r.put("tokensTotal", run.steps().stream().mapToInt(AgentStep::tokensUsed).sum());
+                r.put("toolUsage", ToolUsageAnalyzer.analyze(run));
 
                 List<String> hardFails = asserter.checkHard(c, run);
                 r.put("hardFails", hardFails);
@@ -89,6 +93,17 @@ public class EvalRunner {
         }
 
         int n = Math.max(1, cases.size());
+        long totalTokens = 0;
+        long totalDuration = 0;
+        int divergent = 0;
+        for (Map<String, Object> r : results) {
+            totalTokens += ((Number) r.getOrDefault("tokensTotal", 0)).longValue();
+            totalDuration += ((Number) r.getOrDefault("durationMs", 0)).longValue();
+            Object usage = r.get("toolUsage");
+            if (usage instanceof Map<?, ?> u && Boolean.TRUE.equals(u.get("divergent"))) {
+                divergent++;
+            }
+        }
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("total", cases.size());
         summary.put("passed", passed);
@@ -96,8 +111,12 @@ public class EvalRunner {
         summary.put("completionRate", round(completed * 100.0 / n));
         summary.put("hallucinationSuspected", hallucinationSuspected);
         summary.put("hallucinationRate", round(hallucinationSuspected * 100.0 / n));
+        summary.put("divergenceSuspected", divergent);
+        summary.put("divergenceRate", round(divergent * 100.0 / n));
         summary.put("avgSteps", round(totalSteps * 1.0 / n));
         summary.put("avgEvidence", round(totalEvidence * 1.0 / n));
+        summary.put("avgTokensPerRun", round(totalTokens * 1.0 / n));
+        summary.put("avgDurationMs", round(totalDuration * 1.0 / n));
 
         Map<String, Object> report = new LinkedHashMap<>();
         report.put("suite", "smoke");

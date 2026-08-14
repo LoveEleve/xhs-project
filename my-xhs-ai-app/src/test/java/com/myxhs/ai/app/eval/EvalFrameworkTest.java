@@ -38,9 +38,15 @@ class EvalFrameworkTest {
 
     private static final class FakeModel implements ChatModel {
         private final String answerConclusion;
+        private final boolean divergentWindows;
 
         FakeModel(String answerConclusion) {
+            this(answerConclusion, false);
+        }
+
+        FakeModel(String answerConclusion, boolean divergentWindows) {
             this.answerConclusion = answerConclusion;
+            this.divergentWindows = divergentWindows;
         }
 
         @Override
@@ -48,11 +54,19 @@ class EvalFrameworkTest {
             String all = request.messages().stream().map(EvalFrameworkTest::text).reduce("", String::concat);
             Matcher m = EV.matcher(all);
             String ev = m.find() ? m.group(1) : null;
-            String json = ev == null
-                    ? "{\"action\":\"TOOL_CALL\",\"tool\":\"queryOrderVolume\","
-                    + "\"args\":{\"window\":\"2026-08-01~2026-08-07\"},\"reasoning\":\"查\"}"
-                    : "{\"action\":\"ANSWER\",\"conclusion\":\"" + answerConclusion + "\","
-                    + "\"evidenceRefs\":[\"" + ev + "\"],\"counterEvidence\":\"\",\"uncertainty\":\"\"}";
+            String json;
+            if (divergentWindows) {
+                // 真发散：永不收敛，每次换窗口查（预算/循环检测兜底）
+                long calls = all.split("工具 queryOrderVolume 结果").length - 1;
+                json = "{\"action\":\"TOOL_CALL\",\"tool\":\"queryOrderVolume\","
+                        + "\"args\":{\"window\":\"2026-08-0" + (1 + calls) + "~2026-08-07\"},\"reasoning\":\"换窗口\"}";
+            } else if (ev == null) {
+                json = "{\"action\":\"TOOL_CALL\",\"tool\":\"queryOrderVolume\","
+                        + "\"args\":{\"window\":\"2026-08-01~2026-08-07\"},\"reasoning\":\"查\"}";
+            } else {
+                json = "{\"action\":\"ANSWER\",\"conclusion\":\"" + answerConclusion + "\","
+                        + "\"evidenceRefs\":[\"" + ev + "\"],\"counterEvidence\":\"\",\"uncertainty\":\"\"}";
+            }
             return ChatResponse.builder()
                     .aiMessage(AiMessage.from(json))
                     .metadata(ChatResponseMetadata.builder()
@@ -146,6 +160,39 @@ class EvalFrameworkTest {
     private AgentHarness harness() {
         return new AgentHarness(new FakeModel("当前窗口下单量为61"), new FakeTools(), new FakeObs(),
                 MAPPER, AgentBudget.defaults(), 0.002, 2, null, "fake");
+    }
+
+    @Test
+    void 工具误用分析_发散检测() throws Exception {
+        // 模型反复查同工具不同窗口（发散）：5 次 queryOrderVolume 不同窗口
+        AgentHarness h = new AgentHarness(new FakeModel("下单量为61", true), new FakeTools(), new FakeObs(),
+                MAPPER, AgentBudget.defaults(), 0.002, 2, null, "fake");
+
+        Map<String, Object> report = new EvalRunner(h).run(List.of(
+                EvalCase.fromYaml(Map.of("id", "div", "query", "为什么订单量下降了",
+                        "statusIn", List.of("SUCCEEDED", "PARTIAL"), "minEvidence", 1))));
+
+        Map<?, ?> result = (Map<?, ?>) ((List<?>) report.get("results")).get(0);
+        Map<?, ?> usage = (Map<?, ?>) result.get("toolUsage");
+        assertEquals(true, usage.get("divergent"), "同工具反复换窗口应标记发散: " + usage);
+        assertTrue(((Number) usage.get("totalCalls")).intValue() >= 5, "应累计多次调用: " + usage);
+
+        Map<?, ?> summary = (Map<?, ?>) report.get("summary");
+        assertEquals(100.0, ((Number) summary.get("divergenceRate")).doubleValue());
+        assertTrue(((Number) summary.get("avgTokensPerRun")).doubleValue() > 0, "应统计 token");
+        assertTrue(((Number) summary.get("avgDurationMs")).doubleValue() >= 0, "应统计耗时");
+    }
+
+    @Test
+    void 工具误用分析_正常run不标记发散() {
+        Map<String, Object> report = new EvalRunner(harness()).run(List.of(
+                EvalCase.fromYaml(Map.of("id", "ok2", "query", "为什么订单量下降了",
+                        "statusIn", List.of("SUCCEEDED"), "minEvidence", 1))));
+        Map<?, ?> result = (Map<?, ?>) ((List<?>) report.get("results")).get(0);
+        Map<?, ?> usage = (Map<?, ?>) result.get("toolUsage");
+        assertEquals(false, usage.get("divergent"), "正常 1 次调用不应标记: " + usage);
+        Map<?, ?> summary = (Map<?, ?>) report.get("summary");
+        assertEquals(0.0, ((Number) summary.get("divergenceRate")).doubleValue());
     }
 
     @Test
