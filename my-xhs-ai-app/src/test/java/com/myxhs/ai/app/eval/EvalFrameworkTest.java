@@ -56,10 +56,11 @@ class EvalFrameworkTest {
             String ev = m.find() ? m.group(1) : null;
             String json;
             if (divergentWindows) {
-                // 真发散：永不收敛，每次换窗口查（预算/循环检测兜底）
+                // 真发散：永不收敛，每次换窗口查（预算/循环检测兜底）；%02d 保证窗口始终合法
                 long calls = all.split("工具 queryOrderVolume 结果").length - 1;
+                String day = String.format("%02d", 1 + calls);
                 json = "{\"action\":\"TOOL_CALL\",\"tool\":\"queryOrderVolume\","
-                        + "\"args\":{\"window\":\"2026-08-0" + (1 + calls) + "~2026-08-07\"},\"reasoning\":\"换窗口\"}";
+                        + "\"args\":{\"window\":\"2026-08-" + day + "~2026-08-07\"},\"reasoning\":\"换窗口\"}";
             } else if (ev == null) {
                 json = "{\"action\":\"TOOL_CALL\",\"tool\":\"queryOrderVolume\","
                         + "\"args\":{\"window\":\"2026-08-01~2026-08-07\"},\"reasoning\":\"查\"}";

@@ -28,13 +28,11 @@ public class ToolUsageAnalyzer {
     /** 分析一次 run 的工具使用；返回含 callCount/divergent/分布 的 Map */
     public static Map<String, Object> analyze(AgentRun run) {
         Map<String, List<String>> toolWindows = new LinkedHashMap<>();
-        List<String> toolSequence = new ArrayList<>();
         for (AgentStep s : run.steps()) {
             var d = s.decision();
             if (d != null && d.isToolCall() && d.tool() != null) {
                 String window = d.args() == null ? null : d.args().get("window");
                 toolWindows.computeIfAbsent(d.tool(), k -> new ArrayList<>()).add(window);
-                toolSequence.add(d.tool());
             }
         }
 
@@ -49,8 +47,9 @@ public class ToolUsageAnalyzer {
             stats.add(new ToolStat(e.getKey(), e.getValue().size(), uniqueWindows.size(), d));
         }
 
+        int totalCalls = toolWindows.values().stream().mapToInt(List::size).sum();
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("totalCalls", toolSequence.size());
+        m.put("totalCalls", totalCalls);
         m.put("uniqueTools", toolWindows.size());
         m.put("divergent", divergent);
         m.put("tools", stats);
