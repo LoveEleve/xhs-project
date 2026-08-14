@@ -35,7 +35,7 @@ import java.util.Map;
 public class RunController {
 
     private static final Logger log = LoggerFactory.getLogger(RunController.class);
-    private static final long SSE_TIMEOUT_MS = 15 * 60_000L;
+    private static final long SSE_TIMEOUT_MS = 30 * 60_000L; // 覆盖最坏 run（15 步 × 单步最坏 120s）
 
     private final RunManager runManager;
     private final ObjectMapper om;

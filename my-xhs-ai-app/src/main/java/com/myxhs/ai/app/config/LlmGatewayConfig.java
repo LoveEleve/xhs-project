@@ -18,7 +18,7 @@ import org.springframework.util.StringUtils;
  * $10/月订阅 + $60 月度额度，ZDR 零留存）；原 TeamoRouter 按量费改用不起（见 ADR-001 备注）。
  */
 @Configuration
-public class TeamoRouterModelConfig {
+public class LlmGatewayConfig {
 
     public static final String DEFAULT_BASE_URL = "https://opencode.ai/zen/go/v1";
 

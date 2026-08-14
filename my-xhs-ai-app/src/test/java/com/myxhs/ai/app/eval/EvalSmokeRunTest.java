@@ -27,9 +27,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
         "myxhs.ai.tools.mode=mcp",
         "spring.ai-datasource.url=jdbc:h2:mem:evalsmokeai;MODE=MySQL;DB_CLOSE_DELAY=-1",
         "spring.ai-datasource.username=sa",
-        "spring.ai-datasource.password=sa"
+        "spring.ai-datasource.password=sa",
+        "myxhs.ai.llm.api-key=test-key"
 })
-@EnabledIfEnvironmentVariable(named = "TEAMO_API_KEY", matches = ".+")
+@EnabledIfEnvironmentVariable(named = "MYXHS_LLM_API_KEY", matches = ".+")
 class EvalSmokeRunTest {
 
     @Autowired
