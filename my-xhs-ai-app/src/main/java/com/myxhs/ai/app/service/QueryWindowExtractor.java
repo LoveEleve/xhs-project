@@ -3,7 +3,6 @@ package com.myxhs.ai.app.service;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.time.temporal.TemporalAdjusters;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -16,7 +15,6 @@ import java.util.regex.Pattern;
  */
 public final class QueryWindowExtractor {
 
-    private static final DateTimeFormatter FMT = DateTimeFormatter.ISO_LOCAL_DATE;
     private static final Pattern DATE_PATTERN = Pattern.compile("(\\d{4}-\\d{2}-\\d{2})");
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
 
@@ -27,9 +25,13 @@ public final class QueryWindowExtractor {
         return ZONE;
     }
 
-    /** 永不为 null：无任何时间语义时默认最近 7 天 */
+    /** 永不为 null：无任何时间语义时默认最近 7 天（基于系统当前日期） */
     public static String extract(String message) {
-        LocalDate today = LocalDate.now(ZONE);
+        return extract(message, LocalDate.now(ZONE));
+    }
+
+    /** 以显式 today 计算（测试可控，消除时间不可测性；生产走系统日期） */
+    public static String extract(String message, LocalDate today) {
         if (message == null) {
             return today.minusDays(6) + "~" + today;
         }
