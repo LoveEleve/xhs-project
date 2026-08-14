@@ -2,6 +2,7 @@ package com.myxhs.ai.app.service.run;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.ai.app.service.agent.harness.AgentBudget;
+import com.myxhs.ai.app.service.agent.harness.AgentRun;
 import com.myxhs.ai.app.service.agent.harness.AgentHarness;
 import com.myxhs.ai.app.service.agent.harness.HarnessEvent;
 import com.myxhs.ai.tools.MetricToolAccess;
@@ -157,6 +158,34 @@ class RunManagerTest {
         assertEquals("RUN_STARTED", events.get(0).type());
         assertEquals("COMPLETED", events.get(events.size() - 1).type());
         assertTrue(events.stream().anyMatch(x -> "TOOL".equals(x.type())), "应含 TOOL 事件");
+    }
+
+    @Test
+    void 取消_run终止为CANCELLED() throws Exception {
+        AgentHarness harness = new AgentHarness(new FakeModel(), new FakeTools(), new FakeObs(),
+                MAPPER, AgentBudget.defaults(), 0.002, 2, null, "fake");
+        RunManager mgr = new RunManager(harness);
+
+        RunManager.RunEntry e = mgr.submit("为什么订单量下降了", "u1");
+        // fake 模型很快完成；取消窗口小——直接提交后立即取消（若已完成则取消返回 false，跳过）
+        boolean cancelled = mgr.cancel(e.runId());
+        e.future().get(10, TimeUnit.SECONDS);
+        AgentRun run = e.future().join();
+        if (cancelled) {
+            assertEquals("CANCELLED", run.status().name());
+        } else {
+            assertEquals("SUCCEEDED", run.status().name()); // 太快完成，取消未生效
+        }
+    }
+
+    @Test
+    void 取消已完成run_返回false() throws Exception {
+        AgentHarness harness = new AgentHarness(new FakeModel(), new FakeTools(), new FakeObs(),
+                MAPPER, AgentBudget.defaults(), 0.002, 2, null, "fake");
+        RunManager mgr = new RunManager(harness);
+        RunManager.RunEntry e = mgr.submit("q", "u1");
+        e.future().get(10, TimeUnit.SECONDS);
+        assertEquals(false, mgr.cancel(e.runId()));
     }
 
     @Test

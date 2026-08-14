@@ -21,5 +21,7 @@ public enum TerminationReason {
     /** 存在性校验失败（答案引用未注册的工具结果，拒绝后模型仍不收敛） */
     EVIDENCE_INVALID,
     /** 模型不可用/超时（明确降级，不瞎编） */
-    MODEL_UNAVAILABLE
+    MODEL_UNAVAILABLE,
+    /** 用户取消（M5-3；协作式取消，当前模型调用完成后生效） */
+    CANCELLED
 }

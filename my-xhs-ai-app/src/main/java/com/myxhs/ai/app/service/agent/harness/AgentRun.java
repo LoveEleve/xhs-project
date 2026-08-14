@@ -40,6 +40,7 @@ public class AgentRun {
             case BUDGET_STEPS, BUDGET_TOKENS, BUDGET_COST, LOOP_REPEATED_CALL, LOOP_NO_PROGRESS,
                  POLICY_EXHAUSTED, EVIDENCE_INVALID -> RunStatus.PARTIAL;
             case MODEL_UNAVAILABLE -> RunStatus.FAILED;
+            case CANCELLED -> RunStatus.CANCELLED;
         };
         this.terminationReason = reason;
         this.finalAnswer = finalAnswer;

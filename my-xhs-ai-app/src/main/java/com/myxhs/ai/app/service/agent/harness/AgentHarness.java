@@ -126,6 +126,12 @@ public class AgentHarness {
     /** 带 userId 的 run（M5-2 异步化：用户级审计落库；其余同上） */
     public AgentRun run(String query, AgentBudget budget, java.util.function.Consumer<HarnessEvent> listener,
                         String userId) {
+        return run(query, budget, listener, userId, null);
+    }
+
+    /** 带取消令牌的 run（M5-3 协作式取消：token 置位后，当前步完成即终止，不打断进行中的模型调用） */
+    public AgentRun run(String query, AgentBudget budget, java.util.function.Consumer<HarnessEvent> listener,
+                        String userId, java.util.concurrent.atomic.AtomicBoolean cancelToken) {
         AgentRun run = new AgentRun("run_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12),
                 query, budget);
         if (store != null) {
@@ -156,6 +162,9 @@ public class AgentHarness {
                 run.runId(), query, budget, currentWindow);
 
         while (true) {
+            if (cancelToken != null && cancelToken.get()) {
+                return terminatePartial(run, TerminationReason.CANCELLED, ctrl, listener);
+            }
             TerminationReason pre = ctrl.checkBeforeStep();
             if (pre != null) {
                 return terminatePartial(run, pre, ctrl, listener);
@@ -418,7 +427,7 @@ public class AgentHarness {
     private AgentRun terminatePartial(AgentRun run, TerminationReason reason, LoopCtrl ctrl,
                                       java.util.function.Consumer<HarnessEvent> listener) {
         StringBuilder sb = new StringBuilder();
-        sb.append("调查在 ").append(reason.name()).append(" 时终止（未完成归因）")
+        sb.append("调查").append(reason == TerminationReason.CANCELLED ? "已被用户取消" : "在 " + reason.name() + " 时终止（未完成归因）")
                 .append("，已用步骤 ").append(ctrl.steps()).append("/").append(ctrl.budget().maxSteps())
                 .append("。\n已收集证据：");
         if (run.evidenceChain().size() == 0) {

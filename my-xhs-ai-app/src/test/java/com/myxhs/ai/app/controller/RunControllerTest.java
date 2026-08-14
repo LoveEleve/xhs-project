@@ -128,6 +128,25 @@ class RunControllerTest {
     }
 
     @Test
+    void 取消端点_返回CANCELLING() throws Exception {
+        stubModel();
+        MvcResult sub = mockMvc.perform(post("/api/runs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"为什么订单量下降了\"}"))
+                .andExpect(status().isOk()).andReturn();
+        String runId = sub.getResponse().getContentAsString(StandardCharsets.UTF_8)
+                .replaceAll(".*\"runId\":\"([^\"]+)\".*", "$1");
+        // fake 模型极快——先取消（可能已成功→404 语义），再查状态
+        MvcResult del = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .delete("/api/runs/" + runId))
+                .andReturn();
+        int code = del.getResponse().getStatus();
+        if (code == 200) {
+            assertTrue(del.getResponse().getContentAsString(StandardCharsets.UTF_8).contains("CANCELLING"));
+        }
+    }
+
+    @Test
     void run不存在_404() throws Exception {
         mockMvc.perform(get("/api/runs/run_nonexistent"))
                 .andExpect(status().isNotFound());

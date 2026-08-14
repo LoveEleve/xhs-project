@@ -37,7 +37,8 @@ public class RunManager {
     public record RunEntry(String runId, String userId, String query,
                            LinkedBlockingQueue<HarnessEvent> events,
                            CompletableFuture<AgentRun> future,
-                           AtomicBoolean streaming) {
+                           AtomicBoolean streaming,
+                           AtomicBoolean cancelToken) {
     }
 
     private final AgentHarness harness;
@@ -55,8 +56,9 @@ public class RunManager {
         purgeDone();
         String runId = "run_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         LinkedBlockingQueue<HarnessEvent> queue = new LinkedBlockingQueue<>();
+        AtomicBoolean cancelToken = new AtomicBoolean(false);
         CompletableFuture<AgentRun> future = CompletableFuture.supplyAsync(() ->
-                harness.run(query, budget, queue::offer, userId), executor)
+                harness.run(query, budget, queue::offer, userId, cancelToken), executor)
                 .exceptionally(ex -> {
                     // 异常兜底：补发 FAILED 终态事件（订阅者不会拿到无终态空流）
                     log.warn("[runmgr] run={} 执行异常: {}", runId, ex.getMessage());
@@ -64,7 +66,7 @@ public class RunManager {
                             "EXECUTION_ERROR", "执行异常: " + ex.getMessage()));
                     return null;
                 });
-        RunEntry entry = new RunEntry(runId, userId, query, queue, future, new AtomicBoolean(false));
+        RunEntry entry = new RunEntry(runId, userId, query, queue, future, new AtomicBoolean(false), cancelToken);
         runs.put(runId, entry);
         log.info("[runmgr] submit run={} query={} user={}", runId, query, userId);
         return entry;
@@ -77,6 +79,17 @@ public class RunManager {
     public boolean isDone(String runId) {
         RunEntry e = runs.get(runId);
         return e != null && e.future().isDone();
+    }
+
+    /** 协作式取消（M5-3）：置位取消令牌；Harness 当前步完成后终止为 CANCELLED */
+    public boolean cancel(String runId) {
+        RunEntry e = runs.get(runId);
+        if (e == null || e.future().isDone()) {
+            return false;
+        }
+        e.cancelToken().set(true);
+        log.info("[runmgr] cancel run={} user={}", runId, e.userId());
+        return true;
     }
 
     /** SSE 订阅：同一 run 单活动订阅者（并发订阅返回 false 拒绝）；缓冲补发 + 实时转发直到终态 */

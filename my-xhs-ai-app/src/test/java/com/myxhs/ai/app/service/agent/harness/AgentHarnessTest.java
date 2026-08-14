@@ -295,6 +295,28 @@ class AgentHarnessTest {
     }
 
     @Test
+    void 协作式取消_终止为CANCELLED并返回已收集证据() {
+        java.util.concurrent.atomic.AtomicBoolean token = new java.util.concurrent.atomic.AtomicBoolean(false);
+        AgentHarness h = harness(texts -> {
+            String ev = lastEvId(texts);
+            if (ev == null) {
+                return toolCallJson("queryOrderVolume", "2026-08-01~2026-08-07");
+            }
+            token.set(true); // 拿到证据后置位取消
+            return toolCallJson("paymentSuccessRate", "2026-08-01~2026-08-07");
+        }, AgentBudget.defaults());
+
+        AgentRun run = h.run("为什么订单量下降了", AgentBudget.defaults(), null, "anonymous", token);
+
+        assertEquals(RunStatus.CANCELLED, run.status());
+        assertEquals(TerminationReason.CANCELLED, run.terminationReason());
+        assertTrue(run.finalAnswer().contains("已被用户取消"), run.finalAnswer());
+        assertTrue(run.finalAnswer().contains("已收集证据"), run.finalAnswer());
+        // 协作式语义：当前步完成后才感知取消——第 2 个工具已执行
+        assertEquals(2, run.evidenceChain().size());
+    }
+
+    @Test
     void 落库集成_run和step持久化() {
         var ds = new org.springframework.jdbc.datasource.DriverManagerDataSource(
                 "jdbc:h2:mem:harnessstore;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");

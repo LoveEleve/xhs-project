@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -53,6 +54,15 @@ public class RunController {
         String userId = body.getOrDefault("userId", "anonymous");
         RunManager.RunEntry entry = runManager.submit(message, userId);
         return Map.of("runId", entry.runId(), "status", "RECEIVED");
+    }
+
+    /** 取消诊断任务（协作式：当前步完成后生效） */
+    @DeleteMapping("/{runId}")
+    public Map<String, String> cancel(@PathVariable String runId) {
+        if (!runManager.cancel(runId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "run 不存在或已完成: " + runId);
+        }
+        return Map.of("runId", runId, "status", "CANCELLING");
     }
 
     @GetMapping("/{runId}")
