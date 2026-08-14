@@ -44,4 +44,7 @@ public interface RunStore {
 
     /** 崩溃判定：RUNNING 且最后活动时间早于 before（心跳超时视为崩溃） */
     List<String> findRunningStale(Instant before);
+
+    /** 原子认领（双实例防双份执行）：仅 RUNNING 可认领并刷新心跳；返回影响行数（0=已被认领） */
+    int claimRunning(String runId);
 }

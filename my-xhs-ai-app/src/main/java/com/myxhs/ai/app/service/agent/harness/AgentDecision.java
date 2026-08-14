@@ -1,6 +1,7 @@
 package com.myxhs.ai.app.service.agent.harness;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import java.util.List;
 import java.util.Map;
@@ -13,6 +14,7 @@ import java.util.Map;
  *  - ASK        向用户追问（未用，V1 保留）
  * 证据链约束：ANSWER 的 evidenceRefs 必须命中 ToolResultRegistry（Harness 存在性校验，防模型编造）。
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record AgentDecision(
         String action,
         String tool,

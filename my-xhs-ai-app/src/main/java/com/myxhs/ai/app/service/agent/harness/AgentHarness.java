@@ -298,6 +298,9 @@ public class AgentHarness {
             throw new IllegalStateException("Run Store 未装配，无法恢复");
         }
         var rec = store.loadRun(runId).orElseThrow(() -> new IllegalStateException("run 不存在: " + runId));
+        if (!"RUNNING".equals(rec.status())) {
+            throw new IllegalStateException("仅 RUNNING 状态的 run 可恢复，当前: " + rec.status());
+        }
         AgentBudget budget = parseBudget(rec.budgetJson());
         AgentRun run = new AgentRun(runId, rec.query(), budget);
         List<RunStore.StepRecord> steps = store.loadSteps(runId);
@@ -307,8 +310,12 @@ public class AgentHarness {
         for (RunStore.StepRecord sr : steps) {
             AgentStep step = fromStepRecord(sr);
             run.recordStep(step);
-            ctrl.recordStep((int) sr.tokensUsed());
-            if ("TOOL".equals(step.state()) && sr.evidenceIds() != null && step.decision() != null) {
+            // 计步语义与原执行一致：仅 THINK 步计入步骤预算（TOOL/POLICY_DENIED/ANSWER 不计）
+            if ("THINK".equals(sr.state())) {
+                ctrl.recordStep((int) sr.tokensUsed());
+            }
+            if ("TOOL".equals(step.state()) && sr.evidenceIds() != null && !sr.evidenceIds().isBlank()
+                    && step.decision() != null) {
                 for (String evId : sr.evidenceIds().split(",")) {
                     var args = step.decision().args();
                     run.registry().restore(evId, step.decision().tool(), args, sr.toolResult());
@@ -372,8 +379,7 @@ public class AgentHarness {
             }
             return msgs;
         } catch (Exception e) {
-            log.warn("[harness] 消息快照恢复失败: {}", e.getMessage());
-            return new ArrayList<>();
+            throw new IllegalStateException("消息快照恢复失败（checkpoint 损坏）: " + e.getMessage(), e);
         }
     }
 

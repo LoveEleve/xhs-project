@@ -90,6 +90,12 @@ public class JdbcRunStore implements RunStore {
                 (rs, i) -> rs.getString("run_id"), Timestamp.from(before));
     }
 
+    @Override
+    public int claimRunning(String runId) {
+        return jdbc.update("UPDATE ai_run SET last_activity_at=? WHERE run_id=? AND status='RUNNING'",
+                Timestamp.from(Instant.now()), runId);
+    }
+
     private RunRecord toRun(ResultSet rs) throws SQLException {
         return new RunRecord(
                 rs.getString("run_id"), rs.getString("user_id"), rs.getString("session_id"),

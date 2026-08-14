@@ -69,7 +69,7 @@ public class RunManager {
             if (!stale.isEmpty()) {
                 log.warn("[runmgr] 启动发现 {} 个崩溃 run，开始恢复: {}", stale.size(), stale);
             }
-            for (String runId : stale) {
+                for (String runId : stale) {
                 resumeEntry(runId);
             }
         } catch (Exception e) {
@@ -77,13 +77,21 @@ public class RunManager {
         }
     }
 
-    /** 将崩溃 run 装入内存并异步续跑（供启动恢复/手动 resume 复用） */
+    /** 将崩溃 run 装入内存并异步续跑（供启动恢复/手动 resume 复用）。
+     *  原子认领：UPDATE 影响行数为 0 = 已被其他实例认领/状态已变（双实例防双份执行）。 */
     public RunEntry resumeEntry(String runId) {
+        int claimed = store.claimRunning(runId);
+        if (claimed == 0) {
+            log.warn("[runmgr] run={} 认领失败（已被认领或非 RUNNING），跳过恢复", runId);
+            return null;
+        }
         String userId = "recovered";
+        String query = runId;
         try {
             var rec = store.loadRun(runId);
             if (rec.isPresent()) {
                 userId = rec.get().userId();
+                query = rec.get().query();
             }
         } catch (Exception ignored) {
         }
@@ -97,7 +105,7 @@ public class RunManager {
                             "EXECUTION_ERROR", "恢复执行异常: " + ex.getMessage()));
                     return null;
                 });
-        RunEntry entry = new RunEntry(runId, userId, "recovered", queue, future,
+        RunEntry entry = new RunEntry(runId, userId, query, queue, future,
                 new AtomicBoolean(false), cancelToken);
         runs.put(runId, entry);
         log.info("[runmgr] resume run={} user={}", runId, userId);

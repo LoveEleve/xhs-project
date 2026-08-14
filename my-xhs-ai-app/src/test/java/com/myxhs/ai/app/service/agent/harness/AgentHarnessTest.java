@@ -25,6 +25,7 @@ import java.util.regex.Pattern;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -360,6 +361,72 @@ class AgentHarnessTest {
         assertTrue(resumed.evidenceChain().size() >= 1, "证据应恢复");
         var rec = store.loadRun(runId).orElseThrow();
         assertEquals("SUCCEEDED", rec.status(), "终态应落库");
+    }
+
+    @Test
+    void 中途崩溃恢复_手工构造未完成run续跑() throws Exception {
+        var ds = new org.springframework.jdbc.datasource.DriverManagerDataSource(
+                "jdbc:h2:mem:resume2;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
+        var jdbc = new org.springframework.jdbc.core.JdbcTemplate(ds);
+        jdbc.execute("CREATE TABLE IF NOT EXISTS ai_run (run_id VARCHAR(32) PRIMARY KEY, user_id VARCHAR(64),"
+                + " session_id VARCHAR(64), query TEXT NOT NULL, status VARCHAR(16) NOT NULL,"
+                + " termination_reason VARCHAR(32), budget_json TEXT, versions_json TEXT, tokens_total BIGINT DEFAULT 0,"
+                + " cost_est DOUBLE DEFAULT 0, started_at DATETIME(3), ended_at DATETIME(3), last_activity_at DATETIME(3))");
+        jdbc.execute("CREATE TABLE IF NOT EXISTS ai_step (id BIGINT AUTO_INCREMENT PRIMARY KEY, run_id VARCHAR(32),"
+                + " step_no INT, state VARCHAR(24), decision_json TEXT, tool_result MEDIUMTEXT,"
+                + " evidence_ids VARCHAR(512), messages_snapshot MEDIUMTEXT, tokens_used BIGINT DEFAULT 0, created_at DATETIME(3))");
+        RunStore store = new JdbcRunStore(jdbc, MAPPER);
+
+        // 手工构造"崩溃在 1 步后"的状态（进程死亡：状态 RUNNING、1 步 checkpoint 已落库）
+        String runId = "run_midcrashed";
+        store.createRun(runId, "u1", null, "为什么订单量下降了",
+                "{\"maxSteps\":5,\"maxTokens\":100000,\"maxCost\":100}", "{\"model\":\"fake\"}");
+        String cp = "[{\"type\":\"SYSTEM\",\"text\":\"你是诊断 Agent\"},"
+                + "{\"type\":\"USER\",\"text\":\"用户问题：为什么订单量下降了\"}]";
+        jdbc.update("INSERT INTO ai_step (run_id, step_no, state, decision_json, tool_result, evidence_ids,"
+                        + " messages_snapshot, tokens_used, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                runId, 1, "THINK",
+                "{\"action\":\"TOOL_CALL\",\"tool\":\"queryOrderVolume\","
+                        + "\"args\":{\"window\":\"2026-08-01~2026-08-07\"},\"reasoning\":\"查窗口\"}",
+                null, null, cp, 10, java.sql.Timestamp.from(java.time.Instant.now()));
+
+        AgentHarness h2 = new AgentHarness(new FakeDecisionModel(texts -> {
+            String ev = lastEvId(texts);
+            if (ev == null) {
+                return toolCallJson("queryOrderVolume", "2026-08-01~2026-08-07");
+            }
+            return answerJson("下单量为61", ev);
+        }), new FakeMetricTools(), new FakeObsTools(), MAPPER, AgentBudget.defaults(), 0.002, 2, store, "fake");
+
+        AgentRun resumed = h2.resume(runId, null, null);
+        assertEquals(runId, resumed.runId());
+        assertEquals(RunStatus.SUCCEEDED, resumed.status(), "手工中途状态应能恢复并完成");
+        assertTrue(resumed.steps().size() >= 3, "应含重放+新步骤: " + resumed.steps().size());
+        assertTrue(resumed.evidenceChain().size() >= 1, "恢复后工具执行应产出证据");
+    }
+
+    @Test
+    void 已完成run_拒绝恢复() {
+        var ds = new org.springframework.jdbc.datasource.DriverManagerDataSource(
+                "jdbc:h2:mem:resume3;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
+        var jdbc = new org.springframework.jdbc.core.JdbcTemplate(ds);
+        jdbc.execute("CREATE TABLE IF NOT EXISTS ai_run (run_id VARCHAR(32) PRIMARY KEY, user_id VARCHAR(64),"
+                + " session_id VARCHAR(64), query TEXT NOT NULL, status VARCHAR(16) NOT NULL,"
+                + " termination_reason VARCHAR(32), budget_json TEXT, versions_json TEXT, tokens_total BIGINT DEFAULT 0,"
+                + " cost_est DOUBLE DEFAULT 0, started_at DATETIME(3), ended_at DATETIME(3), last_activity_at DATETIME(3))");
+        jdbc.execute("CREATE TABLE IF NOT EXISTS ai_step (id BIGINT AUTO_INCREMENT PRIMARY KEY, run_id VARCHAR(32),"
+                + " step_no INT, state VARCHAR(24), decision_json TEXT, tool_result MEDIUMTEXT,"
+                + " evidence_ids VARCHAR(512), messages_snapshot MEDIUMTEXT, tokens_used BIGINT DEFAULT 0, created_at DATETIME(3))");
+        RunStore store = new JdbcRunStore(jdbc, MAPPER);
+        AgentHarness h = new AgentHarness(new FakeDecisionModel(texts ->
+                toolCallJson("queryOrderVolume", "2026-08-01~2026-08-07")),
+                new FakeMetricTools(), new FakeObsTools(), MAPPER, AgentBudget.defaults(), 0.002, 2, store, "fake");
+        AgentRun first = h.run("q");
+        String runId = first.runId();
+        assertTrue(!RunStatus.RUNNING.name().equals(store.loadRun(runId).orElseThrow().status()));
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> h.resume(runId, null, null), "已完成 run 应拒绝恢复");
     }
 
     @Test
