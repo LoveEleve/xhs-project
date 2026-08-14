@@ -24,6 +24,11 @@ public class ToolResultRegistry {
         return evidenceId;
     }
 
+    /** 恢复：按已有 evidenceId 直接填入（M5-4 checkpoint 重放，保持引用一致性） */
+    public void restore(String evidenceId, String tool, Map<String, String> args, String result) {
+        records.put(evidenceId, new ToolCallRecord(evidenceId, tool, args, result));
+    }
+
     public boolean contains(String evidenceId) {
         return evidenceId != null && records.containsKey(evidenceId);
     }

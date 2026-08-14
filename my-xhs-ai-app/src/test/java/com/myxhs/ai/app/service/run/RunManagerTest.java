@@ -140,7 +140,7 @@ class RunManagerTest {
     void 异步提交_事件缓冲_完成检测() throws Exception {
         AgentHarness harness = new AgentHarness(new FakeModel(), new FakeTools(), new FakeObs(),
                 MAPPER, AgentBudget.defaults(), 0.002, 2, null, "fake");
-        RunManager mgr = new RunManager(harness);
+        RunManager mgr = new RunManager(harness, null);
 
         RunManager.RunEntry e = mgr.submit("为什么订单量下降了", "u1");
 
@@ -164,7 +164,7 @@ class RunManagerTest {
     void 取消_run终止为CANCELLED() throws Exception {
         AgentHarness harness = new AgentHarness(new FakeModel(), new FakeTools(), new FakeObs(),
                 MAPPER, AgentBudget.defaults(), 0.002, 2, null, "fake");
-        RunManager mgr = new RunManager(harness);
+        RunManager mgr = new RunManager(harness, null);
 
         RunManager.RunEntry e = mgr.submit("为什么订单量下降了", "u1");
         // fake 模型很快完成；取消窗口小——直接提交后立即取消（若已完成则取消返回 false，跳过）
@@ -182,7 +182,7 @@ class RunManagerTest {
     void 取消已完成run_返回false() throws Exception {
         AgentHarness harness = new AgentHarness(new FakeModel(), new FakeTools(), new FakeObs(),
                 MAPPER, AgentBudget.defaults(), 0.002, 2, null, "fake");
-        RunManager mgr = new RunManager(harness);
+        RunManager mgr = new RunManager(harness, null);
         RunManager.RunEntry e = mgr.submit("q", "u1");
         e.future().get(10, TimeUnit.SECONDS);
         assertEquals(false, mgr.cancel(e.runId()));
@@ -192,7 +192,7 @@ class RunManagerTest {
     void 并发订阅_第二个被拒绝() throws Exception {
         AgentHarness harness = new AgentHarness(new FakeModel(), new FakeTools(), new FakeObs(),
                 MAPPER, AgentBudget.defaults(), 0.002, 2, null, "fake");
-        RunManager mgr = new RunManager(harness);
+        RunManager mgr = new RunManager(harness, null);
 
         RunManager.RunEntry e = mgr.submit("为什么订单量下降了", "u1");
         e.future().get(10, TimeUnit.SECONDS);
@@ -213,7 +213,7 @@ class RunManagerTest {
     void streamTo_补发缓冲事件并完成() throws Exception {
         AgentHarness harness = new AgentHarness(new FakeModel(), new FakeTools(), new FakeObs(),
                 MAPPER, AgentBudget.defaults(), 0.002, 2, null, "fake");
-        RunManager mgr = new RunManager(harness);
+        RunManager mgr = new RunManager(harness, null);
 
         RunManager.RunEntry e = mgr.submit("为什么订单量下降了", "u1");
         e.future().get(10, TimeUnit.SECONDS); // 完成后再订阅 → 全部缓冲补发

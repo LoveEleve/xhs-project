@@ -4,6 +4,8 @@ import com.myxhs.ai.app.service.agent.harness.AgentBudget;
 import com.myxhs.ai.app.service.agent.harness.AgentHarness;
 import com.myxhs.ai.app.service.agent.harness.AgentRun;
 import com.myxhs.ai.app.service.agent.harness.HarnessEvent;
+import com.myxhs.ai.app.service.store.RunStore;
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -41,14 +43,65 @@ public class RunManager {
                            AtomicBoolean cancelToken) {
     }
 
+    /** 心跳超时阈值：超过视为崩溃（正常单步最长约 1min，留余量） */
+    private static final Duration CRASH_STALE = Duration.ofMinutes(10);
+
     private final AgentHarness harness;
+    private final RunStore store;
     private final AgentBudget budget;
     private final ExecutorService executor = Executors.newFixedThreadPool(20);
     private final Map<String, RunEntry> runs = new ConcurrentHashMap<>();
 
-    public RunManager(AgentHarness harness) {
+    public RunManager(AgentHarness harness, RunStore store) {
         this.harness = harness;
+        this.store = store;
         this.budget = harness.defaultBudget();
+    }
+
+    /** 启动自动恢复（M5-4）：扫描 RUNNING 且心跳超时的 run，从 checkpoint 续跑 */
+    @PostConstruct
+    public void recoverCrashedOnStartup() {
+        if (store == null) {
+            return;
+        }
+        try {
+            var stale = store.findRunningStale(Instant.now().minus(CRASH_STALE));
+            if (!stale.isEmpty()) {
+                log.warn("[runmgr] 启动发现 {} 个崩溃 run，开始恢复: {}", stale.size(), stale);
+            }
+            for (String runId : stale) {
+                resumeEntry(runId);
+            }
+        } catch (Exception e) {
+            log.warn("[runmgr] 启动恢复扫描失败: {}", e.getMessage());
+        }
+    }
+
+    /** 将崩溃 run 装入内存并异步续跑（供启动恢复/手动 resume 复用） */
+    public RunEntry resumeEntry(String runId) {
+        String userId = "recovered";
+        try {
+            var rec = store.loadRun(runId);
+            if (rec.isPresent()) {
+                userId = rec.get().userId();
+            }
+        } catch (Exception ignored) {
+        }
+        LinkedBlockingQueue<HarnessEvent> queue = new LinkedBlockingQueue<>();
+        AtomicBoolean cancelToken = new AtomicBoolean(false);
+        CompletableFuture<AgentRun> future = CompletableFuture.supplyAsync(() ->
+                harness.resume(runId, queue::offer, cancelToken), executor)
+                .exceptionally(ex -> {
+                    log.warn("[runmgr] run={} 恢复执行异常: {}", runId, ex.getMessage());
+                    queue.offer(new HarnessEvent(runId, "FAILED", 0, null, null, null,
+                            "EXECUTION_ERROR", "恢复执行异常: " + ex.getMessage()));
+                    return null;
+                });
+        RunEntry entry = new RunEntry(runId, userId, "recovered", queue, future,
+                new AtomicBoolean(false), cancelToken);
+        runs.put(runId, entry);
+        log.info("[runmgr] resume run={} user={}", runId, userId);
+        return entry;
     }
 
     /** 提交诊断任务，立即返回；后台执行（userId 落库实现用户级审计） */

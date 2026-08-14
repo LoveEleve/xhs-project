@@ -317,6 +317,52 @@ class AgentHarnessTest {
     }
 
     @Test
+    void 崩溃恢复_从checkpoint续跑完成() {
+        var ds = new org.springframework.jdbc.datasource.DriverManagerDataSource(
+                "jdbc:h2:mem:resume;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
+        var jdbc = new org.springframework.jdbc.core.JdbcTemplate(ds);
+        jdbc.execute("CREATE TABLE IF NOT EXISTS ai_run (run_id VARCHAR(32) PRIMARY KEY, user_id VARCHAR(64),"
+                + " session_id VARCHAR(64), query TEXT NOT NULL, status VARCHAR(16) NOT NULL,"
+                + " termination_reason VARCHAR(32), budget_json TEXT, versions_json TEXT, tokens_total BIGINT DEFAULT 0,"
+                + " cost_est DOUBLE DEFAULT 0, started_at DATETIME(3), ended_at DATETIME(3), last_activity_at DATETIME(3))");
+        jdbc.execute("CREATE TABLE IF NOT EXISTS ai_step (id BIGINT AUTO_INCREMENT PRIMARY KEY, run_id VARCHAR(32),"
+                + " step_no INT, state VARCHAR(24), decision_json TEXT, tool_result MEDIUMTEXT,"
+                + " evidence_ids VARCHAR(512), messages_snapshot MEDIUMTEXT, tokens_used BIGINT DEFAULT 0, created_at DATETIME(3))");
+        RunStore store = new JdbcRunStore(jdbc, MAPPER);
+        AgentHarness h = new AgentHarness(new FakeDecisionModel(texts -> {
+            String ev = lastEvId(texts);
+            if (ev == null) {
+                return toolCallJson("queryOrderVolume", "2026-08-01~2026-08-07");
+            }
+            return answerJson("下单量为61", ev);
+        }), new FakeMetricTools(), new FakeObsTools(), MAPPER, AgentBudget.defaults(), 0.002, 2, store, "fake");
+
+        // 阶段1：正常跑一次（落库完整步骤与 checkpoint）
+        AgentRun first = h.run("为什么订单量下降了");
+        assertEquals(RunStatus.SUCCEEDED, first.status());
+        String runId = first.runId();
+        assertTrue(store.loadSteps(runId).size() >= 3);
+
+        // 阶段2：模拟崩溃恢复——用同一 store 从 checkpoint 续跑（新 Harness 实例，模拟进程重启）
+        AgentHarness h2 = new AgentHarness(new FakeDecisionModel(texts -> {
+            String ev = lastEvId(texts);
+            if (ev == null) {
+                return toolCallJson("queryOrderVolume", "2026-08-01~2026-08-07");
+            }
+            return answerJson("下单量为61", ev);
+        }), new FakeMetricTools(), new FakeObsTools(), MAPPER, AgentBudget.defaults(), 0.002, 2, store, "fake");
+        // 模拟崩溃：把 run 状态改回 RUNNING（真实崩溃是进程死，状态停留 RUNNING）
+        jdbc.update("UPDATE ai_run SET status='RUNNING', termination_reason=NULL WHERE run_id=?", runId);
+
+        AgentRun resumed = h2.resume(runId, null, null);
+        assertEquals(RunStatus.SUCCEEDED, resumed.status(), "恢复后应完成");
+        assertEquals(runId, resumed.runId(), "runId 应复用");
+        assertTrue(resumed.evidenceChain().size() >= 1, "证据应恢复");
+        var rec = store.loadRun(runId).orElseThrow();
+        assertEquals("SUCCEEDED", rec.status(), "终态应落库");
+    }
+
+    @Test
     void 取消事件流_终态事件为CANCELLED() {
         java.util.concurrent.atomic.AtomicBoolean token = new java.util.concurrent.atomic.AtomicBoolean(false);
         AgentHarness h = harness(texts -> {
@@ -347,7 +393,7 @@ class AgentHarnessTest {
                 + " tokens_out BIGINT DEFAULT 0, cost_est DOUBLE DEFAULT 0, started_at DATETIME(3), ended_at DATETIME(3), last_activity_at DATETIME(3))");
         jdbc.execute("CREATE TABLE IF NOT EXISTS ai_step (id BIGINT AUTO_INCREMENT PRIMARY KEY, run_id VARCHAR(32),"
                 + " step_no INT, state VARCHAR(24), decision_json TEXT, tool_result MEDIUMTEXT,"
-                + " evidence_ids VARCHAR(512), messages_snapshot MEDIUMTEXT, created_at DATETIME(3))");
+                + " evidence_ids VARCHAR(512), messages_snapshot MEDIUMTEXT, tokens_used BIGINT DEFAULT 0, created_at DATETIME(3))");
         RunStore store = new JdbcRunStore(jdbc, MAPPER);
         AgentHarness h = new AgentHarness(new FakeDecisionModel(texts -> {
             String ev = lastEvId(texts);

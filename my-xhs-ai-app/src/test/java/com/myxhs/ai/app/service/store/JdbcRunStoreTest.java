@@ -39,7 +39,7 @@ class JdbcRunStoreTest {
                 CREATE TABLE IF NOT EXISTS ai_step (
                   id BIGINT AUTO_INCREMENT PRIMARY KEY, run_id VARCHAR(32), step_no INT, state VARCHAR(24),
                   decision_json TEXT, tool_result MEDIUMTEXT, evidence_ids VARCHAR(512),
-                  messages_snapshot MEDIUMTEXT, created_at DATETIME(3)
+                  messages_snapshot MEDIUMTEXT, tokens_used BIGINT DEFAULT 0, created_at DATETIME(3)
                 )""");
         jdbc.update("DELETE FROM ai_run; DELETE FROM ai_step;");
         store = new JdbcRunStore(jdbc, new ObjectMapper());

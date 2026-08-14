@@ -161,6 +161,13 @@ public class AgentHarness {
         log.info("[harness] run={} start query={} budget={} currentWindow={}",
                 run.runId(), query, budget, currentWindow);
 
+        return executeLoop(run, messages, ctrl, loop, listener, cancelToken, invalidOutputs);
+    }
+
+    /** 执行循环（run 与 resume 共用；M5-4 恢复=重建上下文后从这里继续） */
+    private AgentRun executeLoop(AgentRun run, List<ChatMessage> messages, LoopCtrl ctrl, LoopDetector loop,
+                                 java.util.function.Consumer<HarnessEvent> listener,
+                                 java.util.concurrent.atomic.AtomicBoolean cancelToken, int invalidOutputs) {
         while (true) {
             if (cancelToken != null && cancelToken.get()) {
                 return terminatePartial(run, TerminationReason.CANCELLED, ctrl, listener);
@@ -281,6 +288,92 @@ public class AgentHarness {
                     return terminatePartial(run, loopReason, ctrl, listener);
                 }
             }
+        }
+    }
+
+    /** 崩溃恢复（M5-4）：从 store 加载 run/步骤/最后 checkpoint，重建上下文后续跑 */
+    public AgentRun resume(String runId, java.util.function.Consumer<HarnessEvent> listener,
+                           java.util.concurrent.atomic.AtomicBoolean cancelToken) {
+        if (store == null) {
+            throw new IllegalStateException("Run Store 未装配，无法恢复");
+        }
+        var rec = store.loadRun(runId).orElseThrow(() -> new IllegalStateException("run 不存在: " + runId));
+        AgentBudget budget = parseBudget(rec.budgetJson());
+        AgentRun run = new AgentRun(runId, rec.query(), budget);
+        List<RunStore.StepRecord> steps = store.loadSteps(runId);
+        List<ChatMessage> messages = new ArrayList<>();
+        LoopCtrl ctrl = new LoopCtrl(budget);
+        int invalidOutputs = 0;
+        for (RunStore.StepRecord sr : steps) {
+            AgentStep step = fromStepRecord(sr);
+            run.recordStep(step);
+            ctrl.recordStep((int) sr.tokensUsed());
+            if ("TOOL".equals(step.state()) && sr.evidenceIds() != null && step.decision() != null) {
+                for (String evId : sr.evidenceIds().split(",")) {
+                    var args = step.decision().args();
+                    run.registry().restore(evId, step.decision().tool(), args, sr.toolResult());
+                    run.evidenceChain().add(evId, step.decision().tool(),
+                            args == null ? null : args.get("window"), sr.toolResult());
+                }
+            }
+        }
+        var cp = store.lastCheckpoint(runId).orElseThrow(
+                () -> new IllegalStateException("无 checkpoint 可恢复: " + runId));
+        messages.addAll(restoreMessages(cp.messagesSnapshot()));
+        LoopDetector loop = new LoopDetector();
+        emit(listener, new HarnessEvent(runId, "RUN_STARTED", 0, null, null, null, null,
+                "恢复执行（已完成 " + steps.size() + " 步）"));
+        log.info("[harness] run={} RESUME from checkpoint steps={}", runId, steps.size());
+        return executeLoop(run, messages, ctrl, loop, listener, cancelToken, invalidOutputs);
+    }
+
+    private AgentBudget parseBudget(String budgetJson) {
+        try {
+            var n = om.readTree(budgetJson);
+            return new AgentBudget(n.path("maxSteps").asInt(AgentBudget.DEFAULT_MAX_STEPS),
+                    n.path("maxTokens").asLong(AgentBudget.DEFAULT_MAX_TOKENS),
+                    n.path("maxCost").asDouble(AgentBudget.DEFAULT_MAX_COST));
+        } catch (Exception e) {
+            return AgentBudget.defaults();
+        }
+    }
+
+    private AgentStep fromStepRecord(RunStore.StepRecord sr) {
+        AgentDecision decision = null;
+        if (sr.decisionJson() != null) {
+            try {
+                decision = om.readValue(sr.decisionJson(), AgentDecision.class);
+            } catch (Exception e) {
+                log.warn("[harness] 恢复决策解析失败: {}", e.getMessage());
+            }
+        }
+        List<String> refs = sr.evidenceIds() == null ? null : List.of(sr.evidenceIds().split(","));
+        return new AgentStep(sr.stepNo(), sr.state(), decision, sr.toolResult(), refs,
+                (int) sr.tokensUsed(), sr.createdAt());
+    }
+
+    private List<ChatMessage> restoreMessages(String snapshot) {
+        if (snapshot == null || snapshot.isBlank()) {
+            return new ArrayList<>();
+        }
+        try {
+            List<Map<String, String>> list = om.readValue(snapshot, new com.fasterxml.jackson.core.type.TypeReference<>() {});
+            List<ChatMessage> msgs = new ArrayList<>();
+            for (Map<String, String> m : list) {
+                String type = m.getOrDefault("type", "");
+                String text = m.getOrDefault("text", "");
+                if ("SYSTEM".equals(type)) {
+                    msgs.add(SystemMessage.from(text));
+                } else if ("AI".equals(type)) {
+                    msgs.add(AiMessage.from(text));
+                } else {
+                    msgs.add(UserMessage.from(text));
+                }
+            }
+            return msgs;
+        } catch (Exception e) {
+            log.warn("[harness] 消息快照恢复失败: {}", e.getMessage());
+            return new ArrayList<>();
         }
     }
 

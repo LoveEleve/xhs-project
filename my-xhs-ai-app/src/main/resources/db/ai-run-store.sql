@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS ai_step (
   tool_result       MEDIUMTEXT   DEFAULT NULL COMMENT '工具结果/拒绝原因',
   evidence_ids      VARCHAR(512) DEFAULT NULL COMMENT '证据id列表',
   messages_snapshot MEDIUMTEXT   DEFAULT NULL COMMENT 'LLM对话上下文checkpoint(JSON)',
+  tokens_used       BIGINT       DEFAULT 0 COMMENT '该步 token 消耗(预算恢复用)',
   created_at        DATETIME(3)  DEFAULT NULL,
   KEY idx_run (run_id, step_no)
 ) COMMENT 'AI 诊断 Step 记录(checkpoint 粒度)';

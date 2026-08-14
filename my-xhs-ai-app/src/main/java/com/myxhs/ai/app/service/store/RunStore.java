@@ -24,7 +24,7 @@ public interface RunStore {
     record StepRecord(
             long id, String runId, int stepNo, String state,
             String decisionJson, String toolResult, String evidenceIds,
-            String messagesSnapshot, Instant createdAt) {
+            String messagesSnapshot, long tokensUsed, Instant createdAt) {
     }
 
     void createRun(String runId, String userId, String sessionId, String query,
@@ -41,4 +41,7 @@ public interface RunStore {
 
     /** 崩溃恢复：最后一个有 messages 快照的 step */
     Optional<StepRecord> lastCheckpoint(String runId);
+
+    /** 崩溃判定：RUNNING 且最后活动时间早于 before（心跳超时视为崩溃） */
+    List<String> findRunningStale(Instant before);
 }

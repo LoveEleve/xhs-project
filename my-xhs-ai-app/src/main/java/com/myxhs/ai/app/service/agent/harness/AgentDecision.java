@@ -1,5 +1,7 @@
 package com.myxhs.ai.app.service.agent.harness;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import java.util.List;
 import java.util.Map;
 
@@ -21,10 +23,13 @@ public record AgentDecision(
         String counterEvidence,
         String uncertainty) {
 
+    /** 仅业务方法，非数据字段（防 Jackson 序列化为 answer/toolCall 属性，破坏快照恢复） */
+    @JsonIgnore
     public boolean isToolCall() {
         return "TOOL_CALL".equals(action);
     }
 
+    @JsonIgnore
     public boolean isAnswer() {
         return "ANSWER".equals(action);
     }
