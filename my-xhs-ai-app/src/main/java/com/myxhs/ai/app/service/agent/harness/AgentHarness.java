@@ -101,6 +101,10 @@ public class AgentHarness {
         this.modelName = modelName;
     }
 
+    public AgentBudget defaultBudget() {
+        return defaultBudget;
+    }
+
     public AgentRun run(String query) {
         return run(query, defaultBudget, null);
     }
