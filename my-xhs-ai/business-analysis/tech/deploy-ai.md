@@ -3,16 +3,16 @@
 > 日期：2026-08-14 | 对象：my-xhs-ai-app（19020）/ my-xhs-ai-mcp（19021）
 > 前置：my_xhs_ai 库（M5 DDL）+ 只读/写账号 + 观测栈（Prometheus 19090）同机可达 + OpenCode Go key
 
-## 1. 构建（复用根 Dockerfile.template）
+## 1. 构建（AI 模块独立 Dockerfile）
 
 ```bash
-# 在仓库根目录执行（与后端 16 服务同模式；-am 自动构建 my-xhs-ai-tools 依赖）
-docker build --build-arg MODULE=my-xhs-ai-app -f Dockerfile.template -t myxhs/ai-app:1.0.0 .
-docker build --build-arg MODULE=my-xhs-ai-mcp -f Dockerfile.template -t myxhs/ai-mcp:1.0.0 .
+# 在仓库根目录执行；独立 Dockerfile（不用后端模板——其 COPY 列表缺 my-xhs-ai-tools，-am 构建会失败）
+docker build -f my-xhs-ai-app/Dockerfile -t myxhs/ai-app:1.0.0 .
+docker build -f my-xhs-ai-mcp/Dockerfile -t myxhs/ai-mcp:1.0.0 .
 ```
 
-> ⚠️ 模板的 `mvn package -pl ${MODULE} -am` 会构建 tools→app 依赖链（根 pom 已注册模块）。
-> 本地无 docker：镜像构建验证留部署环境（构建命令已验证逻辑）。
+> Dockerfile 分阶段：pom 先行（层缓存）→ `dependency:go-offline -am`（含 tools 依赖树）→ 全量构建。
+> 本地无 docker：镜像构建验证留部署环境（COPY/依赖链已验证逻辑）。
 
 ## 2. 启动（compose）
 
