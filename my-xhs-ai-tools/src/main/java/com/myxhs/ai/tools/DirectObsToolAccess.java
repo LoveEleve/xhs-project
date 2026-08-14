@@ -44,4 +44,16 @@ public class DirectObsToolAccess implements ObsToolAccess {
             @P("消费组名，空字符串=全部消费组") String consumerGroup) {
         return tool.mqDlqBacklog(consumerGroup);
     }
+
+    @Override
+    @Tool("查询 MySQL 主从复制延迟（直连 Prometheus，Seconds_Behind_Master）")
+    public String mysqlReplicationLag() {
+        return tool.mysqlReplicationLag();
+    }
+
+    @Override
+    @Tool("查询 MySQL 死锁事件（直连 Prometheus，累计+最新）")
+    public String mysqlDeadlocks() {
+        return tool.mysqlDeadlocks();
+    }
 }

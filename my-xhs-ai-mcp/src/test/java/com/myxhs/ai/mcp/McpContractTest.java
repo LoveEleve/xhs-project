@@ -9,10 +9,13 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -21,8 +24,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * MCP 契约测试（H2，无真库/无网络）。
- * 覆盖：initialize / tools/list / tools/call（order 工具口径）/ 认证 401。
+ * MCP 契约测试（H2，无真库/无网络；Prometheus 用内嵌 mock server）。
+ * 覆盖：initialize / tools/list / tools/call（order 工具口径 + mysql 观测）/ 认证 401。
  * 协议要点：Accept: application/json, text/event-stream；会话 Mcp-Session-Id。
  */
 @SpringBootTest
@@ -36,6 +39,27 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "MCP_API_KEY="
 })
 class McpContractTest {
+
+    /** 内嵌 mock Prometheus（观测工具契约测试用，防真实网络依赖） */
+    private static com.sun.net.httpserver.HttpServer promMock;
+
+    @DynamicPropertySource
+    static void promProps(DynamicPropertyRegistry registry) throws Exception {
+        promMock = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+        promMock.createContext("/api/v1/query", exchange -> {
+            String body = "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":["
+                    + "{\"metric\":{\"instance\":\"21.130.247.89:9105\",\"master_host\":\"127.0.0.1\"},"
+                    + "\"value\":[1,\"0\"]}]}}";
+            byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().add("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+        promMock.start();
+        registry.add("myxhs.ai.obs.prometheus-url",
+                () -> "http://127.0.0.1:" + promMock.getAddress().getPort());
+    }
 
     private static final String ACCEPT = "application/json, text/event-stream";
 
@@ -102,14 +126,14 @@ class McpContractTest {
     }
 
     @Test
-    void tools_list_返回八个工具() throws Exception {
+    void tools_list_返回十个工具() throws Exception {
         send("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\","
                 + "\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},"
                 + "\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}");
         send("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{}}");
         JsonNode resp = send("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}");
         JsonNode tools = resp.path("result").path("tools");
-        assertTrue(tools.size() == 8, "应 8 个工具: " + tools);
+        assertTrue(tools.size() == 10, "应 10 个工具: " + tools);
         assertEquals("order.query_volume", tools.get(0).path("name").asText());
         assertEquals("payment.success_rate", tools.get(1).path("name").asText());
         assertEquals("content.interaction", tools.get(2).path("name").asText());
@@ -118,12 +142,27 @@ class McpContractTest {
         assertEquals("service.http_latency", tools.get(5).path("name").asText());
         assertEquals("mq.consumer_lag", tools.get(6).path("name").asText());
         assertEquals("mq.dlq_backlog", tools.get(7).path("name").asText());
+        assertEquals("mysql.replication_lag", tools.get(8).path("name").asText());
+        assertEquals("mysql.deadlocks", tools.get(9).path("name").asText());
         assertTrue(tools.get(0).path("inputSchema").path("properties").has("window"),
                 "应声明 window 参数 schema");
         assertTrue(tools.get(4).path("inputSchema").path("properties").has("hours"),
                 "观测工具应声明 hours 参数 schema");
         assertTrue(tools.get(6).path("inputSchema").path("properties").has("group"),
                 "MQ 工具应声明 group 参数 schema");
+    }
+
+    @Test
+    void tools_call_mysql_复制延迟() throws Exception {
+        send("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\","
+                + "\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},"
+                + "\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}");
+        send("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{}}");
+        JsonNode resp = send("{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\","
+                + "\"params\":{\"name\":\"mysql.replication_lag\",\"arguments\":{}}}");
+        String text = resp.path("result").path("content").get(0).path("text").asText();
+        assertTrue(text.contains("secondsBehindMaster"), "应返回复制延迟: " + text);
+        assertEquals(false, resp.path("result").path("isError").asBoolean(false));
     }
 
     @Test

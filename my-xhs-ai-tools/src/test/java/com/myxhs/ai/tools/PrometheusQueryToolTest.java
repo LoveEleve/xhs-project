@@ -48,6 +48,18 @@ class PrometheusQueryToolTest {
                 body = "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":["
                         + "{\"metric\":{\"consumer_group\":\"order-event-consumer-group\"},\"value\":[1,\"42\"]}"
                         + "]}}";
+            } else if (q.contains("mysql_slave_status_seconds_behind_master")) {
+                body = "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":["
+                        + "{\"metric\":{\"instance\":\"21.130.247.89:9105\",\"master_host\":\"127.0.0.1\"},\"value\":[1,\"0\"]}"
+                        + "]}}";
+            } else if (q.contains("mysql_innodb_deadlock_total")) {
+                body = "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":["
+                        + "{\"metric\":{\"instance\":\"21.130.247.89:9100\"},\"value\":[1,\"2\"]}"
+                        + "]}}";
+            } else if (q.contains("mysql_innodb_deadlock_new_events")) {
+                body = "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":["
+                        + "{\"metric\":{\"instance\":\"21.130.247.89:9100\"},\"value\":[1,\"0\"]}"
+                        + "]}}";
             } else if (q.contains("histogram_quantile")) {
                 body = "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":["
                         + "{\"metric\":{\"uri\":\"/api/orders\",\"service\":\"my-xhs-order\"},\"value\":[1,\"0.85\"]},"
@@ -126,6 +138,23 @@ class PrometheusQueryToolTest {
     void 组名注入防护_非法字符拒绝() throws Exception {
         var r = om.readTree(tool.mqConsumerLag("a\";drop"));
         assertEquals("error", r.path("status").asText());
+    }
+
+    @Test
+    void 查询复制延迟() throws Exception {
+        var r = om.readTree(tool.mysqlReplicationLag());
+        assertEquals("ok", r.path("status").asText());
+        assertEquals(1, r.path("replicaCount").asInt());
+        assertEquals(0, r.path("replicas").get(0).path("secondsBehindMaster").asInt());
+        assertTrue(lastQuery.contains("mysql_slave_status_seconds_behind_master"), lastQuery);
+    }
+
+    @Test
+    void 查询死锁事件() throws Exception {
+        var r = om.readTree(tool.mysqlDeadlocks());
+        assertEquals("ok", r.path("status").asText());
+        assertEquals(2, r.path("deadlockTotal").asInt());
+        assertEquals(0, r.path("deadlockNewEvents").asInt());
     }
 
     @Test

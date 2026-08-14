@@ -120,6 +120,16 @@ class AgentHarnessTest {
         public String mqDlqBacklog(String consumerGroup) {
             return "dlq backlog=42 group=" + consumerGroup;
         }
+
+        @Override
+        public String mysqlReplicationLag() {
+            return "replication lag=0s";
+        }
+
+        @Override
+        public String mysqlDeadlocks() {
+            return "deadlock total=2 new=0";
+        }
     }
 
     private static AgentHarness harness(Function<List<String>, String> responder, AgentBudget budget) {

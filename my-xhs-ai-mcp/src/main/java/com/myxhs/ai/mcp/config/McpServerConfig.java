@@ -48,6 +48,9 @@ public class McpServerConfig {
             {"type":"object","properties":{"group":{"type":"string","description":"消费组名，如 cart-sync-consumer-group；空=全部"}}}
             """;
 
+    /** 无参工具 schema（B4 面） */
+    private static final String NOARG_SCHEMA = "{\"type\":\"object\"}";
+
     @Bean
     public McpJsonMapper mcpJsonMapper(ObjectMapper objectMapper) {
         return new JacksonMcpJsonMapper(objectMapper);
@@ -100,8 +103,14 @@ public class McpServerConfig {
                                 "RocketMQ 消费积压（按消费组聚合 lag，空=全部）",
                                 (args) -> prometheusQueryTool.mqConsumerLag(str(args.get("group")))),
                         mqToolSpec(jsonMapper, "mq.dlq_backlog",
-                                "RocketMQ 死信积压（按 consumer_group 聚合 backlog，空=全部）",
-                                (args) -> prometheusQueryTool.mqDlqBacklog(str(args.get("consumerGroup"))))
+                                "RocketMQ 死信积压（按 consumer_group 聚合 backlog，空=全部；-1 为应用侧哨兵值=无 DLQ）",
+                                (args) -> prometheusQueryTool.mqDlqBacklog(str(args.get("consumerGroup")))),
+                        noArgToolSpec(jsonMapper, "mysql.replication_lag",
+                                "MySQL 主从复制延迟（Seconds_Behind_Master，全部从库）",
+                                () -> prometheusQueryTool.mysqlReplicationLag()),
+                        noArgToolSpec(jsonMapper, "mysql.deadlocks",
+                                "MySQL 死锁事件（累计 total + 最新 new_events）",
+                                () -> prometheusQueryTool.mysqlDeadlocks())
                 )
                 .build();
     }
@@ -180,6 +189,30 @@ public class McpServerConfig {
                         long start = System.currentTimeMillis();
                         String result = fn.apply(args == null ? Map.of() : args);
                         log.info("[mcp-audit] tool={} args={} ok costMs={}", name, args, System.currentTimeMillis() - start);
+                        return new McpSchema.CallToolResult(result, false);
+                    } catch (Exception e) {
+                        log.warn("[mcp-audit] tool={} error: {}", name, e.getMessage());
+                        return new McpSchema.CallToolResult("工具调用失败: " + e.getMessage(), true);
+                    }
+                })
+                .build();
+    }
+
+    /** 无参工具（B4 面） */
+    private static McpServerFeatures.SyncToolSpecification noArgToolSpec(McpJsonMapper mapper, String name, String desc,
+                                                                         java.util.function.Supplier<String> fn) {
+        McpSchema.Tool tool = McpSchema.Tool.builder()
+                .name(name)
+                .description(desc)
+                .inputSchema(mapper, NOARG_SCHEMA)
+                .build();
+        return McpServerFeatures.SyncToolSpecification.builder()
+                .tool(tool)
+                .callHandler((exchange, request) -> {
+                    try {
+                        long start = System.currentTimeMillis();
+                        String result = fn.get();
+                        log.info("[mcp-audit] tool={} ok costMs={}", name, System.currentTimeMillis() - start);
                         return new McpSchema.CallToolResult(result, false);
                     } catch (Exception e) {
                         log.warn("[mcp-audit] tool={} error: {}", name, e.getMessage());

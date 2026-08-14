@@ -53,6 +53,18 @@ public class McpObsBridge implements ObsToolAccess {
         return client.callTool("mq.dlq_backlog", Map.of("consumerGroup", str(consumerGroup)));
     }
 
+    @Override
+    @Tool("查询 MySQL 主从复制延迟（经 MCP，Seconds_Behind_Master）")
+    public String mysqlReplicationLag() {
+        return client.callTool("mysql.replication_lag", Map.of());
+    }
+
+    @Override
+    @Tool("查询 MySQL 死锁事件（经 MCP，累计+最新）")
+    public String mysqlDeadlocks() {
+        return client.callTool("mysql.deadlocks", Map.of());
+    }
+
     private static String str(String s) {
         return s == null ? "" : s;
     }

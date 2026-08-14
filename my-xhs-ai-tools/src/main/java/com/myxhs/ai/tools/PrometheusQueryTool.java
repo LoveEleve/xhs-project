@@ -27,6 +27,8 @@ public class PrometheusQueryTool {
     public static final String METRIC_HTTP_LATENCY = "service.http_latency";
     public static final String METRIC_MQ_LAG = "mq.consumer_lag";
     public static final String METRIC_MQ_DLQ = "mq.dlq_backlog";
+    public static final String METRIC_MYSQL_REPLICA_LAG = "mysql.replication_lag";
+    public static final String METRIC_MYSQL_DEADLOCKS = "mysql.deadlocks";
 
     /** MQ 组名/标签过滤白名单（防 PromQL 注入：组名只允许字母数字下划线连字符） */
     private static final java.util.regex.Pattern GROUP_PATTERN =
@@ -207,6 +209,55 @@ public class PrometheusQueryTool {
             return null;
         }
         return label + "=\"" + group.trim() + "\"";
+    }
+
+    /** MySQL 主从复制延迟（Seconds_Behind_Master，全部从库；无参） */
+    public String mysqlReplicationLag() {
+        ObjectNode node = om.createObjectNode();
+        node.put("status", "ok");
+        node.put("metric", METRIC_MYSQL_REPLICA_LAG);
+        node.put("asOf", java.time.Instant.now().toString());
+        try {
+            JsonNode resp = query("mysql_slave_status_seconds_behind_master");
+            node.put("replicaCount", resp.size());
+            ArrayNode replicas = node.putArray("replicas");
+            for (JsonNode s : resp) {
+                replicas.addObject()
+                        .put("instance", s.path("metric").path("instance").asText())
+                        .put("masterHost", s.path("metric").path("master_host").asText())
+                        .put("secondsBehindMaster", round(s.path("value").get(1).asDouble()));
+            }
+            node.put("window", "当前时点（mysqld-exporter，主库 9104/从库 9105）");
+        } catch (Exception e) {
+            return error("Prometheus 查询失败: " + e.getMessage());
+        }
+        return write(node);
+    }
+
+    /** MySQL 死锁事件（累计 total + 最新 new_events；无参） */
+    public String mysqlDeadlocks() {
+        ObjectNode node = om.createObjectNode();
+        node.put("status", "ok");
+        node.put("metric", METRIC_MYSQL_DEADLOCKS);
+        node.put("asOf", java.time.Instant.now().toString());
+        try {
+            JsonNode total = query("mysql_innodb_deadlock_total");
+            JsonNode events = query("mysql_innodb_deadlock_new_events");
+            double totalV = 0;
+            for (JsonNode s : total) {
+                totalV += s.path("value").get(1).asDouble();
+            }
+            double eventsV = 0;
+            for (JsonNode s : events) {
+                eventsV += s.path("value").get(1).asDouble();
+            }
+            node.put("deadlockTotal", round(totalV));
+            node.put("deadlockNewEvents", round(eventsV));
+            node.put("window", "当前时点（innodb-print-all-deadlocks 管道）");
+        } catch (Exception e) {
+            return error("Prometheus 查询失败: " + e.getMessage());
+        }
+        return write(node);
     }
 
     /** 执行 PromQL 查询，返回 result 数组 */

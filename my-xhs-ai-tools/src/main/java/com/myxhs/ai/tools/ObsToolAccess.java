@@ -21,6 +21,12 @@ public interface ObsToolAccess {
     @Tool("查询 RocketMQ 消费积压（按消费组聚合 lag；group 空=全部，如 cart-sync-consumer-group）")
     String mqConsumerLag(@P("消费组名，空字符串=全部消费组") String group);
 
-    @Tool("查询 RocketMQ 死信积压（按 consumer_group 聚合 backlog；空=全部）")
+    @Tool("查询 RocketMQ 死信积压（按 consumer_group 聚合 backlog；空=全部；注意 -1 为应用侧哨兵值=无 DLQ 或查询失败，非真实积压）")
     String mqDlqBacklog(@P("消费组名，空字符串=全部消费组") String consumerGroup);
+
+    @Tool("查询 MySQL 主从复制延迟（Seconds_Behind_Master，全部从库；无参）")
+    String mysqlReplicationLag();
+
+    @Tool("查询 MySQL 死锁事件（累计 total + 最新 new_events；无参）")
+    String mysqlDeadlocks();
 }
