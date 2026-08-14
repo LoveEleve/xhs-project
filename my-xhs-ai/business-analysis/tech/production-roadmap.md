@@ -15,6 +15,7 @@
 1. 模型只能调固定工具，永不直接执行任意代码/SQL/PromQL（CodeAct 红线，`design-agent-harness.md` 非目标 + PLAN §1.4）
 2. 数字必须来自确定性工具结果（存在性校验已实现，Harness 兜底）
 3. 每步改动必须有评测安全网（生产级与 demo 的分水岭）
+4. **成本红线（2026-08-14）**：LLM 仅用 `deepseek-v4-flash`（OpenCode Go，$10/月订阅 + $60 月度额度）——**禁止引入任何其他模型**（含模型分层 routing 的多模型方案，除非实测 flash 无法满足且额度允许才评估）；评测集/演示等一切模型调用均走 flash
 
 ## 1. 目标能力全景
 
@@ -164,6 +165,7 @@
 | deepseek-v4-flash 上下文上限未核验 | M6 前压测核验，超限降 max-tokens |
 | LLM 输出不稳影响评测 | 阈值带 + 多轮采样 |
 | 业务流量低导致 A 面真数据不足 | 工具链路已闭环，验收以评测集+人工基线为准 |
+| OpenCode Go 额度限制（5h $12 / 周 $30 / 月 $60） | 评测集夜间批量跑 + 成本指标监控（M6）；超限回退免费模型（不在我们的评测范围）|
 | 外部依赖延期 | 每里程碑都有不依赖外部的先行项（M5/M6 全自主） |
 
 ---
@@ -330,7 +332,7 @@ ai_step:     id(PK) run_id(FK) step_no state decision(JSON) tool_result
 | D1 | LLM 可观测 | 自研指标 / Langfuse(OTLP) | M6 后段 PoC |
 | D2 | Durable 引擎 | 自研 Run Store / Temporal Java SDK | M5 后段 PoC 对照 |
 | D3 | 评测断言 | 纯代码断言 / +LLM-judge | M6 评测集 v1 用代码断言，v2 评估 judge |
-| D4 | 模型分层 | 单一模型 / routing 小模型 | M9（成本分布实测后）|
+| D4 | 模型分层 | 单一模型 / routing 小模型 | **已冻结：成本红线禁止多模型**（仅 flash）；routing 仅在"同 flash 不同端点"意义下评估 |
 | D5 | 多租户/RBAC | ADR-006 单组织；用户级认证先行 | M8 |
 | D6 | Prompt 治理 | 资源文件版本 / Langfuse prompt mgmt | M5 前置资源文件，M6 评估 |
 
