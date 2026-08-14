@@ -336,3 +336,82 @@ ai_step:     id(PK) run_id(FK) step_no state decision(JSON) tool_result
 
 > 决策原则：**默认自研/最简单方案，引入外部组件须有实证价值**（对照 ADR-002/005 模式）；每次决策落 ADR。
 
+---
+
+## 14. 资产盘点：难点 / 亮点 / 面试点（附交付证据）
+
+> 定位：PLAN v5 §11 九问的**证据化升级**——每问对应"我们做了什么 + 交付证据 + 还能讲什么"。证据均来自已提交代码/测试/真库 E2E，可当场复现。
+
+### 14.1 难点与解决方案（真技术难点，非术语）
+
+1. **LLM 幻觉 vs 确定性数字**（最核心）
+   - 难点：模型"声称调了工具"但实际编造（免费模型曾编造 12000/15000）
+   - 方案：存在性校验——Harness 登记每次真实工具调用（ToolResultRegistry），答案引用的证据 id 必须命中，否则拒绝重想，2 次不收敛→EVIDENCE_INVALID；数字全部来自工具结果 JSON
+   - 证据：`AgentHarnessTest` 编造证据被拒/顽固编造终止用例；E2E 模型拒答"订单下降"错误前提
+2. **Agent 失控防护**（死循环/发散/预算）
+   - 难点：模型空转（不调工具）、同参数死循环、发散探索
+   - 方案：循环检测两模式（连续同工具同参数 N 次 / M 步无新证据 hash 前进）；预算三重封顶（步骤/Token/成本）；policy 拒绝计数；E2E 实测校准 max-tokens 30k→100k、prompt 收敛压力
+   - 证据：LoopDetector 单测 4 例；E2E 15 步发散→14 步收敛对比
+3. **Agent 安全边界**（注入/越权/过度授权）
+   - 难点：注入无法被识别拦截 100%（OWASP 共识），必须架构兜底
+   - 方案：deny-by-default allowlist + 参数白名单（group 防 PromQL 注入）+ L1/L2 只读 + L3 拒绝挂 HITL 门 + MCP 认证审计；观测数据全走 MCP 保持数据边界
+   - 证据：PolicyGuard 单测（注入拒绝/L3 审批/参数校验）；McpAuthTest 401
+4. **开放性文本的自动化断言**（评测）
+   - 难点：Agent 答案是自由文本，无法精确比对
+   - 方案：分层断言（run 状态/证据数硬断言 + 答案数字 vs registry 一致性软断言 + LLM-judge/人工标注兜底）；评测缓存省成本
+   - 证据：评测体系设计（§12.2）；M6 待交付
+5. **跨异构数据源归因**（16 分片 + 4 事件表 + Prometheus）
+   - 难点：口径不一致、跨库查询、事件表覆盖不全
+   - 方案：工具层口径固化 + 契约测试钉死；漏斗工具复用订单/支付口径；事件表覆盖不足时工具/模型如实声明（E2E 模型正确识别漏斗数据不可用）
+   - 证据：契约测试 13 工具；EventAnalyticsTool 单测；E2E 诚实声明
+6. **MCP 客户端自研**（协议层）
+   - 难点：SDK 0.18.3 client-jdk-http-client 是 15MB fat jar 内嵌未 relocate jackson，classpath 冲突
+   - 方案：自研薄协议客户端（initialize→Session-Id→tools/call，会话自愈重试一次，SSE data 行解析）
+   - 证据：McpToolBridge/McpClient；全链路 E2E
+
+### 14.2 亮点（独特性 + 证据，可现场演示）
+
+1. **"不编造"是架构保证，不是 prompt 承诺**：存在性校验 + 证据链——业界多数靠 prompt 软约束，我们是确定性兜底
+2. **证据链 + 反证 + 不确定性强制结构**：答案必须引用工具证据、声明反证与不确定性；E2E 模型拒答错误前提、识别 DLQ -283 哨兵值异常、区分死锁累计 vs 新增——**Agent 反向发现系统真实问题**
+3. **确定性窗口注入**：E2E 实证同一问题不同窗口结论相反（41.9% vs 63.9%）→ 窗口/基线全部确定性化（QueryWindowExtractor + baseline.window 工具）
+4. **全真实数据闭环**：13 工具连真实 MySQL 16 分片/事件表/Prometheus/SkyWalking；多轮 E2E；非 demo
+5. **与业务/运维协作闭环**：数据缺口促成对方实施 4 张事件流水表（append-only 方案）+ 修复 T-058（MySQL 非法 UPDATE LIMIT）/T-059（gateway 500→404）——我们提需求、对方实施、我们验收
+6. **工具层知识编码**：DLQ -1 哨兵值、5xx 扫描噪音（uri=/** 单列 noiseScanRoutes）——运维知识进工具不进 prompt，确定性
+7. **深度 review 文化**：每轮 review 抓到真 bug（空转检测失效、静默负值、no-progress 被绕过）——工程质量流程可讲
+
+### 14.3 面试点（PLAN v5 九问 → 证据映射）
+
+1. **为什么"订单多少"不走 Agent，"为什么下降"走？**
+   → IntentRouter 规则路由（固定查询→确定性工具，数字可重复）；归因→受限 Agent。Workflow vs Agent 分层与 Anthropic 观点一致。证据：IntentRouterTest。
+2. **如何保证 LLM 不生成错误业务数字？**
+   → 存在性校验（§14.1#1）。答案：工具结果登记 + 引用校验 + 拒绝重想 + 幻觉率评测（M6）。可现场演示 E2E 拒答。
+3. **MCP/Tool/Skill/Workflow/A2A 分别解决什么？**
+   → MCP=工具协议标准化（我们 13 工具全走 MCP，认证+审计）；Tool=受控能力单元；Workflow=预定义路径（固定查询）；A2A=跨 agent 协议（未采用，克制）。证据：MCP 架构图 + 契约测试。
+4. **RocketMQ+Redis 为什么不等于 Durable Agent Runtime？**
+   → MQ 是消息通道无状态/无重放语义；Durable 需要 checkpoint + 重放 + 幂等（M5 Run Store 设计 §12.1）。参考 Temporal 对照（§10.6）。
+5. **Run State / Conversation / RAG / Long-term Memory 区别？**
+   → 四类状态分离（PLAN §3.4）：Run=执行状态（M5 落库）、Conversation=会话（§11.3）、RAG=知识（已交付）、Memory=长期（M9）。
+6. **Agent 非确定性如何 CI/CD 回归门禁？**
+   → M6 评测体系：分层断言 + 阈值带 + 多轮采样 + 缓存；幻觉率/完成率硬指标进 PR。证据：评测设计 §12.2。
+7. **Prompt Injection 无法彻底识别时如何保证不越权？**
+   → 确定性权限兜底：allowlist + 参数白名单 + L3 拒绝；注入只能影响"模型说什么"，影响不了"能做什么"。证据：PolicyGuard 测试 + 红队规划 §12.3。
+8. **工具调用后崩溃如何避免重复副作用/丢进度？**
+   → 工具只读天然幂等 + runId 去重 + messages 快照 checkpoint 重放（M5 §12.1）；Temporal 对照实验入作品集（PLAN §11.2）。
+9. **质量/延迟/成本/安全如何可解释取舍？**
+   → 三条铁律 + 预算参数实测校准（max-tokens 30k→100k 实证）+ 成本指标（M6）+ 模型分层决策点 D4。证据：校准记录。
+
+### 14.4 作品集缺口（对照 PLAN v5 §11.2，当前状态）
+
+| 作品集项 | 状态 |
+|----------|------|
+| C4 架构图 + ≥10 ADR | ADR 6 个已有；C4 图未画（M8 前补） |
+| LangChain4j vs AgentScope Java 对照 | 未做（PoC 项） |
+| 官方 MCP Java SDK + conformance | 已用官方 SDK 服务端；conformance 未跑 |
+| Temporal kill/recovery 故障实验 | 未做（M5 后段） |
+| 300+ 评测集 + Promptfoo/红队报告 | 未做（M6/M7） |
+| Langfuse trace + Grafana Dashboard | 未做（M6） |
+| 成本/容量/SLO/灰度/回滚报告 | 未做（M6-M8） |
+| 5 演示视频 + 技术复盘 | 未做（M8/M9） |
+
+> 结论：**九问的"答案与证据"已齐（14.3 可复用为面试讲稿）；缺口全在作品集工程件**（评测/故障实验/报告/图），恰是本规划 M5-M8 的交付物——路线图与面试路线重合，无额外工作。
+
