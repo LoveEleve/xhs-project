@@ -160,6 +160,27 @@ class RunManagerTest {
     }
 
     @Test
+    void 并发订阅_第二个被拒绝() throws Exception {
+        AgentHarness harness = new AgentHarness(new FakeModel(), new FakeTools(), new FakeObs(),
+                MAPPER, AgentBudget.defaults(), 0.002, 2, null, "fake");
+        RunManager mgr = new RunManager(harness);
+
+        RunManager.RunEntry e = mgr.submit("为什么订单量下降了", "u1");
+        e.future().get(10, TimeUnit.SECONDS);
+
+        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+        boolean first = mgr.streamTo(e.runId(), x -> {}, done::countDown);
+        assertTrue(first, "第一个订阅应成功");
+        // 第一个仍在消费（done 未触发）时，第二个应被拒绝
+        boolean second = mgr.streamTo(e.runId(), x -> {}, () -> {});
+        assertEquals(false, second, "并发订阅应被拒绝（单消费者）");
+        assertTrue(done.await(10, TimeUnit.SECONDS));
+        // 完成后可再次订阅（标志复位）
+        boolean third = mgr.streamTo(e.runId(), x -> {}, () -> {});
+        assertTrue(third, "完成复位后可再订阅");
+    }
+
+    @Test
     void streamTo_补发缓冲事件并完成() throws Exception {
         AgentHarness harness = new AgentHarness(new FakeModel(), new FakeTools(), new FakeObs(),
                 MAPPER, AgentBudget.defaults(), 0.002, 2, null, "fake");

@@ -120,11 +120,17 @@ public class AgentHarness {
 
     /** 带事件回调的 run（SSE 流式推送用；listener 异常不影响执行，仅记录） */
     public AgentRun run(String query, AgentBudget budget, java.util.function.Consumer<HarnessEvent> listener) {
+        return run(query, budget, listener, "anonymous");
+    }
+
+    /** 带 userId 的 run（M5-2 异步化：用户级审计落库；其余同上） */
+    public AgentRun run(String query, AgentBudget budget, java.util.function.Consumer<HarnessEvent> listener,
+                        String userId) {
         AgentRun run = new AgentRun("run_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12),
                 query, budget);
         if (store != null) {
             try {
-                store.createRun(run.runId(), "anonymous", null, query,
+                store.createRun(run.runId(), userId == null || userId.isBlank() ? "anonymous" : userId, null, query,
                         "{\"maxSteps\":" + budget.maxSteps() + ",\"maxTokens\":" + budget.maxTokens()
                                 + ",\"maxCost\":" + budget.maxCost() + "}",
                         versionsJson());

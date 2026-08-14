@@ -83,7 +83,12 @@ public class RunController {
         emitter.onCompletion(() -> log.info("[sse] run={} 流完成", runId));
         MDC.put("traceId", traceId);
         try {
-            runManager.streamTo(runId, event -> send(emitter, event), emitter::complete);
+            boolean accepted = runManager.streamTo(runId, event -> send(emitter, event), emitter::complete);
+            if (!accepted) {
+                // 同一 run 已有活动订阅者（单消费者防事件竞争）
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "run " + runId + " 已有活动订阅者");
+            }
         } finally {
             MDC.remove("traceId");
         }
