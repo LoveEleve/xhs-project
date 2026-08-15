@@ -318,7 +318,10 @@ class RunManagerTest {
     void 超范围话题_零成本拒答不调工具() throws Exception {
         AgentHarness harness = new AgentHarness(new FakeModel(), new FakeTools(), new FakeObs(),
                 MAPPER, AgentBudget.defaults(), 0.002, 2, null, "fake");
-        RunManager mgr = new RunManager(harness, null);
+        // 注入 LLM 分类器（超范围语义由 LLM 判断；纯规则模式无信号默认引导）
+        RunManager mgr = new RunManager(harness, null, null,
+                new com.myxhs.ai.app.service.router.IntentRouter(null,
+                        msg -> com.myxhs.ai.app.service.router.Intent.OUT_OF_SCOPE));
 
         RunManager.RunEntry e = mgr.submit("今天会下雨吗", "u1");
         e.future().get(10, TimeUnit.SECONDS);

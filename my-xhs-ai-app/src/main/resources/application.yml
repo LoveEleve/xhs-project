@@ -34,8 +34,9 @@ myxhs:
       timeout-seconds: 60
     router:
       llm-fallback:
-        # 规则模糊（0 或多个指标词命中）时才走 LLM 分类；默认关保持确定性、无模型依赖/成本
-        enabled: false
+        # LLM 意图分类（主路径，默认开）：规则未命中时交给模型理解意图（问候/超范围/模糊诊断）。
+        # 成本极低（flash 单次 ~500 token），远低于误路由进 Agent 白跑调查；可关（纯规则模式）
+        enabled: true
     tools:
       # 指标工具访问：mcp（默认，经 my-xhs-ai-mcp 取数）/ direct（直连 MySQL，测试/降级）
       mode: mcp

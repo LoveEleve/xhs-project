@@ -132,10 +132,29 @@ class IntentRouterTest {
 
     @Test
     void 超范围话题_走拒答直答() {
-        assertEquals(Intent.OUT_OF_SCOPE, router.classify("今天会下雨吗"));
-        assertEquals(Intent.OUT_OF_SCOPE, router.classify("帮我写一段代码"));
-        assertEquals(Intent.OUT_OF_SCOPE, router.classify("最近有什么新闻"));
-        assertEquals(Intent.OUT_OF_SCOPE, router.classify("讲个笑话"));
+        // 语义区分（超范围 vs 问候）是 LLM 分类的职责（纯规则模式无信号统一默认引导）
+        IntentRouter llmRouter = new IntentRouter(new FakeLlm(Intent.OUT_OF_SCOPE));
+        assertEquals(Intent.OUT_OF_SCOPE, llmRouter.classify("今天会下雨吗"));
+        assertEquals(Intent.OUT_OF_SCOPE, llmRouter.classify("帮我写一段代码"));
+        assertEquals(Intent.OUT_OF_SCOPE, llmRouter.classify("最近有什么新闻"));
+        assertEquals(Intent.OUT_OF_SCOPE, llmRouter.classify("讲个笑话"));
+    }
+
+    @Test
+    void LLM分类_问候语义走Greeting() {
+        IntentRouter llmRouter = new IntentRouter(new FakeLlm(Intent.GREETING));
+        assertEquals(Intent.GREETING, llmRouter.classify("我爱你"));
+        assertEquals(Intent.GREETING, llmRouter.classify("随便聊聊"));
+        assertEquals(Intent.GREETING, llmRouter.classify("最近过得咋样"));
+    }
+
+    @Test
+    void LLM不可用_降级默认引导() {
+        // LLM 返回 null（不可用/失败）→ 语义层/默认引导（不误路由 AGENT）
+        IntentRouter r = new IntentRouter(null, (LlmIntentClassifier) msg -> null);
+        assertEquals(Intent.GREETING, r.classify("随便聊聊"));
+        // 纯规则模式（LLM+语义都无）：无信号输入统一默认引导
+        assertEquals(Intent.GREETING, router.classify("今天会下雨吗"));
     }
 
     @Test
@@ -166,10 +185,11 @@ class IntentRouterTest {
                 "帮我查一下这个 traceId 的日志", "这个单号能帮我查一下吗",
         };
         for (String q : greeting) {
-            assertEquals(Intent.GREETING, router.classify(q), "应 GREETING: " + q);
+            assertEquals(Intent.GREETING, router.classify(q), "应 GREETING(默认引导): " + q);
         }
+        IntentRouter llmRouter = new IntentRouter(new FakeLlm(Intent.OUT_OF_SCOPE));
         for (String q : outOfScope) {
-            assertEquals(Intent.OUT_OF_SCOPE, router.classify(q), "应 OUT_OF_SCOPE: " + q);
+            assertEquals(Intent.OUT_OF_SCOPE, llmRouter.classify(q), "应 OUT_OF_SCOPE(LLM 分类): " + q);
         }
         for (String q : metric) {
             assertTrue(router.classify(q) != Intent.AGENT && router.classify(q) != Intent.GREETING

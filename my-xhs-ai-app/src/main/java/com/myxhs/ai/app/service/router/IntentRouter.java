@@ -6,14 +6,14 @@ import java.util.Locale;
 import java.util.regex.Pattern;
 
 /**
- * 意图路由（三阶分层，M8-4 语义路由重构）：
- *  - L0 规则层（零成本确定性）：诊断侧封闭集（指标词/归因词）→ 指标直取 / AGENT
- *  - L1 语义层（embedding few-shot）：种子示例余弦分类（问候/超范围/模糊诊断的语义区分，
- *    不维护闲聊词表——"我爱你""随便聊聊"靠语义即达）
- *  - L2 LLM 兜底（可选）：语义仍模糊时用 LLM 分类
- *  - L3 默认：GREETING 引导直答（诊断问题是封闭集已全部前置拦截，无信号输入零成本引导）
- * 降级链：embedding 不可用/失败 → 精简词表兜底 → 默认引导。
- * 原则（PLAN §2）：固定查询→确定性工具（数字可重复）；归因→受限 AGENT；不靠模型自觉。
+ * 意图路由（分层，主次正确）：
+ *  - L0 确定性规则（极简，零成本）：只拦"必须确定性"的信号——
+ *    指标词（数字可重复）、归因词（明确诊断信号，防模型误判/不靠模型自觉）、traceId 格式
+ *  - L1 LLM 意图分类（主路径，默认开启）：其余全部交给模型理解
+ *    （问候/超范围/模糊诊断/查日志/traceId 语义都是 LLM 的职责，不人工枚举）
+ *  - L2 语义层（降级）：LLM 不可用/失败时的 embedding 兜底（种子仍保留）
+ *  - L3 默认：GREETING 引导直答（零成本）
+ * 原则：人写规则模拟"理解"是错误架构（开放集永远枚举不完）；LLM 负责理解，规则只保证确定性。
  */
 public class IntentRouter {
 
@@ -34,7 +34,7 @@ public class IntentRouter {
             这个问题不在我的能力范围内，无法回答。
             可以问我，例如：为什么订单量下降了？最近支付成功率为什么异常？为什么有服务 5xx？""";
 
-    /** L0 指标词（诊断侧封闭集，确定性直取） */
+    /** L0 指标词（确定性直取：数字可重复原则，不靠模型） */
     private static final List<Pattern> ORDER_VOLUME_PATTERNS = List.of(
             compile("订单量"), compile("下单量"), compile("订单数"), compile("下单数"),
             compile("订单总量"), compile("订单总数"), compile("订单"), compile("单量"));
@@ -45,7 +45,7 @@ public class IntentRouter {
             compile("互动量"), compile("互动数"), compile("点赞"), compile("收藏"),
             compile("评论数"), compile("分享数"), compile("曝光量"), compile("互动"), compile("内容"));
 
-    /** L0 归因词（诊断侧封闭集：领域词+归因动词，穷举完整且值得；闲聊侧不穷举） */
+    /** L0 归因词（明确诊断信号 → 直接 AGENT，不靠模型自觉） */
     private static final List<Pattern> INVESTIGATION_PATTERNS = List.of(
             compile("为什么"), compile("为何"), compile("原因"), compile("怎么"),
             compile("如何"), compile("分析"), compile("诊断"), compile("归因"),
@@ -57,24 +57,13 @@ public class IntentRouter {
             compile("traceid"), compile("请求id"), compile("请求号"), compile("单号"));
 
     /** traceId/请求链路标识：32 位 hex 是查日志/链路的强信号（贴 ID 进来=想查它） */
-    private static final java.util.regex.Pattern TRACE_ID_PATTERN =
-            java.util.regex.Pattern.compile("^[a-f0-9]{32}$");
-
-    /** 降级兜底词表（仅 embedding 不可用时生效；语义层正常时以下表达靠相似度即可识别） */
-    private static final List<Pattern> FALLBACK_GREETING_PATTERNS = List.of(
-            compile("你好"), compile("您好"), compile("在吗"), compile("谢谢"),
-            compile("哈哈"), compile("测试"), compile("help"), compile("hello"), compile("hi"),
-            compile("帮我"), compile("吃饭"), compile("心情"), compile("再见"), compile("你是谁"));
-    private static final List<Pattern> FALLBACK_OUT_OF_SCOPE_PATTERNS = List.of(
-            compile("天气"), compile("下雨"), compile("新闻"), compile("代码"), compile("笑话"),
-            compile("电影"), compile("股票"), compile("翻译"), compile("什么是"), compile("诗"),
-            compile("故事"), compile("吃什么"), compile("旅游"), compile("音乐"), compile("体育"),
-            compile("游戏"), compile("数学"), compile("英语"), compile("考试"));
+    private static final Pattern TRACE_ID_PATTERN =
+            Pattern.compile("^[a-f0-9]{32}$");
 
     private final SemanticIntentClassifier semanticClassifier;
     private final LlmIntentClassifier llmClassifier;
 
-    /** 纯规则（测试用/无语义无 LLM 兜底） */
+    /** 纯规则（测试用/LLM 与语义均禁用） */
     public IntentRouter() {
         this(null, null);
     }
@@ -83,7 +72,7 @@ public class IntentRouter {
         this(null, llmClassifier);
     }
 
-    /** 三阶路由（L0 规则 → L1 语义 → L2 LLM → L3 默认引导）；semantic/llm 均可空（降级） */
+    /** 分层路由：L0 规则 → L1 LLM → L2 语义 → L3 默认引导；llm/semantic 均可空（逐级降级） */
     public IntentRouter(SemanticIntentClassifier semanticClassifier, LlmIntentClassifier llmClassifier) {
         this.semanticClassifier = semanticClassifier;
         this.llmClassifier = llmClassifier;
@@ -95,11 +84,11 @@ public class IntentRouter {
         }
         String text = userMessage.toLowerCase(Locale.ROOT);
 
-        // L0 归因/分析优先：为什么订单量下降 → Agent（不是固定查询，也不走 LLM/语义兜底）
+        // L0 归因/分析优先：为什么订单量下降 → Agent（确定信号不走模型）
         if (matches(INVESTIGATION_PATTERNS, text)) {
             return Intent.AGENT;
         }
-        // traceId 强信号：32 位 hex（贴 ID 进来 = 想查日志/链路）
+        // traceId 强信号
         if (TRACE_ID_PATTERN.matcher(userMessage.trim()).matches()) {
             return Intent.AGENT;
         }
@@ -116,10 +105,18 @@ public class IntentRouter {
         }
 
         if (hits.size() == 1) {
-            return hits.get(0); // 确定性
+            return hits.get(0); // 确定性指标（数字可重复）
         }
 
-        // L1 语义层：问候/超范围/模糊诊断的语义区分（种子 few-shot，无词表）
+        // L1 LLM 意图分类（主路径）：问候/超范围/模糊诊断等语义理解交给模型
+        if (llmClassifier != null) {
+            Intent llm = llmClassifier.classify(userMessage);
+            if (llm != null) {
+                return llm;
+            }
+        }
+
+        // L2 语义层降级（LLM 不可用/失败）：embedding 种子
         if (semanticClassifier != null) {
             Intent semantic = semanticClassifier.classify(userMessage);
             if (semantic != null) {
@@ -127,20 +124,7 @@ public class IntentRouter {
             }
         }
 
-        // 降级：embedding 不可用时精简词表兜底
-        if (matches(FALLBACK_OUT_OF_SCOPE_PATTERNS, text)) {
-            return Intent.OUT_OF_SCOPE;
-        }
-        if (matches(FALLBACK_GREETING_PATTERNS, text)) {
-            return Intent.GREETING;
-        }
-
-        // L2 LLM 兜底（可选）
-        if (llmClassifier != null) {
-            return llmClassifier.classify(userMessage);
-        }
-
-        // L3 默认引导：无诊断信号（诊断侧封闭集已全部前置拦截），零成本直答
+        // L3 默认引导：无信号且 LLM/语义不可用，零成本直答
         return Intent.GREETING;
     }
 

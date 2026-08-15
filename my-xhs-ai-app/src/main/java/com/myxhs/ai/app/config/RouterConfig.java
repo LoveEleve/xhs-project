@@ -13,8 +13,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * 路由装配（三阶）：L0 规则（确定性）→ L1 语义（embedding few-shot，自动启用）→ L2 LLM 兜底（默认关）。
- * 语义层复用 RAG embedding 基础设施（myxhs.ai.rag.embedding-*），未配置时自动降级到规则+默认引导。
+ * 路由装配（分层，主次正确）：L0 确定性规则（极简）→ L1 LLM 意图分类（默认开启，主路径）
+ * → L2 语义层降级（embedding）→ L3 默认引导。
+ * LLM 分类成本极低（flash 单次 ~500 token），远低于误路由进 Agent 白跑调查的成本；
+ * 可配置关闭（纯规则模式，测试/离线）。
  */
 @Configuration
 public class RouterConfig {
@@ -28,7 +30,7 @@ public class RouterConfig {
     @Bean
     public IntentRouter intentRouter(SemanticIntentClassifier semanticClassifier,
                                      @Autowired(required = false) LlmIntentClassifier llmClassifier,
-                                     @Value("${myxhs.ai.router.llm-fallback.enabled:false}") boolean llmFallbackEnabled) {
+                                     @Value("${myxhs.ai.router.llm-fallback.enabled:true}") boolean llmFallbackEnabled) {
         return new IntentRouter(semanticClassifier, llmFallbackEnabled ? llmClassifier : null);
     }
 
