@@ -130,10 +130,7 @@ public class RunManager {
                             "EXECUTION_ERROR", "恢复执行异常: " + ex.getMessage()));
                     return null;
                 });
-        if (metrics != null) {
-            metrics.onRunSubmitted();
-            future.whenComplete((run, ex) -> metrics.onRunFinished(run));
-        }
+        // 恢复是既有 run 的续跑：不碰 running/runs_total 指标（避免口径失真，P1-2）
         RunEntry entry = new RunEntry(runId, userId, query, queue, future,
                 new AtomicBoolean(false), cancelToken);
         runs.put(runId, entry);
@@ -191,7 +188,10 @@ public class RunManager {
                 store.updateRunStatus(runId, "SUCCEEDED", "COMPLETED", 0, 0);
                 store.updateFinalAnswer(runId, answer);
             } catch (Exception e) {
-                log.warn("[runmgr] direct-answer 落库失败 run={} err={}", runId, e.getMessage());
+                // 落库失败不阻断直答，但错误级别记录（P1-3：可追溯性损失需可见）
+                log.error("[runmgr] direct-answer 落库失败 run={} query={} err={}",
+                        runId, query, e.getMessage());
+                note = note + "（注：历史追溯落库失败）";
             }
         }
         queue.offer(new HarnessEvent(runId, HarnessEventType.RUN_STARTED, 0, null, null, null, null, note));
@@ -236,12 +236,15 @@ public class RunManager {
         if (e == null) {
             return false;
         }
+        // 取消 token 先于 streaming 标志登记：闭合 cancelStream 竞态窗口
+        // （客户端在 compareAndSet 与 put 之间断开时，cancelStream 也能命中 token）
+        AtomicBoolean cancel = new AtomicBoolean(false);
+        streamTokens.put(runId, cancel);
         if (!e.streaming().compareAndSet(false, true)) {
+            streamTokens.remove(runId, cancel);
             log.warn("[runmgr] run={} 已有活动订阅者，拒绝并发订阅", runId);
             return false;
         }
-        AtomicBoolean cancel = new AtomicBoolean(false);
-        streamTokens.put(runId, cancel);
         executor.submit(() -> {
             Thread self = Thread.currentThread();
             streamThreads.put(runId, self);

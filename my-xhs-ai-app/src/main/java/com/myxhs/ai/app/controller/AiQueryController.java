@@ -27,13 +27,17 @@ public class AiQueryController {
     private final IntentRouter intentRouter;
     private final MetricToolAccess metricToolAccess;
     private final MetricAssistant metricAssistant;
+    /** 直答落库（P2-2：/api/ai/query 的问候/超范围直答与 /api/runs 审计一致） */
+    private final com.myxhs.ai.app.service.run.RunManager runManager;
 
     public AiQueryController(IntentRouter intentRouter,
                              MetricToolAccess metricToolAccess,
-                             MetricAssistant metricAssistant) {
+                             MetricAssistant metricAssistant,
+                             com.myxhs.ai.app.service.run.RunManager runManager) {
         this.intentRouter = intentRouter;
         this.metricToolAccess = metricToolAccess;
         this.metricAssistant = metricAssistant;
+        this.runManager = runManager;
     }
 
     @PostMapping("/query")
@@ -62,12 +66,10 @@ public class AiQueryController {
                             metricToolAccess.contentInteraction(extractWindow(message)));
                     break;
                 case GREETING:
-                    result = Map.of("intent", "GREETING", "path", "chat",
-                            "result", IntentRouter.GREETING_ANSWER);
+                    result = directAnswer(message, body, "GREETING", IntentRouter.GREETING_ANSWER);
                     break;
                 case OUT_OF_SCOPE:
-                    result = Map.of("intent", "OUT_OF_SCOPE", "path", "chat",
-                            "result", IntentRouter.OUT_OF_SCOPE_ANSWER);
+                    result = directAnswer(message, body, "OUT_OF_SCOPE", IntentRouter.OUT_OF_SCOPE_ANSWER);
                     break;
                 default:
                     result = agentResult(intent.name(), message);
@@ -76,6 +78,24 @@ public class AiQueryController {
             return withTrace(result, traceId);
         } finally {
             MDC.remove("traceId");
+        }
+    }
+
+    /** 直答（问候/超范围）：与 /api/runs 一致走 RunManager 落库（可追溯），响应带 runId */
+    private Map<String, String> directAnswer(String message, Map<String, String> body,
+                                             String intent, String answer) {
+        String userId = body.getOrDefault("userId", "anonymous");
+        try {
+            var entry = runManager.submit(message, userId);
+            Map<String, String> m = new java.util.HashMap<>();
+            m.put("intent", intent);
+            m.put("path", "chat");
+            m.put("result", answer);
+            m.put("runId", entry.runId());
+            return m;
+        } catch (Exception e) {
+            log.warn("[query] 直答落库失败（不影响应答）: err={}", e.getMessage());
+            return Map.of("intent", intent, "path", "chat", "result", answer);
         }
     }
 

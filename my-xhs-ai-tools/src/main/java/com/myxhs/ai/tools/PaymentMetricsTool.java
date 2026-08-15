@@ -42,7 +42,7 @@ public class PaymentMetricsTool {
             return doQuery(bounds, window);
         } catch (Exception e) {
             log.error("[metric] {} 查询失败: window={}, err={}", METRIC, window, e.getMessage());
-            return ToolJson.error(METRIC, e.getMessage());
+            return ToolJson.error(METRIC, window, e.getMessage());
         }
     }
 

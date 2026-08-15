@@ -201,7 +201,7 @@ public class RunController {
         var d = s.decision();
         Map<String, Object> m = new java.util.HashMap<>();
         m.put("stepNumber", s.stepNumber());
-        m.put("state", s.state());
+        m.put("state", s.state().name());
         m.put("action", d == null ? null : d.action());
         m.put("tool", d == null ? null : d.tool());
         m.put("reasoning", d == null ? null : d.reasoning());

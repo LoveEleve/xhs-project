@@ -43,7 +43,7 @@ public class JdbcRunStore implements RunStore {
         Instant now = Instant.now();
         jdbc.update("INSERT INTO ai_step (run_id, step_no, state, decision_json, tool_result,"
                         + " evidence_ids, messages_snapshot, tokens_used, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-                runId, step.stepNumber(), step.state(),
+                runId, step.stepNumber(), step.state().name(),
                 json(step.decision()), step.toolResult(),
                 step.evidenceRefs() == null ? null : String.join(",", step.evidenceRefs()),
                 messagesSnapshot, step.tokensUsed(), Timestamp.from(now));

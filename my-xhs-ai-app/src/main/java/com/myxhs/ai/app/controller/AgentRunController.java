@@ -66,7 +66,7 @@ public class AgentRunController {
 
     private static StepView toStepView(AgentStep s) {
         var d = s.decision();
-        return new StepView(s.stepNumber(), s.state(),
+        return new StepView(s.stepNumber(), s.state().name(),
                 d == null ? null : d.action(),
                 d == null ? null : d.tool(),
                 d == null ? null : d.reasoning(),

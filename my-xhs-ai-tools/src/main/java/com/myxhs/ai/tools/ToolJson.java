@@ -27,11 +27,17 @@ public final class ToolJson {
         }
     }
 
-    /** 错误响应（统一 status=error 契约） */
+    /** 错误响应（统一 status=error 契约；window 可空） */
+    public static String error(String metric, String window, String message) {
+        java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("status", "error");
+        m.put("metric", metric == null ? "" : metric);
+        m.put("window", window);
+        m.put("message", message);
+        return write(m);
+    }
+
     public static String error(String metric, String message) {
-        return write(java.util.Map.of(
-                "status", "error",
-                "metric", metric == null ? "" : metric,
-                "message", message));
+        return error(metric, null, message);
     }
 }

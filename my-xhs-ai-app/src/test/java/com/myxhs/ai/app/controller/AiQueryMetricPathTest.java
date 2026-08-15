@@ -50,7 +50,8 @@ class AiQueryMetricPathTest {
         controller = new AiQueryController(
                 new IntentRouter(),
                 access,
-                null); // agent 路径不测
+                null, // agent 路径不测
+                null); // 直答落库不测（仅 metric 路径）
     }
 
     @Test

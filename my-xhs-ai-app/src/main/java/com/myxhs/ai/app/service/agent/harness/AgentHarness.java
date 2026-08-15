@@ -393,7 +393,7 @@ public class AgentHarness {
             if ("THINK".equals(sr.state())) {
                 ctrl.recordStep((int) sr.tokensUsed());
             }
-            if ("TOOL".equals(step.state()) && sr.evidenceIds() != null && !sr.evidenceIds().isBlank()
+            if (step.state() == StepState.TOOL && sr.evidenceIds() != null && !sr.evidenceIds().isBlank()
                     && step.decision() != null) {
                 for (String evId : sr.evidenceIds().split(",")) {
                     var args = step.decision().args();
@@ -434,7 +434,13 @@ public class AgentHarness {
             }
         }
         List<String> refs = sr.evidenceIds() == null ? null : List.of(sr.evidenceIds().split(","));
-        return new AgentStep(sr.stepNo(), sr.state(), decision, sr.toolResult(), refs,
+        StepState state;
+        try {
+            state = StepState.valueOf(sr.state());
+        } catch (IllegalArgumentException e) {
+            state = StepState.THINK; // 旧数据/未知值回退
+        }
+        return new AgentStep(sr.stepNo(), state, decision, sr.toolResult(), refs,
                 (int) sr.tokensUsed(), sr.createdAt());
     }
 
