@@ -14,17 +14,23 @@ public class AgentToolBinder {
     }
 
     public static ToolRegistry build(MetricToolAccess metric, ObsToolAccess obs, LogSearchAccess logSearch) {
+        return build(metric, obs, logSearch, null);
+    }
+
+    public static ToolRegistry build(MetricToolAccess metric, ObsToolAccess obs, LogSearchAccess logSearch,
+                                     DlqRedeliverAccess dlqRedeliver) {
         ToolRegistry registry = new ToolRegistry();
         for (ToolSpec spec : AgentToolCatalog.specs()) {
             registry.register(new ToolSpec(spec.name(), spec.mcpName(), spec.description(), spec.level(),
-                    spec.schemaJson(), spec.validator(), bind(spec.name(), metric, obs, logSearch)));
+                    spec.schemaJson(), spec.validator(), bind(spec.name(), metric, obs, logSearch, dlqRedeliver)));
         }
         return registry;
     }
 
-    /** 装配点：Agent 工具名 → 执行器（lambda 包装三接口；L3 返回 null=不开放） */
+    /** 装配点：Agent 工具名 → 执行器（lambda 包装三接口 + L3 重投；L3 预留返回 null=未开放） */
     private static Function<Map<String, String>, String> bind(String name, MetricToolAccess metric,
-                                                              ObsToolAccess obs, LogSearchAccess logSearch) {
+                                                              ObsToolAccess obs, LogSearchAccess logSearch,
+                                                              DlqRedeliverAccess dlqRedeliver) {
         return switch (name) {
             case AgentToolNames.QUERY_ORDER_VOLUME -> args -> metric.queryOrderVolume(arg(args, "window"));
             case AgentToolNames.PAYMENT_SUCCESS_RATE -> args -> metric.paymentSuccessRate(arg(args, "window"));
@@ -42,9 +48,11 @@ public class AgentToolBinder {
             case AgentToolNames.LOG_SEARCH -> args -> logSearch == null
                     ? "ERROR: 受控日志检索未装配（logSearchAccess=null）"
                     : logSearch.searchLog(arg(args, "service"), arg(args, "keyword"), arg(args, "tailLines"));
-            // L3：不绑定执行器（PolicyGuard 先拒；Harness invoker==null 二次防御）
-            case AgentToolNames.L3_DLQ_REDELIVER,
-                    AgentToolNames.L3_SERVICE_RESTART,
+            // L3：dlq.redeliver 绑定受控执行器（M11 HITL：审批后执行）；其余 L3 预留不开放
+            case AgentToolNames.L3_DLQ_REDELIVER -> dlqRedeliver == null
+                    ? args -> "ERROR: dlq.redeliver 未装配（管理通道未配置）"
+                    : args -> dlqRedeliver.redeliver(arg(args, "msgId"), arg(args, "consumerGroup"));
+            case AgentToolNames.L3_SERVICE_RESTART,
                     AgentToolNames.L3_ORDER_REFUND -> null;
             default -> args -> "ERROR: 未注册工具 " + name;
         };

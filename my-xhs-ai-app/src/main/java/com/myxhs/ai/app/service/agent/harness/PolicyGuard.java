@@ -53,9 +53,23 @@ public class PolicyGuard {
             return PolicyDecision.deny("非授权工具: " + tool + "（deny-by-default，仅允许注册工具）");
         }
         ToolSpec spec = specOpt.get();
-        if (spec.level() == AccessLevel.L3 || spec.invoker() == null) {
-            return PolicyDecision.requiresApproval(
-                    tool + " 属 L3 高危动作，V1 需人工审批（HITL）");
+        // M11 修正：L3 且无执行器（预留动作）→ 直接 deny（未开放，审批无从执行，不挂起）
+        if (spec.level() == AccessLevel.L3 && spec.invoker() == null) {
+            return PolicyDecision.deny(tool + " 属 L3 高危动作且未开放执行（V1 不可用）");
+        }
+        if (spec.level() == AccessLevel.L3) {
+            // M11：L3 可执行工具——先参数校验（非法直接拒绝，不浪费审批），再进审批门
+            if (spec.validator() != null) {
+                String invalid = spec.validator().apply(args);
+                if (invalid != null) {
+                    return PolicyDecision.deny(tool + " 参数非法: " + invalid);
+                }
+            }
+            return PolicyDecision.requiresApproval(tool + " 属 L3 高危动作，需人工审批（HITL）");
+        }
+        if (spec.invoker() == null) {
+            // 非 L3 但未绑执行器（装配遗漏）：安全方向拒绝，不误判审批
+            return PolicyDecision.deny(tool + " 未绑定执行器（装配问题），拒绝执行");
         }
         if (spec.validator() != null) {
             String invalid = spec.validator().apply(args);

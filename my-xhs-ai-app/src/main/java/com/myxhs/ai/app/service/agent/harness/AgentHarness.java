@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.ai.app.service.QueryWindowExtractor;
 import com.myxhs.ai.app.service.store.RunStore;
 import com.myxhs.ai.tools.AgentToolBinder;
+import com.myxhs.ai.tools.DlqRedeliverAccess;
 import com.myxhs.ai.tools.LogSearchAccess;
 import com.myxhs.ai.tools.MetricToolAccess;
 import com.myxhs.ai.tools.ObsToolAccess;
@@ -55,6 +56,9 @@ public class AgentHarness {
             - notePublishEvents(window)：内容发布事件数（PUBLISH 按天，窗口内）
             - logSearch(service, keyword, tailLines)：受控检索服务日志（白名单服务最近 N 行内过滤 keyword；
               用于找异常堆栈/报错明细，如 ERROR/Deadlock/OutOfMemory；keyword 仅字母数字与常见符号）
+            - dlq.redeliver(msgId, consumerGroup)：**MQ 死信消息重投（L3 高危动作，执行需人工审批）**——
+              仅在用户明确要求重投死信消息且已确认风险时请求该工具；请求后系统挂起待审批，
+              审批通过才会真正执行；无审批绝不执行
             排障提示：httpErrors 的 uri=/** 已由工具单列为 noiseScanRoutes（扫描/探测噪音），归因时排除；
             /api/coupon/*、/api/cart/* 的 [Gateway-异常] WARN 日志非 5xx
             已知服务名（L2 观测可用）：my-xhs-gateway / my-xhs-order / my-xhs-payment / my-xhs-content /
@@ -120,12 +124,22 @@ public class AgentHarness {
                         LogSearchAccess logSearchAccess, ObjectMapper mapper, AgentBudget defaultBudget,
                         double pricePer1kTokens, int maxInvalidAnswers, RunStore store, String modelName,
                         int toolResultMaxLen) {
+        this(chatModel, metricToolAccess, obsToolAccess, logSearchAccess, null, mapper, defaultBudget,
+                pricePer1kTokens, maxInvalidAnswers, store, modelName, toolResultMaxLen);
+    }
+
+    /** 带受控 L3 执行（M11 HITL：dlqRedeliver=null 时 dlq.redeliver 挂起审批后返回"未装配"） */
+    public AgentHarness(ChatModel chatModel, MetricToolAccess metricToolAccess, ObsToolAccess obsToolAccess,
+                        LogSearchAccess logSearchAccess, DlqRedeliverAccess dlqRedeliver,
+                        ObjectMapper mapper, AgentBudget defaultBudget,
+                        double pricePer1kTokens, int maxInvalidAnswers, RunStore store, String modelName,
+                        int toolResultMaxLen) {
         this.chatModel = chatModel;
         this.metricToolAccess = metricToolAccess;
         this.obsToolAccess = obsToolAccess;
         this.logSearchAccess = logSearchAccess;
         // M12：注册表 = catalog 元数据 + 三接口执行器绑定（单一事实源；PolicyGuard/callTool 读它）
-        this.toolRegistry = AgentToolBinder.build(metricToolAccess, obsToolAccess, logSearchAccess);
+        this.toolRegistry = AgentToolBinder.build(metricToolAccess, obsToolAccess, logSearchAccess, dlqRedeliver);
         this.policyGuard = new PolicyGuard(toolRegistry);
         this.codec = new AgentDecisionCodec(mapper);
         this.defaultBudget = defaultBudget;
@@ -304,6 +318,10 @@ public class AgentHarness {
         // 单独计数，连续 N 次拒绝 → POLICY_EXHAUSTED（设计 §2"反馈模型重想"的专用机制）
         PolicyDecision pd = policyGuard.evaluate(decision.tool(), decision.args());
         if (!pd.allowed()) {
+            // M11 HITL：L3 工具 → 挂起待审批（不 feedback 重想、不执行、不登记证据）
+            if (pd.requiresApproval()) {
+                return suspendForApproval(run, decision, ctrl, listener, messages);
+            }
             ctrl.recordPolicyDenied();
             recordAndStore(run, AgentStep.policyDenied(ctrl.steps(), decision, pd.reason()), messages);
             String note = pd.requiresApproval()
@@ -341,8 +359,34 @@ public class AgentHarness {
         return null;
     }
 
-    /** DECLINE 分支：明确无法回答/超范围，零证据豁免（防模型为过存在性校验而调无关工具"凑证据"）。恒终态 */
-    private AgentRun handleDecline(AgentRun run, AgentDecision decision, LoopCtrl ctrl,
+    /**
+     * M11 HITL 挂起：L3 工具请求 → 状态 WAITING_APPROVAL + 事件 + approval_json 落库。
+     * 线程释放（executeLoop 返回，run 不设终态）；审批后 resume 恢复执行（see resume）。
+     */
+    private AgentRun suspendForApproval(AgentRun run, AgentDecision decision, LoopCtrl ctrl,
+                                        java.util.function.Consumer<HarnessEvent> listener,
+                                        List<ChatMessage> messages) {
+        recordAndStore(run, AgentStep.policyDenied(ctrl.steps(), decision,
+                "L3 高危动作待审批（HITL）"), messages);
+        run.flagWaitingApproval(decision.tool(), decision.args());
+        String approvalJson = "{\"tool\":\"" + decision.tool() + "\",\"args\":" + jsonOf(decision.args())
+                + ",\"requestedAt\":\"" + java.time.Instant.now() + "\",\"status\":\"PENDING\"}";
+        if (store != null) {
+            try {
+                store.updateApproval(run.runId(), approvalJson);
+                store.updateRunStatus(run.runId(), "WAITING_APPROVAL", null, ctrl.tokens(), ctrl.cost());
+            } catch (Exception e) {
+                log.warn("[harness] run={} 审批挂起落库失败: {}", run.runId(), e.getMessage());
+            }
+        }
+        String note = "L3 工具 " + decision.tool() + " 请求人工审批（参数: " + decision.args() + "）";
+        log.info("[harness] run={} WAITING_APPROVAL tool={} args={}", run.runId(), decision.tool(), decision.args());
+        emit(listener, new HarnessEvent(run.runId(), HarnessEventType.WAITING_APPROVAL, ctrl.steps(),
+                decision.tool(), null, null, null, note));
+        return run;
+    }
+
+    /** DECLINE 分支：明确无法回答/超范围，零证据豁免（防模型为过存在性校验而调无关工具"凑证据"）。恒终态 */    private AgentRun handleDecline(AgentRun run, AgentDecision decision, LoopCtrl ctrl,
                                    java.util.function.Consumer<HarnessEvent> listener, List<ChatMessage> messages) {
         String answer = composeDecline(decision);
         recordAndStore(run, AgentStep.answer(ctrl.steps(), decision), messages);
@@ -428,10 +472,44 @@ public class AgentHarness {
                 () -> new IllegalStateException("无 checkpoint 可恢复: " + runId));
         messages.addAll(restoreMessages(cp.messagesSnapshot()));
         LoopDetector loop = new LoopDetector();
+        // M11 HITL 审批恢复：approval_json 存在且 APPROVED → 直接执行被审批工具（不走模型决策），
+        // 结果入上下文后 executeLoop 继续（模型可引用新证据收尾）
+        String approvalJson = store.loadApproval(runId).orElse(null);
+        if (approvalJson != null && approvalJson.contains("\"status\":\"APPROVED\"")) {
+            try {
+                var an = om.readTree(approvalJson);
+                String approvedTool = an.path("tool").asText();
+                java.util.Map<String, String> approvedArgs = om.convertValue(an.path("args"),
+                        new com.fasterxml.jackson.core.type.TypeReference<java.util.Map<String, String>>() {});
+                log.info("[harness] run={} 审批恢复执行 tool={} args={}", runId, approvedTool, approvedArgs);
+                executeApprovedTool(run, approvedTool, approvedArgs, ctrl, messages, listener);
+                // 防重复执行：执行后标记（崩溃再恢复不重放）
+                store.updateApproval(runId, approvalJson.replace("\"status\":\"APPROVED\"", "\"status\":\"EXECUTED\""));
+            } catch (Exception e) {
+                log.warn("[harness] run={} 审批恢复解析失败（按普通恢复继续）: {}", runId, e.getMessage());
+            }
+        }
         emit(listener, new HarnessEvent(runId, HarnessEventType.RUN_STARTED, 0, null, null, null, null,
                 "恢复执行（已完成 " + steps.size() + " 步）"));
         log.info("[harness] run={} RESUME from checkpoint steps={}", runId, steps.size());
         return executeLoop(run, messages, ctrl, loop, listener, cancelToken, invalidOutputs);
+    }
+
+    /** 审批恢复：执行被审批工具（与普通 TOOL 同路径：执行 + 证据登记 + 落步 + 入上下文） */
+    private void executeApprovedTool(AgentRun run, String tool, Map<String, String> args, LoopCtrl ctrl,
+                                     List<ChatMessage> messages,
+                                     java.util.function.Consumer<HarnessEvent> listener) {
+        AgentDecision decision = new AgentDecision("TOOL_CALL", tool, args, "HITL 审批恢复执行", null, null, null, null);
+        String result = callTool(tool, args);
+        String evidenceId = run.registry().register(tool, args, result);
+        String window = args == null ? null : args.get("window");
+        run.evidenceChain().add(evidenceId, tool, window, result);
+        recordAndStore(run, AgentStep.tool(ctrl.steps(), decision, result, List.of(evidenceId)), messages);
+        messages.add(UserMessage.from("工具 " + tool + " 结果（证据 id=" + evidenceId + "）："
+                + truncateToolResult(result)));
+        emit(listener, new HarnessEvent(run.runId(), HarnessEventType.TOOL, ctrl.steps(), tool,
+                window, List.of(evidenceId), null, result));
+        log.info("[harness] run={} 审批执行 tool={} ev={} result={}", run.runId(), tool, evidenceId, result);
     }
 
     private AgentBudget parseBudget(String budgetJson) {
@@ -535,8 +613,7 @@ public class AgentHarness {
     }
 
     /** model/prompt/tool 版本（M5 版本追溯；model 名来自配置，工具数=注册表可用数；prompt 版本化抽文件待 M6） */
-    private String versionsJson() {
-        return "{\"model\":\"" + modelName + "\",\"prompt\":\"SYSTEM_PROMPT.v1\",\"tools\":"
+    private String versionsJson() {        return "{\"model\":\"" + modelName + "\",\"prompt\":\"SYSTEM_PROMPT.v1\",\"tools\":"
                 + toolRegistry.usableCount()
                 + "}";
     }
@@ -685,5 +762,13 @@ public class AgentHarness {
 
     private static String blank(String s, String fallback) {
         return s == null || s.isBlank() ? fallback : s;
+    }
+
+    private String jsonOf(Map<String, String> args) {
+        try {
+            return om.writeValueAsString(args == null ? Map.of() : args);
+        } catch (Exception e) {
+            return "{}";
+        }
     }
 }

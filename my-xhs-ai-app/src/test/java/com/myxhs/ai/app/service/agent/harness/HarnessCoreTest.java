@@ -122,14 +122,23 @@ class HarnessCoreTest {
 
     @Test
     void L3工具_需人工审批() {
-        PolicyGuard guard = new PolicyGuard(AgentToolBinder.build(null, null, null));
-        PolicyDecision d1 = guard.evaluate("service.restart", null);
-        PolicyDecision d2 = guard.evaluate("dlq.redeliver", null);
-        PolicyDecision d3 = guard.evaluate("order.refund", null);
+        // M11：dlq.redeliver 已绑定执行器（真实审批工具）→ requiresApproval；
+        // 预留工具（无执行器）→ deny（未开放，不挂起）
+        PolicyGuard guard = new PolicyGuard(AgentToolBinder.build(null, null, null,
+                (msgId, group) -> "fake-redeliver"));
+        PolicyDecision d1 = guard.evaluate("dlq.redeliver",
+                Map.of("msgId", "0123456789abcdef0123456789abcdef", "consumerGroup", "cart-sync-group"));
+        assertEquals(true, d1.requiresApproval(), "已开放 L3 应要求审批: " + d1.reason());
         assertEquals(false, d1.allowed());
-        assertEquals(true, d1.requiresApproval());
-        assertEquals(true, d2.requiresApproval());
-        assertEquals(true, d3.requiresApproval());
+        PolicyDecision bad = guard.evaluate("dlq.redeliver", Map.of("msgId", "x", "consumerGroup", "g"));
+        assertEquals(false, bad.allowed(), "非法参数应拒绝（不浪费审批）: " + bad.reason());
+        assertEquals(false, bad.requiresApproval());
+        // 无执行器的 L3 预留工具 → deny（非审批）
+        PolicyGuard noDlq = new PolicyGuard(AgentToolBinder.build(null, null, null));
+        assertEquals(false, noDlq.evaluate("dlq.redeliver", Map.of()).allowed());
+        assertEquals(false, noDlq.evaluate("dlq.redeliver", Map.of()).requiresApproval());
+        assertEquals(false, noDlq.evaluate("service.restart", null).requiresApproval());
+        assertEquals(false, noDlq.evaluate("order.refund", null).requiresApproval());
     }
 
     @Test

@@ -86,6 +86,25 @@ public class RunController {
         return Map.of("runId", runId, "status", "CANCELLING");
     }
 
+    /** M11 HITL 审批：approve → 恢复执行被审批工具；reject → CANCELLED + 审计 */
+    @PostMapping("/{runId}/approve")
+    public Map<String, String> approve(@PathVariable String runId,
+                                       @RequestBody(required = false) Map<String, String> body) {
+        String decision = body == null ? null : body.get("decision");
+        if (decision == null || !decision.equals("approve") && !decision.equals("reject")) {
+            throw new IllegalArgumentException("decision 必须为 approve 或 reject");
+        }
+        String reason = body.get("reason");
+        String approver = body.get("approver");
+        if (!runManager.approve(runId, decision, reason, approver)) {
+            // 无待审批/状态已变/重复审批
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "run " + runId + " 无待审批项或已被处理（仅 WAITING_APPROVAL 可审批）");
+        }
+        return Map.of("runId", runId, "decision", decision, "status",
+                "approve".equals(decision) ? "APPROVED_RUNNING" : "REJECTED_CANCELLED");
+    }
+
     @GetMapping("/{runId}")
     public Map<String, Object> get(@PathVariable String runId) {
         RunManager.RunEntry entry = runManager.get(runId);
@@ -99,6 +118,16 @@ public class RunController {
         AgentRun run = entry.future().join();
         if (run == null) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "run 执行异常: " + runId);
+        }
+        // M11 HITL：挂起待审批（run 对象未终态，但状态=WAITING_APPROVAL + pendingApproval）
+        if (run.status() == com.myxhs.ai.app.service.agent.harness.RunStatus.WAITING_APPROVAL) {
+            Map<String, Object> m = new java.util.HashMap<>();
+            m.put("runId", runId);
+            m.put("status", "WAITING_APPROVAL");
+            m.put("query", run.query());
+            m.put("pendingTool", run.pendingTool());
+            m.put("pendingApproval", run.pendingApproval());
+            return m;
         }
         return view(run);
     }

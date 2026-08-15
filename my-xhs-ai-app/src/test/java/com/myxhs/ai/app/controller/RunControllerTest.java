@@ -63,6 +63,9 @@ class RunControllerTest {
     @MockBean(name = "metricToolAccess")
     private MetricToolAccess metricToolAccess;
 
+    @MockBean
+    private com.myxhs.ai.tools.DlqRedeliverAccess dlqRedeliverAccess;
+
     @Autowired
     private com.myxhs.ai.app.service.store.RunStore runStore;
 
@@ -75,7 +78,7 @@ class RunControllerTest {
                 + " session_id VARCHAR(64), query TEXT NOT NULL, status VARCHAR(16) NOT NULL,"
                 + " termination_reason VARCHAR(32), budget_json TEXT, versions_json TEXT,"
                 + " tokens_total BIGINT DEFAULT 0, cost_est DOUBLE DEFAULT 0, final_answer MEDIUMTEXT,"
-                + " started_at DATETIME(3), ended_at DATETIME(3), last_activity_at DATETIME(3))");
+                + " approval_json TEXT, started_at DATETIME(3), ended_at DATETIME(3), last_activity_at DATETIME(3))");
         aiJdbc.execute("CREATE TABLE IF NOT EXISTS ai_step (id BIGINT AUTO_INCREMENT PRIMARY KEY, run_id VARCHAR(32),"
                 + " step_no INT, state VARCHAR(24), decision_json TEXT, tool_result MEDIUMTEXT,"
                 + " evidence_ids VARCHAR(512), messages_snapshot MEDIUMTEXT, tokens_used BIGINT DEFAULT 0, created_at DATETIME(3))");
@@ -370,5 +373,114 @@ class RunControllerTest {
         MvcResult cv = mockMvc.perform(get("/api/conversations/" + convId)).andExpect(status().isOk()).andReturn();
         String cbody = cv.getResponse().getContentAsString(StandardCharsets.UTF_8);
         assertTrue(cbody.contains("\"messageCount\":2"), "直答也应写会话消息: " + cbody);
+    }
+
+    // ---------- M11 HITL 审批 ----------
+
+    /** fake 模型：首轮请求 dlq.redeliver；工具结果出现后回答（HITL 场景） */
+    private void stubModelForDlq() {
+        when(dlqRedeliverAccess.redeliver(any(), any()))
+                .thenReturn("{\"status\":\"ok\",\"tool\":\"dlq.redeliver\",\"msgId\":\"x\"}");
+        when(chatModel.chat(any(ChatRequest.class))).thenAnswer(inv -> {
+            List<ChatMessage> msgs = inv.getArgument(0, ChatRequest.class).messages();
+            String all = msgs.stream().map(RunControllerTest::textOf).reduce("", String::concat);
+            Matcher m = EV.matcher(all);
+            String ev = m.find() ? m.group(1) : null;
+            String json;
+            if (all.contains("dlq.redeliver 结果")) {
+                json = "{\"action\":\"ANSWER\",\"conclusion\":\"已重投消息\",\"evidenceRefs\":[\""
+                        + ev + "\"],\"counterEvidence\":\"\",\"uncertainty\":\"\"}";
+            } else {
+                json = "{\"action\":\"TOOL_CALL\",\"tool\":\"dlq.redeliver\","
+                        + "\"args\":{\"msgId\":\"0123456789abcdef0123456789abcdef\","
+                        + "\"consumerGroup\":\"cart-sync-group\"},\"reasoning\":\"重投\"}";
+            }
+            return ChatResponse.builder()
+                    .aiMessage(AiMessage.from(json))
+                    .metadata(ChatResponseMetadata.builder()
+                            .tokenUsage(new TokenUsage(5, 5)).modelName("fake").build())
+                    .build();
+        });
+    }
+
+    private String awaitStatus(String runId, String status) throws Exception {
+        for (int i = 0; i < 50; i++) {
+            MvcResult r = mockMvc.perform(get("/api/runs/" + runId)).andExpect(status().isOk()).andReturn();
+            String body = r.getResponse().getContentAsString(StandardCharsets.UTF_8);
+            if (body.contains("\"status\":\"" + status + "\"")) {
+                return body;
+            }
+            Thread.sleep(100);
+        }
+        throw new IllegalStateException("run " + runId + " 未达状态 " + status);
+    }
+
+    @Test
+    void HITL_L3挂起_审批通过后执行完成() throws Exception {
+        stubModelForDlq();
+        String r1 = submit("MQ 死信积压了，帮我重投死信消息", "conv_hitl_1");
+        String runId = r1.replaceAll(".*\"runId\":\"([^\"]+)\".*", "$1");
+
+        // 1. 挂起：GET 视图 WAITING_APPROVAL + pendingApproval
+        String waiting = awaitStatus(runId, "WAITING_APPROVAL");
+        assertTrue(waiting.contains("pendingApproval"), waiting);
+        assertTrue(waiting.contains("dlq.redeliver"), waiting);
+        // 工具未执行（mock 未被调用）
+        org.mockito.Mockito.verify(dlqRedeliverAccess, org.mockito.Mockito.never())
+                .redeliver(any(), any());
+
+        // 2. 审批通过 → resume 执行 → 完成
+        MvcResult ap = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/runs/" + runId + "/approve")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"approve\",\"approver\":\"ops1\",\"reason\":\"确认重投\"}"))
+                .andExpect(status().isOk()).andReturn();
+        assertTrue(ap.getResponse().getContentAsString(StandardCharsets.UTF_8).contains("APPROVED_RUNNING"));
+
+        String done = awaitStatus(runId, "SUCCEEDED");
+        assertTrue(done.contains("已重投消息"), done);
+        assertTrue(done.contains("dlq.redeliver"), "证据链应含被审批工具: " + done);
+        // 审计落库
+        org.mockito.Mockito.verify(dlqRedeliverAccess).redeliver(any(), any());
+    }
+
+    @Test
+    void HITL_审批拒绝_终止并审计() throws Exception {
+        stubModelForDlq();
+        String runId = submit("MQ 死信积压了，帮我重投死信消息", "conv_hitl_2").replaceAll(".*\"runId\":\"([^\"]+)\".*", "$1");
+        awaitStatus(runId, "WAITING_APPROVAL");
+
+        MvcResult rj = mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/runs/" + runId + "/approve")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"reject\",\"approver\":\"ops2\",\"reason\":\"风险过高\"}"))
+                .andExpect(status().isOk()).andReturn();
+        assertTrue(rj.getResponse().getContentAsString(StandardCharsets.UTF_8).contains("REJECTED_CANCELLED"));
+
+        String done = awaitStatus(runId, "CANCELLED");
+        assertTrue(done.contains("审批拒绝：风险过高"), done);
+        // 工具始终未执行
+        org.mockito.Mockito.verify(dlqRedeliverAccess, org.mockito.Mockito.never())
+                .redeliver(any(), any());
+    }
+
+    @Test
+    void HITL_重复审批409() throws Exception {
+        stubModelForDlq();
+        String runId = submit("MQ 死信积压了，帮我重投死信消息", "conv_hitl_3").replaceAll(".*\"runId\":\"([^\"]+)\".*", "$1");
+        awaitStatus(runId, "WAITING_APPROVAL");
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/runs/" + runId + "/approve")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"approve\"}"))
+                .andExpect(status().isOk());
+        // 等 SUCCEEDED 后再审批 → 409
+        awaitStatus(runId, "SUCCEEDED");
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/runs/" + runId + "/approve")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"decision\":\"approve\"}"))
+                .andExpect(status().isConflict());
     }
 }

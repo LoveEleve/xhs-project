@@ -59,4 +59,20 @@ public class ToolParamValidators {
     public static int parseTailLines(String tailLines) {
         return DirectLogSearchAccess.parseTailLines(tailLines);
     }
+
+    /** dlq.redeliver：msgId 必须 32 位 hex（RocketMQ 消息 ID 格式） */
+    public static String validateMsgId(String msgId) {
+        if (msgId == null || !msgId.matches("[0-9a-fA-F]{32}")) {
+            return "msgId 必须为 32 位十六进制消息 ID";
+        }
+        return null;
+    }
+
+    /** dlq.redeliver：consumerGroup 白名单（同 MQ 组名校验） */
+    public static String validateConsumerGroup(String consumerGroup) {
+        if (consumerGroup == null || consumerGroup.isBlank()) {
+            return "consumerGroup 必填";
+        }
+        return validateGroup(consumerGroup);
+    }
 }

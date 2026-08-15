@@ -43,7 +43,7 @@ export interface RunView {
 
 export const TERMINAL_TYPES = new Set(['COMPLETED', 'PARTIAL', 'FAILED', 'CANCELLED']);
 export const LIVE_TYPES = ['RUN_STARTED', 'THINK', 'POLICY_DENIED', 'TOOL', 'ANSWER',
-  'COMPLETED', 'PARTIAL', 'FAILED', 'CANCELLED'] as const;
+  'COMPLETED', 'PARTIAL', 'FAILED', 'CANCELLED', 'WAITING_APPROVAL', 'APPROVAL_RESULT'] as const;
 
 const client = axios.create({
   baseURL: '/ai-api',
@@ -68,6 +68,29 @@ export const getRun = (runId: string) =>
 
 export const cancelRun = (runId: string) =>
   client.delete<{ runId: string; status: string }>(`/api/runs/${runId}`).then((r) => r.data);
+
+/** M11 HITL 审批：approve → 恢复执行被审批工具；reject → CANCELLED */
+export const approveRun = (runId: string, decision: 'approve' | 'reject', reason?: string) =>
+  client.post<{ runId: string; decision: string; status: string }>(`/api/runs/${runId}/approve`, {
+    decision,
+    reason: reason || '',
+  }).then((r) => r.data);
+
+export interface RunView {
+  runId: string;
+  status: string;
+  terminationReason?: string;
+  query: string;
+  steps: RunStep[];
+  evidence: string[];
+  finalAnswer?: string;
+  costMs: number;
+  /** 零步骤直答（问候/闲聊）说明，后端 view 提供 */
+  note?: string;
+  /** M11 HITL：WAITING_APPROVAL 时待审批工具与参数 */
+  pendingTool?: string;
+  pendingApproval?: Record<string, string>;
+}
 
 /** 订阅 run 事件流（GET /api/runs/{id}/stream，SSE 命名事件；返回调用方负责 close） */
 export const openRunStream = (runId: string, onEvent: (e: HarnessEvent) => void): EventSource => {

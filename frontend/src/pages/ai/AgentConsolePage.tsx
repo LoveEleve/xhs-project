@@ -10,7 +10,7 @@ import {
   Typography, Empty, Spin, Divider, message,
 } from 'antd';
 import {
-  submitRun, getRun, cancelRun, openRunStream, TERMINAL_TYPES,
+  submitRun, getRun, cancelRun, approveRun, openRunStream, TERMINAL_TYPES,
 } from '../../api/ai';
 import type { HarnessEvent, RunStep } from '../../api/ai';
 
@@ -48,7 +48,7 @@ export default function AgentConsolePage() {
   const [runId, setRunId] = useState(searchParams.get('run') || '');
   // M10 多轮会话：?conv= 恢复上次会话（连续提问同上下文）；"新建会话"清空
   const [convId, setConvId] = useState(searchParams.get('conv') || '');
-  const [phase, setPhase] = useState<'idle' | 'running' | 'done'>('idle');
+  const [phase, setPhase] = useState<'idle' | 'running' | 'done' | 'approval'>('idle');
   const [status, setStatus] = useState<string | undefined>();
   const [terminationReason, setTerminationReason] = useState<string | undefined>();
   const [finalAnswer, setFinalAnswer] = useState<string | undefined>();
@@ -58,6 +58,11 @@ export default function AgentConsolePage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [detail, setDetail] = useState<DisplayStep | null>(null);
   const [loading, setLoading] = useState(false);
+  // M11 HITL：WAITING_APPROVAL 时的待审批信息 + 拒绝理由输入
+  const [pendingTool, setPendingTool] = useState<string | undefined>();
+  const [pendingApproval, setPendingApproval] = useState<Record<string, string> | undefined>();
+  const [rejectReason, setRejectReason] = useState('');
+  const [approving, setApproving] = useState(false);
   const esRef = useRef<EventSource | null>(null);
 
   const closeStream = useCallback(() => {
@@ -137,6 +142,16 @@ export default function AgentConsolePage() {
         setStatus('RUNNING');
         setPhase('running');
         watchRun(id, 'RUNNING');
+        return;
+      }
+      if (view.status === 'WAITING_APPROVAL') {
+        // M11 HITL：挂起待审批（不订阅 SSE——run 已暂停，审批后刷新拉取）
+        setPhase('approval');
+        setStatus('WAITING_APPROVAL');
+        setPendingTool(view.pendingTool);
+        setPendingApproval(view.pendingApproval);
+        setSteps([]);
+        setFinalAnswer(undefined);
         return;
       }
       setPhase('done');
@@ -225,6 +240,34 @@ export default function AgentConsolePage() {
     }
   };
 
+  /** M11 HITL 审批：通过/拒绝 → 刷新视图（resume 后 RUNNING/终态） */
+  const handleApprove = async (decision: 'approve' | 'reject') => {
+    if (!runId || !pendingTool) return;
+    if (decision === 'reject' && !rejectReason.trim()) {
+      message.warning('拒绝需填写理由（审计要求）');
+      return;
+    }
+    setApproving(true);
+    try {
+      await approveRun(runId, decision, rejectReason);
+      message.success(decision === 'approve' ? '已通过审批，Agent 恢复执行' : '已拒绝，任务终止');
+      setPhase('running');
+      setStatus('RUNNING');
+      setPendingTool(undefined);
+      setPendingApproval(undefined);
+      setRejectReason('');
+      // 审批后轮询：resume 执行 → 终态；或拒绝 → CANCELLED
+      loadView(runId);
+    } catch (e) {
+      const err = e as { response?: { status?: number } };
+      message.error(err.response?.status === 409
+        ? '该审批已处理或 run 状态已变化，请刷新'
+        : `审批失败: ${(e as Error).message}`);
+    } finally {
+      setApproving(false);
+    }
+  };
+
   const timelineItems = steps.map((s) => {
     const color =
       s.kind === 'TOOL' ? 'blue' :
@@ -307,6 +350,32 @@ export default function AgentConsolePage() {
       {errorMsg && (
         <Alert type="error" showIcon message={errorMsg} style={{ marginBottom: 16 }} closable
           onClose={() => setErrorMsg(null)} />
+      )}
+
+      {phase === 'approval' && pendingTool && (
+        <Card title="L3 高危操作审批（HITL）" style={{ marginBottom: 16 }}
+          extra={<Tag color="orange">WAITING_APPROVAL</Tag>}>
+          <Space direction="vertical" style={{ width: '100%' }} size={12}>
+            <Alert type="warning" showIcon
+              message={`Agent 请求执行高危工具：${pendingTool}`}
+              description={pendingApproval ? `参数：${Object.entries(pendingApproval)
+                .map(([k, v]) => `${k}=${v}`).join('，')}` : undefined} />
+            <Input.TextArea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="拒绝理由（拒绝必填，审批审计要求）"
+              autoSize={{ minRows: 2, maxRows: 4 }}
+            />
+            <Space>
+              <Button type="primary" loading={approving} onClick={() => handleApprove('approve')}>
+                审批通过
+              </Button>
+              <Button danger loading={approving} onClick={() => handleApprove('reject')}>
+                拒绝
+              </Button>
+            </Space>
+          </Space>
+        </Card>
       )}
 
       {runId && !errorMsg && (

@@ -355,7 +355,7 @@ class AgentHarnessTest {
         jdbc.execute("CREATE TABLE IF NOT EXISTS ai_run (run_id VARCHAR(32) PRIMARY KEY, user_id VARCHAR(64),"
                 + " session_id VARCHAR(64), query TEXT NOT NULL, status VARCHAR(16) NOT NULL,"
                 + " termination_reason VARCHAR(32), budget_json TEXT, versions_json TEXT, tokens_total BIGINT DEFAULT 0,"
-                + " cost_est DOUBLE DEFAULT 0, final_answer MEDIUMTEXT, started_at DATETIME(3), ended_at DATETIME(3), last_activity_at DATETIME(3))");
+                + " cost_est DOUBLE DEFAULT 0, final_answer MEDIUMTEXT, approval_json TEXT, started_at DATETIME(3), ended_at DATETIME(3), last_activity_at DATETIME(3))");
         jdbc.execute("CREATE TABLE IF NOT EXISTS ai_step (id BIGINT AUTO_INCREMENT PRIMARY KEY, run_id VARCHAR(32),"
                 + " step_no INT, state VARCHAR(24), decision_json TEXT, tool_result MEDIUMTEXT,"
                 + " evidence_ids VARCHAR(512), messages_snapshot MEDIUMTEXT, tokens_used BIGINT DEFAULT 0, created_at DATETIME(3))");
@@ -401,7 +401,7 @@ class AgentHarnessTest {
         jdbc.execute("CREATE TABLE IF NOT EXISTS ai_run (run_id VARCHAR(32) PRIMARY KEY, user_id VARCHAR(64),"
                 + " session_id VARCHAR(64), query TEXT NOT NULL, status VARCHAR(16) NOT NULL,"
                 + " termination_reason VARCHAR(32), budget_json TEXT, versions_json TEXT, tokens_total BIGINT DEFAULT 0,"
-                + " cost_est DOUBLE DEFAULT 0, final_answer MEDIUMTEXT, started_at DATETIME(3), ended_at DATETIME(3), last_activity_at DATETIME(3))");
+                + " cost_est DOUBLE DEFAULT 0, final_answer MEDIUMTEXT, approval_json TEXT, started_at DATETIME(3), ended_at DATETIME(3), last_activity_at DATETIME(3))");
         jdbc.execute("CREATE TABLE IF NOT EXISTS ai_step (id BIGINT AUTO_INCREMENT PRIMARY KEY, run_id VARCHAR(32),"
                 + " step_no INT, state VARCHAR(24), decision_json TEXT, tool_result MEDIUMTEXT,"
                 + " evidence_ids VARCHAR(512), messages_snapshot MEDIUMTEXT, tokens_used BIGINT DEFAULT 0, created_at DATETIME(3))");
@@ -443,7 +443,7 @@ class AgentHarnessTest {
         jdbc.execute("CREATE TABLE IF NOT EXISTS ai_run (run_id VARCHAR(32) PRIMARY KEY, user_id VARCHAR(64),"
                 + " session_id VARCHAR(64), query TEXT NOT NULL, status VARCHAR(16) NOT NULL,"
                 + " termination_reason VARCHAR(32), budget_json TEXT, versions_json TEXT, tokens_total BIGINT DEFAULT 0,"
-                + " cost_est DOUBLE DEFAULT 0, final_answer MEDIUMTEXT, started_at DATETIME(3), ended_at DATETIME(3), last_activity_at DATETIME(3))");
+                + " cost_est DOUBLE DEFAULT 0, final_answer MEDIUMTEXT, approval_json TEXT, started_at DATETIME(3), ended_at DATETIME(3), last_activity_at DATETIME(3))");
         jdbc.execute("CREATE TABLE IF NOT EXISTS ai_step (id BIGINT AUTO_INCREMENT PRIMARY KEY, run_id VARCHAR(32),"
                 + " step_no INT, state VARCHAR(24), decision_json TEXT, tool_result MEDIUMTEXT,"
                 + " evidence_ids VARCHAR(512), messages_snapshot MEDIUMTEXT, tokens_used BIGINT DEFAULT 0, created_at DATETIME(3))");
@@ -487,7 +487,7 @@ class AgentHarnessTest {
         jdbc.execute("CREATE TABLE IF NOT EXISTS ai_run (run_id VARCHAR(32) PRIMARY KEY, user_id VARCHAR(64),"
                 + " session_id VARCHAR(64), query TEXT NOT NULL, status VARCHAR(16) NOT NULL,"
                 + " termination_reason VARCHAR(32), budget_json TEXT, versions_json TEXT, tokens_total BIGINT DEFAULT 0,"
-                + " tokens_out BIGINT DEFAULT 0, cost_est DOUBLE DEFAULT 0, final_answer MEDIUMTEXT, started_at DATETIME(3), ended_at DATETIME(3), last_activity_at DATETIME(3))");
+                + " tokens_out BIGINT DEFAULT 0, cost_est DOUBLE DEFAULT 0, final_answer MEDIUMTEXT, approval_json TEXT, started_at DATETIME(3), ended_at DATETIME(3), last_activity_at DATETIME(3))");
         jdbc.execute("CREATE TABLE IF NOT EXISTS ai_step (id BIGINT AUTO_INCREMENT PRIMARY KEY, run_id VARCHAR(32),"
                 + " step_no INT, state VARCHAR(24), decision_json TEXT, tool_result MEDIUMTEXT,"
                 + " evidence_ids VARCHAR(512), messages_snapshot MEDIUMTEXT, tokens_used BIGINT DEFAULT 0, created_at DATETIME(3))");
@@ -523,7 +523,7 @@ class AgentHarnessTest {
         jdbc.execute("CREATE TABLE IF NOT EXISTS ai_run (run_id VARCHAR(32) PRIMARY KEY, user_id VARCHAR(64),"
                 + " session_id VARCHAR(64), query TEXT NOT NULL, status VARCHAR(16) NOT NULL,"
                 + " termination_reason VARCHAR(32), budget_json TEXT, versions_json TEXT, tokens_total BIGINT DEFAULT 0,"
-                + " cost_est DOUBLE DEFAULT 0, final_answer MEDIUMTEXT, started_at DATETIME(3), ended_at DATETIME(3), last_activity_at DATETIME(3))");
+                + " cost_est DOUBLE DEFAULT 0, final_answer MEDIUMTEXT, approval_json TEXT, started_at DATETIME(3), ended_at DATETIME(3), last_activity_at DATETIME(3))");
         jdbc.execute("CREATE TABLE IF NOT EXISTS ai_step (id BIGINT AUTO_INCREMENT PRIMARY KEY, run_id VARCHAR(32),"
                 + " step_no INT, state VARCHAR(24), decision_json TEXT, tool_result MEDIUMTEXT,"
                 + " evidence_ids VARCHAR(512), messages_snapshot MEDIUMTEXT, tokens_used BIGINT DEFAULT 0, created_at DATETIME(3))");
@@ -567,7 +567,7 @@ class AgentHarnessTest {
         jdbc.execute("CREATE TABLE IF NOT EXISTS ai_run (run_id VARCHAR(32) PRIMARY KEY, user_id VARCHAR(64),"
                 + " session_id VARCHAR(64), query TEXT NOT NULL, status VARCHAR(16) NOT NULL,"
                 + " termination_reason VARCHAR(32), budget_json TEXT, versions_json TEXT, tokens_total BIGINT DEFAULT 0,"
-                + " cost_est DOUBLE DEFAULT 0, final_answer MEDIUMTEXT, started_at DATETIME(3), ended_at DATETIME(3), last_activity_at DATETIME(3))");
+                + " cost_est DOUBLE DEFAULT 0, final_answer MEDIUMTEXT, approval_json TEXT, started_at DATETIME(3), ended_at DATETIME(3), last_activity_at DATETIME(3))");
         jdbc.execute("CREATE TABLE IF NOT EXISTS ai_step (id BIGINT AUTO_INCREMENT PRIMARY KEY, run_id VARCHAR(32),"
                 + " step_no INT, state VARCHAR(24), decision_json TEXT, tool_result MEDIUMTEXT,"
                 + " evidence_ids VARCHAR(512), messages_snapshot MEDIUMTEXT, tokens_used BIGINT DEFAULT 0, created_at DATETIME(3))");

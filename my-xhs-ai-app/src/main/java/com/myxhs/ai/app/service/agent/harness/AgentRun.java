@@ -23,6 +23,9 @@ public class AgentRun {
     private volatile String finalAnswer;
     private volatile Instant startedAt = Instant.now();
     private volatile Instant endedAt;
+    /** M11 HITL：挂起待审批的工具（tool/args；审批后 resume 据此执行，不设终态） */
+    private volatile String pendingTool;
+    private volatile java.util.Map<String, String> pendingApproval;
 
     public AgentRun(String runId, String query, AgentBudget budget) {
         this.runId = runId;
@@ -40,7 +43,7 @@ public class AgentRun {
             case BUDGET_STEPS, BUDGET_TOKENS, BUDGET_COST, LOOP_REPEATED_CALL, LOOP_NO_PROGRESS,
                  POLICY_EXHAUSTED, EVIDENCE_INVALID -> RunStatus.PARTIAL;
             case MODEL_UNAVAILABLE -> RunStatus.FAILED;
-            case CANCELLED -> RunStatus.CANCELLED;
+            case APPROVAL_REJECTED, CANCELLED -> RunStatus.CANCELLED;
         };
         this.terminationReason = reason;
         this.finalAnswer = finalAnswer;
@@ -73,6 +76,21 @@ public class AgentRun {
 
     public RunStatus status() {
         return status;
+    }
+
+    /** M11 HITL：挂起待审批（status=WAITING_APPROVAL，不设终态/endedAt；审批后 resume 重建新 run 对象） */
+    public void flagWaitingApproval(String tool, java.util.Map<String, String> approvalArgs) {
+        this.status = RunStatus.WAITING_APPROVAL;
+        this.pendingTool = tool;
+        this.pendingApproval = approvalArgs;
+    }
+
+    public String pendingTool() {
+        return pendingTool;
+    }
+
+    public java.util.Map<String, String> pendingApproval() {
+        return pendingApproval;
     }
 
     public TerminationReason terminationReason() {

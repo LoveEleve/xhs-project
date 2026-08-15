@@ -308,6 +308,69 @@ public class RunManager {
         return e != null && e.future().isDone();
     }
 
+    /**
+     * M11 HITL 审批：approve → resume 恢复执行被审批工具；reject → CANCELLED 终态 + 审计。
+     * 原子认领（仅 WAITING_APPROVAL 可处理）防并发/重复审批；内存 miss（重启后）走 resumeEntry 重建。
+     * 返回 false = 无待审批/状态已变（调用方 409/404）。
+     */
+    public boolean approve(String runId, String decision, String reason, String approver) {
+        if (store == null || !"approve".equals(decision) && !"reject".equals(decision)) {
+            return false;
+        }
+        String approvalJson = null;
+        try {
+            approvalJson = store.loadApproval(runId).orElse(null);
+        } catch (Exception e) {
+            log.warn("[runmgr] run={} 审批加载失败: {}", runId, e.getMessage());
+            return false;
+        }
+        if (approvalJson == null || !approvalJson.contains("\"status\":\"PENDING\"")) {
+            return false; // 无待审批（未挂起/已处理）
+        }
+        int claimed;
+        try {
+            claimed = store.claimApproval(runId); // WAITING_APPROVAL → RUNNING（原子）
+        } catch (Exception e) {
+            log.warn("[runmgr] run={} 审批认领失败: {}", runId, e.getMessage());
+            return false;
+        }
+        if (claimed == 0) {
+            log.warn("[runmgr] run={} 审批认领失败（状态已变），拒绝重复审批", runId);
+            return false;
+        }
+        String who = approver == null || approver.isBlank() ? "anonymous" : approver;
+        String updated = approvalJson.replace("\"status\":\"PENDING\"", "\"status\":\"APPROVED\"");
+        if ("reject".equals(decision)) {
+            updated = updated.replace("\"status\":\"PENDING\"", "\"status\":\"REJECTED\"");
+        }
+        updated = updated.replace("}", ",\"approver\":\"" + who + "\",\"reason\":\""
+                + (reason == null ? "" : reason.replace("\"", "'"))
+                + "\",\"decidedAt\":\"" + java.time.Instant.now() + "\"}");
+        try {
+            store.updateApproval(runId, updated);
+        } catch (Exception e) {
+            log.warn("[runmgr] run={} 审批审计落库失败: {}", runId, e.getMessage());
+        }
+        if ("reject".equals(decision)) {
+            try {
+                store.updateRunStatus(runId, "CANCELLED", "APPROVAL_REJECTED", 0, 0);
+                store.updateFinalAnswer(runId, "审批拒绝：" + (reason == null ? "未提供理由" : reason));
+            } catch (Exception e) {
+                log.warn("[runmgr] run={} 拒绝终态落库失败: {}", runId, e.getMessage());
+            }
+            runs.remove(runId); // 内存挂起 entry 移除 → GET 走 store 回退（CANCELLED）
+            log.info("[runmgr] run={} 审批拒绝 by={} reason={}", runId, who, reason);
+            return true;
+        }
+        // approve：resume 恢复执行（内存 miss → resumeEntry 从 store 重建；与崩溃恢复同路径）
+        if (runs.get(runId) != null) {
+            runs.remove(runId);
+        }
+        RunEntry entry = resumeEntry(runId);
+        log.info("[runmgr] run={} 审批通过 by={} 恢复执行", runId, who);
+        return entry != null;
+    }
+
     /** 协作式取消（M5-3）：置位取消令牌；Harness 当前步完成后终止为 CANCELLED */
     public boolean cancel(String runId) {
         RunEntry e = runs.get(runId);

@@ -13,5 +13,9 @@ public enum HarnessEventType {
     COMPLETED,
     PARTIAL,
     FAILED,
-    CANCELLED
+    CANCELLED,
+    /** M11 HITL：L3 工具挂起待审批（message 含 tool/args/说明） */
+    WAITING_APPROVAL,
+    /** M11 HITL：审批结果（approve→resume 继续 / reject→终态；前端可据此刷新） */
+    APPROVAL_RESULT
 }

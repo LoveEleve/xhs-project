@@ -41,6 +41,15 @@ public interface RunStore {
     /** 关联会话（M10：ai_run.session_id = convId，run 追溯会话；提交后即写） */
     void updateSessionId(String runId, String sessionId);
 
+    /** M11 HITL：审批 JSON 落库（ai_run.approval_json：tool/args/status/approver/reason/时间戳） */
+    void updateApproval(String runId, String approvalJson);
+
+    /** M11 HITL：读取审批 JSON（resume 审批恢复 / 视图展示） */
+    Optional<String> loadApproval(String runId);
+
+    /** M11 HITL：审批原子认领——仅 WAITING_APPROVAL 可认领为 RUNNING；返回影响行数（0=已处理/状态已变） */
+    int claimApproval(String runId);
+
     Optional<RunRecord> loadRun(String runId);
 
     List<StepRecord> loadSteps(String runId);

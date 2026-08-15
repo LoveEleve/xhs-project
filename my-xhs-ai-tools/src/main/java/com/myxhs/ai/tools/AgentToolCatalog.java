@@ -22,7 +22,9 @@ public class AgentToolCatalog {
     private static final String LOG_SEARCH_SCHEMA = """
             {"type":"object","properties":{"service":{"type":"string","description":"白名单服务名，如 my-xhs-order"},"keyword":{"type":"string","description":"检索关键词，字母数字与常见符号，长度≤100"},"tailLines":{"type":"string","description":"最近多少行内检索（1~5000，默认 500）"}},"required":["service","keyword"]}
             """;
-    private static final String L3_SCHEMA = "{\"type\":\"object\"}";
+    private static final String L3_SCHEMA = """
+            {"type":"object","properties":{"msgId":{"type":"string","description":"RocketMQ 消息 ID（32 位 hex）"},"consumerGroup":{"type":"string","description":"消费组名，如 cart-sync-consumer-group"}},"required":["msgId","consumerGroup"]}
+            """;
 
     private AgentToolCatalog() {
     }
@@ -59,9 +61,10 @@ public class AgentToolCatalog {
                         AccessLevel.L2, NOARG_SCHEMA, null),
                 spec(AgentToolNames.MYSQL_DEADLOCKS, "mysql.deadlocks", "MySQL 死锁事件（累计 total + 最新 new_events）",
                         AccessLevel.L2, NOARG_SCHEMA, null),
-                // L3 高危动作：V1 无执行器（PolicyGuard requiresApproval 恒拒绝；M11 HITL 挂执行器）
+                // L3 高危动作：dlq.redeliver 已开放（M11 HITL 审批后执行，validator 先校验）；
+                // 其余 L3 预留（V1 无执行器 → PolicyGuard deny，不挂起）
                 spec(AgentToolNames.L3_DLQ_REDELIVER, "mq.dlq_redeliver", "MQ 死信消息重投（命令模板写死 + 参数白名单，需人工审批）",
-                        AccessLevel.L3, L3_SCHEMA, null),
+                        AccessLevel.L3, L3_SCHEMA, dlqValidator()),
                 spec(AgentToolNames.L3_SERVICE_RESTART, null, "服务重启（需人工审批，V1 未开放）",
                         AccessLevel.L3, L3_SCHEMA, null),
                 spec(AgentToolNames.L3_ORDER_REFUND, null, "订单退款（需人工审批，V1 未开放）",
@@ -93,5 +96,16 @@ public class AgentToolCatalog {
     private static java.util.function.Function<java.util.Map<String, String>, String> logSearchValidator() {
         // 与原 PolicyGuard 行为一致：仅校验 keyword（tailLines 由工具侧 parseTailLines clamp，恒合法）
         return args -> ToolParamValidators.validateKeyword(args == null ? null : args.get("keyword"));
+    }
+
+    private static java.util.function.Function<java.util.Map<String, String>, String> dlqValidator() {
+        return args -> {
+            String msgId = args == null ? null : args.get("msgId");
+            String invalid = ToolParamValidators.validateMsgId(msgId);
+            if (invalid != null) {
+                return invalid;
+            }
+            return ToolParamValidators.validateConsumerGroup(args == null ? null : args.get("consumerGroup"));
+        };
     }
 }

@@ -22,6 +22,8 @@ public enum TerminationReason {
     EVIDENCE_INVALID,
     /** 模型不可用/超时（明确降级，不瞎编） */
     MODEL_UNAVAILABLE,
+    /** M11 HITL：L3 工具审批被拒绝（status=CANCELLED；审计在 approval_json） */
+    APPROVAL_REJECTED,
     /** 用户取消（M5-3；协作式取消，当前模型调用完成后生效） */
     CANCELLED
 }

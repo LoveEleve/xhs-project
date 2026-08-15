@@ -74,6 +74,28 @@ public class JdbcRunStore implements RunStore {
     }
 
     @Override
+    public void updateApproval(String runId, String approvalJson) {
+        jdbc.update("UPDATE ai_run SET approval_json=? WHERE run_id=?",
+                approvalJson, runId);
+    }
+
+    @Override
+    public Optional<String> loadApproval(String runId) {
+        List<String> rows = jdbc.query("SELECT approval_json FROM ai_run WHERE run_id=?",
+                (rs, i) -> rs.getString("approval_json"), runId);
+        // 先过滤 null/空（findFirst 对 null 元素会 Optional.of(null) NPE）
+        return rows.stream().filter(s -> s != null && !s.isBlank()).findFirst();
+    }
+
+    @Override
+    public int claimApproval(String runId) {
+        // 原子认领：仅 WAITING_APPROVAL → RUNNING（并发审批/状态已变时影响 0 行）
+        return jdbc.update("UPDATE ai_run SET status='RUNNING', last_activity_at=? WHERE run_id=?"
+                        + " AND status='WAITING_APPROVAL'",
+                Timestamp.from(Instant.now()), runId);
+    }
+
+    @Override
     public Optional<RunRecord> loadRun(String runId) {
         List<RunRecord> rows = jdbc.query("SELECT * FROM ai_run WHERE run_id=?",
                 (rs, i) -> toRun(rs), runId);
