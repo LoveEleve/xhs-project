@@ -26,19 +26,24 @@ public class IntentRouter {
             - 为什么 MQ 有消费积压？""";
 
     private static final List<Pattern> ORDER_VOLUME_PATTERNS = List.of(
-            compile("订单量"), compile("下单量"), compile("订单数"),
-            compile("下单数"), compile("订单总量"), compile("订单总数"));
+            compile("订单量"), compile("下单量"), compile("订单数"), compile("下单数"),
+            compile("订单总量"), compile("订单总数"), compile("订单"), compile("单量"));
     private static final List<Pattern> PAYMENT_RATE_PATTERNS = List.of(
             compile("支付成功率"), compile("支付成功"), compile("付款成功率"),
-            compile("支付失败率"));
+            compile("支付失败率"), compile("支付"));
     private static final List<Pattern> CONTENT_INTERACTION_PATTERNS = List.of(
             compile("互动量"), compile("互动数"), compile("点赞"), compile("收藏"),
-            compile("评论数"), compile("分享数"), compile("曝光量"), compile("互动"));
-    /** 归因/分析意图：命中即 AGENT（优先于指标关键词，也不走 LLM 兜底） */
+            compile("评论数"), compile("分享数"), compile("曝光量"), compile("互动"), compile("内容"));
+    /** 归因/分析意图：命中即 AGENT（优先于指标关键词，也不走 LLM 兜底）。
+     *  诊断侧是封闭集（领域词+归因动词），此处穷举是完整且值得的——闲聊侧不穷举。 */
     private static final List<Pattern> INVESTIGATION_PATTERNS = List.of(
             compile("为什么"), compile("为何"), compile("原因"), compile("怎么"),
             compile("如何"), compile("分析"), compile("诊断"), compile("归因"),
-            compile("下降"), compile("降低"), compile("异常"), compile("波动"));
+            compile("下降"), compile("降低"), compile("异常"), compile("波动"),
+            compile("故障"), compile("错误"), compile("延迟"), compile("慢"),
+            compile("超时"), compile("失败"), compile("积压"), compile("挂了"),
+            compile("问题"), compile("5xx"), compile("排查"), compile("卡顿"),
+            compile("崩溃"), compile("宕"), compile("报错"));
     /** 问候/闲聊/无诊断目标：规则模糊时才判（归因/指标词已优先消耗），命中即 GREETING 不走 Agent */
     private static final List<Pattern> GREETING_PATTERNS = List.of(
             compile("你好"), compile("您好"), compile("嗨"), compile("哈喽"), compile("hello"),
@@ -84,7 +89,7 @@ public class IntentRouter {
 
     public Intent classify(String userMessage) {
         if (userMessage == null || userMessage.isBlank()) {
-            return Intent.AGENT; // 空/纯空白：直接 AGENT，不触发 LLM 兜底（省成本）
+            return Intent.GREETING; // 空/纯空白：引导直答（零成本，不丢 Agent 白花模型调用）
         }
         String text = userMessage.toLowerCase(Locale.ROOT);
 
@@ -108,18 +113,19 @@ public class IntentRouter {
             return hits.get(0); // 确定性
         }
         // 0 个 或 >1 个指标命中 → 先超范围判定（主体话题明确无关，如"帮我写代码"），
-        // 再问候判定（"帮我"类求助词），再 LLM 兜底，最后保守 AGENT
+        // 再问候判定（"帮我"类求助词），再 LLM 兜底。
+        // 最后默认 GREETING（不是 AGENT）：诊断问题是封闭集（归因词+指标词已全部前置拦截），
+        // 完全无诊断信号的输入大概率是闲聊/表达——引导直答零成本，比白跑一次模型好。
         if (matches(OUT_OF_SCOPE_PATTERNS, text)) {
             return Intent.OUT_OF_SCOPE;
         }
         if (matches(GREETING_PATTERNS, text)) {
             return Intent.GREETING;
         }
-        // 模糊：LLM 兜底（开启时）否则 AGENT
         if (llmClassifier != null) {
             return llmClassifier.classify(userMessage);
         }
-        return Intent.AGENT;
+        return Intent.GREETING;
     }
 
     private static boolean matches(List<Pattern> patterns, String text) {

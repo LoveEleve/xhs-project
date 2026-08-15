@@ -53,8 +53,7 @@ class IntentRouterTest {
         assertEquals(Intent.AGENT, router.classify("为什么订单量下降了"));
         assertEquals(Intent.AGENT, router.classify("为什么支付成功率降低"));
         assertEquals(Intent.AGENT, router.classify("帮我分析一下最近业务情况"));
-        assertEquals(Intent.AGENT, router.classify("随便聊聊今天的情况"));
-        assertEquals(Intent.AGENT, router.classify(null));
+        assertEquals(Intent.AGENT, router.classify("帮我排查下系统问题"));
     }
 
     @Test
@@ -80,23 +79,36 @@ class IntentRouterTest {
 
     @Test
     void 规则模糊有LLM兜底时按LLM路由() {
-        // "看看订单总额" 无规则命中（模糊）→ 走 LLM → METRIC_ORDER_VOLUME
+        // "看看订单总额" 含领域词"订单"→ 确定性 METRIC；用纯模糊输入验证 LLM 兜底
         IntentRouter r = new IntentRouter(new FakeLlm(Intent.METRIC_ORDER_VOLUME));
-        assertEquals(Intent.METRIC_ORDER_VOLUME, r.classify("看看订单总额"));
+        assertEquals(Intent.METRIC_ORDER_VOLUME, r.classify("最近业务情况汇总"));
     }
 
     @Test
-    void 规则模糊无LLM兜底时保守Agent() {
-        assertEquals(Intent.AGENT, router.classify("看看订单总额"));
+    void 无诊断信号_默认Greeting引导() {
+        // 核心设计：诊断是封闭集，完全无诊断信号的输入默认引导直答（零成本），不白跑 Agent
+        assertEquals(Intent.GREETING, router.classify("最近业务情况汇总"));
+        assertEquals(Intent.GREETING, router.classify("随便聊聊"));
+        assertEquals(Intent.GREETING, router.classify("哈哈哈"));
+        assertEquals(Intent.GREETING, router.classify("今天真不错"));
+    }
+
+    @Test
+    void 领域词_直接命中指标() {
+        assertEquals(Intent.METRIC_ORDER_VOLUME, router.classify("订单"));
+        assertEquals(Intent.METRIC_ORDER_VOLUME, router.classify("看看订单总额"));
+        assertEquals(Intent.METRIC_PAYMENT_RATE, router.classify("支付"));
+        assertEquals(Intent.METRIC_CONTENT_INTERACTION, router.classify("内容互动"));
+        assertEquals(Intent.METRIC_CONTENT_INTERACTION, router.classify("内容"));
     }
 
     @Test
     void 空串不走LLM兜底() {
-        // 空白输入直接 AGENT，即使有 LLM 兜底也不触发（省成本）
+        // 空白输入直接 GREETING 引导，即使有 LLM 兜底也不触发（省成本）
         IntentRouter r = new IntentRouter(new FakeLlm(Intent.METRIC_ORDER_VOLUME));
-        assertEquals(Intent.AGENT, r.classify(""));
-        assertEquals(Intent.AGENT, r.classify("   "));
-        assertEquals(Intent.AGENT, r.classify(null));
+        assertEquals(Intent.GREETING, r.classify(""));
+        assertEquals(Intent.GREETING, r.classify("   "));
+        assertEquals(Intent.GREETING, r.classify(null));
     }
 
     @Test
@@ -139,15 +151,17 @@ class IntentRouterTest {
     void 边界输入_高频日常表达不进Agent() {
         String[] greeting = {
                 "你能帮我吗", "帮我看下", "哈哈", "今天心情不好", "我是谁", "hello world",
-                "在吗帮我看看", "help", "你好你好", "谢谢老板", "测一下", "帮忙看看这个报错",
+                "在吗帮我看看", "help", "你好你好", "谢谢老板", "测一下",
                 "你是AI吗", "介绍一下你自己", "吃饭了吗", "周末去哪玩",
                 "我爱你", "我想你", "你真棒", "你太厉害了", "么么哒", "喜欢你", "你真好",
+                "随便聊聊", "哈哈哈",
         };
         String[] outOfScope = {"最近有什么好电影", "写首诗", "今天吃什么", "什么是Nacos", "讲个恐怖故事"};
-        String[] metric = {"订单量", "帮我查下订单量", "内容互动"};
+        String[] metric = {"订单量", "帮我查下订单量", "内容互动", "订单", "支付", "内容"};
         String[] agent = {
-                "随便聊聊", "怎么弄", "天气怎么样", "订单量怎么样", "为什么订单量下降了",
+                "怎么弄", "天气怎么样", "订单量怎么样", "为什么订单量下降了",
                 "订单量下降", "最近有 5xx 吗", "MySQL 主从延迟", "服务错误", "怎么查订单量",
+                "支付为什么失败了", "内容互动异常", "帮忙看看这个报错", "帮我排查下系统问题",
         };
         for (String q : greeting) {
             assertEquals(Intent.GREETING, router.classify(q), "应 GREETING: " + q);
