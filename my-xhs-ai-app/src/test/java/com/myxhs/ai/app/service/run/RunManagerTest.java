@@ -5,6 +5,7 @@ import com.myxhs.ai.app.service.agent.harness.AgentBudget;
 import com.myxhs.ai.app.service.agent.harness.AgentRun;
 import com.myxhs.ai.app.service.agent.harness.AgentHarness;
 import com.myxhs.ai.app.service.agent.harness.HarnessEvent;
+import com.myxhs.ai.app.service.agent.harness.HarnessEventType;
 import com.myxhs.ai.tools.MetricToolAccess;
 import com.myxhs.ai.tools.ObsToolAccess;
 import dev.langchain4j.data.message.AiMessage;
@@ -155,9 +156,9 @@ class RunManagerTest {
         while ((ev = e.events().poll()) != null) {
             events.add(ev);
         }
-        assertEquals("RUN_STARTED", events.get(0).type());
-        assertEquals("COMPLETED", events.get(events.size() - 1).type());
-        assertTrue(events.stream().anyMatch(x -> "TOOL".equals(x.type())), "应含 TOOL 事件");
+        assertEquals(HarnessEventType.RUN_STARTED, events.get(0).type());
+        assertEquals(HarnessEventType.COMPLETED, events.get(events.size() - 1).type());
+        assertTrue(events.stream().anyMatch(x -> HarnessEventType.TOOL.equals(x.type())), "应含 TOOL 事件");
     }
 
     @Test
@@ -223,7 +224,7 @@ class RunManagerTest {
         mgr.streamTo(e.runId(), received::add, done::countDown);
         assertTrue(done.await(10, TimeUnit.SECONDS), "流应完成");
         assertTrue(received.size() >= 4, "应收到全部事件: " + received.size());
-        assertEquals("COMPLETED", received.get(received.size() - 1).type());
+        assertEquals(HarnessEventType.COMPLETED, received.get(received.size() - 1).type());
     }
 
     @Test
@@ -310,8 +311,8 @@ class RunManagerTest {
             events.add(ev);
         }
         assertEquals(2, events.size(), "仅 RUN_STARTED + COMPLETED 两个事件");
-        assertEquals("RUN_STARTED", events.get(0).type());
-        assertEquals("COMPLETED", events.get(1).type());
+        assertEquals(HarnessEventType.RUN_STARTED, events.get(0).type());
+        assertEquals(HarnessEventType.COMPLETED, events.get(1).type());
     }
 
     @Test
@@ -336,6 +337,6 @@ class RunManagerTest {
             events.add(ev);
         }
         assertEquals(2, events.size());
-        assertEquals("COMPLETED", events.get(1).type());
+        assertEquals(HarnessEventType.COMPLETED, events.get(1).type());
     }
 }

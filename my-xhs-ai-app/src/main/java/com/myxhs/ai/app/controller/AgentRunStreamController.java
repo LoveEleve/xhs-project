@@ -78,7 +78,7 @@ public class AgentRunStreamController {
     private void send(SseEmitter emitter, HarnessEvent event, String traceId) {
         try {
             emitter.send(SseEmitter.event()
-                    .name(event.type())
+                    .name(event.type().name())
                     .data(om.writeValueAsString(event)));
         } catch (Exception e) {
             // 客户端断开/序列化异常：Harness 侧只记日志（emit 已兜底）

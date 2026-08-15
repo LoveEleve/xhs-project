@@ -42,8 +42,7 @@ public class PaymentMetricsTool {
             return doQuery(bounds, window);
         } catch (Exception e) {
             log.error("[metric] {} 查询失败: window={}, err={}", METRIC, window, e.getMessage());
-            return "{\"status\":\"error\",\"metric\":\"" + METRIC + "\",\"window\":\"" + window
-                    + "\",\"error\":\"" + e.getMessage().replace("\"", "\\\"") + "\"}";
+            return ToolJson.error(METRIC, e.getMessage());
         }
     }
 
@@ -62,43 +61,40 @@ public class PaymentMetricsTool {
         double rate = (success + fail) == 0 ? 0.0 : (double) success / (success + fail);
 
         // 分渠道
-        List<Map<String, Object>> channels = jdbc.queryForList(
+        List<ChannelRate> channels = new java.util.ArrayList<>();
+        for (Map<String, Object> c : jdbc.queryForList(
                 "SELECT pay_type AS payType, " +
                         "  COALESCE(SUM(CASE WHEN status = 1 THEN 1 ELSE 0 END), 0) AS success, " +
                         "  COALESCE(SUM(CASE WHEN status = 2 THEN 1 ELSE 0 END), 0) AS fail " +
                         "FROM " + TABLE +
                         " WHERE created_at >= ? AND created_at < ? AND deleted = 0 " +
                         "GROUP BY pay_type",
-                bounds[0], bounds[1]);
-
-        StringBuilder ch = new StringBuilder("[");
-        for (int i = 0; i < channels.size(); i++) {
-            Map<String, Object> c = channels.get(i);
+                bounds[0], bounds[1])) {
             long cs = ((Number) c.get("success")).longValue();
             long cf = ((Number) c.get("fail")).longValue();
             double cr = (cs + cf) == 0 ? 0.0 : (double) cs / (cs + cf);
-            if (i > 0) {
-                ch.append(",");
-            }
-            ch.append("{\"channel\":\"")
-                    .append(c.get("payType"))
-                    .append("\",\"rate\":").append(String.format("%.4f", cr))
-                    .append(",\"success\":").append(cs)
-                    .append(",\"fail\":").append(cf)
-                    .append("}");
+            channels.add(new ChannelRate(String.valueOf(c.get("payType")),
+                    Double.parseDouble(String.format("%.4f", cr)), cs, cf));
         }
-        ch.append("]");
 
         log.info("[metric] {} window={} rate={} success={} fail={} channels={}",
                 METRIC, window, String.format("%.4f", rate), success, fail, channels.size());
 
-        return "{\"status\":\"ok\",\"metric\":\"" + METRIC
-                + "\",\"definitionVersion\":\"" + DEF_VERSION
-                + "\",\"window\":\"" + window + "\",\"zone\":\"Asia/Shanghai\""
-                + ",\"value\":" + String.format("%.4f", rate)
-                + ",\"success\":" + success + ",\"fail\":" + fail
-                + ",\"channels\":" + ch
-                + ",\"asOf\":\"" + LocalDateTime.now(ZONE) + "\",\"source\":\"" + SOURCE
-                + "\",\"note\":\"渠道 pay_type: 1=支付宝 2=微信 99=Mock(模拟支付)；rate 按查询时刻已决支付计(待支付0后续可能改变结果)\"}";
+        return ToolJson.write(new PaymentRateResult(
+                "ok", METRIC, DEF_VERSION, window, "Asia/Shanghai",
+                Double.parseDouble(String.format("%.4f", rate)), success, fail, channels,
+                LocalDateTime.now(ZONE).toString(), SOURCE,
+                "渠道 pay_type: 1=支付宝 2=微信 99=Mock(模拟支付)；rate 按查询时刻已决支付计(待支付0后续可能改变结果)"));
+    }
+
+    /** 支付成功率结果（类型化契约） */
+    public record PaymentRateResult(
+            String status, String metric, String definitionVersion, String window, String zone,
+            double value, long success, long fail, List<ChannelRate> channels,
+            String asOf, String source, String note) {
+    }
+
+    /** 分渠道成功率 */
+    public record ChannelRate(String channel, double rate, long success, long fail) {
     }
 }

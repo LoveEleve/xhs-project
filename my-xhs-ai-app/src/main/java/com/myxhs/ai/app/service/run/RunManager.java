@@ -4,6 +4,7 @@ import com.myxhs.ai.app.service.agent.harness.AgentBudget;
 import com.myxhs.ai.app.service.agent.harness.AgentHarness;
 import com.myxhs.ai.app.service.agent.harness.AgentRun;
 import com.myxhs.ai.app.service.agent.harness.HarnessEvent;
+import com.myxhs.ai.app.service.agent.harness.HarnessEventType;
 import com.myxhs.ai.app.service.agent.harness.TerminationReason;
 import com.myxhs.ai.app.service.router.Intent;
 import com.myxhs.ai.app.service.router.IntentRouter;
@@ -124,7 +125,7 @@ public class RunManager {
                 harness.resume(runId, queue::offer, cancelToken), executor)
                 .exceptionally(ex -> {
                     log.warn("[runmgr] run={} 恢复执行异常: {}", runId, ex.getMessage());
-                    queue.offer(new HarnessEvent(runId, "FAILED", 0, null, null, null,
+                    queue.offer(new HarnessEvent(runId, HarnessEventType.FAILED, 0, null, null, null,
                             "EXECUTION_ERROR", "恢复执行异常: " + ex.getMessage()));
                     return null;
                 });
@@ -161,7 +162,7 @@ public class RunManager {
                 .exceptionally(ex -> {
                     // 异常兜底：补发 FAILED 终态事件（订阅者不会拿到无终态空流）
                     log.warn("[runmgr] run={} 执行异常: {}", runId, ex.getMessage());
-                    queue.offer(new HarnessEvent(runId, "FAILED", 0, null, null, null,
+                    queue.offer(new HarnessEvent(runId, HarnessEventType.FAILED, 0, null, null, null,
                             "EXECUTION_ERROR", "执行异常: " + ex.getMessage()));
                     return null;
                 });
@@ -192,8 +193,8 @@ public class RunManager {
                 log.warn("[runmgr] direct-answer 落库失败 run={} err={}", runId, e.getMessage());
             }
         }
-        queue.offer(new HarnessEvent(runId, "RUN_STARTED", 0, null, null, null, null, note));
-        queue.offer(new HarnessEvent(runId, "COMPLETED", 0, null, null, null,
+        queue.offer(new HarnessEvent(runId, HarnessEventType.RUN_STARTED, 0, null, null, null, null, note));
+        queue.offer(new HarnessEvent(runId, HarnessEventType.COMPLETED, 0, null, null, null,
                 TerminationReason.COMPLETED.name(), answer));
         CompletableFuture<AgentRun> future = CompletableFuture.completedFuture(run);
         if (metrics != null) {

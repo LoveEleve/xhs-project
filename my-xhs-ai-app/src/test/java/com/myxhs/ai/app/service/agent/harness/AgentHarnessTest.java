@@ -472,7 +472,7 @@ class AgentHarnessTest {
         h.run("为什么订单量下降了", AgentBudget.defaults(), events::add, "anonymous", token);
 
         HarnessEvent last = events.get(events.size() - 1);
-        assertEquals("CANCELLED", last.type(), "终态事件应与 run 状态一致: " + events);
+        assertEquals(HarnessEventType.CANCELLED, last.type(), "终态事件应与 run 状态一致: " + events);
         assertEquals("CANCELLED", last.terminationReason());
     }
 
@@ -608,14 +608,14 @@ class AgentHarnessTest {
         java.util.List<HarnessEvent> events = new java.util.ArrayList<>();
         h.run("为什么订单量下降了", AgentBudget.defaults(), events::add);
 
-        java.util.List<String> types = events.stream().map(HarnessEvent::type).toList();
-        assertEquals(java.util.List.of("RUN_STARTED", "THINK", "TOOL", "THINK", "ANSWER", "COMPLETED"), types);
-        HarnessEvent tool = events.stream().filter(e -> "TOOL".equals(e.type())).findFirst().orElseThrow();
+        java.util.List<HarnessEventType> types = events.stream().map(HarnessEvent::type).toList();
+        assertEquals(java.util.List.of(HarnessEventType.RUN_STARTED, HarnessEventType.THINK, HarnessEventType.TOOL, HarnessEventType.THINK, HarnessEventType.ANSWER, HarnessEventType.COMPLETED), types);
+        HarnessEvent tool = events.stream().filter(e -> HarnessEventType.TOOL.equals(e.type())).findFirst().orElseThrow();
         assertEquals("queryOrderVolume", tool.tool());
         assertEquals("2026-08-01~2026-08-07", tool.window());
         assertEquals(1, tool.evidenceRefs().size());
         HarnessEvent done = events.get(events.size() - 1);
-        assertEquals("COMPLETED", done.type());
+        assertEquals(HarnessEventType.COMPLETED, done.type());
         assertEquals("COMPLETED", done.terminationReason());
         assertTrue(done.message().contains("下单量为61"));
     }
@@ -629,7 +629,7 @@ class AgentHarnessTest {
         h.run("为什么订单量下降了", AgentBudget.defaults(), events::add);
 
         HarnessEvent last = events.get(events.size() - 1);
-        assertEquals("PARTIAL", last.type());
+        assertEquals(HarnessEventType.PARTIAL, last.type());
         assertEquals(TerminationReason.LOOP_REPEATED_CALL.name(), last.terminationReason());
     }
 
@@ -641,7 +641,7 @@ class AgentHarnessTest {
         h.run("为什么订单量下降了", AgentBudget.defaults(), events::add);
 
         HarnessEvent last = events.get(events.size() - 1);
-        assertEquals("FAILED", last.type());
+        assertEquals(HarnessEventType.FAILED, last.type());
         assertEquals(TerminationReason.MODEL_UNAVAILABLE.name(), last.terminationReason());
     }
 

@@ -79,22 +79,15 @@ public class OrderMetricsTool {
         log.info("[metric] {} window={} volume={} partial={} failedShards={}/{}",
                 METRIC, window, volume, partial, failed, shards.size());
 
-        // warnings 恒为 JSON 数组（空=[]，有值=[...]），保证契约类型一致
-        StringBuilder warningsJson = new StringBuilder("[");
-        for (int i = 0; i < warnings.size(); i++) {
-            if (i > 0) {
-                warningsJson.append(",");
-            }
-            warningsJson.append("\"").append(warnings.get(i).replace("\"", "\\\"")).append("\"");
-        }
-        warningsJson.append("]");
+        return ToolJson.write(new OrderVolumeResult(
+                partial ? "partial" : "ok", METRIC, DEF_VERSION, window, "Asia/Shanghai",
+                volume, "单", LocalDateTime.now(ZONE).toString(), SOURCE, partial, warnings));
+    }
 
-        return "{\"status\":\"" + (partial ? "partial" : "ok") + "\",\"metric\":\"" + METRIC
-                + "\",\"definitionVersion\":\"" + DEF_VERSION
-                + "\",\"window\":\"" + window + "\",\"zone\":\"Asia/Shanghai\",\"value\":" + volume
-                + ",\"unit\":\"单\",\"asOf\":\"" + LocalDateTime.now(ZONE) + "\",\"source\":\"" + SOURCE
-                + "\",\"partial\":" + partial
-                + ",\"warnings\":" + warningsJson + "}";
+    /** 订单量结果（类型化契约，替代手拼 JSON） */
+    public record OrderVolumeResult(
+            String status, String metric, String definitionVersion, String window, String zone,
+            long value, String unit, String asOf, String source, boolean partial, List<String> warnings) {
     }
 
     /** 解析 "yyyy-MM-dd~yyyy-MM-dd" → [from 00:00, to+1day 00:00)；超 MAX_WINDOW_DAYS 拒绝 */

@@ -191,7 +191,7 @@ public class AgentHarness {
         messages.add(UserMessage.from("用户问题：" + query));
         int invalidOutputs = 0;
 
-        emit(listener, new HarnessEvent(run.runId(), "RUN_STARTED", 0, null, null, null, null,
+        emit(listener, new HarnessEvent(run.runId(), HarnessEventType.RUN_STARTED, 0, null, null, null, null,
                 "开始调查：当前窗口已确定 = " + currentWindow));
         log.info("[harness] run={} start query={} budget={} currentWindow={}",
                 run.runId(), query, budget, currentWindow);
@@ -199,7 +199,12 @@ public class AgentHarness {
         return executeLoop(run, messages, ctrl, loop, listener, cancelToken, invalidOutputs);
     }
 
-    /** 执行循环（run 与 resume 共用；M5-4 恢复=重建上下文后从这里继续） */
+    /** 步骤执行结果：terminal=null 表示继续循环（重想/下一决策），非 null=终态返回 */
+    private record LoopStep(AgentRun terminal, int invalidOutputs) {
+    }
+
+    /** 执行循环（run 与 resume 共用；M5-4 恢复=重建上下文后从这里继续）。
+     *  调度职责：预算/取消检查 → THINK → 按 action 分派 handler；各 handler 返回终态或继续。 */
     private AgentRun executeLoop(AgentRun run, List<ChatMessage> messages, LoopCtrl ctrl, LoopDetector loop,
                                  java.util.function.Consumer<HarnessEvent> listener,
                                  java.util.concurrent.atomic.AtomicBoolean cancelToken, int invalidOutputs) {
@@ -216,7 +221,7 @@ public class AgentHarness {
             ChatResponse response = callModel(run.runId(), messages);
             if (response == null) {
                 run.terminate(TerminationReason.MODEL_UNAVAILABLE, "模型暂不可用，请稍后重试（调查未完成）");
-                emit(listener, new HarnessEvent(run.runId(), "FAILED", ctrl.steps(), null, null, null,
+                emit(listener, new HarnessEvent(run.runId(), HarnessEventType.FAILED, ctrl.steps(), null, null, null,
                         TerminationReason.MODEL_UNAVAILABLE.name(), run.finalAnswer()));
                 storeRunFinish(run, ctrl);
                 return run;
@@ -230,7 +235,7 @@ public class AgentHarness {
                 recordAndStore(run, AgentStep.think(ctrl.steps(), null, tokens), messages);
                 messages.add(UserMessage.from(AgentDecisionCodec.malformedOutputMessage()));
                 log.warn("[harness] run={} 模型输出非 JSON，反馈重想", run.runId());
-                emit(listener, new HarnessEvent(run.runId(), "THINK", ctrl.steps(), null, null, null, null,
+                emit(listener, new HarnessEvent(run.runId(), HarnessEventType.THINK, ctrl.steps(), null, null, null, null,
                         "模型输出非合法 JSON，已反馈重想"));
                 invalidOutputs++;
                 if (invalidOutputs >= maxInvalidAnswers) {
@@ -240,95 +245,26 @@ public class AgentHarness {
             }
             recordAndStore(run, AgentStep.think(ctrl.steps(), decision, tokens), messages);
             messages.add(AiMessage.from(response.aiMessage().text()));
-            emit(listener, new HarnessEvent(run.runId(), "THINK", ctrl.steps(), decision.tool(),
+            emit(listener, new HarnessEvent(run.runId(), HarnessEventType.THINK, ctrl.steps(), decision.tool(),
                     decision.args() == null ? null : decision.args().get("window"), null, null,
                     decision.isAnswer() ? decision.conclusion() : decision.reasoning()));
 
             if (decision.isToolCall()) {
-                // VALIDATE：deny-by-default
-                // 预算语义：policy 拒绝不计步骤数（惩罚探索会扭曲调查），由 LoopCtrl.policyDeniedCount
-                // 单独计数，连续 N 次拒绝 → POLICY_EXHAUSTED（设计 §2"反馈模型重想"的专用机制）
-                PolicyDecision pd = policyGuard.evaluate(decision.tool(), decision.args());
-                if (!pd.allowed()) {
-                    ctrl.recordPolicyDenied();
-                    recordAndStore(run, AgentStep.policyDenied(ctrl.steps(), decision, pd.reason()), messages);
-                    String note = pd.requiresApproval()
-                            ? pd.reason() + "（L3 需人工审批，V1 不可执行）" : pd.reason();
-                    messages.add(UserMessage.from(AgentDecisionCodec.feedback(decision, note)));
-                    log.info("[harness] run={} policy_denied tool={} reason={}", run.runId(), decision.tool(), pd.reason());
-                    emit(listener, new HarnessEvent(run.runId(), "POLICY_DENIED", ctrl.steps(),
-                            decision.tool(), null, null, null, note));
-                    TerminationReason loopReason = loop.recordStep(run.evidenceChain().hash());
-                    if (loopReason != null) {
-                        return terminatePartial(run, loopReason, ctrl, listener);
-                    }
-                    continue;
-                }
-
-                // TOOL：执行 + 登记证据（存在性校验数据源）
-                String result = callTool(decision.tool(), decision.args());
-                String evidenceId = run.registry().register(decision.tool(), decision.args(), result);
-                String window = decision.args() == null ? null : decision.args().get("window");
-                run.evidenceChain().add(evidenceId, decision.tool(), window, result);
-                recordAndStore(run, AgentStep.tool(ctrl.steps(), decision, result, List.of(evidenceId)), messages);
-                messages.add(UserMessage.from("工具 " + decision.tool() + " 结果（证据 id=" + evidenceId + "）："
-                        + truncateToolResult(result)));
-                log.info("[harness] run={} tool={} window={} ev={} result={}", run.runId(),
-                        decision.tool(), window, evidenceId, result);
-                emit(listener, new HarnessEvent(run.runId(), "TOOL", ctrl.steps(), decision.tool(),
-                        window, List.of(evidenceId), null, result));
-
-                // LOOPCHECK
-                TerminationReason loopReason = loop.recordToolCall(decision.tool(), decision.args(),
-                        run.evidenceChain().hash());
-                if (loopReason != null) {
-                    return terminatePartial(run, loopReason, ctrl, listener);
+                AgentRun terminal = handleToolCall(run, decision, ctrl, loop, listener, messages);
+                if (terminal != null) {
+                    return terminal;
                 }
             } else if (decision.isDecline()) {
-                // 拒答（DECLINE）：明确无法回答/超范围，零证据豁免（M8-4 机制修复：
-                // 防模型为满足存在性校验而调用无关工具"凑证据"，如"天气→查主从延迟"）
-                String answer = composeDecline(decision);
-                recordAndStore(run, AgentStep.answer(ctrl.steps(), decision), messages);
-                run.terminate(TerminationReason.COMPLETED, answer);
-                log.info("[harness] run={} DECLINED answer={}", run.runId(), answer);
-                emit(listener, new HarnessEvent(run.runId(), "ANSWER", ctrl.steps(), null, null,
-                        null, null, answer));
-                emit(listener, new HarnessEvent(run.runId(), "COMPLETED", ctrl.steps(), null, null,
-                        null, TerminationReason.COMPLETED.name(), answer));
-                storeRunFinish(run, ctrl);
-                return run;
+                return handleDecline(run, decision, ctrl, listener, messages);
             } else if (decision.isAnswer()) {
-                // 存在性校验（确定性兜底，不靠模型自觉）
-                String invalid = validateAnswer(run, decision);
-                if (invalid == null) {
-                    recordAndStore(run, AgentStep.answer(ctrl.steps(), decision), messages);
-                    String answer = composeAnswer(decision, run);
-                    run.terminate(TerminationReason.COMPLETED, answer);
-                    log.info("[harness] run={} COMPLETED ev={} answer={}", run.runId(),
-                            run.evidenceChain().size(), answer);
-                    emit(listener, new HarnessEvent(run.runId(), "ANSWER", ctrl.steps(), null, null,
-                            decision.evidenceRefs(), null, decision.conclusion()));
-                    emit(listener, new HarnessEvent(run.runId(), "COMPLETED", ctrl.steps(), null, null,
-                            decision.evidenceRefs(), TerminationReason.COMPLETED.name(), answer));
-                    storeRunFinish(run, ctrl);
-                    return run;
+                LoopStep step = handleAnswer(run, decision, ctrl, loop, listener, messages, invalidOutputs);
+                if (step.terminal() != null) {
+                    return step.terminal();
                 }
-                invalidOutputs++;
-                recordAndStore(run, AgentStep.answer(ctrl.steps(), decision), messages);
-                messages.add(UserMessage.from(AgentDecisionCodec.feedback(decision, invalid)));
-                log.warn("[harness] run={} 证据校验失败: {}", run.runId(), invalid);
-                emit(listener, new HarnessEvent(run.runId(), "ANSWER", ctrl.steps(), null, null,
-                        decision.evidenceRefs(), null, "证据校验失败: " + invalid));
-                if (invalidOutputs >= maxInvalidAnswers) {
-                    return terminatePartial(run, TerminationReason.EVIDENCE_INVALID, ctrl, listener);
-                }
-                TerminationReason loopReason = loop.recordStep(run.evidenceChain().hash());
-                if (loopReason != null) {
-                    return terminatePartial(run, loopReason, ctrl, listener);
-                }
+                invalidOutputs = step.invalidOutputs();
             } else {
                 invalidOutputs++;
-                messages.add(UserMessage.from(AgentDecisionCodec.feedback(decision, "action 必须是 TOOL_CALL 或 ANSWER")));
+                messages.add(UserMessage.from(AgentDecisionCodec.feedback(decision, "action 必须是 TOOL_CALL、ANSWER 或 DECLINE")));
                 if (invalidOutputs >= maxInvalidAnswers) {
                     return terminatePartial(run, TerminationReason.EVIDENCE_INVALID, ctrl, listener);
                 }
@@ -338,6 +274,100 @@ public class AgentHarness {
                 }
             }
         }
+    }
+
+    /** TOOL_CALL 分支：VALIDATE（deny-by-default）→ 工具执行 + 证据登记 → LOOPCHECK。返回 null=继续循环 */
+    private AgentRun handleToolCall(AgentRun run, AgentDecision decision, LoopCtrl ctrl, LoopDetector loop,
+                                    java.util.function.Consumer<HarnessEvent> listener, List<ChatMessage> messages) {
+        // 预算语义：policy 拒绝不计步骤数（惩罚探索会扭曲调查），由 LoopCtrl.policyDeniedCount
+        // 单独计数，连续 N 次拒绝 → POLICY_EXHAUSTED（设计 §2"反馈模型重想"的专用机制）
+        PolicyDecision pd = policyGuard.evaluate(decision.tool(), decision.args());
+        if (!pd.allowed()) {
+            ctrl.recordPolicyDenied();
+            recordAndStore(run, AgentStep.policyDenied(ctrl.steps(), decision, pd.reason()), messages);
+            String note = pd.requiresApproval()
+                    ? pd.reason() + "（L3 需人工审批，V1 不可执行）" : pd.reason();
+            messages.add(UserMessage.from(AgentDecisionCodec.feedback(decision, note)));
+            log.info("[harness] run={} policy_denied tool={} reason={}", run.runId(), decision.tool(), pd.reason());
+            emit(listener, new HarnessEvent(run.runId(), HarnessEventType.POLICY_DENIED, ctrl.steps(),
+                    decision.tool(), null, null, null, note));
+            TerminationReason loopReason = loop.recordStep(run.evidenceChain().hash());
+            if (loopReason != null) {
+                return terminatePartial(run, loopReason, ctrl, listener);
+            }
+            return null;
+        }
+
+        // TOOL：执行 + 登记证据（存在性校验数据源）
+        String result = callTool(decision.tool(), decision.args());
+        String evidenceId = run.registry().register(decision.tool(), decision.args(), result);
+        String window = decision.args() == null ? null : decision.args().get("window");
+        run.evidenceChain().add(evidenceId, decision.tool(), window, result);
+        recordAndStore(run, AgentStep.tool(ctrl.steps(), decision, result, List.of(evidenceId)), messages);
+        messages.add(UserMessage.from("工具 " + decision.tool() + " 结果（证据 id=" + evidenceId + "）："
+                + truncateToolResult(result)));
+        log.info("[harness] run={} tool={} window={} ev={} result={}", run.runId(),
+                decision.tool(), window, evidenceId, result);
+        emit(listener, new HarnessEvent(run.runId(), HarnessEventType.TOOL, ctrl.steps(), decision.tool(),
+                window, List.of(evidenceId), null, result));
+
+        // LOOPCHECK
+        TerminationReason loopReason = loop.recordToolCall(decision.tool(), decision.args(),
+                run.evidenceChain().hash());
+        if (loopReason != null) {
+            return terminatePartial(run, loopReason, ctrl, listener);
+        }
+        return null;
+    }
+
+    /** DECLINE 分支：明确无法回答/超范围，零证据豁免（防模型为过存在性校验而调无关工具"凑证据"）。恒终态 */
+    private AgentRun handleDecline(AgentRun run, AgentDecision decision, LoopCtrl ctrl,
+                                   java.util.function.Consumer<HarnessEvent> listener, List<ChatMessage> messages) {
+        String answer = composeDecline(decision);
+        recordAndStore(run, AgentStep.answer(ctrl.steps(), decision), messages);
+        run.terminate(TerminationReason.COMPLETED, answer);
+        log.info("[harness] run={} DECLINED answer={}", run.runId(), answer);
+        emit(listener, new HarnessEvent(run.runId(), HarnessEventType.ANSWER, ctrl.steps(), null, null,
+                null, null, answer));
+        emit(listener, new HarnessEvent(run.runId(), HarnessEventType.COMPLETED, ctrl.steps(), null, null,
+                null, TerminationReason.COMPLETED.name(), answer));
+        storeRunFinish(run, ctrl);
+        return run;
+    }
+
+    /** ANSWER 分支：存在性校验（确定性兜底）→ 完成或反馈重想。返回 terminal=null 表示继续重想 */
+    private LoopStep handleAnswer(AgentRun run, AgentDecision decision, LoopCtrl ctrl, LoopDetector loop,
+                                  java.util.function.Consumer<HarnessEvent> listener, List<ChatMessage> messages,
+                                  int invalidOutputs) {
+        String invalid = validateAnswer(run, decision);
+        if (invalid == null) {
+            recordAndStore(run, AgentStep.answer(ctrl.steps(), decision), messages);
+            String answer = composeAnswer(decision, run);
+            run.terminate(TerminationReason.COMPLETED, answer);
+            log.info("[harness] run={} COMPLETED ev={} answer={}", run.runId(),
+                    run.evidenceChain().size(), answer);
+            emit(listener, new HarnessEvent(run.runId(), HarnessEventType.ANSWER, ctrl.steps(), null, null,
+                    decision.evidenceRefs(), null, decision.conclusion()));
+            emit(listener, new HarnessEvent(run.runId(), HarnessEventType.COMPLETED, ctrl.steps(), null, null,
+                    decision.evidenceRefs(), TerminationReason.COMPLETED.name(), answer));
+            storeRunFinish(run, ctrl);
+            return new LoopStep(run, invalidOutputs);
+        }
+        invalidOutputs++;
+        recordAndStore(run, AgentStep.answer(ctrl.steps(), decision), messages);
+        messages.add(UserMessage.from(AgentDecisionCodec.feedback(decision, invalid)));
+        log.warn("[harness] run={} 证据校验失败: {}", run.runId(), invalid);
+        emit(listener, new HarnessEvent(run.runId(), HarnessEventType.ANSWER, ctrl.steps(), null, null,
+                decision.evidenceRefs(), null, "证据校验失败: " + invalid));
+        if (invalidOutputs >= maxInvalidAnswers) {
+            return new LoopStep(terminatePartial(run, TerminationReason.EVIDENCE_INVALID, ctrl, listener),
+                    invalidOutputs);
+        }
+        TerminationReason loopReason = loop.recordStep(run.evidenceChain().hash());
+        if (loopReason != null) {
+            return new LoopStep(terminatePartial(run, loopReason, ctrl, listener), invalidOutputs);
+        }
+        return new LoopStep(null, invalidOutputs);
     }
 
     /** 崩溃恢复（M5-4）：从 store 加载 run/步骤/最后 checkpoint，重建上下文后续跑 */
@@ -377,7 +407,7 @@ public class AgentHarness {
                 () -> new IllegalStateException("无 checkpoint 可恢复: " + runId));
         messages.addAll(restoreMessages(cp.messagesSnapshot()));
         LoopDetector loop = new LoopDetector();
-        emit(listener, new HarnessEvent(runId, "RUN_STARTED", 0, null, null, null, null,
+        emit(listener, new HarnessEvent(runId, HarnessEventType.RUN_STARTED, 0, null, null, null, null,
                 "恢复执行（已完成 " + steps.size() + " 步）"));
         log.info("[harness] run={} RESUME from checkpoint steps={}", runId, steps.size());
         return executeLoop(run, messages, ctrl, loop, listener, cancelToken, invalidOutputs);
@@ -629,7 +659,7 @@ public class AgentHarness {
         run.terminate(reason, answer);
         log.info("[harness] run={} {} answer={}", run.runId(), reason, answer);
         // 终态事件 type 与 run 状态一致（取消=CANCELLED，其余=PARTIAL）
-        String eventType = run.status() == RunStatus.CANCELLED ? "CANCELLED" : "PARTIAL";
+        HarnessEventType eventType = run.status() == RunStatus.CANCELLED ? HarnessEventType.CANCELLED : HarnessEventType.PARTIAL;
         emit(listener, new HarnessEvent(run.runId(), eventType, ctrl.steps(), null, null, null,
                 reason.name(), answer));
         storeRunFinish(run, ctrl);

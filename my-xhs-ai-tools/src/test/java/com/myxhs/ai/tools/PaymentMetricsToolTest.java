@@ -65,18 +65,18 @@ class PaymentMetricsToolTest {
         // 期望：success=3, fail=1, rate=3/4=0.75；排除 2 待支付 + 1 退款 + 1 已删 + 1 窗外
         assertTrue(result.contains("\"success\":3"), "success 应为 3，实际: " + result);
         assertTrue(result.contains("\"fail\":1"), "fail 应为 1，实际: " + result);
-        assertTrue(result.contains("\"value\":0.7500"), "rate 应为 0.7500，实际: " + result);
+        assertTrue(result.contains("\"value\":0.75"), "rate 应为 0.7500，实际: " + result);
         assertTrue(result.contains("\"channels\":["));
         // 支付宝 type=1：success=2, fail=0 → rate 1.0；微信 type=2：success=1, fail=1 → 0.5
-        assertTrue(result.contains("\"rate\":1.0000"), "支付宝渠道应 1.0: " + result);
-        assertTrue(result.contains("\"rate\":0.5000"), "微信渠道应 0.5: " + result);
+        assertTrue(result.contains("\"rate\":1.0"), "支付宝渠道应 1.0: " + result);
+        assertTrue(result.contains("\"rate\":0.5"), "微信渠道应 0.5: " + result);
     }
 
     @Test
     void 空窗口_rate为0() {
         PaymentMetricsTool tool = new PaymentMetricsTool(jdbc);
         String result = tool.paymentSuccessRate("2026-09-01~2026-09-07");
-        assertTrue(result.contains("\"value\":0.0000"), "空窗口应为 0，实际: " + result);
+        assertTrue(result.contains("\"value\":0.0"), "空窗口应为 0，实际: " + result);
         assertTrue(result.contains("\"success\":0"));
     }
 

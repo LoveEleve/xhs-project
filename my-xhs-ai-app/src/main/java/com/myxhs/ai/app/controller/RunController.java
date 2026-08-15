@@ -168,7 +168,7 @@ public class RunController {
 
     private void send(SseEmitter emitter, HarnessEvent event) {
         try {
-            emitter.send(SseEmitter.event().name(event.type()).data(om.writeValueAsString(event)));
+            emitter.send(SseEmitter.event().name(event.type().name()).data(om.writeValueAsString(event)));
         } catch (Exception e) {
             log.warn("[sse] 推送失败 type={} err={}", event.type(), e.getMessage());
         }

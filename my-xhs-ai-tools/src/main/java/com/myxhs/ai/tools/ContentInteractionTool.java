@@ -43,14 +43,15 @@ public class ContentInteractionTool {
             return doQuery(bounds, window);
         } catch (Exception e) {
             log.error("[metric] {} 查询失败: window={}, err={}", METRIC, window, e.getMessage());
-            return "{\"status\":\"error\",\"metric\":\"" + METRIC + "\",\"window\":\"" + window
-                    + "\",\"error\":\"" + e.getMessage().replace("\"", "\\\"") + "\"}";
+            return ToolJson.error(METRIC, e.getMessage());
         }
     }
 
     private String doQuery(LocalDateTime[] bounds, String window) {
         // 按日互动
-        List<Map<String, Object>> daily = jdbc.queryForList(
+        List<DailyInteraction> daily = new java.util.ArrayList<>();
+        long total = 0;
+        for (Map<String, Object> r : jdbc.queryForList(
                 "SELECT CAST(created_at AS DATE) AS d, " +
                         "  SUM(CASE WHEN behavior_type = 3 THEN 1 ELSE 0 END) AS likeCount, " +
                         "  SUM(CASE WHEN behavior_type = 4 THEN 1 ELSE 0 END) AS favCount, " +
@@ -60,7 +61,14 @@ public class ContentInteractionTool {
                         " WHERE behavior_type IN (3,4,5,6) AND deleted = 0 " +
                         "  AND created_at >= ? AND created_at < ? " +
                         "GROUP BY CAST(created_at AS DATE) ORDER BY d",
-                bounds[0], bounds[1]);
+                bounds[0], bounds[1])) {
+            long l = ((Number) r.get("likeCount")).longValue();
+            long f = ((Number) r.get("favCount")).longValue();
+            long c = ((Number) r.get("commentCount")).longValue();
+            long s = ((Number) r.get("shareCount")).longValue();
+            total += l + f + c + s;
+            daily.add(new DailyInteraction(String.valueOf(r.get("d")), l, f, c, s, l + f + c + s));
+        }
 
         // 曝光（behavior_type=1，推荐流）
         Long exposure = jdbc.queryForObject(
@@ -68,37 +76,22 @@ public class ContentInteractionTool {
                         + " WHERE behavior_type = 1 AND deleted = 0 AND created_at >= ? AND created_at < ?",
                 Long.class, bounds[0], bounds[1]);
 
-        StringBuilder dailyJson = new StringBuilder("[");
-        long total = 0;
-        for (int i = 0; i < daily.size(); i++) {
-            Map<String, Object> r = daily.get(i);
-            long l = ((Number) r.get("likeCount")).longValue();
-            long f = ((Number) r.get("favCount")).longValue();
-            long c = ((Number) r.get("commentCount")).longValue();
-            long s = ((Number) r.get("shareCount")).longValue();
-            total += l + f + c + s;
-            if (i > 0) {
-                dailyJson.append(",");
-            }
-            dailyJson.append("{\"day\":\"").append(r.get("d"))
-                    .append("\",\"like\":").append(l)
-                    .append(",\"favorite\":").append(f)
-                    .append(",\"comment\":").append(c)
-                    .append(",\"share\":").append(s)
-                    .append(",\"total\":").append(l + f + c + s).append("}");
-        }
-        dailyJson.append("]");
-
         log.info("[metric] {} window={} total={} dailyDays={} exposure={}",
                 METRIC, window, total, daily.size(), exposure == null ? 0 : exposure);
 
-        return "{\"status\":\"ok\",\"metric\":\"" + METRIC
-                + "\",\"definitionVersion\":\"" + DEF_VERSION
-                + "\",\"window\":\"" + window + "\",\"zone\":\"Asia/Shanghai\""
-                + ",\"total\":" + total
-                + ",\"daily\":" + dailyJson
-                + ",\"exposure\":" + (exposure == null ? 0 : exposure)
-                + ",\"asOf\":\"" + LocalDateTime.now(ZONE) + "\",\"source\":\"" + SOURCE
-                + "\",\"note\":\"互动=code枚举3赞4藏5评6分享；曝光=1(推荐流)，关注流曝光待A6补\"}";
+        return ToolJson.write(new InteractionResult(
+                "ok", METRIC, DEF_VERSION, window, "Asia/Shanghai", total, daily,
+                exposure == null ? 0 : exposure, LocalDateTime.now(ZONE).toString(), SOURCE,
+                "互动=code枚举3赞4藏5评6分享；曝光=1(推荐流)，关注流曝光待A6补"));
+    }
+
+    /** 内容互动结果（类型化契约） */
+    public record InteractionResult(
+            String status, String metric, String definitionVersion, String window, String zone,
+            long total, List<DailyInteraction> daily, long exposure, String asOf, String source, String note) {
+    }
+
+    /** 按日互动 */
+    public record DailyInteraction(String day, long like, long favorite, long comment, long share, long total) {
     }
 }
