@@ -65,7 +65,9 @@ public class AgentHarness {
             6. 每次输出必须是合法 JSON（不要 markdown 代码块），格式：
             {"action":"TOOL_CALL","tool":"queryOrderVolume","args":{"window":"2026-08-01~2026-08-07"},"reasoning":"为什么查"}
             {"action":"ANSWER","conclusion":"结论","evidenceRefs":["ev_xxx"],"counterEvidence":"反证或空","uncertainty":"不确定性或空"}
-            7. 如果用户消息不是诊断问题（问候/闲聊/无明确调查目标），禁止调用任何工具，直接 ANSWER 说明能力并引导提问。
+            {"action":"DECLINE","conclusion":"无法回答的说明","reasoning":"原因"}
+            7. 如果用户消息不是诊断问题（问候/闲聊/超范围话题如天气/新闻等），必须输出 DECLINE（conclusion 说明能力范围并引导提问），
+               严禁调用任何工具；DECLINE 是零证据路径，不需要 evidenceRefs，不要为凑证据而调用工具。
             """;
 
     private final ChatModel chatModel;
@@ -265,6 +267,19 @@ public class AgentHarness {
                 if (loopReason != null) {
                     return terminatePartial(run, loopReason, ctrl, listener);
                 }
+            } else if (decision.isDecline()) {
+                // 拒答（DECLINE）：明确无法回答/超范围，零证据豁免（M8-4 机制修复：
+                // 防模型为满足存在性校验而调用无关工具"凑证据"，如"天气→查主从延迟"）
+                String answer = composeDecline(decision);
+                recordAndStore(run, AgentStep.answer(ctrl.steps(), decision), messages);
+                run.terminate(TerminationReason.COMPLETED, answer);
+                log.info("[harness] run={} DECLINED answer={}", run.runId(), answer);
+                emit(listener, new HarnessEvent(run.runId(), "ANSWER", ctrl.steps(), null, null,
+                        null, null, answer));
+                emit(listener, new HarnessEvent(run.runId(), "COMPLETED", ctrl.steps(), null, null,
+                        null, TerminationReason.COMPLETED.name(), answer));
+                storeRunFinish(run, ctrl);
+                return run;
             } else if (decision.isAnswer()) {
                 // 存在性校验（确定性兜底，不靠模型自觉）
                 String invalid = validateAnswer(run, decision);
@@ -562,6 +577,11 @@ public class AgentHarness {
         sb.append("\n反证：").append(blank(decision.counterEvidence(), "无"));
         sb.append("\n不确定性：").append(blank(decision.uncertainty(), "无"));
         return sb.toString();
+    }
+
+    /** 拒答答案：明确说明无法回答 + 能力范围（DECLINE 零证据，天然不含证据链） */
+    private String composeDecline(AgentDecision decision) {
+        return decision.conclusion();
     }
 
     /** partial 终止：确定性摘要（已收集证据 + 终止原因），不调模型、不假装全成 */

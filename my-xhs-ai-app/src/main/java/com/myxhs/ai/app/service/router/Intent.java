@@ -14,5 +14,7 @@ public enum Intent {
     /** 开放调查/其他 → Agent（多步归因） */
     AGENT,
     /** 问候/闲聊/无诊断目标 → 直接应答（零模型/工具成本，不进 Agent） */
-    GREETING
+    GREETING,
+    /** 明显超范围话题（天气/新闻等）→ 直接拒答（零成本，不进 Agent） */
+    OUT_OF_SCOPE
 }

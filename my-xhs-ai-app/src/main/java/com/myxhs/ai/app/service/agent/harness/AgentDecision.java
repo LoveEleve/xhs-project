@@ -11,8 +11,10 @@ import java.util.Map;
  * action：
  *  - TOOL_CALL  调工具（tool+args 必填），进入 VALIDATE/TOOL
  *  - ANSWER     给出最终答案（conclusion/evidenceRefs/counterEvidence/uncertainty）
+ *  - DECLINE    拒答（超范围/无法回答/非诊断问题）：零证据豁免，直接终态（防模型"凑证据"式编造）
  *  - ASK        向用户追问（未用，V1 保留）
- * 证据链约束：ANSWER 的 evidenceRefs 必须命中 ToolResultRegistry（Harness 存在性校验，防模型编造）。
+ * 证据链约束：ANSWER 的 evidenceRefs 必须命中 ToolResultRegistry（Harness 存在性校验，防模型编造）；
+ *  DECLINE 是唯一豁免路径（明确拒答不需要证据）。
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record AgentDecision(
@@ -36,6 +38,12 @@ public record AgentDecision(
         return "ANSWER".equals(action);
     }
 
+    /** 拒答：超范围/无法回答（零证据豁免路径，M8-4 机制修复：防模型为过证据校验而凑证据） */
+    @JsonIgnore
+    public boolean isDecline() {
+        return "DECLINE".equals(action);
+    }
+
     public static AgentDecision toolCall(String tool, Map<String, String> args, String reasoning) {
         return new AgentDecision("TOOL_CALL", tool, args, reasoning, null, null, null, null);
     }
@@ -43,5 +51,9 @@ public record AgentDecision(
     public static AgentDecision answer(String conclusion, List<String> evidenceRefs,
                                        String counterEvidence, String uncertainty) {
         return new AgentDecision("ANSWER", null, null, null, conclusion, evidenceRefs, counterEvidence, uncertainty);
+    }
+
+    public static AgentDecision decline(String conclusion, String reasoning) {
+        return new AgentDecision("DECLINE", null, null, reasoning, conclusion, null, null, null);
     }
 }

@@ -45,6 +45,22 @@ public class IntentRouter {
             compile("hi"), compile("在吗"), compile("你是谁"), compile("能干什么"),
             compile("可以做什么"), compile("帮助"), compile("谢谢"), compile("再见"), compile("测试"));
 
+    /** 明显超范围话题（与诊断词几乎零重叠的通用闲聊域）：命中即 OUT_OF_SCOPE 直答拒答，零成本 */
+    private static final List<Pattern> OUT_OF_SCOPE_PATTERNS = List.of(
+            compile("天气"), compile("气温"), compile("下雨"), compile("新闻"), compile("股票"),
+            compile("汇率"), compile("翻译"), compile("写代码"), compile("代码"), compile("数学"),
+            compile("美食"), compile("旅游"), compile("电影"), compile("音乐"), compile("体育"),
+            compile("足球"), compile("篮球"), compile("游戏"), compile("恋爱"), compile("星座"),
+            compile("算命"), compile("笑话"), compile("故事"), compile("诗"), compile("作诗"),
+            compile("英语"), compile("学习"), compile("考试"), compile("招聘"), compile("工资"));
+
+    /** 超范围话题拒答内容（RunManager/AiQueryController 共用） */
+    public static final String OUT_OF_SCOPE_ANSWER = """
+            我是 my-xhs 运营诊断助手，能力范围是电商运营/运维指标诊断（订单、支付、内容互动、
+            服务错误/延迟、MQ 积压、MySQL 主从等），且结论基于真实指标数据、带证据链。
+            这个问题不在我的能力范围内，无法回答。
+            可以问我，例如：为什么订单量下降了？最近支付成功率为什么异常？为什么有服务 5xx？""";
+
     private final LlmIntentClassifier llmClassifier;
 
     /** 纯规则（测试用/默认无 LLM 兜底） */
@@ -81,9 +97,12 @@ public class IntentRouter {
         if (hits.size() == 1) {
             return hits.get(0); // 确定性
         }
-        // 0 个 或 >1 个指标命中 → 先问候判定（零成本直答），再 LLM 兜底，最后保守 AGENT
+        // 0 个 或 >1 个指标命中 → 先问候判定（零成本直答），再超范围判定，再 LLM 兜底，最后保守 AGENT
         if (matches(GREETING_PATTERNS, text)) {
             return Intent.GREETING;
+        }
+        if (matches(OUT_OF_SCOPE_PATTERNS, text)) {
+            return Intent.OUT_OF_SCOPE;
         }
         // 模糊：LLM 兜底（开启时）否则 AGENT
         if (llmClassifier != null) {

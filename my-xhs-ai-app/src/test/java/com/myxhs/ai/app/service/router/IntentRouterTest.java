@@ -116,4 +116,20 @@ class IntentRouterTest {
         assertEquals(Intent.AGENT, router.classify("您好，帮忙分析下"));
         assertEquals(Intent.METRIC_ORDER_VOLUME, router.classify("你好，帮我查下订单量"));
     }
+
+    @Test
+    void 超范围话题_走拒答直答() {
+        assertEquals(Intent.OUT_OF_SCOPE, router.classify("今天会下雨吗"));
+        assertEquals(Intent.OUT_OF_SCOPE, router.classify("帮我写一段代码"));
+        assertEquals(Intent.OUT_OF_SCOPE, router.classify("最近有什么新闻"));
+        assertEquals(Intent.OUT_OF_SCOPE, router.classify("讲个笑话"));
+    }
+
+    @Test
+    void 超范围含归因词_不误判() {
+        // 归因优先：带"为什么/怎么/分析"的仍走 Agent（DECLINE 机制兜底正确拒答）
+        assertEquals(Intent.AGENT, router.classify("今天天气怎么样"));   // "怎么"→Agent→模型 DECLINE
+        assertEquals(Intent.AGENT, router.classify("为什么最近订单量异常"));
+        assertEquals(Intent.AGENT, router.classify("帮我分析一下天气对订单的影响"));
+    }
 }

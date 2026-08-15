@@ -137,9 +137,9 @@ public class RunController {
         m.put("evidence", evidence);
         m.put("finalAnswer", run.finalAnswer());
         m.put("costMs", costMs);
-        // 问候/闲聊直答（零步骤 COMPLETED）：说明未调用工具/模型，避免前端"空执行"误解
+        // 非诊断任务直答（问候/超范围，零步骤 COMPLETED）：说明未调用工具/模型，避免前端"空执行"误解
         if (run.steps().isEmpty() && run.terminationReason() == TerminationReason.COMPLETED) {
-            m.put("note", "输入被识别为问候/闲聊（非诊断任务），直接应答，未调用工具/模型");
+            m.put("note", "输入被识别为非诊断任务（问候/闲聊/超范围话题），直接应答，未调用工具/模型");
         }
         return m;
     }

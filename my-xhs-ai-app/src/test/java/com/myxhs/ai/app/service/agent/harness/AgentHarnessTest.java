@@ -190,6 +190,23 @@ class AgentHarnessTest {
     }
 
     @Test
+    void 拒答DECLINE_零证据豁免直接完成() {
+        // 超范围问题（天气）：模型输出 DECLINE → 无需任何工具/证据，直接 COMPLETED
+        // （M8-4 机制修复：防模型为满足存在性校验而调用无关工具"凑证据"）
+        AgentHarness h = harness(texts ->
+                "{\"action\":\"DECLINE\",\"conclusion\":\"我是运营诊断助手，无法回答天气问题。\","
+                        + "\"reasoning\":\"超范围\"}", AgentBudget.defaults());
+
+        AgentRun run = h.run("今天天气怎么样");
+
+        assertEquals(RunStatus.SUCCEEDED, run.status());
+        assertEquals(TerminationReason.COMPLETED, run.terminationReason());
+        assertEquals("我是运营诊断助手，无法回答天气问题。", run.finalAnswer());
+        assertEquals(0, run.evidenceChain().size(), "拒答不应产生任何证据");
+        assertEquals(0, run.registry().records().size(), "拒答不应调用任何工具");
+    }
+
+    @Test
     void 正常闭环_工具证据通过存在性校验() {
         AgentHarness h = harness(texts -> {
             String ev = lastEvId(texts);

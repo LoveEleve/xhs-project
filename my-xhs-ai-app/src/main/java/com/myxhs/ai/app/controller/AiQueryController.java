@@ -65,6 +65,10 @@ public class AiQueryController {
                     result = Map.of("intent", "GREETING", "path", "chat",
                             "result", IntentRouter.GREETING_ANSWER);
                     break;
+                case OUT_OF_SCOPE:
+                    result = Map.of("intent", "OUT_OF_SCOPE", "path", "chat",
+                            "result", IntentRouter.OUT_OF_SCOPE_ANSWER);
+                    break;
                 default:
                     result = agentResult(intent.name(), message);
                     break;

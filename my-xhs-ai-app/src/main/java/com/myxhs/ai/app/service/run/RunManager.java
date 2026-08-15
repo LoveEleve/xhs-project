@@ -134,11 +134,18 @@ public class RunManager {
     }
 
     /** 提交诊断任务，立即返回；后台执行（userId 落库实现用户级审计）。
-     *  意图预检：问候/闲聊（无诊断目标）不进 Agent，直接完成（零模型/工具成本，防"你好→调 baselineWindow"类蠢回答）。 */
+     *  意图预检：问候/超范围话题（无诊断目标）不进 Agent，直接完成（零模型/工具成本，
+     *  防"你好→调 baselineWindow"“天气→查主从延迟"类蠢回答）。 */
     public RunEntry submit(String query, String userId) {
         purgeDone();
-        if (intentRouter.classify(query) == Intent.GREETING) {
-            return submitGreeting(query, userId);
+        Intent intent = intentRouter.classify(query);
+        if (intent == Intent.GREETING) {
+            return submitDirectAnswer(query, userId, IntentRouter.GREETING_ANSWER,
+                    "问候直答（非诊断任务，未调用工具/模型）");
+        }
+        if (intent == Intent.OUT_OF_SCOPE) {
+            return submitDirectAnswer(query, userId, IntentRouter.OUT_OF_SCOPE_ANSWER,
+                    "超范围话题拒答（非诊断任务，未调用工具/模型）");
         }
         String runId = AgentHarness.newRunId();
         LinkedBlockingQueue<HarnessEvent> queue = new LinkedBlockingQueue<>();
@@ -162,16 +169,15 @@ public class RunManager {
         return entry;
     }
 
-    /** 问候/闲聊直答：立即完成（RUN_STARTED→COMPLETED 事件流完整，前端零改动）；不落库（无追溯价值） */
-    private RunEntry submitGreeting(String query, String userId) {
+    /** 非诊断任务直答（问候/超范围）：立即完成（RUN_STARTED→COMPLETED 事件流完整，前端零改动）；不落库（无追溯价值） */
+    private RunEntry submitDirectAnswer(String query, String userId, String answer, String note) {
         String runId = AgentHarness.newRunId();
         LinkedBlockingQueue<HarnessEvent> queue = new LinkedBlockingQueue<>();
         AgentRun run = new AgentRun(runId, query, budget);
-        run.terminate(TerminationReason.COMPLETED, IntentRouter.GREETING_ANSWER);
-        queue.offer(new HarnessEvent(runId, "RUN_STARTED", 0, null, null, null, null,
-                "问候直答（非诊断任务，未调用工具/模型）"));
+        run.terminate(TerminationReason.COMPLETED, answer);
+        queue.offer(new HarnessEvent(runId, "RUN_STARTED", 0, null, null, null, null, note));
         queue.offer(new HarnessEvent(runId, "COMPLETED", 0, null, null, null,
-                TerminationReason.COMPLETED.name(), IntentRouter.GREETING_ANSWER));
+                TerminationReason.COMPLETED.name(), answer));
         CompletableFuture<AgentRun> future = CompletableFuture.completedFuture(run);
         if (metrics != null) {
             metrics.onRunSubmitted();
@@ -180,7 +186,7 @@ public class RunManager {
         RunEntry entry = new RunEntry(runId, userId, query, queue, future,
                 new AtomicBoolean(false), new AtomicBoolean(false));
         runs.put(runId, entry);
-        log.info("[runmgr] greeting run={} query={} user={}（零成本直答）", runId, query, userId);
+        log.info("[runmgr] direct-answer run={} query={} user={} note={}", runId, query, userId, note);
         return entry;
     }
 

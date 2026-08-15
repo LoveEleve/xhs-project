@@ -313,4 +313,26 @@ class RunManagerTest {
         assertEquals("RUN_STARTED", events.get(0).type());
         assertEquals("COMPLETED", events.get(1).type());
     }
+
+    @Test
+    void 超范围话题_零成本拒答不调工具() throws Exception {
+        AgentHarness harness = new AgentHarness(new FakeModel(), new FakeTools(), new FakeObs(),
+                MAPPER, AgentBudget.defaults(), 0.002, 2, null, "fake");
+        RunManager mgr = new RunManager(harness, null);
+
+        RunManager.RunEntry e = mgr.submit("今天会下雨吗", "u1");
+        e.future().get(10, TimeUnit.SECONDS);
+
+        AgentRun run = e.future().join();
+        assertEquals("SUCCEEDED", run.status().name());
+        assertEquals(com.myxhs.ai.app.service.router.IntentRouter.OUT_OF_SCOPE_ANSWER, run.finalAnswer());
+        assertEquals(0, run.steps().size(), "超范围话题不应产生任何步骤（未调模型/工具）");
+        List<HarnessEvent> events = new java.util.ArrayList<>();
+        HarnessEvent ev;
+        while ((ev = e.events().poll()) != null) {
+            events.add(ev);
+        }
+        assertEquals(2, events.size());
+        assertEquals("COMPLETED", events.get(1).type());
+    }
 }

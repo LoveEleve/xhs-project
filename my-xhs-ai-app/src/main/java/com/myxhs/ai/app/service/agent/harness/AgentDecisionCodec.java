@@ -64,7 +64,7 @@ public class AgentDecisionCodec {
 
     /** 解析失败时的纠正消息 */
     public static String malformedOutputMessage() {
-        return "输出不是合法 JSON，无法解析。必须严格输出 JSON 对象（action 为 TOOL_CALL 或 ANSWER），不要用 markdown 代码块。";
+        return "输出不是合法 JSON，无法解析。必须严格输出 JSON 对象（action 为 TOOL_CALL、ANSWER 或 DECLINE），不要用 markdown 代码块。";
     }
 
     /** 断言消息是否为 JSON 对象（测试/日志用） */
