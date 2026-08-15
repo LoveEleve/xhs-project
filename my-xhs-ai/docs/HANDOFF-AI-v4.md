@@ -34,11 +34,12 @@
 | `TEAMO_API_KEY` | 旧 TeamoRouter key（已不用，保留）| |
 | `MYXHS_DB_USER/PASSWORD` | 只读账号 `myxhs_ai_ro`（SELECT）| 真实 MySQL |
 | `MYXHS_ROOT_PASSWORD` | 集成测试自愈 seed + DDL（root）| 仅测试/建表 |
-| `MYXHS_AI_DB_USER/PASSWORD` | AI 自有库写账号 `myxhs_ai_rw`（my_xhs_ai 库）| |
+| `MYXHS_AI_DB_PASSWORD` | AI 自有库写账号密码（用户 `myxhs_ai_rw` 由 yml 默认兜底 `${MYXHS_AI_DB_USER:myxhs_ai_rw}`，**无 MYXHS_AI_DB_USER 环境变量**）| my_xhs_ai 库 |
 | `MYXHS_ES_PASS` | ES elastic 认证 | |
-| `ARK_PLAN_API_KEY/BASE_URL/EMBEDDING_MODEL` | RAG embedding + **语义路由降级 embedding**（doubao-embedding-vision-large 2048 维，**单批 ≤10 条**）| |
-| `MCP_API_KEY` | MCP 认证（dev 未设放行 WARN，生产必设）| |
-| `MYXHS_LOG_SEARCH_FILES` | log.search 白名单（service=日志文件绝对路径，CSV）| **不配则 log.search 全拒** |
+| `ARK_API_KEY` | **火山模型 API key（.env.local 实际存在，勿漏）** | 备用/未用主路径 |
+| `ARK_PLAN_API_KEY/BASE_URL/EMBEDDING_MODEL` | RAG embedding + 语义路由降级 embedding（doubao-embedding-vision-large 2048 维，**单批 ≤10 条**）| |
+| `MCP_API_KEY` | **非 .env.local 变量**——部署环境设置（dev 未设放行 WARN，生产必设）| |
+| `MYXHS_LOG_SEARCH_FILES` | **非 .env.local 变量**——启动时手动 export（service=日志文件绝对路径 CSV；不配则 log.search 全拒）| |
 
 ### 基础设施（真实，远端）
 | 服务 | 地址 | 备注 |
@@ -81,17 +82,20 @@
 | `service/store/JdbcRunStore` | Run Store（checkpoint/心跳/claimRunning/**finalAnswer 落库**）|
 | `eval/*` | EvalCase/EvalRunner/EvalGate（门禁阈值 10/60/40 拍脑袋，**待校准**）|
 
-### 端点（app:19020）
+### 端点（app:19020，全量核对）
 | 端点 | 说明 |
 |------|------|
+| `GET /api/ai/health` | 健康 |
 | `POST /api/runs` | 提交诊断（返回 runId；问候/超范围直答也落库）|
 | `GET /api/runs/{id}` | 状态/步骤/答案（**内存 miss 回退 Run Store**，fromStore 标记）|
 | `DELETE /api/runs/{id}` | 协作式取消 |
 | `GET /api/runs/{id}/stream` | SSE 订阅（单消费者 409；断开立即释放）|
 | `POST /api/ai/query` | 路由直答（指标确定性/问候/超范围直答带 runId/AGENT 模型调用）|
-| `POST /api/ai/chat` `/chat/stream` | D1 保留 |
-| `POST /api/ai/rag/**` | RAG 系列 |
-| `GET /actuator/prometheus` | M6-3 指标 |
+| `POST /api/ai/chat` / `POST /api/ai/chat/stream` | D1 对话/SSE（保留）|
+| `POST /api/ai/agent` / `POST /api/ai/agent/run` / `POST /api/ai/agent/run/stream` | D4 同步 Agent 端点（保留）|
+| `POST /api/ai/mcp/check` | MCP 全链路验证（app→桥→mcp→真库）|
+| `POST /api/ai/rag/ingest` `/search` `/search-dense` `/search-hybrid` `/answer` | RAG 系列 |
+| `GET /actuator/prometheus` `/actuator/health` | 指标/健康 |
 
 ### MCP 工具（mcp:19021，14 个）
 `order.query_volume` `payment.success_rate` `content.interaction` `baseline.window` `funnel.conversion` `payment.failures` `content.publish_events` **`log.search`** `service.http_errors` `service.http_latency` `mq.consumer_lag` `mq.dlq_backlog` `mysql.replication_lag` `mysql.deadlocks`
