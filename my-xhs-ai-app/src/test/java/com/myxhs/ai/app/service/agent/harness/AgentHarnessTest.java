@@ -530,6 +530,45 @@ class AgentHarnessTest {
     }
 
     @Test
+    void 工具结果截断长度_可配置() throws Exception {
+        var ds = new org.springframework.jdbc.datasource.DriverManagerDataSource(
+                "jdbc:h2:mem:trunc2;MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
+        var jdbc = new org.springframework.jdbc.core.JdbcTemplate(ds);
+        jdbc.execute("CREATE TABLE IF NOT EXISTS ai_run (run_id VARCHAR(32) PRIMARY KEY, user_id VARCHAR(64),"
+                + " session_id VARCHAR(64), query TEXT NOT NULL, status VARCHAR(16) NOT NULL,"
+                + " termination_reason VARCHAR(32), budget_json TEXT, versions_json TEXT, tokens_total BIGINT DEFAULT 0,"
+                + " cost_est DOUBLE DEFAULT 0, started_at DATETIME(3), ended_at DATETIME(3), last_activity_at DATETIME(3))");
+        jdbc.execute("CREATE TABLE IF NOT EXISTS ai_step (id BIGINT AUTO_INCREMENT PRIMARY KEY, run_id VARCHAR(32),"
+                + " step_no INT, state VARCHAR(24), decision_json TEXT, tool_result MEDIUMTEXT,"
+                + " evidence_ids VARCHAR(512), messages_snapshot MEDIUMTEXT, tokens_used BIGINT DEFAULT 0, created_at DATETIME(3))");
+        RunStore store = new JdbcRunStore(jdbc, MAPPER);
+        String longResult = "{\"value\":61,\"window\":\"2026-08-01~2026-08-07\"," + "\"shardDetails\":\"" + "x".repeat(800) + "\"}";
+        MetricToolAccess longTools = new FakeMetricTools() {
+            @Override
+            public String queryOrderVolume(String window) {
+                return longResult;
+            }
+        };
+        // 上限调大（10000）→ 模型可见文本不再截断（registry 与快照均含完整结果）
+        AgentHarness h = new AgentHarness(new FakeDecisionModel(texts -> {
+            String ev = lastEvId(texts);
+            if (ev == null) {
+                return toolCallJson("queryOrderVolume", "2026-08-01~2026-08-07");
+            }
+            return answerJson("下单量为61", ev);
+        }), longTools, new FakeObsTools(), MAPPER, AgentBudget.defaults(), 0.002, 2, store, "fake", 10000);
+
+        AgentRun run = h.run("为什么订单量下降了");
+
+        assertEquals(RunStatus.SUCCEEDED, run.status());
+        var cp = store.lastCheckpoint(run.runId()).orElseThrow();
+        // 快照是 List<ChatMessage> 的 JSON 序列化（引号转义），用转义形式断言
+        String escaped = longResult.replace("\"", "\\\"");
+        assertTrue(cp.messagesSnapshot().contains(escaped), "调大上限后模型可见文本应含完整结果");
+        assertEquals(false, cp.messagesSnapshot().contains("结果已截断"), "调大上限后不应截断");
+    }
+
+    @Test
     void 事件流_完整序列推送() {
         AgentHarness h = harness(texts -> {
             String ev = lastEvId(texts);

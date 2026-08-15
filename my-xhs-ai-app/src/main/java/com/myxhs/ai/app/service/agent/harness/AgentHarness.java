@@ -82,13 +82,21 @@ public class AgentHarness {
     public AgentHarness(ChatModel chatModel, MetricToolAccess metricToolAccess, ObsToolAccess obsToolAccess,
                         ObjectMapper mapper, AgentBudget defaultBudget, double pricePer1kTokens, int maxInvalidAnswers) {
         this(chatModel, metricToolAccess, obsToolAccess, mapper, defaultBudget, pricePer1kTokens, maxInvalidAnswers,
-                null, "unknown");
+                null, "unknown", 400);
     }
 
     /** 带 RunStore 的构造（M5 Durable：run/step 落库；store=null 不持久化，兼容测试） */
     public AgentHarness(ChatModel chatModel, MetricToolAccess metricToolAccess, ObsToolAccess obsToolAccess,
                         ObjectMapper mapper, AgentBudget defaultBudget, double pricePer1kTokens, int maxInvalidAnswers,
                         RunStore store, String modelName) {
+        this(chatModel, metricToolAccess, obsToolAccess, mapper, defaultBudget, pricePer1kTokens, maxInvalidAnswers,
+                store, modelName, 400);
+    }
+
+    /** 带截断长度配置的构造（M8-4 可配化：模型可见工具结果截断长度） */
+    public AgentHarness(ChatModel chatModel, MetricToolAccess metricToolAccess, ObsToolAccess obsToolAccess,
+                        ObjectMapper mapper, AgentBudget defaultBudget, double pricePer1kTokens, int maxInvalidAnswers,
+                        RunStore store, String modelName, int toolResultMaxLen) {
         this.chatModel = chatModel;
         this.metricToolAccess = metricToolAccess;
         this.obsToolAccess = obsToolAccess;
@@ -99,6 +107,7 @@ public class AgentHarness {
         this.store = store;
         this.om = mapper;
         this.modelName = modelName;
+        this.toolResultMaxLen = Math.max(1, toolResultMaxLen);
     }
 
     public AgentBudget defaultBudget() {
@@ -458,17 +467,18 @@ public class AgentHarness {
      * 工具结果进上下文的截断（M7 性能优化）：registry/证据链保留完整结果（存在性校验/幻觉检测
      * 不受影响），仅模型可见文本截断——大幅降上下文体积（15 步 × 400+ 字符 JSON 的冗余）。
      * 截断保留头部（value/window/status 等核心字段在 JSON 前端）。
+     * 长度可配置（myxhs.ai.agent.tool-result-max-len，默认 400）。
      */
-    private static final int TOOL_RESULT_MAX_LEN = 400;
+    private final int toolResultMaxLen;
 
-    private static String truncateToolResult(String result) {
-        if (result == null || result.length() <= TOOL_RESULT_MAX_LEN) {
+    private String truncateToolResult(String result) {
+        if (result == null || result.length() <= toolResultMaxLen) {
             return result;
         }
         // 字段边界截断：避免把 JSON 截在字段中间（模型读到不完整字段值会误读）
-        String cut = result.substring(0, TOOL_RESULT_MAX_LEN);
+        String cut = result.substring(0, toolResultMaxLen);
         int boundary = Math.max(cut.lastIndexOf(','), cut.lastIndexOf('}'));
-        if (boundary > TOOL_RESULT_MAX_LEN / 2) {
+        if (boundary > toolResultMaxLen / 2) {
             cut = cut.substring(0, boundary + 1);
         }
         return cut + "...(结果已截断，仅保留核心字段)";
