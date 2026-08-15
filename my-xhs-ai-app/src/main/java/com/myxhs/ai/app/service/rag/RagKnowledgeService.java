@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.myxhs.ai.app.service.embedding.EmbeddingClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,7 +22,7 @@ import java.util.Map;
 
 /**
  * RAG 知识库（D3 第一切片）：指标字典 → ES BM25 索引 → 检索带引用回原文。
- * ⚠️ 基线为 BM25 关键词检索（无需 embedding）；dense/混合检索待 embedding 接入点就绪后补。
+ * ⚠️ 基线为 BM25 关键词检索（无需 embedding）；dense/混合检索用共享 EmbeddingClient。
  * ES 调用用 HttpClient + Jackson（零新依赖，规避 ES 版本差异：BOM 8.12 vs 服务端 8.19）。
  */
 @Component
@@ -35,24 +36,18 @@ public class RagKnowledgeService {
     private final HttpClient http;
     private final String esUrl;
     private final String authHeader;
-    private final String embeddingUrl;
-    private final String embeddingKey;
-    private final String embeddingModel;
+    private final EmbeddingClient embeddingClient;
 
     public RagKnowledgeService(ObjectMapper om,
                                @Value("${myxhs.ai.rag.es-url:http://21.130.247.89:19200}") String esUrl,
                                @Value("${myxhs.ai.rag.es-user:elastic}") String esUser,
                                @Value("${myxhs.ai.rag.es-pass:}") String esPass,
-                               @Value("${myxhs.ai.rag.embedding-url:}") String embeddingUrl,
-                               @Value("${myxhs.ai.rag.embedding-key:}") String embeddingKey,
-                               @Value("${myxhs.ai.rag.embedding-model:doubao-embedding-vision-large}") String embeddingModel) {
+                               EmbeddingClient embeddingClient) {
         this.om = om;
         this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
         this.esUrl = esUrl;
         this.authHeader = "Basic " + Base64.getEncoder().encodeToString((esUser + ":" + esPass).getBytes());
-        this.embeddingUrl = embeddingUrl;
-        this.embeddingKey = embeddingKey;
-        this.embeddingModel = embeddingModel;
+        this.embeddingClient = embeddingClient;
     }
 
     /** 建索引（BM25 + dense_vector 2048 维） */
@@ -95,7 +90,7 @@ public class RagKnowledgeService {
             src.put("section", d.get("section"));
             // dense：文档向量（Agent Plan embedding），数组形式（非字符串）
             if (embeddingAvailable()) {
-                src.set("embedding", om.valueToTree(embed(d.get("content") + " " + d.get("title"))));
+                src.set("embedding", om.valueToTree(embeddingClient.embed(d.get("content") + " " + d.get("title"))));
             }
             bulk.append(om.writeValueAsString(src)).append('\n');
         }
@@ -118,11 +113,11 @@ public class RagKnowledgeService {
 
     /** dense 检索（kNN cosine）；无 embedding 配置时回退 BM25 */
     public List<Map<String, Object>> searchDense(String query, int size) throws Exception {
-        if (!embeddingAvailable()) {
+        if (!embeddingClient.available()) {
             log.warn("[rag] 未配置 embedding，dense 检索不可用");
             return List.of();
         }
-        float[] q = embed(query);
+        float[] q = embeddingClient.embed(query);
         ObjectNode body = om.createObjectNode();
         body.put("size", size);
         ObjectNode knn = body.putObject("knn");
@@ -139,33 +134,7 @@ public class RagKnowledgeService {
     }
 
     private boolean embeddingAvailable() {
-        return embeddingKey != null && !embeddingKey.isBlank() && embeddingUrl != null && !embeddingUrl.isBlank();
-    }
-
-    /** 调火山 Agent Plan /embeddings → float[]（2048 维） */
-    private float[] embed(String text) throws Exception {
-        ObjectNode body = om.createObjectNode();
-        body.put("model", embeddingModel);
-        body.putArray("input").add(text);
-        HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(embeddingUrl + "/embeddings"))
-                .timeout(Duration.ofSeconds(30))
-                .header("Authorization", "Bearer " + embeddingKey)
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(om.writeValueAsString(body)));
-        HttpResponse<String> r = http.send(b.build(), HttpResponse.BodyHandlers.ofString());
-        if (r.statusCode() >= 300) {
-            throw new IllegalStateException("embedding 失败: " + r.statusCode() + " " + r.body());
-        }
-        JsonNode data = om.readTree(r.body()).path("data");
-        if (data.size() == 0) {
-            throw new IllegalStateException("embedding 空响应");
-        }
-        JsonNode vec = data.get(0).path("embedding");
-        float[] out = new float[vec.size()];
-        for (int i = 0; i < vec.size(); i++) {
-            out[i] = (float) vec.get(i).asDouble();
-        }
-        return out;
+        return embeddingClient.available();
     }
 
     /** BM25 检索：返回 [{title, content, source, score}] */

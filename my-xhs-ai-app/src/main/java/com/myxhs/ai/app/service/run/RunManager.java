@@ -60,14 +60,20 @@ public class RunManager {
     private final java.util.concurrent.ConcurrentHashMap<String, AtomicBoolean> streamTokens =
             new java.util.concurrent.ConcurrentHashMap<>();
     private final Map<String, RunEntry> runs = new ConcurrentHashMap<>();
-    /** 意图预检（纯规则版，零 LLM 成本）：问候/闲聊直答，不进 Agent */
-    private final IntentRouter intentRouter = new IntentRouter();
+    /** 意图预检（三阶路由：规则 → 语义 → 默认引导）：问候/超范围直答，不进 Agent */
+    private final IntentRouter intentRouter;
 
     @Autowired
     public RunManager(AgentHarness harness, RunStore store, RunMetrics metrics) {
+        this(harness, store, metrics, new IntentRouter());
+    }
+
+    /** 注入语义路由（无参时纯规则降级） */
+    public RunManager(AgentHarness harness, RunStore store, RunMetrics metrics, IntentRouter intentRouter) {
         this.harness = harness;
         this.store = store;
         this.metrics = metrics;
+        this.intentRouter = intentRouter;
         this.budget = harness.defaultBudget();
     }
 
