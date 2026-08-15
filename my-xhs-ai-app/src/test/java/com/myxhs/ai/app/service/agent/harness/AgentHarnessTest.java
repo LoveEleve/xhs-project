@@ -3,6 +3,7 @@ package com.myxhs.ai.app.service.agent.harness;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.ai.app.service.store.JdbcRunStore;
 import com.myxhs.ai.app.service.store.RunStore;
+import com.myxhs.ai.tools.LogSearchAccess;
 import com.myxhs.ai.tools.MetricToolAccess;
 import com.myxhs.ai.tools.ObsToolAccess;
 import dev.langchain4j.data.message.AiMessage;
@@ -123,7 +124,6 @@ class AgentHarnessTest {
         public String httpErrors(String service, String hours) {
             return "5xx total=3 service=" + service + " hours=" + hours;
         }
-
         @Override
         public String httpLatency(String service, String hours) {
             return "p95=0.8 service=" + service + " hours=" + hours;
@@ -147,6 +147,16 @@ class AgentHarnessTest {
         @Override
         public String mysqlDeadlocks() {
             return "deadlock total=2 new=0";
+        }
+    }
+
+    /** M9-1 受控日志检索 fake */
+    private static final class FakeLogSearch implements LogSearchAccess {
+        @Override
+        public String searchLog(String service, String keyword, String tailLines) {
+            return "{\"status\":\"ok\",\"tool\":\"log.search\",\"service\":\"" + service
+                    + "\",\"keyword\":\"" + keyword + "\",\"scannedLines\":100,\"matches\":3,"
+                    + "\"lines\":[\"ERROR OutOfMemoryError\"]}";
         }
     }
 
@@ -723,6 +733,40 @@ class AgentHarnessTest {
 
         assertEquals(RunStatus.PARTIAL, run.status());
         assertEquals(TerminationReason.POLICY_EXHAUSTED, run.terminationReason());
+    }
+
+    @Test
+    void 受控日志检索_合法参数执行() {
+        // M9-1：logSearch 合法参数（白名单服务+合法 keyword）→ 工具执行并登记证据
+        AgentHarness h = new AgentHarness(new FakeDecisionModel(texts -> {
+            String ev = lastEvId(texts);
+            if (ev == null) {
+                return "{\"action\":\"TOOL_CALL\",\"tool\":\"logSearch\","
+                        + "\"args\":{\"service\":\"my-xhs-order\",\"keyword\":\"ERROR\",\"tailLines\":\"100\"},"
+                        + "\"reasoning\":\"查错误日志\"}";
+            }
+            return answerJson("日志中有 ERROR", ev);
+        }), new FakeMetricTools(), new FakeObsTools(), new FakeLogSearch(), MAPPER,
+                AgentBudget.defaults(), 0.002, 2, null, "fake", 400);
+
+        AgentRun run = h.run("能帮我查日志吗");
+
+        assertEquals(RunStatus.SUCCEEDED, run.status(), run.finalAnswer());
+        assertTrue(run.evidenceChain().size() >= 1, "应登记证据");
+    }
+
+    @Test
+    void 受控日志检索_非法keyword被策略拒绝() {
+        // 注入尝试（; rm -rf）：PolicyGuard 应拒绝（POLICY_EXHAUSTED 前不断重想）
+        AgentHarness h = harness(texts -> "{\"action\":\"TOOL_CALL\",\"tool\":\"logSearch\","
+                + "\"args\":{\"service\":\"my-xhs-order\",\"keyword\":\"ERROR; rm -rf /\",\"tailLines\":\"100\"},"
+                + "\"reasoning\":\"查日志\"}", AgentBudget.defaults());
+
+        AgentRun run = h.run("能帮我查日志吗");
+
+        assertEquals(RunStatus.PARTIAL, run.status());
+        assertEquals(TerminationReason.POLICY_EXHAUSTED, run.terminationReason());
+        assertEquals(0, run.evidenceChain().size(), "拒绝的参数不应产生证据");
     }
 
     @Test

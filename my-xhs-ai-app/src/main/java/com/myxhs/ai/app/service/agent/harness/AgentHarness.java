@@ -3,6 +3,7 @@ package com.myxhs.ai.app.service.agent.harness;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.ai.app.service.QueryWindowExtractor;
 import com.myxhs.ai.app.service.store.RunStore;
+import com.myxhs.ai.tools.LogSearchAccess;
 import com.myxhs.ai.tools.MetricToolAccess;
 import com.myxhs.ai.tools.ObsToolAccess;
 import dev.langchain4j.data.message.AiMessage;
@@ -50,6 +51,8 @@ public class AgentHarness {
             - funnelConversion(window)：电商漏斗各环节量（商品浏览/加购/下单/支付，窗口内）
             - paymentFailures(window)：支付失败事件（PAY_FAIL 按失败码聚合，窗口内）
             - notePublishEvents(window)：内容发布事件数（PUBLISH 按天，窗口内）
+            - logSearch(service, keyword, tailLines)：受控检索服务日志（白名单服务最近 N 行内过滤 keyword；
+              用于找异常堆栈/报错明细，如 ERROR/Deadlock/OutOfMemory；keyword 仅字母数字与常见符号）
             排障提示：httpErrors 的 uri=/** 已由工具单列为 noiseScanRoutes（扫描/探测噪音），归因时排除；
             /api/coupon/*、/api/cart/* 的 [Gateway-异常] WARN 日志非 5xx
             已知服务名（L2 观测可用）：my-xhs-gateway / my-xhs-order / my-xhs-payment / my-xhs-content /
@@ -73,6 +76,7 @@ public class AgentHarness {
     private final ChatModel chatModel;
     private final MetricToolAccess metricToolAccess;
     private final ObsToolAccess obsToolAccess;
+    private final LogSearchAccess logSearchAccess;
     private final PolicyGuard policyGuard = new PolicyGuard();
     private final AgentDecisionCodec codec;
     private final AgentBudget defaultBudget;
@@ -84,25 +88,35 @@ public class AgentHarness {
 
     public AgentHarness(ChatModel chatModel, MetricToolAccess metricToolAccess, ObsToolAccess obsToolAccess,
                         ObjectMapper mapper, AgentBudget defaultBudget, double pricePer1kTokens, int maxInvalidAnswers) {
-        this(chatModel, metricToolAccess, obsToolAccess, mapper, defaultBudget, pricePer1kTokens, maxInvalidAnswers,
-                null, "unknown", 400);
+        this(chatModel, metricToolAccess, obsToolAccess, null, mapper, defaultBudget, pricePer1kTokens,
+                maxInvalidAnswers, null, "unknown", 400);
     }
 
     /** 带 RunStore 的构造（M5 Durable：run/step 落库；store=null 不持久化，兼容测试） */
     public AgentHarness(ChatModel chatModel, MetricToolAccess metricToolAccess, ObsToolAccess obsToolAccess,
                         ObjectMapper mapper, AgentBudget defaultBudget, double pricePer1kTokens, int maxInvalidAnswers,
                         RunStore store, String modelName) {
-        this(chatModel, metricToolAccess, obsToolAccess, mapper, defaultBudget, pricePer1kTokens, maxInvalidAnswers,
-                store, modelName, 400);
+        this(chatModel, metricToolAccess, obsToolAccess, null, mapper, defaultBudget, pricePer1kTokens,
+                maxInvalidAnswers, store, modelName, 400);
     }
 
     /** 带截断长度配置的构造（M8-4 可配化：模型可见工具结果截断长度） */
     public AgentHarness(ChatModel chatModel, MetricToolAccess metricToolAccess, ObsToolAccess obsToolAccess,
                         ObjectMapper mapper, AgentBudget defaultBudget, double pricePer1kTokens, int maxInvalidAnswers,
                         RunStore store, String modelName, int toolResultMaxLen) {
+        this(chatModel, metricToolAccess, obsToolAccess, null, mapper, defaultBudget, pricePer1kTokens,
+                maxInvalidAnswers, store, modelName, toolResultMaxLen);
+    }
+
+    /** 带受控日志检索的构造（M9-1：logSearch=null 时该工具调用返回"未装配"，兼容旧测试） */
+    public AgentHarness(ChatModel chatModel, MetricToolAccess metricToolAccess, ObsToolAccess obsToolAccess,
+                        LogSearchAccess logSearchAccess, ObjectMapper mapper, AgentBudget defaultBudget,
+                        double pricePer1kTokens, int maxInvalidAnswers, RunStore store, String modelName,
+                        int toolResultMaxLen) {
         this.chatModel = chatModel;
         this.metricToolAccess = metricToolAccess;
         this.obsToolAccess = obsToolAccess;
+        this.logSearchAccess = logSearchAccess;
         this.codec = new AgentDecisionCodec(mapper);
         this.defaultBudget = defaultBudget;
         this.pricePer1kTokens = pricePer1kTokens;
@@ -556,6 +570,9 @@ public class AgentHarness {
                 case PolicyGuard.TOOL_FUNNEL -> metricToolAccess.funnelConversion(window);
                 case PolicyGuard.TOOL_PAY_FAILURES -> metricToolAccess.paymentFailures(window);
                 case PolicyGuard.TOOL_NOTE_PUBLISH -> metricToolAccess.notePublishEvents(window);
+                case PolicyGuard.TOOL_LOG_SEARCH -> logSearchAccess == null
+                        ? "ERROR: 受控日志检索未装配（logSearchAccess=null）"
+                        : logSearchAccess.searchLog(args.get("service"), args.get("keyword"), args.get("tailLines"));
                 default -> "ERROR: 未注册工具 " + tool;
             };
         } catch (Exception e) {

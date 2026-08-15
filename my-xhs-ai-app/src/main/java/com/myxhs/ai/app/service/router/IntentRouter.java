@@ -53,7 +53,7 @@ public class IntentRouter {
             compile("故障"), compile("错误"), compile("延迟"), compile("慢"),
             compile("超时"), compile("失败"), compile("积压"), compile("挂了"),
             compile("问题"), compile("5xx"), compile("排查"), compile("卡顿"),
-            compile("崩溃"), compile("宕"), compile("报错"));
+            compile("崩溃"), compile("宕"), compile("报错"), compile("日志"));
 
     /** 降级兜底词表（仅 embedding 不可用时生效；语义层正常时以下表达靠相似度即可识别） */
     private static final List<Pattern> FALLBACK_GREETING_PATTERNS = List.of(

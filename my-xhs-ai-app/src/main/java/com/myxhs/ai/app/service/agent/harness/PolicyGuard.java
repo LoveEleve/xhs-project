@@ -28,12 +28,13 @@ public class PolicyGuard {
     public static final String TOOL_FUNNEL = "funnelConversion";
     public static final String TOOL_PAY_FAILURES = "paymentFailures";
     public static final String TOOL_NOTE_PUBLISH = "notePublishEvents";
+    public static final String TOOL_LOG_SEARCH = "logSearch";
 
     private static final Set<String> ALLOWED_TOOLS = Set.of(
             TOOL_ORDER_VOLUME, TOOL_PAYMENT_RATE, TOOL_CONTENT_INTERACTION, TOOL_BASELINE_WINDOW,
             TOOL_HTTP_ERRORS, TOOL_HTTP_LATENCY, TOOL_MQ_LAG, TOOL_MQ_DLQ,
             TOOL_MYSQL_REPLICA_LAG, TOOL_MYSQL_DEADLOCKS,
-            TOOL_FUNNEL, TOOL_PAY_FAILURES, TOOL_NOTE_PUBLISH);
+            TOOL_FUNNEL, TOOL_PAY_FAILURES, TOOL_NOTE_PUBLISH, TOOL_LOG_SEARCH);
 
     /** 需要 window 参数的工具（业务+基线+事件流水） */
     private static final Set<String> WINDOW_TOOLS = Set.of(
@@ -74,6 +75,19 @@ public class PolicyGuard {
             String invalid = validateHours(args == null ? null : args.get("hours"));
             if (invalid != null) {
                 return PolicyDecision.deny(tool + " 参数非法: " + invalid);
+            }
+        } else if (tool.equals(TOOL_LOG_SEARCH)) {
+            // 受控日志检索（M9-1）：service 白名单在工具侧严格 map 校验（无路径拼接）；
+            // 此处校验 keyword 字符白名单 + tailLines 范围（与 DirectLogSearchAccess 同规则）
+            String k = args == null ? null : args.get("keyword");
+            String invalid = com.myxhs.ai.tools.DirectLogSearchAccess.validateKeyword(k);
+            if (invalid != null) {
+                return PolicyDecision.deny(tool + " 参数非法: " + invalid);
+            }
+            int tail = com.myxhs.ai.tools.DirectLogSearchAccess.parseTailLines(
+                    args == null ? null : args.get("tailLines"));
+            if (tail < 1 || tail > 5000) {
+                return PolicyDecision.deny(tool + " 参数非法: tailLines 必须在 1~5000");
             }
         } else if (tool.equals(TOOL_MQ_LAG) || tool.equals(TOOL_MQ_DLQ)) {
             // MQ 组名可选；若有值必须符合白名单（防 PromQL 注入，与工具侧同规则）

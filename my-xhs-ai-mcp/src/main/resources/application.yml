@@ -16,3 +16,9 @@ spring:
 logging:
   level:
     root: info
+
+# M9-1 受控日志检索白名单（service=日志文件绝对路径；不在白名单的服务一律拒绝）
+myxhs:
+  ai:
+    log-search:
+      files: ${MYXHS_LOG_SEARCH_FILES:}

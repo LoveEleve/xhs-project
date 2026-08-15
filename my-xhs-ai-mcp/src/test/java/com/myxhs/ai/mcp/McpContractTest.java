@@ -126,14 +126,14 @@ class McpContractTest {
     }
 
     @Test
-    void tools_list_返回十三个工具() throws Exception {
+    void tools_list_返回十四个工具() throws Exception {
         send("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\","
                 + "\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},"
                 + "\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}");
         send("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{}}");
         JsonNode resp = send("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}");
         JsonNode tools = resp.path("result").path("tools");
-        assertTrue(tools.size() == 13, "应 13 个工具: " + tools);
+        assertTrue(tools.size() == 14, "应 14 个工具: " + tools);
         assertEquals("order.query_volume", tools.get(0).path("name").asText());
         assertEquals("payment.success_rate", tools.get(1).path("name").asText());
         assertEquals("content.interaction", tools.get(2).path("name").asText());
@@ -141,20 +141,38 @@ class McpContractTest {
         assertEquals("funnel.conversion", tools.get(4).path("name").asText());
         assertEquals("payment.failures", tools.get(5).path("name").asText());
         assertEquals("content.publish_events", tools.get(6).path("name").asText());
-        assertEquals("service.http_errors", tools.get(7).path("name").asText());
-        assertEquals("service.http_latency", tools.get(8).path("name").asText());
-        assertEquals("mq.consumer_lag", tools.get(9).path("name").asText());
-        assertEquals("mq.dlq_backlog", tools.get(10).path("name").asText());
-        assertEquals("mysql.replication_lag", tools.get(11).path("name").asText());
-        assertEquals("mysql.deadlocks", tools.get(12).path("name").asText());
+        assertEquals("log.search", tools.get(7).path("name").asText());
+        assertEquals("service.http_errors", tools.get(8).path("name").asText());
+        assertEquals("service.http_latency", tools.get(9).path("name").asText());
+        assertEquals("mq.consumer_lag", tools.get(10).path("name").asText());
+        assertEquals("mq.dlq_backlog", tools.get(11).path("name").asText());
+        assertEquals("mysql.replication_lag", tools.get(12).path("name").asText());
+        assertEquals("mysql.deadlocks", tools.get(13).path("name").asText());
         assertTrue(tools.get(0).path("inputSchema").path("properties").has("window"),
                 "应声明 window 参数 schema");
-        assertTrue(tools.get(7).path("inputSchema").path("properties").has("hours"),
+        assertTrue(tools.get(8).path("inputSchema").path("properties").has("hours"),
                 "观测工具应声明 hours 参数 schema");
-        assertTrue(tools.get(9).path("inputSchema").path("properties").has("group"),
+        assertTrue(tools.get(10).path("inputSchema").path("properties").has("group"),
                 "MQ 工具应声明 group 参数 schema");
         assertTrue(tools.get(4).path("inputSchema").path("properties").has("window"),
                 "漏斗工具应声明 window 参数 schema");
+        assertTrue(tools.get(7).path("inputSchema").path("properties").has("keyword"),
+                "log.search 应声明 keyword 参数 schema");
+    }
+
+    @Test
+    void tools_call_log_search_白名单外拒绝() throws Exception {
+        send("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\","
+                + "\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},"
+                + "\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}");
+        send("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{}}");
+        JsonNode resp = send("{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"tools/call\","
+                + "\"params\":{\"name\":\"log.search\",\"arguments\":{\"service\":\"my-xhs-payment\","
+                + "\"keyword\":\"ERROR\",\"tailLines\":\"100\"}}}");
+        JsonNode content = resp.path("result").path("content");
+        assertTrue(content.size() > 0, "应返回工具结果: " + resp);
+        String text = content.get(0).path("text").asText();
+        assertTrue(text.contains("不在白名单"), "白名单外服务应拒绝: " + text);
     }
 
     @Test

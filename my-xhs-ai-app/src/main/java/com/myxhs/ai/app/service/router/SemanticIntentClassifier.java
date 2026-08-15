@@ -46,7 +46,8 @@ public class SemanticIntentClassifier {
         SEEDS.put(Intent.AGENT, List.of(
                 "为什么订单量下降了", "订单量为什么异常", "支付成功率为什么降低", "服务为什么有5xx",
                 "MQ积压的原因", "帮我分析一下订单下降的原因", "为什么内容互动骤降", "系统为什么这么慢",
-                "帮我排查一下系统问题", "死锁的原因是什么", "为什么有服务报错"));
+                "帮我排查一下系统问题", "死锁的原因是什么", "为什么有服务报错",
+                "帮我查一下服务的日志", "查一下报错日志", "能帮我查日志吗"));
     }
 
     private final EmbeddingClient embeddingClient;

@@ -3,6 +3,7 @@ package com.myxhs.ai.mcp.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.ai.tools.BaselineWindowTool;
 import com.myxhs.ai.tools.ContentInteractionTool;
+import com.myxhs.ai.tools.DirectLogSearchAccess;
 import com.myxhs.ai.tools.EventAnalyticsTool;
 import com.myxhs.ai.tools.OrderMetricsTool;
 import com.myxhs.ai.tools.PaymentMetricsTool;
@@ -52,6 +53,11 @@ public class McpServerConfig {
     /** 无参工具 schema（B4 面） */
     private static final String NOARG_SCHEMA = "{\"type\":\"object\"}";
 
+    /** 受控日志检索工具参数 schema（M9-1） */
+    private static final String LOG_SEARCH_SCHEMA = """
+            {"type":"object","properties":{"service":{"type":"string","description":"白名单服务名，如 my-xhs-order"},"keyword":{"type":"string","description":"检索关键词，字母数字与常见符号，长度≤100"},"tailLines":{"type":"string","description":"最近多少行内检索（1~5000，默认 500）"}},"required":["service","keyword"]}
+            """;
+
     @Bean
     public McpJsonMapper mcpJsonMapper(ObjectMapper objectMapper) {
         return new JacksonMcpJsonMapper(objectMapper);
@@ -79,7 +85,8 @@ public class McpServerConfig {
                                        ContentInteractionTool contentInteractionTool,
                                        BaselineWindowTool baselineWindowTool,
                                        PrometheusQueryTool prometheusQueryTool,
-                                       EventAnalyticsTool eventAnalyticsTool) {
+                                       EventAnalyticsTool eventAnalyticsTool,
+                                       DirectLogSearchAccess directLogSearchAccess) {
         return McpServer.sync(transport)
                 .serverInfo("my-xhs-ai-mcp", "1.0.0")
                 .tools(
@@ -104,6 +111,10 @@ public class McpServerConfig {
                         toolSpec(jsonMapper, "content.publish_events",
                                 "内容发布事件数（PUBLISH 按天，窗口内）",
                                 eventAnalyticsTool::notePublishEvents),
+                        logSearchToolSpec(jsonMapper, "log.search",
+                                "检索服务日志（白名单服务最近 N 行内过滤 keyword；M9-1 受控检索）",
+                                (args) -> directLogSearchAccess.searchLog(
+                                        str(args.get("service")), str(args.get("keyword")), str(args.get("tailLines")))),
                         obsToolSpec(jsonMapper, "service.http_errors",
                                 "服务 HTTP 5xx 错误统计（按 uri 聚合，最近 N 小时）",
                                 (args) -> prometheusQueryTool.httpErrors(str(args.get("service")), str(args.get("hours")))),
@@ -155,7 +166,52 @@ public class McpServerConfig {
                 .build();
     }
 
-    /** 观测工具（多参数 service+hours） */
+    /** 受控日志检索工具（3 参数 service/keyword/tailLines；白名单在 DirectLogSearchAccess 内校验） */
+    private static McpServerFeatures.SyncToolSpecification logSearchToolSpec(McpJsonMapper mapper, String name, String desc,
+                                                                              Function<Map<String, Object>, String> fn) {
+        McpSchema.Tool tool = McpSchema.Tool.builder()
+                .name(name)
+                .description(desc)
+                .inputSchema(mapper, LOG_SEARCH_SCHEMA)
+                .build();
+        return McpServerFeatures.SyncToolSpecification.builder()
+                .tool(tool)
+                .callHandler((exchange, request) -> {
+                    try {
+                        Map<String, Object> args = request.arguments();
+                        if (args == null || args.get("service") == null || args.get("keyword") == null) {
+                            return new McpSchema.CallToolResult("缺少参数 service/keyword", true);
+                        }
+                        long start = System.currentTimeMillis();
+                        String result = fn.apply(args);
+                        log.info("[mcp-audit] tool={} service={} costMs={}",
+                                name, str(args.get("service")), System.currentTimeMillis() - start);
+                        return new McpSchema.CallToolResult(result, false);
+                    } catch (Exception e) {
+                        log.warn("[mcp-audit] tool={} error: {}", name, e.getMessage());
+                        return new McpSchema.CallToolResult("工具调用失败: " + e.getMessage(), true);
+                    }
+                })
+                .build();
+    }
+
+    /** 受控日志检索实现 bean（白名单 service→文件路径，配置注入；不在白名单的服务不可检索） */
+    @Bean
+    public DirectLogSearchAccess directLogSearchAccess(
+            @Value("${myxhs.ai.log-search.files:}") String filesCsv) {
+        Map<String, String> whitelist = new java.util.LinkedHashMap<>();
+        for (String entry : filesCsv.split(",")) {
+            int eq = entry.indexOf('=');
+            if (eq > 0 && eq < entry.length() - 1) {
+                whitelist.put(entry.substring(0, eq).trim(), entry.substring(eq + 1).trim());
+            }
+        }
+        if (whitelist.isEmpty()) {
+            log.warn("[log.search] 白名单为空（myxhs.ai.log-search.files 未配置），log.search 将全部拒绝");
+        }
+        return new DirectLogSearchAccess(whitelist);
+    }
+
     private static McpServerFeatures.SyncToolSpecification obsToolSpec(McpJsonMapper mapper, String name, String desc,
                                                                        Function<Map<String, Object>, String> fn) {
         McpSchema.Tool tool = McpSchema.Tool.builder()
