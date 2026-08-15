@@ -187,19 +187,25 @@ public class RunManager {
             }
             try {
                 conversation.ensureConversation(convId, userId, query);
-                conversation.appendUserMessage(convId, runId, query);
             } catch (Exception e) {
                 // 会话持久化故障不阻断诊断（仅日志），但锁仍须释放
                 log.warn("[runmgr] 会话准备失败 conv={} err={}", convId, e.getMessage());
             }
         }
-        // M10 多轮上下文注入（摘要 + 历史结论，无工具原文）；失败降级为单轮
+        // M10 多轮上下文注入（摘要 + 历史结论，无工具原文）；失败降级为单轮。
+        // 注意顺序：buildContext 必须先于 appendUserMessage——否则当前问题被写入历史后
+        // 会被重复注入（历史一条 + harness 尾部"用户问题："一条）（P0-2 修复）
         List<ChatMessage> initial = null;
         if (convId != null && conversation != null) {
             try {
                 initial = conversation.buildContext(convId);
             } catch (Exception e) {
                 log.warn("[runmgr] 会话上下文注入失败 conv={} 降级单轮: {}", convId, e.getMessage());
+            }
+            try {
+                conversation.appendUserMessage(convId, runId, query);
+            } catch (Exception e) {
+                log.warn("[runmgr] 用户消息落库失败 conv={} err={}", convId, e.getMessage());
             }
         }
         List<ChatMessage> initialMessages = initial;
@@ -223,6 +229,10 @@ public class RunManager {
             final String cid = convId;
             future.whenComplete((run, ex) -> {
                 try {
+                    // run → 会话追溯（ai_run.session_id=convId）：必须在异步 createRun(INSERT) 之后执行
+                    if (store != null) {
+                        store.updateSessionId(runId, cid);
+                    }
                     if (run != null) {
                         conversation.appendAssistantMessage(cid, runId, run.finalAnswer(),
                                 run.evidenceChain().entries().stream()

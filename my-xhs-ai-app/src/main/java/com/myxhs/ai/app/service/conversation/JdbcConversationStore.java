@@ -39,9 +39,12 @@ public class JdbcConversationStore implements ConversationStore {
         return rows.stream().findFirst();
     }
 
+    /** 最近 limit 条消息（升序：旧→新）。
+     *  先逆序取最近 N 条再正序——直接 ORDER BY id ASC LIMIT 会取到最早的 N 条（P0-1 修复）。 */
     @Override
     public List<Message> loadMessages(String convId, int limit) {
-        return jdbc.query("SELECT * FROM ai_message WHERE conv_id=? ORDER BY id ASC LIMIT ?",
+        return jdbc.query("SELECT * FROM (SELECT * FROM ai_message WHERE conv_id=?"
+                        + " ORDER BY id DESC LIMIT ?) t ORDER BY id ASC",
                 (rs, i) -> toMessage(rs), convId, limit);
     }
 

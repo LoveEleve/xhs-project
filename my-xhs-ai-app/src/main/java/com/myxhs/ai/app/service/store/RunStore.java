@@ -38,6 +38,9 @@ public interface RunStore {
     /** 终态答案落库（M8-4 历史追溯：内存 TTL/重启后仍可查到最终答案） */
     void updateFinalAnswer(String runId, String finalAnswer);
 
+    /** 关联会话（M10：ai_run.session_id = convId，run 追溯会话；提交后即写） */
+    void updateSessionId(String runId, String sessionId);
+
     Optional<RunRecord> loadRun(String runId);
 
     List<StepRecord> loadSteps(String runId);

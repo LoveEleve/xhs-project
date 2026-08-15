@@ -96,6 +96,11 @@ class ConversationServiceTest {
         }
         var ctx = service.buildContext(convId);
         assertEquals(ConversationService.HISTORY_LIMIT, ctx.size(), "最近 20 条（10 轮），无摘要不注入");
+        // P0-1 回归：60 条消息取最近 20 条（消息 40..59 = 问题20..结论29），且旧→新顺序
+        assertTrue(text(ctx.get(0)).contains("问题20"), "应取最近消息（首条=问题20）: " + text(ctx.get(0)));
+        assertTrue(text(ctx.get(1)).contains("结论20"), text(ctx.get(1)));
+        assertTrue(text(ctx.get(19)).contains("结论29"), "末条应为最新结论: " + text(ctx.get(19)));
+        assertTrue(!text(ctx.get(0)).contains("问题0"), "不得注入最早的消息");
     }
 
     @Test

@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
@@ -218,14 +219,20 @@ class RunControllerTest {
         throw new IllegalStateException("run 未完成: " + runId);
     }
 
-    /** 捕获每次模型调用收到的完整消息（验证多轮注入） */
-    private java.util.concurrent.atomic.AtomicReference<StringBuilder> stubModelWithCapture() {
-        var captured = new java.util.concurrent.atomic.AtomicReference<>(new StringBuilder());
+    /** 模型调用捕获：文本（验证注入内容）+ 角色序列（验证注入条数/重复） */
+    private record ModelCapture(StringBuilder text, StringBuilder roles) {
+    }
+
+    private ModelCapture stubModelWithCapture() {
+        var captured = new StringBuilder();
+        var roles = new StringBuilder();
         when(metricToolAccess.queryOrderVolume(any())).thenReturn("volume=61");
         when(chatModel.chat(any(ChatRequest.class))).thenAnswer(inv -> {
             List<ChatMessage> msgs = inv.getArgument(0, ChatRequest.class).messages();
             String all = msgs.stream().map(RunControllerTest::textOf).reduce("", String::concat);
-            captured.get().append("<<ROUND>>").append(all);
+            captured.append("<<ROUND>>").append(all);
+            roles.append("<<ROUND>>")
+                    .append(msgs.stream().map(m -> m.type().name()).reduce("", (a, b) -> a + "," + b));
             Matcher m = EV.matcher(all);
             String ev = m.find() ? m.group(1) : null;
             String json = ev == null
@@ -239,7 +246,7 @@ class RunControllerTest {
                             .tokenUsage(new TokenUsage(5, 5)).modelName("fake").build())
                     .build();
         });
-        return captured;
+        return new ModelCapture(captured, roles);
     }
 
     private static String textOf(ChatMessage m) {
@@ -250,7 +257,7 @@ class RunControllerTest {
 
     @Test
     void 多轮会话_第二问注入上轮结论() throws Exception {
-        var captured = stubModelWithCapture();
+        ModelCapture capture = stubModelWithCapture();
         // 第一问：显式 convId
         String convId = "conv_flow_1";
         String r1 = submit("为什么订单量下降了", convId);
@@ -275,12 +282,26 @@ class RunControllerTest {
         assertTrue(lst.getResponse().getContentAsString(StandardCharsets.UTF_8).contains("conv_flow_1"));
 
         // 第二问的模型调用必须收到第一问结论（无工具原文：不含"工具 queryOrderVolume 结果"）
-        String allCalls = captured2(captured);
+        String allCalls = capture.text().toString();
         assertTrue(allCalls.contains("下单量为61"), "第二问应注入上轮结论: " + allCalls);
+        // P0-2 回归：当前问题不得重复注入——Q2 首轮（尚无工具结果消息）中，
+        // "用户问题："之前的 USER 消息必须恰 1 条（历史 Q1）。若 buildContext 晚于
+        // appendUserMessage，当前问题会写进历史 → 之前出现 2 条 USER
+        String[] textRounds = allCalls.split("<<ROUND>>");
+        String[] roleRounds = capture.roles().toString().split("<<ROUND>>");
+        for (int i = 1; i < textRounds.length; i++) {
+            if (textRounds[i].contains("用户问题：那支付呢") && !textRounds[i].contains("工具 ")) {
+                String round = roleRounds[i];
+                int usersBeforeCurrent = round.substring(0, round.lastIndexOf("USER"))
+                        .split("USER").length - 1;
+                assertEquals(1, usersBeforeCurrent,
+                        "当前问题不得重复注入，角色序列: " + round);
+            }
+        }
     }
 
-    private static String captured2(java.util.concurrent.atomic.AtomicReference<StringBuilder> ref) {
-        return ref.get().toString();
+    private static String captured2(StringBuilder sb) {
+        return sb.toString();
     }
 
     @Test
@@ -316,5 +337,38 @@ class RunControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"message\":\"那支付成功率呢\",\"userId\":\"ops1\",\"conversationId\":\"conv_busy_1\"}"))
                 .andExpect(status().isConflict()).andReturn();
+    }
+
+    @Test
+    void 会话锁_首个run完成后同会话可再提交() throws Exception {
+        stubModel();
+        String convId = "conv_rel_1";
+        String r1 = submit("为什么订单量下降了", convId);
+        String run1 = r1.replaceAll(".*\"runId\":\"([^\"]+)\".*", "$1");
+        awaitSucceeded(run1);
+        // 锁已释放：同会话再次提交应 200（非 409）
+        String r2 = submit("那支付成功率呢", convId);
+        assertTrue(r2.contains("\"runId\":\""), r2);
+        // run → 会话追溯：ai_run.session_id = convId
+        Integer sessionIdCount = aiJdbc.queryForObject(
+                "SELECT COUNT(*) FROM ai_run WHERE run_id=? AND session_id=?",
+                Integer.class, run1, convId);
+        assertEquals(1, sessionIdCount.intValue(), "run 应关联会话 session_id");
+    }
+
+    @Test
+    void 问候直答_写入会话消息() throws Exception {
+        stubModel();
+        String convId = "conv_greet_1";
+        MvcResult r = mockMvc.perform(post("/api/runs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"你好\",\"userId\":\"ops1\",\"conversationId\":\"" + convId + "\"}"))
+                .andExpect(status().isOk()).andReturn();
+        String body = r.getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertTrue(body.contains("RECEIVED"), body);
+        // 直答零步骤即终态：消息应已落库（user + assistant）
+        MvcResult cv = mockMvc.perform(get("/api/conversations/" + convId)).andExpect(status().isOk()).andReturn();
+        String cbody = cv.getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertTrue(cbody.contains("\"messageCount\":2"), "直答也应写会话消息: " + cbody);
     }
 }

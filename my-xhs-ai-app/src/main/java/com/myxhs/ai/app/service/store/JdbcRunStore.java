@@ -68,6 +68,12 @@ public class JdbcRunStore implements RunStore {
     }
 
     @Override
+    public void updateSessionId(String runId, String sessionId) {
+        jdbc.update("UPDATE ai_run SET session_id=? WHERE run_id=?",
+                sessionId, runId);
+    }
+
+    @Override
     public Optional<RunRecord> loadRun(String runId) {
         List<RunRecord> rows = jdbc.query("SELECT * FROM ai_run WHERE run_id=?",
                 (rs, i) -> toRun(rs), runId);

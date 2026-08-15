@@ -205,6 +205,7 @@ export default function AgentConsolePage() {
   /** 新建会话：清空会话关联（下次提交后端新建 convId） */
   const handleNewConversation = () => {
     setConvId('');
+    setRunId('');
     setSearchParams({}, { replace: true });
     setSteps([]);
     setRunNote(null);

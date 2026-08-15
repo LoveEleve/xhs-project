@@ -92,8 +92,10 @@ public class ConversationService {
         if (convId == null) {
             return;
         }
+        // JSON 数组格式（非 Map.toString）：["ev_a","ev_b"]
         String refsJson = evidenceRefs == null || evidenceRefs.isEmpty() ? null
-                : java.util.Map.of("refs", evidenceRefs).toString();
+                : "[" + String.join(",", evidenceRefs.stream()
+                        .map(r -> "\"" + r + "\"").toList()) + "]";
         store.appendMessage(convId, "assistant", cleanForConversation(answer), runId, refsJson);
     }
 
