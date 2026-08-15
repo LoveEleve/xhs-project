@@ -52,7 +52,7 @@ class IntentRouterTest {
         assertEquals(Intent.AGENT, router.classify("为什么订单量下降了"));
         assertEquals(Intent.AGENT, router.classify("为什么支付成功率降低"));
         assertEquals(Intent.AGENT, router.classify("帮我分析一下最近业务情况"));
-        assertEquals(Intent.AGENT, router.classify("你好"));
+        assertEquals(Intent.AGENT, router.classify("随便聊聊今天的情况"));
         assertEquals(Intent.AGENT, router.classify(null));
     }
 
@@ -96,5 +96,24 @@ class IntentRouterTest {
         assertEquals(Intent.AGENT, r.classify(""));
         assertEquals(Intent.AGENT, r.classify("   "));
         assertEquals(Intent.AGENT, r.classify(null));
+    }
+
+    @Test
+    void 问候语_走Greeting直答() {
+        assertEquals(Intent.GREETING, router.classify("你好"));
+        assertEquals(Intent.GREETING, router.classify("您好，在吗"));
+        assertEquals(Intent.GREETING, router.classify("hi"));
+        assertEquals(Intent.GREETING, router.classify("hello"));
+        assertEquals(Intent.GREETING, router.classify("你是谁"));
+        assertEquals(Intent.GREETING, router.classify("谢谢"));
+        assertEquals(Intent.GREETING, router.classify("测试"));
+    }
+
+    @Test
+    void 问候含归因或指标词_不误判Greeting() {
+        // 归因/指标词优先于问候：带诊断目标的"你好"仍走正确路径
+        assertEquals(Intent.AGENT, router.classify("你好，为什么订单量下降了"));
+        assertEquals(Intent.AGENT, router.classify("您好，帮忙分析下"));
+        assertEquals(Intent.METRIC_ORDER_VOLUME, router.classify("你好，帮我查下订单量"));
     }
 }

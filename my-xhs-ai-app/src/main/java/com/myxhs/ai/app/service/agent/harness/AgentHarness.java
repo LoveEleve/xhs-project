@@ -65,6 +65,7 @@ public class AgentHarness {
             6. 每次输出必须是合法 JSON（不要 markdown 代码块），格式：
             {"action":"TOOL_CALL","tool":"queryOrderVolume","args":{"window":"2026-08-01~2026-08-07"},"reasoning":"为什么查"}
             {"action":"ANSWER","conclusion":"结论","evidenceRefs":["ev_xxx"],"counterEvidence":"反证或空","uncertainty":"不确定性或空"}
+            7. 如果用户消息不是诊断问题（问候/闲聊/无明确调查目标），禁止调用任何工具，直接 ANSWER 说明能力并引导提问。
             """;
 
     private final ChatModel chatModel;

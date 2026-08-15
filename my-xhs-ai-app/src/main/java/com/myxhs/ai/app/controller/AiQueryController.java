@@ -61,6 +61,10 @@ public class AiQueryController {
                     result = metricResult("METRIC_CONTENT_INTERACTION", message, () ->
                             metricToolAccess.contentInteraction(extractWindow(message)));
                     break;
+                case GREETING:
+                    result = Map.of("intent", "GREETING", "path", "chat",
+                            "result", IntentRouter.GREETING_ANSWER);
+                    break;
                 default:
                     result = agentResult(intent.name(), message);
                     break;

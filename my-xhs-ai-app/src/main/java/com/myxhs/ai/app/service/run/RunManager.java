@@ -4,6 +4,9 @@ import com.myxhs.ai.app.service.agent.harness.AgentBudget;
 import com.myxhs.ai.app.service.agent.harness.AgentHarness;
 import com.myxhs.ai.app.service.agent.harness.AgentRun;
 import com.myxhs.ai.app.service.agent.harness.HarnessEvent;
+import com.myxhs.ai.app.service.agent.harness.TerminationReason;
+import com.myxhs.ai.app.service.router.Intent;
+import com.myxhs.ai.app.service.router.IntentRouter;
 import com.myxhs.ai.app.service.store.RunStore;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -57,6 +60,8 @@ public class RunManager {
     private final java.util.concurrent.ConcurrentHashMap<String, AtomicBoolean> streamTokens =
             new java.util.concurrent.ConcurrentHashMap<>();
     private final Map<String, RunEntry> runs = new ConcurrentHashMap<>();
+    /** 意图预检（纯规则版，零 LLM 成本）：问候/闲聊直答，不进 Agent */
+    private final IntentRouter intentRouter = new IntentRouter();
 
     @Autowired
     public RunManager(AgentHarness harness, RunStore store, RunMetrics metrics) {
@@ -128,9 +133,13 @@ public class RunManager {
         return entry;
     }
 
-    /** 提交诊断任务，立即返回；后台执行（userId 落库实现用户级审计） */
+    /** 提交诊断任务，立即返回；后台执行（userId 落库实现用户级审计）。
+     *  意图预检：问候/闲聊（无诊断目标）不进 Agent，直接完成（零模型/工具成本，防"你好→调 baselineWindow"类蠢回答）。 */
     public RunEntry submit(String query, String userId) {
         purgeDone();
+        if (intentRouter.classify(query) == Intent.GREETING) {
+            return submitGreeting(query, userId);
+        }
         String runId = AgentHarness.newRunId();
         LinkedBlockingQueue<HarnessEvent> queue = new LinkedBlockingQueue<>();
         AtomicBoolean cancelToken = new AtomicBoolean(false);
@@ -150,6 +159,28 @@ public class RunManager {
         RunEntry entry = new RunEntry(runId, userId, query, queue, future, new AtomicBoolean(false), cancelToken);
         runs.put(runId, entry);
         log.info("[runmgr] submit run={} query={} user={}", runId, query, userId);
+        return entry;
+    }
+
+    /** 问候/闲聊直答：立即完成（RUN_STARTED→COMPLETED 事件流完整，前端零改动）；不落库（无追溯价值） */
+    private RunEntry submitGreeting(String query, String userId) {
+        String runId = AgentHarness.newRunId();
+        LinkedBlockingQueue<HarnessEvent> queue = new LinkedBlockingQueue<>();
+        AgentRun run = new AgentRun(runId, query, budget);
+        run.terminate(TerminationReason.COMPLETED, IntentRouter.GREETING_ANSWER);
+        queue.offer(new HarnessEvent(runId, "RUN_STARTED", 0, null, null, null, null,
+                "问候直答（非诊断任务，未调用工具/模型）"));
+        queue.offer(new HarnessEvent(runId, "COMPLETED", 0, null, null, null,
+                TerminationReason.COMPLETED.name(), IntentRouter.GREETING_ANSWER));
+        CompletableFuture<AgentRun> future = CompletableFuture.completedFuture(run);
+        if (metrics != null) {
+            metrics.onRunSubmitted();
+            future.whenComplete((r, ex) -> metrics.onRunFinished(r));
+        }
+        RunEntry entry = new RunEntry(runId, userId, query, queue, future,
+                new AtomicBoolean(false), new AtomicBoolean(false));
+        runs.put(runId, entry);
+        log.info("[runmgr] greeting run={} query={} user={}（零成本直答）", runId, query, userId);
         return entry;
     }
 

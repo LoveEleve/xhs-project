@@ -15,6 +15,16 @@ import java.util.regex.Pattern;
  */
 public class IntentRouter {
 
+    /** 问候/闲聊直答内容（非诊断任务零成本应答；RunManager/AiQueryController 共用） */
+    public static final String GREETING_ANSWER = """
+            你好！我是 my-xhs 运营诊断助手，基于真实指标数据做多步归因调查，结论带证据链、可追溯。
+            你可以这样问我：
+            - 为什么订单量下降了？
+            - 最近支付成功率为什么异常？
+            - 内容互动量波动是什么原因？
+            - 帮我分析最近的服务错误或延迟
+            - 为什么 MQ 有消费积压？""";
+
     private static final List<Pattern> ORDER_VOLUME_PATTERNS = List.of(
             compile("订单量"), compile("下单量"), compile("订单数"),
             compile("下单数"), compile("订单总量"), compile("订单总数"));
@@ -29,6 +39,11 @@ public class IntentRouter {
             compile("为什么"), compile("为何"), compile("原因"), compile("怎么"),
             compile("如何"), compile("分析"), compile("诊断"), compile("归因"),
             compile("下降"), compile("降低"), compile("异常"), compile("波动"));
+    /** 问候/闲聊/无诊断目标：规则模糊时才判（归因/指标词已优先消耗），命中即 GREETING 不走 Agent */
+    private static final List<Pattern> GREETING_PATTERNS = List.of(
+            compile("你好"), compile("您好"), compile("嗨"), compile("哈喽"), compile("hello"),
+            compile("hi"), compile("在吗"), compile("你是谁"), compile("能干什么"),
+            compile("可以做什么"), compile("帮助"), compile("谢谢"), compile("再见"), compile("测试"));
 
     private final LlmIntentClassifier llmClassifier;
 
@@ -66,7 +81,11 @@ public class IntentRouter {
         if (hits.size() == 1) {
             return hits.get(0); // 确定性
         }
-        // 0 个 或 >1 个指标命中 → 模糊：LLM 兜底（开启时）否则 AGENT
+        // 0 个 或 >1 个指标命中 → 先问候判定（零成本直答），再 LLM 兜底，最后保守 AGENT
+        if (matches(GREETING_PATTERNS, text)) {
+            return Intent.GREETING;
+        }
+        // 模糊：LLM 兜底（开启时）否则 AGENT
         if (llmClassifier != null) {
             return llmClassifier.classify(userMessage);
         }

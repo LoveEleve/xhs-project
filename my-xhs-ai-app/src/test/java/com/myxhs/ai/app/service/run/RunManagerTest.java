@@ -289,4 +289,28 @@ class RunManagerTest {
         e.future().get(10, TimeUnit.SECONDS);
         assertEquals("SUCCEEDED", e.future().join().status().name());
     }
+
+    @Test
+    void 问候语_零成本直答不调工具() throws Exception {
+        AgentHarness harness = new AgentHarness(new FakeModel(), new FakeTools(), new FakeObs(),
+                MAPPER, AgentBudget.defaults(), 0.002, 2, null, "fake");
+        RunManager mgr = new RunManager(harness, null);
+
+        RunManager.RunEntry e = mgr.submit("你好", "u1");
+        e.future().get(10, TimeUnit.SECONDS);
+
+        AgentRun run = e.future().join();
+        assertEquals("SUCCEEDED", run.status().name());
+        assertEquals(com.myxhs.ai.app.service.router.IntentRouter.GREETING_ANSWER, run.finalAnswer());
+        assertEquals(0, run.steps().size(), "问候不应产生任何步骤（未调模型/工具）");
+        // 事件流完整：RUN_STARTED → COMPLETED，无 THINK/TOOL
+        List<HarnessEvent> events = new java.util.ArrayList<>();
+        HarnessEvent ev;
+        while ((ev = e.events().poll()) != null) {
+            events.add(ev);
+        }
+        assertEquals(2, events.size(), "仅 RUN_STARTED + COMPLETED 两个事件");
+        assertEquals("RUN_STARTED", events.get(0).type());
+        assertEquals("COMPLETED", events.get(1).type());
+    }
 }
