@@ -175,12 +175,23 @@ public class RunManager {
         return entry;
     }
 
-    /** 非诊断任务直答（问候/超范围）：立即完成（RUN_STARTED→COMPLETED 事件流完整，前端零改动）；不落库（无追溯价值） */
+    /** 非诊断任务直答（问候/超范围）：立即完成（RUN_STARTED→COMPLETED 事件流完整，前端零改动）。
+     *  落库（M8-4 可追溯闭环：所有 run 统一可追溯，重启/TTL 后历史直答也可查） */
     private RunEntry submitDirectAnswer(String query, String userId, String answer, String note) {
         String runId = AgentHarness.newRunId();
         LinkedBlockingQueue<HarnessEvent> queue = new LinkedBlockingQueue<>();
         AgentRun run = new AgentRun(runId, query, budget);
         run.terminate(TerminationReason.COMPLETED, answer);
+        if (store != null) {
+            try {
+                store.createRun(runId, userId == null || userId.isBlank() ? "anonymous" : userId,
+                        null, query, "{}", "{}");
+                store.updateRunStatus(runId, "SUCCEEDED", "COMPLETED", 0, 0);
+                store.updateFinalAnswer(runId, answer);
+            } catch (Exception e) {
+                log.warn("[runmgr] direct-answer 落库失败 run={} err={}", runId, e.getMessage());
+            }
+        }
         queue.offer(new HarnessEvent(runId, "RUN_STARTED", 0, null, null, null, null, note));
         queue.offer(new HarnessEvent(runId, "COMPLETED", 0, null, null, null,
                 TerminationReason.COMPLETED.name(), answer));
