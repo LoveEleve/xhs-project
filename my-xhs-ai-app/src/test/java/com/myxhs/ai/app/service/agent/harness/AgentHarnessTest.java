@@ -3,6 +3,7 @@ package com.myxhs.ai.app.service.agent.harness;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.ai.app.service.store.JdbcRunStore;
 import com.myxhs.ai.app.service.store.RunStore;
+import com.myxhs.ai.tools.AgentToolBinder;
 import com.myxhs.ai.tools.LogSearchAccess;
 import com.myxhs.ai.tools.MetricToolAccess;
 import com.myxhs.ai.tools.ObsToolAccess;
@@ -286,10 +287,11 @@ class AgentHarnessTest {
     @Test
     void 观测工具_hours非法被策略拒绝() {
         AgentHarness h = harness(texts -> toolCallJson("httpErrors", "6"), AgentBudget.defaults());
-        // 用 PolicyGuard 直接验证 hours 校验
-        PolicyDecision d = new PolicyGuard().evaluate("httpErrors", Map.of("service", "my-xhs-gateway", "hours", "0"));
-        assertEquals(false, d.allowed());
-        PolicyDecision ok = new PolicyGuard().evaluate("httpErrors", Map.of("service", "my-xhs-gateway", "hours", "6"));
+        // 用 PolicyGuard 直接验证 hours 校验（M12：注册表驱动，同源 catalog 装配）
+        PolicyGuard guard = new PolicyGuard(AgentToolBinder.build(null, null, null));
+        PolicyDecision d = guard.evaluate("httpErrors", Map.of("service", "my-xhs-gateway", "hours", "0"));
+        assertTrue(!d.allowed(), "hours=0 应拒绝: " + d.reason());
+        PolicyDecision ok = guard.evaluate("httpErrors", Map.of("service", "my-xhs-gateway", "hours", "6"));
         assertEquals(true, ok.allowed());
     }
 
@@ -314,10 +316,11 @@ class AgentHarnessTest {
 
     @Test
     void MQ组名注入_被策略拒绝() {
-        PolicyDecision d = new PolicyGuard().evaluate("mqConsumerLag",
+        PolicyGuard guard = new PolicyGuard(AgentToolBinder.build(null, null, null));
+        PolicyDecision d = guard.evaluate("mqConsumerLag",
                 Map.of("group", "a\";drop;"));
         assertEquals(false, d.allowed());
-        PolicyDecision ok = new PolicyGuard().evaluate("mqConsumerLag",
+        PolicyDecision ok = guard.evaluate("mqConsumerLag",
                 Map.of("group", "cart-sync-consumer-group"));
         assertEquals(true, ok.allowed());
     }

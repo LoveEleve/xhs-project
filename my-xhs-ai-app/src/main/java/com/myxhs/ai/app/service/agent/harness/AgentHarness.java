@@ -3,9 +3,11 @@ package com.myxhs.ai.app.service.agent.harness;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.ai.app.service.QueryWindowExtractor;
 import com.myxhs.ai.app.service.store.RunStore;
+import com.myxhs.ai.tools.AgentToolBinder;
 import com.myxhs.ai.tools.LogSearchAccess;
 import com.myxhs.ai.tools.MetricToolAccess;
 import com.myxhs.ai.tools.ObsToolAccess;
+import com.myxhs.ai.tools.ToolRegistry;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
@@ -80,7 +82,9 @@ public class AgentHarness {
     private final MetricToolAccess metricToolAccess;
     private final ObsToolAccess obsToolAccess;
     private final LogSearchAccess logSearchAccess;
-    private final PolicyGuard policyGuard = new PolicyGuard();
+    /** M12 工具注册表（catalog 元数据 + 执行器绑定，构造器内装配；PolicyGuard/callTool 单一事实源） */
+    private final ToolRegistry toolRegistry;
+    private final PolicyGuard policyGuard;
     private final AgentDecisionCodec codec;
     private final AgentBudget defaultBudget;
     private final double pricePer1kTokens;
@@ -120,6 +124,9 @@ public class AgentHarness {
         this.metricToolAccess = metricToolAccess;
         this.obsToolAccess = obsToolAccess;
         this.logSearchAccess = logSearchAccess;
+        // M12：注册表 = catalog 元数据 + 三接口执行器绑定（单一事实源；PolicyGuard/callTool 读它）
+        this.toolRegistry = AgentToolBinder.build(metricToolAccess, obsToolAccess, logSearchAccess);
+        this.policyGuard = new PolicyGuard(toolRegistry);
         this.codec = new AgentDecisionCodec(mapper);
         this.defaultBudget = defaultBudget;
         this.pricePer1kTokens = pricePer1kTokens;
@@ -527,10 +534,10 @@ public class AgentHarness {
         }
     }
 
-    /** model/prompt/tool 版本（M5 版本追溯；model 名来自配置，工具数自动计数；prompt 版本化抽文件待 M6） */
+    /** model/prompt/tool 版本（M5 版本追溯；model 名来自配置，工具数=注册表可用数；prompt 版本化抽文件待 M6） */
     private String versionsJson() {
         return "{\"model\":\"" + modelName + "\",\"prompt\":\"SYSTEM_PROMPT.v1\",\"tools\":"
-                + PolicyGuard.allowedToolCount()
+                + toolRegistry.usableCount()
                 + "}";
     }
 
@@ -607,31 +614,15 @@ public class AgentHarness {
         return null;
     }
 
-    /** 工具执行（只经 allowlist；异常→ERROR 结果如实回填，不抛出） */
+    /** 工具执行（注册表驱动 M12：PolicyGuard 已 deny-by-default 校验，此处二次防御）。
+     *  未注册/无执行器 → ERROR 如实回填，不抛出。 */
     private String callTool(String tool, Map<String, String> args) {
-        String window = args == null ? null : args.get("window");
-        String service = args == null ? null : args.get("service");
-        String hours = args == null ? null : args.get("hours");
         try {
-            return switch (tool) {
-                case PolicyGuard.TOOL_ORDER_VOLUME -> metricToolAccess.queryOrderVolume(window);
-                case PolicyGuard.TOOL_PAYMENT_RATE -> metricToolAccess.paymentSuccessRate(window);
-                case PolicyGuard.TOOL_CONTENT_INTERACTION -> metricToolAccess.contentInteraction(window);
-                case PolicyGuard.TOOL_BASELINE_WINDOW -> metricToolAccess.baselineWindow(window);
-                case PolicyGuard.TOOL_HTTP_ERRORS -> obsToolAccess.httpErrors(service, hours);
-                case PolicyGuard.TOOL_HTTP_LATENCY -> obsToolAccess.httpLatency(service, hours);
-                case PolicyGuard.TOOL_MQ_LAG -> obsToolAccess.mqConsumerLag(args == null ? null : args.get("group"));
-                case PolicyGuard.TOOL_MQ_DLQ -> obsToolAccess.mqDlqBacklog(args == null ? null : args.get("consumerGroup"));
-                case PolicyGuard.TOOL_MYSQL_REPLICA_LAG -> obsToolAccess.mysqlReplicationLag();
-                case PolicyGuard.TOOL_MYSQL_DEADLOCKS -> obsToolAccess.mysqlDeadlocks();
-                case PolicyGuard.TOOL_FUNNEL -> metricToolAccess.funnelConversion(window);
-                case PolicyGuard.TOOL_PAY_FAILURES -> metricToolAccess.paymentFailures(window);
-                case PolicyGuard.TOOL_NOTE_PUBLISH -> metricToolAccess.notePublishEvents(window);
-                case PolicyGuard.TOOL_LOG_SEARCH -> logSearchAccess == null
-                        ? "ERROR: 受控日志检索未装配（logSearchAccess=null）"
-                        : logSearchAccess.searchLog(args.get("service"), args.get("keyword"), args.get("tailLines"));
-                default -> "ERROR: 未注册工具 " + tool;
-            };
+            var specOpt = toolRegistry.get(tool);
+            if (specOpt.isEmpty() || specOpt.get().invoker() == null) {
+                return "ERROR: 工具 " + tool + " 未开放执行（未注册或 L3 需人工审批）";
+            }
+            return specOpt.get().invoker().apply(args);
         } catch (Exception e) {
             log.warn("[harness] 工具调用异常 tool={} err={}", tool, e.getMessage());
             return "ERROR: 工具调用异常: " + e.getMessage();

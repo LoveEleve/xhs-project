@@ -1,129 +1,68 @@
 package com.myxhs.ai.app.service.agent.harness;
 
-import com.myxhs.ai.tools.MetricWindow;
+import com.myxhs.ai.tools.AccessLevel;
+import com.myxhs.ai.tools.AgentToolNames;
+import com.myxhs.ai.tools.ToolRegistry;
+import com.myxhs.ai.tools.ToolSpec;
 
 import java.util.Map;
-import java.util.Set;
 
 /**
  * 策略守卫（设计 §2 VALIDATE + §5 HITL）：deny-by-default 工具 allowlist + 参数校验。
- *  - L1 业务只读工具（MetricToolAccess 四件套，window 参数）→ ALLOW
- *  - L2 观测只读工具（ObsToolAccess 两件套，service+hours 参数，B3 面）→ ALLOW
- *  - L3 高危动作（重启/重投/写，V1 未开放）→ REQUIRES_APPROVAL（HITL 门，V1 恒不通过）
- *  - 其余一切 → DENY
- * 参数校验：window 规则单一事实源 = MetricWindow；hours 规则在本地（1~168 整数）。
+ * M12 注册表驱动：allowlist/参数规则/权限级全部读 ToolRegistry（单一事实源）——
+ * 新增工具注册即生效，零改本类。
+ *  - L1/L2（注册且可执行）→ ALLOW（参数经 spec.validator 校验）
+ *  - L3 或未绑定执行器 → REQUIRES_APPROVAL（HITL 门，V1 恒不通过）
+ *  - 未注册 → DENY
+ * 工具名常量保留（引用点零改动），值委托 AgentToolNames 单一事实源。
  */
 public class PolicyGuard {
 
-    public static final String TOOL_ORDER_VOLUME = "queryOrderVolume";
-    public static final String TOOL_PAYMENT_RATE = "paymentSuccessRate";
-    public static final String TOOL_CONTENT_INTERACTION = "contentInteraction";
-    public static final String TOOL_BASELINE_WINDOW = "baselineWindow";
-    public static final String TOOL_HTTP_ERRORS = "httpErrors";
-    public static final String TOOL_HTTP_LATENCY = "httpLatency";
-    public static final String TOOL_MQ_LAG = "mqConsumerLag";
-    public static final String TOOL_MQ_DLQ = "mqDlqBacklog";
-    public static final String TOOL_MYSQL_REPLICA_LAG = "mysqlReplicationLag";
-    public static final String TOOL_MYSQL_DEADLOCKS = "mysqlDeadlocks";
-    public static final String TOOL_FUNNEL = "funnelConversion";
-    public static final String TOOL_PAY_FAILURES = "paymentFailures";
-    public static final String TOOL_NOTE_PUBLISH = "notePublishEvents";
-    public static final String TOOL_LOG_SEARCH = "logSearch";
+    public static final String TOOL_ORDER_VOLUME = AgentToolNames.QUERY_ORDER_VOLUME;
+    public static final String TOOL_PAYMENT_RATE = AgentToolNames.PAYMENT_SUCCESS_RATE;
+    public static final String TOOL_CONTENT_INTERACTION = AgentToolNames.CONTENT_INTERACTION;
+    public static final String TOOL_BASELINE_WINDOW = AgentToolNames.BASELINE_WINDOW;
+    public static final String TOOL_HTTP_ERRORS = AgentToolNames.HTTP_ERRORS;
+    public static final String TOOL_HTTP_LATENCY = AgentToolNames.HTTP_LATENCY;
+    public static final String TOOL_MQ_LAG = AgentToolNames.MQ_CONSUMER_LAG;
+    public static final String TOOL_MQ_DLQ = AgentToolNames.MQ_DLQ_BACKLOG;
+    public static final String TOOL_MYSQL_REPLICA_LAG = AgentToolNames.MYSQL_REPLICA_LAG;
+    public static final String TOOL_MYSQL_DEADLOCKS = AgentToolNames.MYSQL_DEADLOCKS;
+    public static final String TOOL_FUNNEL = AgentToolNames.FUNNEL_CONVERSION;
+    public static final String TOOL_PAY_FAILURES = AgentToolNames.PAYMENT_FAILURES;
+    public static final String TOOL_NOTE_PUBLISH = AgentToolNames.NOTE_PUBLISH_EVENTS;
+    public static final String TOOL_LOG_SEARCH = AgentToolNames.LOG_SEARCH;
 
-    private static final Set<String> ALLOWED_TOOLS = Set.of(
-            TOOL_ORDER_VOLUME, TOOL_PAYMENT_RATE, TOOL_CONTENT_INTERACTION, TOOL_BASELINE_WINDOW,
-            TOOL_HTTP_ERRORS, TOOL_HTTP_LATENCY, TOOL_MQ_LAG, TOOL_MQ_DLQ,
-            TOOL_MYSQL_REPLICA_LAG, TOOL_MYSQL_DEADLOCKS,
-            TOOL_FUNNEL, TOOL_PAY_FAILURES, TOOL_NOTE_PUBLISH, TOOL_LOG_SEARCH);
+    private final ToolRegistry registry;
 
-    /** 需要 window 参数的工具（业务+基线+事件流水） */
-    private static final Set<String> WINDOW_TOOLS = Set.of(
-            TOOL_ORDER_VOLUME, TOOL_PAYMENT_RATE, TOOL_CONTENT_INTERACTION, TOOL_BASELINE_WINDOW,
-            TOOL_FUNNEL, TOOL_PAY_FAILURES, TOOL_NOTE_PUBLISH);
+    public PolicyGuard(ToolRegistry registry) {
+        this.registry = registry;
+    }
 
-    /** 需要 hours 参数的工具（L2 观测） */
-    private static final Set<String> HOURS_TOOLS = Set.of(TOOL_HTTP_ERRORS, TOOL_HTTP_LATENCY);
-
-    /** 组名标签过滤白名单（防 PromQL 注入；与 PrometheusQueryTool 同规则） */
-    private static final java.util.regex.Pattern GROUP_PATTERN =
-            java.util.regex.Pattern.compile("[A-Za-z0-9_-]+");
-
-    /** L3 高危动作（V1 一律人工审批；不在 allowlist，Agent 无法执行） */
-    private static final Set<String> L3_TOOLS = Set.of("service.restart", "dlq.redeliver", "order.refund");
-
-    /** Agent 可调用工具数（版本追溯用；不含 L3） */
-    public static int allowedToolCount() {
-        return ALLOWED_TOOLS.size();
+    /** 可用工具数（版本追溯用；只算 level!=L3 且有执行器） */
+    public int allowedToolCount() {
+        return registry.usableCount();
     }
 
     public PolicyDecision evaluate(String tool, Map<String, String> args) {
         if (tool == null || tool.isBlank()) {
             return PolicyDecision.deny("tool 为空");
         }
-        if (L3_TOOLS.contains(tool)) {
-            return PolicyDecision.requiresApproval(tool + " 属 L3 高危动作，V1 需人工审批（HITL）");
+        var specOpt = registry.get(tool);
+        if (specOpt.isEmpty()) {
+            return PolicyDecision.deny("非授权工具: " + tool + "（deny-by-default，仅允许注册工具）");
         }
-        if (!ALLOWED_TOOLS.contains(tool)) {
-            return PolicyDecision.deny("非授权工具: " + tool + "（deny-by-default，仅允许固定只读工具）");
+        ToolSpec spec = specOpt.get();
+        if (spec.level() == AccessLevel.L3 || spec.invoker() == null) {
+            return PolicyDecision.requiresApproval(
+                    tool + " 属 L3 高危动作，V1 需人工审批（HITL）");
         }
-        if (WINDOW_TOOLS.contains(tool)) {
-            String invalid = validateWindow(args == null ? null : args.get("window"));
+        if (spec.validator() != null) {
+            String invalid = spec.validator().apply(args);
             if (invalid != null) {
                 return PolicyDecision.deny(tool + " 参数非法: " + invalid);
-            }
-        } else if (HOURS_TOOLS.contains(tool)) {
-            String invalid = validateHours(args == null ? null : args.get("hours"));
-            if (invalid != null) {
-                return PolicyDecision.deny(tool + " 参数非法: " + invalid);
-            }
-        } else if (tool.equals(TOOL_LOG_SEARCH)) {
-            // 受控日志检索（M9-1）：service 白名单在工具侧严格 map 校验（无路径拼接）；
-            // 此处校验 keyword 字符白名单 + tailLines 范围（与 DirectLogSearchAccess 同规则）
-            String k = args == null ? null : args.get("keyword");
-            String invalid = com.myxhs.ai.tools.DirectLogSearchAccess.validateKeyword(k);
-            if (invalid != null) {
-                return PolicyDecision.deny(tool + " 参数非法: " + invalid);
-            }
-            int tail = com.myxhs.ai.tools.DirectLogSearchAccess.parseTailLines(
-                    args == null ? null : args.get("tailLines"));
-            if (tail < 1 || tail > 5000) {
-                return PolicyDecision.deny(tool + " 参数非法: tailLines 必须在 1~5000");
-            }
-        } else if (tool.equals(TOOL_MQ_LAG) || tool.equals(TOOL_MQ_DLQ)) {
-            // MQ 组名可选；若有值必须符合白名单（防 PromQL 注入，与工具侧同规则）
-            String g = tool.equals(TOOL_MQ_LAG)
-                    ? (args == null ? null : args.get("group"))
-                    : (args == null ? null : args.get("consumerGroup"));
-            if (g != null && !g.isBlank() && !GROUP_PATTERN.matcher(g.trim()).matches()) {
-                return PolicyDecision.deny(tool + " 参数非法: 组名仅允许字母数字下划线连字符");
             }
         }
         return PolicyDecision.allow();
-    }
-
-    /** 返回错误消息，null=合法（规则单一事实源 MetricWindow） */
-    static String validateWindow(String window) {
-        try {
-            MetricWindow.parse(window);
-            return null;
-        } catch (IllegalArgumentException e) {
-            return e.getMessage();
-        }
-    }
-
-    /** hours 校验：1~168 整数 */
-    static String validateHours(String hours) {
-        if (hours == null || hours.isBlank()) {
-            return "hours 必填（最近小时数 1~168）";
-        }
-        try {
-            int h = Integer.parseInt(hours.trim());
-            if (h < 1 || h > 168) {
-                return "hours 必须在 1~168 之间";
-            }
-            return null;
-        } catch (NumberFormatException e) {
-            return "hours 必须为整数";
-        }
     }
 }

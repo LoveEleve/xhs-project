@@ -1,13 +1,18 @@
 package com.myxhs.ai.mcp.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.myxhs.ai.tools.AgentToolBinder;
 import com.myxhs.ai.tools.BaselineWindowTool;
 import com.myxhs.ai.tools.ContentInteractionTool;
 import com.myxhs.ai.tools.DirectLogSearchAccess;
+import com.myxhs.ai.tools.DirectMetricToolAccess;
+import com.myxhs.ai.tools.DirectObsToolAccess;
 import com.myxhs.ai.tools.EventAnalyticsTool;
 import com.myxhs.ai.tools.OrderMetricsTool;
 import com.myxhs.ai.tools.PaymentMetricsTool;
 import com.myxhs.ai.tools.PrometheusQueryTool;
+import com.myxhs.ai.tools.ToolRegistry;
+import com.myxhs.ai.tools.ToolSpec;
 import io.modelcontextprotocol.json.McpJsonMapper;
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
@@ -17,46 +22,26 @@ import io.modelcontextprotocol.server.transport.WebMvcStreamableServerTransportP
 import io.modelcontextprotocol.spec.McpSchema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.function.RouterFunction;
 import org.springframework.web.servlet.function.ServerResponse;
 
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
-import java.util.function.Function;
+import java.util.Set;
 
 /**
- * MCP 服务装配（D2）：Streamable HTTP 暴露 3 个只读指标工具（复用 my-xhs-ai-tools）。
- * 端点 /mcp；工具参数统一 window(yyyy-MM-dd~yyyy-MM-dd)。
- * 安全：工具只读（SELECT 账号），口径/容错在 tools 模块内。
+ * MCP 服务装配（D2 + M12 注册表化）：Streamable HTTP 暴露注册表中的可用工具
+ * （catalog 元数据 + Direct 执行器，AgentToolBinder 单一事实源）。
+ * 工具列表 = 注册表导出（新增工具注册即上 MCP，零改本类）；L3 工具不上线（M11 HITL）。
+ * 端点 /mcp；必填参数来自 spec.schemaJson 的 required（与 app 侧 PolicyGuard 校验职责分离）。
  */
 @Configuration
 public class McpServerConfig {
 
     private static final Logger log = LoggerFactory.getLogger(McpServerConfig.class);
-
-    private static final String WINDOW_SCHEMA = """
-            {"type":"object","properties":{"window":{"type":"string","description":"时间窗 yyyy-MM-dd~yyyy-MM-dd，跨度≤31天"}},"required":["window"]}
-            """;
-
-    /** 观测工具参数 schema（service+hours，B3 面） */
-    private static final String OBS_SCHEMA = """
-            {"type":"object","properties":{"service":{"type":"string","description":"服务名，如 my-xhs-order；空=全部"},"hours":{"type":"string","description":"最近小时数 1~168"}},"required":["hours"]}
-            """;
-
-    /** MQ 工具参数 schema（可选单参数，B2 面） */
-    private static final String MQ_SCHEMA = """
-            {"type":"object","properties":{"group":{"type":"string","description":"消费组名，如 cart-sync-consumer-group；空=全部"}}}
-            """;
-
-    /** 无参工具 schema（B4 面） */
-    private static final String NOARG_SCHEMA = "{\"type\":\"object\"}";
-
-    /** 受控日志检索工具参数 schema（M9-1） */
-    private static final String LOG_SEARCH_SCHEMA = """
-            {"type":"object","properties":{"service":{"type":"string","description":"白名单服务名，如 my-xhs-order"},"keyword":{"type":"string","description":"检索关键词，字母数字与常见符号，长度≤100"},"tailLines":{"type":"string","description":"最近多少行内检索（1~5000，默认 500）"}},"required":["service","keyword"]}
-            """;
 
     @Bean
     public McpJsonMapper mcpJsonMapper(ObjectMapper objectMapper) {
@@ -87,119 +72,82 @@ public class McpServerConfig {
                                        PrometheusQueryTool prometheusQueryTool,
                                        EventAnalyticsTool eventAnalyticsTool,
                                        DirectLogSearchAccess directLogSearchAccess) {
-        return McpServer.sync(transport)
-                .serverInfo("my-xhs-ai-mcp", "1.0.0")
-                .tools(
-                        toolSpec(jsonMapper, "order.query_volume",
-                                "查询下单量（口径：排除已删、含取消/退款，按创建时间）",
-                                orderMetricsTool::queryOrderVolume),
-                        toolSpec(jsonMapper, "payment.success_rate",
-                                "查询支付成功率（口径：成功/(成功+失败)，排除待支付/退款；渠道为 Mock）",
-                                paymentMetricsTool::paymentSuccessRate),
-                        toolSpec(jsonMapper, "content.interaction",
-                                "查询内容互动量（口径：点赞/收藏/评论/分享，曝光单列）",
-                                contentInteractionTool::contentInteraction),
-                        toolSpec(jsonMapper, "baseline.window",
-                                "计算对比基线窗口（上一同长窗口，确定性，模型不得自行推算）",
-                                baselineWindowTool::baselineWindow),
-                        toolSpec(jsonMapper, "funnel.conversion",
-                                "电商漏斗各环节量（浏览/加购/下单/支付，窗口内）",
-                                eventAnalyticsTool::funnelConversion),
-                        toolSpec(jsonMapper, "payment.failures",
-                                "支付失败事件（PAY_FAIL 按失败码聚合，窗口内）",
-                                eventAnalyticsTool::paymentFailures),
-                        toolSpec(jsonMapper, "content.publish_events",
-                                "内容发布事件数（PUBLISH 按天，窗口内）",
-                                eventAnalyticsTool::notePublishEvents),
-                        logSearchToolSpec(jsonMapper, "log.search",
-                                "检索服务日志（白名单服务最近 N 行内过滤 keyword；M9-1 受控检索）",
-                                (args) -> directLogSearchAccess.searchLog(
-                                        str(args.get("service")), str(args.get("keyword")), str(args.get("tailLines")))),
-                        obsToolSpec(jsonMapper, "service.http_errors",
-                                "服务 HTTP 5xx 错误统计（按 uri 聚合，最近 N 小时）",
-                                (args) -> prometheusQueryTool.httpErrors(str(args.get("service")), str(args.get("hours")))),
-                        obsToolSpec(jsonMapper, "service.http_latency",
-                                "服务 HTTP 慢端点 top（P95 延迟秒，最近 N 小时）",
-                                (args) -> prometheusQueryTool.httpLatency(str(args.get("service")), str(args.get("hours")))),
-                        mqToolSpec(jsonMapper, "mq.consumer_lag",
-                                "RocketMQ 消费积压（按消费组聚合 lag，空=全部）",
-                                (args) -> prometheusQueryTool.mqConsumerLag(str(args.get("group")))),
-                        mqToolSpec(jsonMapper, "mq.dlq_backlog",
-                                "RocketMQ 死信积压（按 consumer_group 聚合 backlog，空=全部；-1 为应用侧哨兵值=无 DLQ）",
-                                (args) -> prometheusQueryTool.mqDlqBacklog(str(args.get("consumerGroup")))),
-                        noArgToolSpec(jsonMapper, "mysql.replication_lag",
-                                "MySQL 主从复制延迟（Seconds_Behind_Master，全部从库）",
-                                () -> prometheusQueryTool.mysqlReplicationLag()),
-                        noArgToolSpec(jsonMapper, "mysql.deadlocks",
-                                "MySQL 死锁事件（累计 total + 最新 new_events）",
-                                () -> prometheusQueryTool.mysqlDeadlocks())
-                )
-                .build();
+        // M12：注册表 = catalog 元数据 + Direct 三接口执行器（与 app 侧桥接同源装配）
+        ToolRegistry registry = AgentToolBinder.build(
+                new DirectMetricToolAccess(orderMetricsTool, paymentMetricsTool, contentInteractionTool,
+                        baselineWindowTool, eventAnalyticsTool),
+                new DirectObsToolAccess(prometheusQueryTool),
+                directLogSearchAccess);
+        var server = McpServer.sync(transport)
+                .serverInfo("my-xhs-ai-mcp", "1.0.0");
+        var specs = registry.all().stream()
+                .filter(ToolSpec::usable) // L3 未开放不上线
+                .map(spec -> toolSpecFrom(jsonMapper, spec))
+                .toList();
+        log.info("[mcp] 工具列表（注册表导出）: {} 个: {}", specs.size(),
+                specs.stream().map(s -> s.tool().name()).toList());
+        return server.tools(specs.toArray(new McpServerFeatures.SyncToolSpecification[0])).build();
     }
 
-    private static McpServerFeatures.SyncToolSpecification toolSpec(McpJsonMapper mapper, String name, String desc,
-                                                                    Function<String, String> fn) {
+    /** 从注册表 spec 生成 MCP 工具（schema + 必填检查 + 执行器 + 审计；校验职责在 app 侧 PolicyGuard） */
+    private static McpServerFeatures.SyncToolSpecification toolSpecFrom(McpJsonMapper mapper, ToolSpec spec) {
         McpSchema.Tool tool = McpSchema.Tool.builder()
-                .name(name)
-                .description(desc)
-                .inputSchema(mapper, WINDOW_SCHEMA)
+                .name(spec.mcpName())
+                .description(spec.description())
+                .inputSchema(mapper, spec.schemaJson())
                 .build();
+        Set<String> required = parseRequired(spec.schemaJson());
         return McpServerFeatures.SyncToolSpecification.builder()
                 .tool(tool)
                 .callHandler((exchange, request) -> {
                     try {
                         Map<String, Object> args = request.arguments();
-                        String window = args == null ? null : String.valueOf(args.get("window"));
-                        if (window == null || window.isBlank()) {
-                            return new McpSchema.CallToolResult("缺少参数 window（yyyy-MM-dd~yyyy-MM-dd）", true);
+                        for (String r : required) {
+                            if (args == null || args.get(r) == null) {
+                                return new McpSchema.CallToolResult("缺少参数 " + r, true);
+                            }
                         }
                         long start = System.currentTimeMillis();
-                        String result = fn.apply(window);
-                        // 审计：工具调用记录（工具名/窗口/耗时/成功）
-                        log.info("[mcp-audit] tool={} window={} ok costMs={}", name, window, System.currentTimeMillis() - start);
+                        String result = spec.invoker().apply(strMap(args));
+                        // 审计：工具调用记录（工具名/参数/耗时/成功）
+                        log.info("[mcp-audit] tool={} args={} ok costMs={}",
+                                spec.mcpName(), args, System.currentTimeMillis() - start);
                         return new McpSchema.CallToolResult(result, false);
                     } catch (Exception e) {
-                        log.warn("[mcp-audit] tool={} error: {}", name, e.getMessage());
+                        log.warn("[mcp-audit] tool={} error: {}", spec.mcpName(), e.getMessage());
                         return new McpSchema.CallToolResult("工具调用失败: " + e.getMessage(), true);
                     }
                 })
                 .build();
     }
 
-    /** 受控日志检索工具（3 参数 service/keyword/tailLines；白名单在 DirectLogSearchAccess 内校验） */
-    private static McpServerFeatures.SyncToolSpecification logSearchToolSpec(McpJsonMapper mapper, String name, String desc,
-                                                                              Function<Map<String, Object>, String> fn) {
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-                .name(name)
-                .description(desc)
-                .inputSchema(mapper, LOG_SEARCH_SCHEMA)
-                .build();
-        return McpServerFeatures.SyncToolSpecification.builder()
-                .tool(tool)
-                .callHandler((exchange, request) -> {
-                    try {
-                        Map<String, Object> args = request.arguments();
-                        if (args == null || args.get("service") == null || args.get("keyword") == null) {
-                            return new McpSchema.CallToolResult("缺少参数 service/keyword", true);
-                        }
-                        long start = System.currentTimeMillis();
-                        String result = fn.apply(args);
-                        log.info("[mcp-audit] tool={} service={} costMs={}",
-                                name, str(args.get("service")), System.currentTimeMillis() - start);
-                        return new McpSchema.CallToolResult(result, false);
-                    } catch (Exception e) {
-                        log.warn("[mcp-audit] tool={} error: {}", name, e.getMessage());
-                        return new McpSchema.CallToolResult("工具调用失败: " + e.getMessage(), true);
-                    }
-                })
-                .build();
+    /** schemaJson 的 required 数组（必填参数）；解析失败=无必填 */
+    private static Set<String> parseRequired(String schemaJson) {
+        Set<String> required = new LinkedHashSet<>();
+        if (schemaJson == null) {
+            return required;
+        }
+        try {
+            var node = new ObjectMapper().readTree(schemaJson).path("required");
+            node.forEach(e -> required.add(e.asText()));
+        } catch (Exception ignored) {
+        }
+        return required;
+    }
+
+    private static Map<String, String> strMap(Map<String, Object> args) {
+        Map<String, String> m = new LinkedHashMap<>();
+        if (args != null) {
+            args.forEach((k, v) -> m.put(k, v == null ? null : String.valueOf(v)));
+        }
+        return m;
     }
 
     /** 受控日志检索实现 bean（白名单 service→文件路径，配置注入；不在白名单的服务不可检索） */
     @Bean
     public DirectLogSearchAccess directLogSearchAccess(
-            @Value("${myxhs.ai.log-search.files:}") String filesCsv) {
-        Map<String, String> whitelist = new java.util.LinkedHashMap<>();
+            @org.springframework.beans.factory.annotation.Value("${myxhs.ai.log-search.files:}") String filesCsv) {
+        Map<String, String> whitelist = new LinkedHashMap<>();
         for (String entry : filesCsv.split(",")) {
             int eq = entry.indexOf('=');
             if (eq > 0 && eq < entry.length() - 1) {
@@ -210,86 +158,5 @@ public class McpServerConfig {
             log.warn("[log.search] 白名单为空（myxhs.ai.log-search.files 未配置），log.search 将全部拒绝");
         }
         return new DirectLogSearchAccess(whitelist);
-    }
-
-    private static McpServerFeatures.SyncToolSpecification obsToolSpec(McpJsonMapper mapper, String name, String desc,
-                                                                       Function<Map<String, Object>, String> fn) {
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-                .name(name)
-                .description(desc)
-                .inputSchema(mapper, OBS_SCHEMA)
-                .build();
-        return McpServerFeatures.SyncToolSpecification.builder()
-                .tool(tool)
-                .callHandler((exchange, request) -> {
-                    try {
-                        Map<String, Object> args = request.arguments();
-                        if (args == null || args.get("hours") == null) {
-                            return new McpSchema.CallToolResult("缺少参数 hours（1~168）", true);
-                        }
-                        long start = System.currentTimeMillis();
-                        String result = fn.apply(args);
-                        log.info("[mcp-audit] tool={} service={} hours={} ok costMs={}", name,
-                                args.get("service"), args.get("hours"), System.currentTimeMillis() - start);
-                        return new McpSchema.CallToolResult(result, false);
-                    } catch (Exception e) {
-                        log.warn("[mcp-audit] tool={} error: {}", name, e.getMessage());
-                        return new McpSchema.CallToolResult("工具调用失败: " + e.getMessage(), true);
-                    }
-                })
-                .build();
-    }
-
-    /** MQ 工具（可选单参数 group/consumerGroup） */
-    private static McpServerFeatures.SyncToolSpecification mqToolSpec(McpJsonMapper mapper, String name, String desc,
-                                                                      Function<Map<String, Object>, String> fn) {
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-                .name(name)
-                .description(desc)
-                .inputSchema(mapper, MQ_SCHEMA)
-                .build();
-        return McpServerFeatures.SyncToolSpecification.builder()
-                .tool(tool)
-                .callHandler((exchange, request) -> {
-                    try {
-                        Map<String, Object> args = request.arguments();
-                        long start = System.currentTimeMillis();
-                        String result = fn.apply(args == null ? Map.of() : args);
-                        log.info("[mcp-audit] tool={} args={} ok costMs={}", name, args, System.currentTimeMillis() - start);
-                        return new McpSchema.CallToolResult(result, false);
-                    } catch (Exception e) {
-                        log.warn("[mcp-audit] tool={} error: {}", name, e.getMessage());
-                        return new McpSchema.CallToolResult("工具调用失败: " + e.getMessage(), true);
-                    }
-                })
-                .build();
-    }
-
-    /** 无参工具（B4 面） */
-    private static McpServerFeatures.SyncToolSpecification noArgToolSpec(McpJsonMapper mapper, String name, String desc,
-                                                                         java.util.function.Supplier<String> fn) {
-        McpSchema.Tool tool = McpSchema.Tool.builder()
-                .name(name)
-                .description(desc)
-                .inputSchema(mapper, NOARG_SCHEMA)
-                .build();
-        return McpServerFeatures.SyncToolSpecification.builder()
-                .tool(tool)
-                .callHandler((exchange, request) -> {
-                    try {
-                        long start = System.currentTimeMillis();
-                        String result = fn.get();
-                        log.info("[mcp-audit] tool={} ok costMs={}", name, System.currentTimeMillis() - start);
-                        return new McpSchema.CallToolResult(result, false);
-                    } catch (Exception e) {
-                        log.warn("[mcp-audit] tool={} error: {}", name, e.getMessage());
-                        return new McpSchema.CallToolResult("工具调用失败: " + e.getMessage(), true);
-                    }
-                })
-                .build();
-    }
-
-    private static String str(Object o) {
-        return o == null ? null : String.valueOf(o);
     }
 }

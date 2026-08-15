@@ -1,5 +1,7 @@
 package com.myxhs.ai.app.service.agent.harness;
 
+import com.myxhs.ai.tools.AgentToolBinder;
+import com.myxhs.ai.tools.ToolParamValidators;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -104,7 +106,7 @@ class HarnessCoreTest {
 
     @Test
     void 授权工具_放行() {
-        PolicyGuard guard = new PolicyGuard();
+        PolicyGuard guard = new PolicyGuard(AgentToolBinder.build(null, null, null));
         assertEquals(true, guard.evaluate("queryOrderVolume", window("2026-08-01~2026-08-07")).allowed());
         assertEquals(true, guard.evaluate("paymentSuccessRate", window("2026-08-01~2026-08-07")).allowed());
         assertEquals(true, guard.evaluate("contentInteraction", window("2026-08-01~2026-08-07")).allowed());
@@ -113,14 +115,14 @@ class HarnessCoreTest {
 
     @Test
     void 非授权工具_拒绝() {
-        PolicyDecision d = new PolicyGuard().evaluate("dropDatabase", window("2026-08-01~2026-08-07"));
+        PolicyDecision d = new PolicyGuard(AgentToolBinder.build(null, null, null)).evaluate("dropDatabase", window("2026-08-01~2026-08-07"));
         assertEquals(false, d.allowed());
         assertEquals(false, d.requiresApproval());
     }
 
     @Test
     void L3工具_需人工审批() {
-        PolicyGuard guard = new PolicyGuard();
+        PolicyGuard guard = new PolicyGuard(AgentToolBinder.build(null, null, null));
         PolicyDecision d1 = guard.evaluate("service.restart", null);
         PolicyDecision d2 = guard.evaluate("dlq.redeliver", null);
         PolicyDecision d3 = guard.evaluate("order.refund", null);
@@ -132,16 +134,16 @@ class HarnessCoreTest {
 
     @Test
     void window参数校验() {
-        assertNull(PolicyGuard.validateWindow("2026-08-01~2026-08-07"));
-        assertNull(PolicyGuard.validateWindow("2026-08-01~2026-08-31"));
+        assertNull(ToolParamValidators.validateWindow("2026-08-01~2026-08-07"));
+        assertNull(ToolParamValidators.validateWindow("2026-08-01~2026-08-31"));
         assertEquals("window 格式必须为 yyyy-MM-dd~yyyy-MM-dd",
-                PolicyGuard.validateWindow("20260801~20260807"));
+                ToolParamValidators.validateWindow("20260801~20260807"));
         assertEquals("window 起始日期不能晚于结束日期",
-                PolicyGuard.validateWindow("2026-08-07~2026-08-01"));
+                ToolParamValidators.validateWindow("2026-08-07~2026-08-01"));
         assertEquals("window 跨度不能超过 31 天",
-                PolicyGuard.validateWindow("2026-08-01~2026-09-05"));
+                ToolParamValidators.validateWindow("2026-08-01~2026-09-05"));
         assertEquals("window 必填（yyyy-MM-dd~yyyy-MM-dd）",
-                PolicyGuard.validateWindow(""));
+                ToolParamValidators.validateWindow(""));
     }
 
     // ---- ToolResultRegistry：存在性校验数据源 ----
