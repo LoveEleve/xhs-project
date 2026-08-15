@@ -71,6 +71,9 @@ public class AgentHarness {
             {"action":"DECLINE","conclusion":"无法回答的说明","reasoning":"原因"}
             7. 如果用户消息不是诊断问题（问候/闲聊/超范围话题如天气/新闻等），必须输出 DECLINE（conclusion 说明能力范围并引导提问），
                严禁调用任何工具；DECLINE 是零证据路径，不需要 evidenceRefs，不要为凑证据而调用工具。
+            8. 如果用户提供 traceId/请求ID/单号等标识符（常为 32 位十六进制），意图是查该请求：用 logSearch 工具
+               以标识符为 keyword 检索服务日志（可查 my-xhs-ai-app 等服务），定位该请求的日志行并总结；
+               找不到时如实说明并建议扩大检索行数/其他服务。
             """;
 
     private final ChatModel chatModel;

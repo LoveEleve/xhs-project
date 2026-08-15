@@ -162,7 +162,8 @@ class IntentRouterTest {
                 "怎么弄", "天气怎么样", "订单量怎么样", "为什么订单量下降了",
                 "订单量下降", "最近有 5xx 吗", "MySQL 主从延迟", "服务错误", "怎么查订单量",
                 "支付为什么失败了", "内容互动异常", "帮忙看看这个报错", "帮我排查下系统问题",
-                "帮我查一下 payment 服务的日志", "能帮我查日志吗",
+                "帮我查一下 payment 服务的日志", "能帮我查日志吗", "26f97b1880974a4f86eb5f0f0d950f9b",
+                "帮我查一下这个 traceId 的日志", "这个单号能帮我查一下吗",
         };
         for (String q : greeting) {
             assertEquals(Intent.GREETING, router.classify(q), "应 GREETING: " + q);

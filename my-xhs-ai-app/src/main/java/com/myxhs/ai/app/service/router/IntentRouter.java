@@ -53,7 +53,12 @@ public class IntentRouter {
             compile("故障"), compile("错误"), compile("延迟"), compile("慢"),
             compile("超时"), compile("失败"), compile("积压"), compile("挂了"),
             compile("问题"), compile("5xx"), compile("排查"), compile("卡顿"),
-            compile("崩溃"), compile("宕"), compile("报错"), compile("日志"));
+            compile("崩溃"), compile("宕"), compile("报错"), compile("日志"),
+            compile("traceid"), compile("请求id"), compile("请求号"), compile("单号"));
+
+    /** traceId/请求链路标识：32 位 hex 是查日志/链路的强信号（贴 ID 进来=想查它） */
+    private static final java.util.regex.Pattern TRACE_ID_PATTERN =
+            java.util.regex.Pattern.compile("^[a-f0-9]{32}$");
 
     /** 降级兜底词表（仅 embedding 不可用时生效；语义层正常时以下表达靠相似度即可识别） */
     private static final List<Pattern> FALLBACK_GREETING_PATTERNS = List.of(
@@ -92,6 +97,10 @@ public class IntentRouter {
 
         // L0 归因/分析优先：为什么订单量下降 → Agent（不是固定查询，也不走 LLM/语义兜底）
         if (matches(INVESTIGATION_PATTERNS, text)) {
+            return Intent.AGENT;
+        }
+        // traceId 强信号：32 位 hex（贴 ID 进来 = 想查日志/链路）
+        if (TRACE_ID_PATTERN.matcher(userMessage.trim()).matches()) {
             return Intent.AGENT;
         }
 
