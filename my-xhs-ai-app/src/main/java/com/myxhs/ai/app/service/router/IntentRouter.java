@@ -46,7 +46,12 @@ public class IntentRouter {
             compile("可以做什么"), compile("帮助"), compile("帮我"), compile("帮忙"), compile("谢谢"),
             compile("再见"), compile("测试"), compile("测一下"), compile("试试"), compile("哈哈"),
             compile("心情"), compile("吃饭"), compile("去哪玩"), compile("介绍一下"), compile("你是ai"),
-            compile("help"));
+            compile("help"),
+            // 情感/夸赞表达（高频闲聊，零成本直答引导）
+            compile("爱你"), compile("想你"), compile("喜欢你"), compile("么么哒"), compile("亲亲"),
+            compile("抱抱"), compile("真棒"), compile("棒"), compile("厉害"), compile("真漂亮"),
+            compile("漂亮"), compile("可爱"), compile("好帅"), compile("好美"), compile("优秀"),
+            compile("真好"), compile("真不错"), compile("真聪明"));
 
     /** 明显超范围话题（与诊断词几乎零重叠的通用闲聊域）：命中即 OUT_OF_SCOPE 直答拒答，零成本。
      *  判定在 GREETING 之前（"帮我写代码"按主体话题拒答而非引导）。 */
