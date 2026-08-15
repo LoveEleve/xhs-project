@@ -87,6 +87,24 @@ ai-eval-gate:
     - main
 
 # ============================================================
+# AI 模块：依赖漏洞扫描（nightly，输入 CycloneDX SBOM）
+# 模板：my-xhs-ai/business-analysis/tech/security-supply-chain.md §1
+# ============================================================
+ai-dependency-scan:
+  stage: test
+  image: owasp/dependency-check:latest
+  script:
+    - mvn -pl my-xhs-ai-app package -DskipTests   # 生成 target/bom.json
+    - /usr/share/dependency-check/bin/dependency-check.sh --project my-xhs-ai \
+        --scan my-xhs-ai-app/target/bom.json --format JSON --out target/dc-report.json
+  artifacts:
+    when: always
+    paths: [ my-xhs-ai-app/target/dc-report.json ]
+    expire_in: 7 days
+  only:
+    - schedules
+
+# ============================================================
 # Stage 3: 代码检查 (SpotBugs)
 # ============================================================
 spotbugs:
