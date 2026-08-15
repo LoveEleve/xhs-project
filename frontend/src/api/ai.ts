@@ -37,6 +37,8 @@ export interface RunView {
   evidence: string[];
   finalAnswer?: string;
   costMs: number;
+  /** 零步骤直答（问候/闲聊）说明，后端 view 提供 */
+  note?: string;
 }
 
 export const TERMINAL_TYPES = new Set(['COMPLETED', 'PARTIAL', 'FAILED', 'CANCELLED']);

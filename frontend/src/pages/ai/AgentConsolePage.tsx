@@ -52,6 +52,7 @@ export default function AgentConsolePage() {
   const [finalAnswer, setFinalAnswer] = useState<string | undefined>();
   const [costMs, setCostMs] = useState<number | undefined>();
   const [steps, setSteps] = useState<DisplayStep[]>([]);
+  const [runNote, setRunNote] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [detail, setDetail] = useState<DisplayStep | null>(null);
   const [loading, setLoading] = useState(false);
@@ -64,7 +65,9 @@ export default function AgentConsolePage() {
 
   const applyEvent = useCallback((ev: HarnessEvent) => {
     const base = { key: `${ev.type}-${ev.stepNumber}`, stepNumber: ev.stepNumber, evidenceRefs: ev.evidenceRefs || [] };
-    if (ev.type === 'THINK') {
+    if (ev.type === 'RUN_STARTED') {
+      if (ev.message) setRunNote(ev.message);
+    } else if (ev.type === 'THINK') {
       setSteps((s) => [...s, { ...base, kind: 'THINK', reasoning: ev.message }]);
     } else if (ev.type === 'POLICY_DENIED') {
       setSteps((s) => [...s, { ...base, kind: 'POLICY_DENIED', tool: ev.tool, reasoning: ev.message }]);
@@ -108,6 +111,7 @@ export default function AgentConsolePage() {
         setTerminationReason(view.terminationReason);
         if (view.finalAnswer) setFinalAnswer(view.finalAnswer);
         setCostMs(view.costMs);
+        if (view.note) setRunNote(view.note);
         const mapped: DisplayStep[] = (view.steps || []).map((s: RunStep) => ({
           key: `${s.state || 'STEP'}-${s.stepNumber}`,
           kind: s.state || s.action || 'STEP',
@@ -138,6 +142,7 @@ export default function AgentConsolePage() {
       setTerminationReason(view.terminationReason);
       setFinalAnswer(view.finalAnswer);
       setCostMs(view.costMs);
+      if (view.note) setRunNote(view.note);
       fetchedRef.current = id;
       const mapped: DisplayStep[] = (view.steps || []).map((s: RunStep) => ({
         key: `${s.state || 'STEP'}-${s.stepNumber}`,
@@ -172,6 +177,7 @@ export default function AgentConsolePage() {
     setErrorMsg(null);
     setLoading(true);
     setSteps([]);
+    setRunNote(null);
     setFinalAnswer(undefined);
     setStatus(undefined);
     setTerminationReason(undefined);
@@ -281,7 +287,14 @@ export default function AgentConsolePage() {
           {steps.length > 0 ? (
             <Timeline items={timelineItems} />
           ) : (
-            <Empty description={running ? '等待执行事件…' : '暂无执行步骤'} />
+            <>
+              <Empty description={running ? '等待执行事件…' : '暂无执行步骤'} />
+              {/* 零步骤完成（问候/闲聊直答）：说明事件流给出的原因，避免"空执行"误解 */}
+              {!running && runNote && (
+                <Alert type="info" showIcon style={{ marginTop: 12 }}
+                  title="未执行工具调查" description={runNote} />
+              )}
+            </>
           )}
           {phase === 'done' && (
             <>
