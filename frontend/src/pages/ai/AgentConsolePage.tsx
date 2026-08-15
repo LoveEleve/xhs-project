@@ -46,6 +46,8 @@ export default function AgentConsolePage() {
 
   const [query, setQuery] = useState('');
   const [runId, setRunId] = useState(searchParams.get('run') || '');
+  // M10 多轮会话：?conv= 恢复上次会话（连续提问同上下文）；"新建会话"清空
+  const [convId, setConvId] = useState(searchParams.get('conv') || '');
   const [phase, setPhase] = useState<'idle' | 'running' | 'done'>('idle');
   const [status, setStatus] = useState<string | undefined>();
   const [terminationReason, setTerminationReason] = useState<string | undefined>();
@@ -184,15 +186,32 @@ export default function AgentConsolePage() {
     setCostMs(undefined);
     fetchedRef.current = '';
     try {
-      const { runId: id } = await submitRun(query.trim());
+      const { runId: id, conversationId: cid } = await submitRun(query.trim(), convId || undefined);
       setRunId(id);
-      setSearchParams({ run: id }, { replace: true });
+      if (cid) setConvId(cid);
+      setSearchParams({ run: id, conv: cid }, { replace: true });
     } catch (e) {
-      setErrorMsg(`提交失败: ${(e as Error).message}`);
+      const err = e as { response?: { status?: number; data?: { message?: string } } };
+      const status409 = err.response?.status === 409;
+      setErrorMsg(status409
+        ? '该会话有进行中的诊断（同会话串行），请等待完成后再提问，或新建会话'
+        : `提交失败: ${(e as Error).message}`);
       setPhase('idle');
     } finally {
       setLoading(false);
     }
+  };
+
+  /** 新建会话：清空会话关联（下次提交后端新建 convId） */
+  const handleNewConversation = () => {
+    setConvId('');
+    setSearchParams({}, { replace: true });
+    setSteps([]);
+    setRunNote(null);
+    setFinalAnswer(undefined);
+    setStatus(undefined);
+    setPhase('idle');
+    message.info('已新建会话（后续提问不再带上轮上下文）');
   };
 
   const handleCancel = async () => {
@@ -263,12 +282,24 @@ export default function AgentConsolePage() {
             <Button danger disabled={!running} onClick={handleCancel}>
               取消
             </Button>
+            <Button disabled={running} onClick={handleNewConversation}>
+              新建会话
+            </Button>
             {runId && (
               <Text type="secondary" copyable={{ text: runId }} style={{ fontSize: 12 }}>
                 run: {runId}
               </Text>
             )}
           </Space>
+          {convId ? (
+            <Text type="secondary" copyable={{ text: convId }} style={{ fontSize: 12 }}>
+              会话: {convId.slice(0, 12)}…（多轮上下文已开启）
+            </Text>
+          ) : (
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              会话: 新建（本次提问独立上下文）
+            </Text>
+          )}
         </Space>
       </Card>
 

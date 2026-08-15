@@ -51,8 +51,17 @@ const client = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-export const submitRun = (message: string) =>
-  client.post<{ runId: string; status: string }>('/api/runs', { message }).then((r) => r.data);
+export interface RunSubmitResponse {
+  runId: string;
+  status: string;
+  /** M10 多轮会话：本次提交归属的会话（无显式 convId 时后端新建） */
+  conversationId: string;
+}
+
+export const submitRun = (message: string, conversationId?: string) =>
+  client.post<RunSubmitResponse>('/api/runs', conversationId
+    ? { message, conversationId }
+    : { message }).then((r) => r.data);
 
 export const getRun = (runId: string) =>
   client.get<RunView>(`/api/runs/${runId}`).then((r) => r.data);

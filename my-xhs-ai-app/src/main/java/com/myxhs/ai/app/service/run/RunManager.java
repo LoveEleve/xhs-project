@@ -6,9 +6,11 @@ import com.myxhs.ai.app.service.agent.harness.AgentRun;
 import com.myxhs.ai.app.service.agent.harness.HarnessEvent;
 import com.myxhs.ai.app.service.agent.harness.HarnessEventType;
 import com.myxhs.ai.app.service.agent.harness.TerminationReason;
+import com.myxhs.ai.app.service.conversation.ConversationService;
 import com.myxhs.ai.app.service.router.Intent;
 import com.myxhs.ai.app.service.router.IntentRouter;
 import com.myxhs.ai.app.service.store.RunStore;
+import dev.langchain4j.data.message.ChatMessage;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,6 +20,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -39,6 +42,16 @@ public class RunManager {
 
     /** 完成后内存保留时长（TTL 清理；store 仍保留记录供追溯） */
     private static final Duration DONE_TTL = Duration.ofHours(1);
+
+    /** 会话并发锁：convId → 活跃 runId（M10：同会话同一时间仅一个活跃 run，V1 串行，409 语义） */
+    private final Map<String, String> activeByConv = new ConcurrentHashMap<>();
+
+    /** 同会话已有活跃 run（M10 并发限制） */
+    public static class ConversationBusyException extends RuntimeException {
+        public ConversationBusyException(String convId) {
+            super("会话 " + convId + " 已有进行中的诊断任务（同会话串行）");
+        }
+    }
 
     public record RunEntry(String runId, String userId, String query,
                            LinkedBlockingQueue<HarnessEvent> events,
@@ -63,18 +76,27 @@ public class RunManager {
     private final Map<String, RunEntry> runs = new ConcurrentHashMap<>();
     /** 意图预检（三阶路由：规则 → LLM → 语义 → 默认引导）：问候/超范围直答，不进 Agent */
     private final IntentRouter intentRouter;
+    /** 会话服务（M10；=null 时多轮功能关闭，兼容旧测试构造） */
+    private final ConversationService conversation;
 
     /** Spring 注入点：与 AiQueryController 共用配置好的路由（含 LLM 分类，行为一致） */
     @Autowired
-    public RunManager(AgentHarness harness, RunStore store, RunMetrics metrics, IntentRouter intentRouter) {
+    public RunManager(AgentHarness harness, RunStore store, RunMetrics metrics, IntentRouter intentRouter,
+                      @org.springframework.beans.factory.annotation.Autowired(required = false)
+                      ConversationService conversation) {
         this.harness = harness;
         this.store = store;
         this.metrics = metrics;
         this.intentRouter = intentRouter;
+        this.conversation = conversation;
         this.budget = harness.defaultBudget();
     }
 
     /** 纯规则降级（测试/离线；无 LLM 分类时无信号输入默认引导） */
+    public RunManager(AgentHarness harness, RunStore store, RunMetrics metrics, IntentRouter intentRouter) {
+        this(harness, store, metrics, intentRouter, null);
+    }
+
     public RunManager(AgentHarness harness, RunStore store, RunMetrics metrics) {
         this(harness, store, metrics, new IntentRouter());
     }
@@ -142,21 +164,49 @@ public class RunManager {
      *  意图预检：问候/超范围话题（无诊断目标）不进 Agent，直接完成（零模型/工具成本，
      *  防"你好→调 baselineWindow"“天气→查主从延迟"类蠢回答）。 */
     public RunEntry submit(String query, String userId) {
+        return submit(query, userId, null);
+    }
+
+    /** 多轮提交（M10）：convId 非空时挂接会话（历史注入/消息落库/同会话串行 409） */
+    public RunEntry submit(String query, String userId, String convId) {
         purgeDone();
         Intent intent = intentRouter.classify(query);
         if (intent == Intent.GREETING) {
-            return submitDirectAnswer(query, userId, IntentRouter.GREETING_ANSWER,
+            return submitDirectAnswer(query, userId, convId, IntentRouter.GREETING_ANSWER,
                     "问候直答（非诊断任务，未调用工具/模型）");
         }
         if (intent == Intent.OUT_OF_SCOPE) {
-            return submitDirectAnswer(query, userId, IntentRouter.OUT_OF_SCOPE_ANSWER,
+            return submitDirectAnswer(query, userId, convId, IntentRouter.OUT_OF_SCOPE_ANSWER,
                     "超范围话题拒答（非诊断任务，未调用工具/模型）");
         }
         String runId = AgentHarness.newRunId();
+        if (convId != null && conversation != null) {
+            // 同会话并发限制（V1 串行：第二个活跃 run 直接 409）
+            if (activeByConv.putIfAbsent(convId, runId) != null) {
+                throw new ConversationBusyException(convId);
+            }
+            try {
+                conversation.ensureConversation(convId, userId, query);
+                conversation.appendUserMessage(convId, runId, query);
+            } catch (Exception e) {
+                // 会话持久化故障不阻断诊断（仅日志），但锁仍须释放
+                log.warn("[runmgr] 会话准备失败 conv={} err={}", convId, e.getMessage());
+            }
+        }
+        // M10 多轮上下文注入（摘要 + 历史结论，无工具原文）；失败降级为单轮
+        List<ChatMessage> initial = null;
+        if (convId != null && conversation != null) {
+            try {
+                initial = conversation.buildContext(convId);
+            } catch (Exception e) {
+                log.warn("[runmgr] 会话上下文注入失败 conv={} 降级单轮: {}", convId, e.getMessage());
+            }
+        }
+        List<ChatMessage> initialMessages = initial;
         LinkedBlockingQueue<HarnessEvent> queue = new LinkedBlockingQueue<>();
         AtomicBoolean cancelToken = new AtomicBoolean(false);
         CompletableFuture<AgentRun> future = CompletableFuture.supplyAsync(() ->
-                harness.run(runId, query, budget, queue::offer, userId, cancelToken), executor)
+                harness.run(runId, query, budget, queue::offer, userId, cancelToken, initialMessages), executor)
                 .exceptionally(ex -> {
                     // 异常兜底：补发 FAILED 终态事件（订阅者不会拿到无终态空流）
                     log.warn("[runmgr] run={} 执行异常: {}", runId, ex.getMessage());
@@ -168,16 +218,46 @@ public class RunManager {
             metrics.onRunSubmitted();
             future.whenComplete((run, ex) -> metrics.onRunFinished(run));
         }
+        // M10：终态后写 assistant 结论消息 + 更新会话摘要 + 释放会话锁
+        if (convId != null && conversation != null) {
+            final String cid = convId;
+            future.whenComplete((run, ex) -> {
+                try {
+                    if (run != null) {
+                        conversation.appendAssistantMessage(cid, runId, run.finalAnswer(),
+                                run.evidenceChain().entries().stream()
+                                        .map(com.myxhs.ai.app.service.agent.harness.EvidenceChain.Evidence::evidenceId)
+                                        .toList());
+                        conversation.updateSummary(cid, run.finalAnswer());
+                    }
+                } catch (Exception e) {
+                    log.warn("[runmgr] 会话终态落库失败 conv={} run={} err={}", cid, runId, e.getMessage());
+                } finally {
+                    activeByConv.remove(cid, runId);
+                }
+            });
+        }
         RunEntry entry = new RunEntry(runId, userId, query, queue, future, new AtomicBoolean(false), cancelToken);
         runs.put(runId, entry);
-        log.info("[runmgr] submit run={} query={} user={}", runId, query, userId);
+        log.info("[runmgr] submit run={} query={} user={} conv={}", runId, query, userId, convId);
         return entry;
     }
 
     /** 非诊断任务直答（问候/超范围）：立即完成（RUN_STARTED→COMPLETED 事件流完整，前端零改动）。
-     *  落库（M8-4 可追溯闭环：所有 run 统一可追溯，重启/TTL 后历史直答也可查） */
-    private RunEntry submitDirectAnswer(String query, String userId, String answer, String note) {
+     *  落库（M8-4 可追溯闭环：所有 run 统一可追溯，重启/TTL 后历史直答也可查）；
+     *  M10：挂接会话时同步写 user/assistant 消息 + 摘要（直答零耗时，无需锁） */
+    private RunEntry submitDirectAnswer(String query, String userId, String convId, String answer, String note) {
         String runId = AgentHarness.newRunId();
+        if (convId != null && conversation != null) {
+            try {
+                conversation.ensureConversation(convId, userId, query);
+                conversation.appendUserMessage(convId, runId, query);
+                conversation.appendAssistantMessage(convId, runId, answer, List.of());
+                conversation.updateSummary(convId, answer);
+            } catch (Exception e) {
+                log.warn("[runmgr] direct-answer 会话落库失败 conv={} err={}", convId, e.getMessage());
+            }
+        }
         LinkedBlockingQueue<HarnessEvent> queue = new LinkedBlockingQueue<>();
         AgentRun run = new AgentRun(runId, query, budget);
         run.terminate(TerminationReason.COMPLETED, answer);

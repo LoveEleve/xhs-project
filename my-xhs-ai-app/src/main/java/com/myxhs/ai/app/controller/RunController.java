@@ -58,8 +58,23 @@ public class RunController {
             throw new IllegalArgumentException("message 不能为空");
         }
         String userId = body.getOrDefault("userId", "anonymous");
-        RunManager.RunEntry entry = runManager.submit(message, userId);
-        return Map.of("runId", entry.runId(), "status", "RECEIVED");
+        // M10：显式 conversationId 优先；无则新建会话（响应带 convId，前端缓存用于后续多轮）
+        String convId = body.get("conversationId");
+        boolean freshConv = convId == null || convId.isBlank();
+        if (freshConv) {
+            convId = com.myxhs.ai.app.service.conversation.ConversationService.newConvId();
+        }
+        try {
+            RunManager.RunEntry entry = runManager.submit(message, userId, convId);
+            Map<String, String> resp = new java.util.LinkedHashMap<>();
+            resp.put("runId", entry.runId());
+            resp.put("status", "RECEIVED");
+            resp.put("conversationId", convId);
+            return resp;
+        } catch (RunManager.ConversationBusyException e) {
+            // 同会话并发（M10）：第二个活跃 run 拒绝（409 语义）
+            throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage());
+        }
     }
 
     /** 取消诊断任务（协作式：当前步完成后生效） */

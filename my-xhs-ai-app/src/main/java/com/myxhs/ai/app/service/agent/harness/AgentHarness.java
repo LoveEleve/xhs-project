@@ -168,6 +168,16 @@ public class AgentHarness {
     public AgentRun run(String runId, String query, AgentBudget budget,
                         java.util.function.Consumer<HarnessEvent> listener,
                         String userId, java.util.concurrent.atomic.AtomicBoolean cancelToken) {
+        return run(runId, query, budget, listener, userId, cancelToken, null);
+    }
+
+    /** 多轮入口（M10）：initialMessages = 会话摘要 SystemMessage + 历史 user/assistant 结论消息
+     * （ConversationService.buildContext 组装，无工具原文——跨轮证据校验 P0-1 方案 A）。
+     * 注入优先级：系统提示 < 记忆摘要/会话历史 < 时间窗规则 < 当前问题。 */
+    public AgentRun run(String runId, String query, AgentBudget budget,
+                        java.util.function.Consumer<HarnessEvent> listener,
+                        String userId, java.util.concurrent.atomic.AtomicBoolean cancelToken,
+                        List<ChatMessage> initialMessages) {
         AgentRun run = new AgentRun(runId, query, budget);
         if (store != null) {
             try {
@@ -183,6 +193,10 @@ public class AgentHarness {
         LoopDetector loop = new LoopDetector();
         List<ChatMessage> messages = new ArrayList<>();
         messages.add(SystemMessage.from(SYSTEM_PROMPT));
+        // M10 多轮上下文：摘要 + 历史结论（无工具原文；null=单轮行为不变）
+        if (initialMessages != null) {
+            messages.addAll(initialMessages);
+        }
         // 确定性当前窗口注入（QueryWindowExtractor 单一事实源）：消除"最近 7 天"由模型自选的软约束
         String currentWindow = QueryWindowExtractor.extract(query);
         messages.add(SystemMessage.from("时间窗规则（确定性，Asia/Shanghai）：用户显式指定优先，否则取最近 7 天。"
