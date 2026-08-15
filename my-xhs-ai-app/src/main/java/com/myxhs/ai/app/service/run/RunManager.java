@@ -61,21 +61,22 @@ public class RunManager {
     private final java.util.concurrent.ConcurrentHashMap<String, AtomicBoolean> streamTokens =
             new java.util.concurrent.ConcurrentHashMap<>();
     private final Map<String, RunEntry> runs = new ConcurrentHashMap<>();
-    /** 意图预检（三阶路由：规则 → 语义 → 默认引导）：问候/超范围直答，不进 Agent */
+    /** 意图预检（三阶路由：规则 → LLM → 语义 → 默认引导）：问候/超范围直答，不进 Agent */
     private final IntentRouter intentRouter;
 
+    /** Spring 注入点：与 AiQueryController 共用配置好的路由（含 LLM 分类，行为一致） */
     @Autowired
-    public RunManager(AgentHarness harness, RunStore store, RunMetrics metrics) {
-        this(harness, store, metrics, new IntentRouter());
-    }
-
-    /** 注入语义路由（无参时纯规则降级） */
     public RunManager(AgentHarness harness, RunStore store, RunMetrics metrics, IntentRouter intentRouter) {
         this.harness = harness;
         this.store = store;
         this.metrics = metrics;
         this.intentRouter = intentRouter;
         this.budget = harness.defaultBudget();
+    }
+
+    /** 纯规则降级（测试/离线；无 LLM 分类时无信号输入默认引导） */
+    public RunManager(AgentHarness harness, RunStore store, RunMetrics metrics) {
+        this(harness, store, metrics, new IntentRouter());
     }
 
     public RunManager(AgentHarness harness, RunStore store) {
