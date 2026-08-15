@@ -23,6 +23,9 @@ public class AgentRun {
     private volatile String finalAnswer;
     private volatile Instant startedAt = Instant.now();
     private volatile Instant endedAt;
+    /** M13：Agent 画像（工具子集/prompt 变体；FULL=单 Agent 全量）。per-run 字段，非单例（并发安全） */
+    private volatile com.myxhs.ai.app.service.agent.profile.AgentProfile profile;
+
     /** M11 HITL：挂起待审批的工具（tool/args；审批后 resume 据此执行，不设终态） */
     private volatile String pendingTool;
     private volatile java.util.Map<String, String> pendingApproval;
@@ -87,6 +90,15 @@ public class AgentRun {
 
     public String pendingTool() {
         return pendingTool;
+    }
+
+    /** M13：设置画像（null=未指定，PolicyGuard 不做子集过滤） */
+    public void setProfile(com.myxhs.ai.app.service.agent.profile.AgentProfile profile) {
+        this.profile = profile;
+    }
+
+    public com.myxhs.ai.app.service.agent.profile.AgentProfile profile() {
+        return profile;
     }
 
     public java.util.Map<String, String> pendingApproval() {

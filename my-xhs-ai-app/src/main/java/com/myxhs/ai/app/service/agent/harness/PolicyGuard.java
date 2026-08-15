@@ -45,12 +45,20 @@ public class PolicyGuard {
     }
 
     public PolicyDecision evaluate(String tool, Map<String, String> args) {
+        return evaluate(tool, args, null);
+    }
+
+    /** M13：allowedTools 非空时按画像子集过滤（子集外 deny）；null=全量（单 Agent 兼容） */
+    public PolicyDecision evaluate(String tool, Map<String, String> args, java.util.Set<String> allowedTools) {
         if (tool == null || tool.isBlank()) {
             return PolicyDecision.deny("tool 为空");
         }
         var specOpt = registry.get(tool);
         if (specOpt.isEmpty()) {
             return PolicyDecision.deny("非授权工具: " + tool + "（deny-by-default，仅允许注册工具）");
+        }
+        if (allowedTools != null && !allowedTools.contains(tool)) {
+            return PolicyDecision.deny("工具 " + tool + " 不可用（当前 Agent 仅限本领域工具）");
         }
         ToolSpec spec = specOpt.get();
         // M11 修正：L3 且无执行器（预留动作）→ 直接 deny（未开放，审批无从执行，不挂起）

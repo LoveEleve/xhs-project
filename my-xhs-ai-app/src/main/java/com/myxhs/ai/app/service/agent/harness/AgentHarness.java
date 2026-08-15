@@ -82,6 +82,57 @@ public class AgentHarness {
                找不到时如实说明并建议扩大检索行数/其他服务。
             """;
 
+    /** M13 多 Agent prompt 分段（FULL = SYSTEM_PROMPT 原样不动；变体 = HEAD+工具列表+TAIL） */
+    public static final String PROMPT_HEAD = """
+你是 my-xhs 运营诊断 Agent。目标是查清用户问题，通过多步工具调查归因。
+可用工具（只读；参数 window 格式 yyyy-MM-dd~yyyy-MM-dd，跨度≤31天）：
+            """;
+    public static final String BUSINESS_TOOL_LIST = """
+- queryOrderVolume(window)：下单量（口径：排除已删、含取消/退款，按创建时间，Asia/Shanghai）
+- paymentSuccessRate(window)：支付成功率（口径：成功/(成功+失败)，排除待支付/退款；渠道为 Mock：1支付宝/2微信/99）
+- contentInteraction(window)：内容互动量（口径：点赞/收藏/评论/分享，曝光单列）
+- baselineWindow(window)：计算对比基线窗口（上一同长窗口，确定性）
+- funnelConversion(window)：电商漏斗各环节量（商品浏览/加购/下单/支付，窗口内）
+- paymentFailures(window)：支付失败事件（PAY_FAIL 按失败码聚合，窗口内）
+- notePublishEvents(window)：内容发布事件数（PUBLISH 按天，窗口内）
+            """;
+    public static final String OPS_TOOL_LIST = """
+- httpErrors(service, hours)：服务 HTTP 5xx 错误统计（按 uri 聚合，最近 N 小时；service 如 my-xhs-gateway，空=全部）
+- httpLatency(service, hours)：服务 HTTP 慢端点 top（P95 延迟秒，最近 N 小时）
+- mqConsumerLag(group)：RocketMQ 消费积压（按消费组聚合 lag；空=全部）
+- mqDlqBacklog(consumerGroup)：RocketMQ 死信积压（空=全部；**-1 为应用侧哨兵值=无 DLQ 或查询失败，非真实积压**）
+- mysqlReplicationLag()：MySQL 主从复制延迟（Seconds_Behind_Master，全部从库）
+- mysqlDeadlocks()：MySQL 死锁事件（累计 total + 最新 new_events）
+- logSearch(service, keyword, tailLines)：受控检索服务日志（白名单服务最近 N 行内过滤 keyword；
+  用于找异常堆栈/报错明细，如 ERROR/Deadlock/OutOfMemory；keyword 仅字母数字与常见符号）
+- dlq.redeliver(msgId, consumerGroup)：**MQ 死信消息重投（L3 高危动作，执行需人工审批）**——
+  仅在用户明确要求重投死信消息且已确认风险时请求该工具；请求后系统挂起待审批，
+  审批通过才会真正执行；无审批绝不执行
+            """;
+    public static final String PROMPT_TAIL = """
+排障提示：httpErrors 的 uri=/** 已由工具单列为 noiseScanRoutes（扫描/探测噪音），归因时排除；
+/api/coupon/*、/api/cart/* 的 [Gateway-异常] WARN 日志非 5xx
+已知服务名（L2 观测可用）：my-xhs-gateway / my-xhs-order / my-xhs-payment / my-xhs-content /
+my-xhs-user / my-xhs-inventory / my-xhs-product / my-xhs-search / my-xhs-cart / my-xhs-coupon 等
+规则：
+1. 数字必须来自工具结果，禁止编造。
+2. 对比/升降分析：**当前窗口以系统注入的时间窗规则为准**（见消息中的"当前窗口已确定"）；
+   基线窗口必须用 baselineWindow 工具计算（上一同长窗口），不得自行推算。
+3. 工具返回 error/partial 时如实说明，不猜测。
+4. 证据充分即 ANSWER：典型调查 5~10 步工具调用；不要为求全面反复查同一指标的不同窗口
+  （有当前+基线对比即可）；业务/观测两面各覆盖关键指标后即收敛。
+5. 不把相关当因果；有反证须显式说明（counterEvidence）；结论的不确定性须声明。
+6. 每次输出必须是合法 JSON（不要 markdown 代码块），格式：
+{"action":"TOOL_CALL","tool":"queryOrderVolume","args":{"window":"2026-08-01~2026-08-07"},"reasoning":"为什么查"}
+{"action":"ANSWER","conclusion":"结论","evidenceRefs":["ev_xxx"],"counterEvidence":"反证或空","uncertainty":"不确定性或空"}
+{"action":"DECLINE","conclusion":"无法回答的说明","reasoning":"原因"}
+7. 如果用户消息不是诊断问题（问候/闲聊/超范围话题如天气/新闻等），必须输出 DECLINE（conclusion 说明能力范围并引导提问），
+   严禁调用任何工具；DECLINE 是零证据路径，不需要 evidenceRefs，不要为凑证据而调用工具。
+8. 如果用户提供 traceId/请求ID/单号等标识符（常为 32 位十六进制），意图是查该请求：用 logSearch 工具
+   以标识符为 keyword 检索服务日志（可查 my-xhs-ai-app 等服务），定位该请求的日志行并总结；
+            """;
+
+
     private final ChatModel chatModel;
     private final MetricToolAccess metricToolAccess;
     private final ObsToolAccess obsToolAccess;
@@ -159,6 +210,11 @@ public class AgentHarness {
         return run(query, defaultBudget, null);
     }
 
+    /** M13：带画像的 run（prompt 变体 + 工具子集；null=FULL） */
+    public AgentRun run(String query, com.myxhs.ai.app.service.agent.profile.AgentProfile profile) {
+        return run(newRunId(), query, defaultBudget, null, "anonymous", null, null, profile);
+    }
+
     public AgentRun run(String query, AgentBudget budget) {
         return run(query, budget, null);
     }
@@ -199,13 +255,25 @@ public class AgentHarness {
                         java.util.function.Consumer<HarnessEvent> listener,
                         String userId, java.util.concurrent.atomic.AtomicBoolean cancelToken,
                         List<ChatMessage> initialMessages) {
+        return run(runId, query, budget, listener, userId, cancelToken, initialMessages, null);
+    }
+
+    /** M13 多 Agent：profile 指定 prompt 变体 + 工具子集（null=FULL 单 Agent 现状） */
+    public AgentRun run(String runId, String query, AgentBudget budget,
+                        java.util.function.Consumer<HarnessEvent> listener,
+                        String userId, java.util.concurrent.atomic.AtomicBoolean cancelToken,
+                        List<ChatMessage> initialMessages,
+                        com.myxhs.ai.app.service.agent.profile.AgentProfile profile) {
         AgentRun run = new AgentRun(runId, query, budget);
+        if (profile != null) {
+            run.setProfile(profile);
+        }
         if (store != null) {
             try {
                 store.createRun(run.runId(), userId == null || userId.isBlank() ? "anonymous" : userId, null, query,
                         "{\"maxSteps\":" + budget.maxSteps() + ",\"maxTokens\":" + budget.maxTokens()
                                 + ",\"maxCost\":" + budget.maxCost() + "}",
-                        versionsJson());
+                        versionsJson(run));
             } catch (Exception e) {
                 log.warn("[harness] run={} 创建 run 落库失败: {}", run.runId(), e.getMessage());
             }
@@ -213,7 +281,8 @@ public class AgentHarness {
         LoopCtrl ctrl = new LoopCtrl(budget);
         LoopDetector loop = new LoopDetector();
         List<ChatMessage> messages = new ArrayList<>();
-        messages.add(SystemMessage.from(SYSTEM_PROMPT));
+        String systemPrompt = profile == null ? SYSTEM_PROMPT : profile.systemPrompt();
+        messages.add(SystemMessage.from(systemPrompt));
         // M10 多轮上下文：摘要 + 历史结论（无工具原文；null=单轮行为不变）
         if (initialMessages != null) {
             messages.addAll(initialMessages);
@@ -316,7 +385,8 @@ public class AgentHarness {
                                     java.util.function.Consumer<HarnessEvent> listener, List<ChatMessage> messages) {
         // 预算语义：policy 拒绝不计步骤数（惩罚探索会扭曲调查），由 LoopCtrl.policyDeniedCount
         // 单独计数，连续 N 次拒绝 → POLICY_EXHAUSTED（设计 §2"反馈模型重想"的专用机制）
-        PolicyDecision pd = policyGuard.evaluate(decision.tool(), decision.args());
+        PolicyDecision pd = policyGuard.evaluate(decision.tool(), decision.args(),
+                run.profile() == null ? null : run.profile().toolNames());
         if (!pd.allowed()) {
             // M11 HITL：L3 工具 → 挂起待审批（不 feedback 重想、不执行、不登记证据）
             if (pd.requiresApproval()) {
@@ -613,9 +683,10 @@ public class AgentHarness {
     }
 
     /** model/prompt/tool 版本（M5 版本追溯；model 名来自配置，工具数=注册表可用数；prompt 版本化抽文件待 M6） */
-    private String versionsJson() {        return "{\"model\":\"" + modelName + "\",\"prompt\":\"SYSTEM_PROMPT.v1\",\"tools\":"
-                + toolRegistry.usableCount()
-                + "}";
+    private String versionsJson(AgentRun run) {
+        String profileId = run.profile() == null ? "FULL" : run.profile().id();
+        return "{\"model\":\"" + modelName + "\",\"prompt\":\"SYSTEM_PROMPT.v1\",\"tools\":"
+                + toolRegistry.usableCount() + ",\"profile\":\"" + profileId + "\"}";
     }
 
     public static String newRunId() {

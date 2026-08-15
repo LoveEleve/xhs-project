@@ -9,6 +9,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Harness 核心单元测试（纯逻辑，无 DB/模型）。
@@ -118,6 +119,34 @@ class HarnessCoreTest {
         PolicyDecision d = new PolicyGuard(AgentToolBinder.build(null, null, null)).evaluate("dropDatabase", window("2026-08-01~2026-08-07"));
         assertEquals(false, d.allowed());
         assertEquals(false, d.requiresApproval());
+    }
+
+    @Test
+    void M13_画像工具子集过滤() {
+        PolicyGuard guard = new PolicyGuard(AgentToolBinder.build(null, null, null,
+                (msgId, group) -> "ok"));
+        // Business 画像：业务工具放行、观测工具子集外拒绝
+        var business = com.myxhs.ai.app.service.agent.profile.AgentProfiles.BUSINESS;
+        assertEquals(true, guard.evaluate("queryOrderVolume", window("2026-08-01~2026-08-07"),
+                business.toolNames()).allowed());
+        PolicyDecision denyObs = guard.evaluate("httpErrors", Map.of("hours", "24"), business.toolNames());
+        assertEquals(false, denyObs.allowed(), "Business 画像不得调用观测工具");
+        assertTrue(denyObs.reason().contains("不可用"), denyObs.reason());
+        // Ops 画像：观测放行、业务工具拒绝
+        var ops = com.myxhs.ai.app.service.agent.profile.AgentProfiles.OPS;
+        assertEquals(true, guard.evaluate("httpErrors", Map.of("hours", "24"), ops.toolNames()).allowed());
+        PolicyDecision denyBiz = guard.evaluate("queryOrderVolume", window("2026-08-01~2026-08-07"),
+                ops.toolNames());
+        assertEquals(false, denyBiz.allowed(), "Ops 画像不得调用业务工具");
+        // 子集外 L3 也拒绝（Ops 允许 dlq.redeliver；Business 不允许）
+        assertEquals(true, guard.evaluate("dlq.redeliver",
+                Map.of("msgId", "0123456789abcdef0123456789abcdef", "consumerGroup", "g"),
+                ops.toolNames()).requiresApproval());
+        assertEquals(false, guard.evaluate("dlq.redeliver",
+                Map.of("msgId", "0123456789abcdef0123456789abcdef", "consumerGroup", "g"),
+                business.toolNames()).allowed());
+        // null=全量（单 Agent 兼容）
+        assertEquals(true, guard.evaluate("httpErrors", Map.of("hours", "24"), null).allowed());
     }
 
     @Test

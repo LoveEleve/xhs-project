@@ -31,8 +31,14 @@ public class EvalRunner {
         this.harness = harness;
     }
 
-    /** 执行评测集；返回报告对象（可序列化为 JSON） */
+    /** 执行评测集；返回报告对象（可序列化为 JSON）。M13：profileFor 非空时按画像跑（双 Agent 对比评测） */
     public Map<String, Object> run(List<EvalCase> cases) {
+        return run(cases, null);
+    }
+
+    /** M13：per-case 画像分派（FULL=单 Agent 基线；dispatcher 分派=双 Agent）。返回 null 的 case 用默认单 Agent */
+    public Map<String, Object> run(List<EvalCase> cases,
+                                   java.util.function.Function<EvalCase, com.myxhs.ai.app.service.agent.profile.AgentProfile> profileFor) {
         List<Map<String, Object>> results = new ArrayList<>();
         int passed = 0;
         int completed = 0;
@@ -49,7 +55,11 @@ public class EvalRunner {
             r.put("id", c.id());
             r.put("query", c.query());
             try {
-                AgentRun run = harness.run(c.query());
+                com.myxhs.ai.app.service.agent.profile.AgentProfile p =
+                        profileFor == null ? null : profileFor.apply(c);
+                AgentRun run = p == null
+                        ? harness.run(c.query())
+                        : harness.run(c.query(), p);
                 // 限流类外部故障（模型不可用/超时）重试一次：评测门禁不应被随机限流打红
                 if (RunStatus.FAILED.name().equals(run.status().name())
                         && TerminationReason.MODEL_UNAVAILABLE == run.terminationReason()) {

@@ -78,6 +78,9 @@ public class RunManager {
     private final IntentRouter intentRouter;
     /** 会话服务（M10；=null 时多轮功能关闭，兼容旧测试构造） */
     private final ConversationService conversation;
+    /** M13：Agent 领域分派（AGENT 意图 → 业务/排障画像；规则零成本） */
+    private final com.myxhs.ai.app.service.agent.profile.AgentDispatcher dispatcher =
+            new com.myxhs.ai.app.service.agent.profile.AgentDispatcher();
 
     /** Spring 注入点：与 AiQueryController 共用配置好的路由（含 LLM 分类，行为一致） */
     @Autowired
@@ -240,10 +243,12 @@ public class RunManager {
             }
         }
         List<ChatMessage> initialMessages = initial;
+        // M13：AGENT 领域分派（业务/排障画像——prompt 变体 + 工具子集）
         LinkedBlockingQueue<HarnessEvent> queue = new LinkedBlockingQueue<>();
         AtomicBoolean cancelToken = new AtomicBoolean(false);
         CompletableFuture<AgentRun> future = CompletableFuture.supplyAsync(() ->
-                harness.run(runId, query, budget, queue::offer, userId, cancelToken, initialMessages), executor)
+                harness.run(runId, query, budget, queue::offer, userId, cancelToken, initialMessages,
+                        dispatcher.dispatch(query)), executor)
                 .exceptionally(ex -> {
                     // 异常兜底：补发 FAILED 终态事件（订阅者不会拿到无终态空流）
                     log.warn("[runmgr] run={} 执行异常: {}", runId, ex.getMessage());
