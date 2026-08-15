@@ -155,7 +155,7 @@ export default function AgentConsolePage() {
       }));
       setSteps(mapped);
     } catch {
-      setErrorMsg('加载 run 失败（可能已被 TTL 清理或不存在）');
+      setErrorMsg('加载 run 失败：该 run 不存在（历史 run 已落库可追溯，可检查 runId 是否正确）');
       setPhase('idle');
     }
   }, [watchRun]);

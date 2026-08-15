@@ -40,10 +40,15 @@ public class RunController {
 
     private final RunManager runManager;
     private final ObjectMapper om;
+    /** 历史追溯（M8-4）：内存 TTL/重启后从 Run Store 回退读取 */
+    private final com.myxhs.ai.app.service.store.RunStore runStore;
 
-    public RunController(RunManager runManager, ObjectMapper om) {
+    public RunController(RunManager runManager, ObjectMapper om,
+                         @org.springframework.beans.factory.annotation.Autowired(required = false)
+                         com.myxhs.ai.app.service.store.RunStore runStore) {
         this.runManager = runManager;
         this.om = om;
+        this.runStore = runStore;
     }
 
     @PostMapping
@@ -70,7 +75,8 @@ public class RunController {
     public Map<String, Object> get(@PathVariable String runId) {
         RunManager.RunEntry entry = runManager.get(runId);
         if (entry == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "run 不存在: " + runId);
+            // 内存 miss（TTL 清理/重启）：从 Run Store 回退读取历史 run（M8-4 可追溯闭环）
+            return viewFromStore(runId);
         }
         if (!entry.future().isDone()) {
             return Map.of("runId", runId, "status", "RUNNING", "query", entry.query());
@@ -80,6 +86,53 @@ public class RunController {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "run 执行异常: " + runId);
         }
         return view(run);
+    }
+
+    /** 历史 run 视图（store 回退）：RunRecord + StepRecord 重建（finalAnswer/steps/evidence 全量可查） */
+    private Map<String, Object> viewFromStore(String runId) {
+        if (runStore == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "run 不存在: " + runId);
+        }
+        var rec = runStore.loadRun(runId);
+        if (rec.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "run 不存在: " + runId);
+        }
+        var r = rec.get();
+        var codec = new com.myxhs.ai.app.service.agent.harness.AgentDecisionCodec(om);
+        List<Map<String, Object>> steps = new java.util.ArrayList<>();
+        List<String> evidence = new java.util.ArrayList<>();
+        for (var s : runStore.loadSteps(runId)) {
+            var d = s.decisionJson() == null ? null : codec.parse(s.decisionJson());
+            Map<String, Object> m = new java.util.HashMap<>();
+            m.put("stepNumber", s.stepNo());
+            m.put("state", s.state());
+            m.put("action", d == null ? null : d.action());
+            m.put("tool", d == null ? null : d.tool());
+            m.put("reasoning", d == null ? null : d.reasoning());
+            m.put("toolResult", s.toolResult());
+            m.put("evidenceRefs", s.evidenceIds() == null ? List.of()
+                    : java.util.Arrays.asList(s.evidenceIds().split(",")));
+            steps.add(m);
+            if (s.evidenceIds() != null) {
+                for (String ev : s.evidenceIds().split(",")) {
+                    if (!ev.isBlank() && !evidence.contains(ev)) {
+                        evidence.add(ev);
+                    }
+                }
+            }
+        }
+        Map<String, Object> m = new java.util.HashMap<>();
+        m.put("runId", r.runId());
+        m.put("status", r.status());
+        m.put("terminationReason", r.terminationReason());
+        m.put("query", r.query());
+        m.put("steps", steps);
+        m.put("evidence", evidence);
+        m.put("finalAnswer", r.finalAnswer());
+        m.put("costMs", r.startedAt() == null || r.endedAt() == null ? 0
+                : java.time.Duration.between(r.startedAt(), r.endedAt()).toMillis());
+        m.put("fromStore", true);
+        return m;
     }
 
     @GetMapping("/{runId}/stream")

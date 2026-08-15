@@ -20,11 +20,15 @@ CREATE TABLE IF NOT EXISTS ai_run (
   versions_json      TEXT         DEFAULT NULL COMMENT 'model/prompt/tool版本(JSON)',
   tokens_total       BIGINT       DEFAULT 0 COMMENT 'token 合计(输入+输出)',
   cost_est           DOUBLE       DEFAULT 0 COMMENT '成本估算',
+  final_answer       MEDIUMTEXT   DEFAULT NULL COMMENT '最终答案(历史 run 追溯，M8-4 补列)',
   started_at         DATETIME(3)  DEFAULT NULL,
   ended_at           DATETIME(3)  DEFAULT NULL,
   last_activity_at   DATETIME(3)  DEFAULT NULL COMMENT '最后活动时间(每step更新，崩溃恢复判定)',
   KEY idx_status_started (status, started_at)
 ) COMMENT 'AI 诊断 Run 记录';
+
+-- 历史补列（已建库环境执行一次）
+-- ALTER TABLE ai_run ADD COLUMN final_answer MEDIUMTEXT DEFAULT NULL COMMENT '最终答案(历史 run 追溯)';
 
 CREATE TABLE IF NOT EXISTS ai_step (
   id                BIGINT AUTO_INCREMENT PRIMARY KEY,

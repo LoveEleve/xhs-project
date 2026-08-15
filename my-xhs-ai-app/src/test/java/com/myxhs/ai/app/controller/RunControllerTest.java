@@ -62,6 +62,24 @@ class RunControllerTest {
     @MockBean(name = "metricToolAccess")
     private MetricToolAccess metricToolAccess;
 
+    @Autowired
+    private com.myxhs.ai.app.service.store.RunStore runStore;
+
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate aiJdbc;
+
+    @org.junit.jupiter.api.BeforeEach
+    void ensureTables() {
+        aiJdbc.execute("CREATE TABLE IF NOT EXISTS ai_run (run_id VARCHAR(32) PRIMARY KEY, user_id VARCHAR(64),"
+                + " session_id VARCHAR(64), query TEXT NOT NULL, status VARCHAR(16) NOT NULL,"
+                + " termination_reason VARCHAR(32), budget_json TEXT, versions_json TEXT,"
+                + " tokens_total BIGINT DEFAULT 0, cost_est DOUBLE DEFAULT 0, final_answer MEDIUMTEXT,"
+                + " started_at DATETIME(3), ended_at DATETIME(3), last_activity_at DATETIME(3))");
+        aiJdbc.execute("CREATE TABLE IF NOT EXISTS ai_step (id BIGINT AUTO_INCREMENT PRIMARY KEY, run_id VARCHAR(32),"
+                + " step_no INT, state VARCHAR(24), decision_json TEXT, tool_result MEDIUMTEXT,"
+                + " evidence_ids VARCHAR(512), messages_snapshot MEDIUMTEXT, tokens_used BIGINT DEFAULT 0, created_at DATETIME(3))");
+    }
+
     private void stubModel() {
         when(metricToolAccess.queryOrderVolume(any())).thenReturn("volume=61");
         when(chatModel.chat(any(ChatRequest.class))).thenAnswer(inv -> {
@@ -150,5 +168,23 @@ class RunControllerTest {
     void run不存在_404() throws Exception {
         mockMvc.perform(get("/api/runs/run_nonexistent"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void 历史run_内存miss后store回退可查() throws Exception {
+        // M8-4 可追溯闭环：内存 TTL/重启后，GET 回退 Run Store 重建视图
+        String runId = "run_store_history_1";
+        runStore.createRun(runId, "ops1", null, "为什么订单量下降了", "{}", "{}");
+        runStore.saveStep(runId, com.myxhs.ai.app.service.agent.harness.AgentStep.think(1, null, 0), null);
+        runStore.updateRunStatus(runId, "SUCCEEDED", "COMPLETED", 10, 0.01);
+        runStore.updateFinalAnswer(runId, "历史答案：订单量从46降至8");
+
+        MvcResult r = mockMvc.perform(get("/api/runs/" + runId))
+                .andExpect(status().isOk()).andReturn();
+        String body = r.getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertTrue(body.contains("fromStore"), "应标记 fromStore 回退: " + body);
+        assertTrue(body.contains("历史答案"), "应含落库的 finalAnswer: " + body);
+        assertTrue(body.contains("SUCCEEDED"), body);
+        assertTrue(body.contains("THINK"), "应含步骤: " + body.substring(0, Math.min(200, body.length())));
     }
 }

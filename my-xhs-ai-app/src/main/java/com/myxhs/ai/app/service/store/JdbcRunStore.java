@@ -62,6 +62,12 @@ public class JdbcRunStore implements RunStore {
     }
 
     @Override
+    public void updateFinalAnswer(String runId, String finalAnswer) {
+        jdbc.update("UPDATE ai_run SET final_answer=? WHERE run_id=?",
+                finalAnswer, runId);
+    }
+
+    @Override
     public Optional<RunRecord> loadRun(String runId) {
         List<RunRecord> rows = jdbc.query("SELECT * FROM ai_run WHERE run_id=?",
                 (rs, i) -> toRun(rs), runId);
@@ -101,7 +107,7 @@ public class JdbcRunStore implements RunStore {
                 rs.getString("run_id"), rs.getString("user_id"), rs.getString("session_id"),
                 rs.getString("query"), rs.getString("status"), rs.getString("termination_reason"),
                 rs.getString("budget_json"), rs.getString("versions_json"),
-                rs.getLong("tokens_total"), rs.getDouble("cost_est"),
+                rs.getLong("tokens_total"), rs.getDouble("cost_est"), rs.getString("final_answer"),
                 ts(rs.getTimestamp("started_at")), ts(rs.getTimestamp("ended_at")),
                 ts(rs.getTimestamp("last_activity_at")));
     }

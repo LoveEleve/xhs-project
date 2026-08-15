@@ -17,7 +17,7 @@ public interface RunStore {
             String runId, String userId, String sessionId, String query,
             String status, String terminationReason,
             String budgetJson, String versionsJson,
-            long tokensTotal, double costEst,
+            long tokensTotal, double costEst, String finalAnswer,
             Instant startedAt, Instant endedAt, Instant lastActivityAt) {
     }
 
@@ -34,6 +34,9 @@ public interface RunStore {
 
     void updateRunStatus(String runId, String status, String terminationReason,
                          long tokensTotal, double costEst);
+
+    /** 终态答案落库（M8-4 历史追溯：内存 TTL/重启后仍可查到最终答案） */
+    void updateFinalAnswer(String runId, String finalAnswer);
 
     Optional<RunRecord> loadRun(String runId);
 

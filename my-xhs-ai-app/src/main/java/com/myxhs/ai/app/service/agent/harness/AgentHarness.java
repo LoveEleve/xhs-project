@@ -450,6 +450,10 @@ public class AgentHarness {
             store.updateRunStatus(run.runId(), run.status().name(),
                     run.terminationReason() == null ? null : run.terminationReason().name(),
                     ctrl.tokens(), ctrl.cost());
+            // M8-4 历史追溯：终态答案落库（内存 TTL/重启后仍可查）
+            if (run.finalAnswer() != null) {
+                store.updateFinalAnswer(run.runId(), run.finalAnswer());
+            }
         } catch (Exception e) {
             log.warn("[harness] run={} 终态落库失败: {}", run.runId(), e.getMessage());
         }
