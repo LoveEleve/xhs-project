@@ -15,7 +15,6 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -52,6 +51,11 @@ public class RunManager {
     private final RunMetrics metrics;
     private final AgentBudget budget;
     private final ExecutorService executor = Executors.newFixedThreadPool(20);
+    /** 订阅泵线程登记 + 每订阅取消 token（M8-4：客户端断开时按 runId 中断/标记） */
+    private final java.util.concurrent.ConcurrentHashMap<String, Thread> streamThreads =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.concurrent.ConcurrentHashMap<String, AtomicBoolean> streamTokens =
+            new java.util.concurrent.ConcurrentHashMap<>();
     private final Map<String, RunEntry> runs = new ConcurrentHashMap<>();
 
     @Autowired
@@ -127,11 +131,11 @@ public class RunManager {
     /** 提交诊断任务，立即返回；后台执行（userId 落库实现用户级审计） */
     public RunEntry submit(String query, String userId) {
         purgeDone();
-        String runId = "run_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        String runId = AgentHarness.newRunId();
         LinkedBlockingQueue<HarnessEvent> queue = new LinkedBlockingQueue<>();
         AtomicBoolean cancelToken = new AtomicBoolean(false);
         CompletableFuture<AgentRun> future = CompletableFuture.supplyAsync(() ->
-                harness.run(query, budget, queue::offer, userId, cancelToken), executor)
+                harness.run(runId, query, budget, queue::offer, userId, cancelToken), executor)
                 .exceptionally(ex -> {
                     // 异常兜底：补发 FAILED 终态事件（订阅者不会拿到无终态空流）
                     log.warn("[runmgr] run={} 执行异常: {}", runId, ex.getMessage());
@@ -180,10 +184,17 @@ public class RunManager {
             log.warn("[runmgr] run={} 已有活动订阅者，拒绝并发订阅", runId);
             return false;
         }
+        AtomicBoolean cancel = new AtomicBoolean(false);
+        streamTokens.put(runId, cancel);
         executor.submit(() -> {
+            Thread self = Thread.currentThread();
+            streamThreads.put(runId, self);
             try {
                 HarnessEvent ev;
                 while (true) {
+                    if (cancel.get()) {
+                        break;
+                    }
                     ev = e.events().poll(5, TimeUnit.SECONDS);
                     if (ev != null) {
                         sink.accept(ev);
@@ -199,11 +210,25 @@ public class RunManager {
             } catch (InterruptedException ie) {
                 Thread.currentThread().interrupt();
             } finally {
+                streamThreads.remove(runId, self);
+                streamTokens.remove(runId, cancel);
                 e.streaming().set(false);
                 onComplete.run();
             }
         });
         return true;
+    }
+
+    /** 客户端断开/超时：标记取消并中断订阅泵，释放单消费者标志（M8-4 修复：刷新/断网后新订阅不再 409） */
+    public void cancelStream(String runId) {
+        AtomicBoolean cancel = streamTokens.get(runId);
+        if (cancel != null) {
+            cancel.set(true);
+        }
+        Thread t = streamThreads.get(runId);
+        if (t != null) {
+            t.interrupt();
+        }
     }
 
     /** TTL 清理：已完成（含异常 null）超过 DONE_TTL 的 run 从内存移除（store 记录仍在） */

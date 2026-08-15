@@ -132,8 +132,14 @@ public class AgentHarness {
     /** 带取消令牌的 run（M5-3 协作式取消：token 置位后，当前步完成即终止，不打断进行中的模型调用） */
     public AgentRun run(String query, AgentBudget budget, java.util.function.Consumer<HarnessEvent> listener,
                         String userId, java.util.concurrent.atomic.AtomicBoolean cancelToken) {
-        AgentRun run = new AgentRun("run_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12),
-                query, budget);
+        return run(newRunId(), query, budget, listener, userId, cancelToken);
+    }
+
+    /** 指定 runId 的 run（M8-4 契约修复：对外 runId 与事件/落库/视图一致） */
+    public AgentRun run(String runId, String query, AgentBudget budget,
+                        java.util.function.Consumer<HarnessEvent> listener,
+                        String userId, java.util.concurrent.atomic.AtomicBoolean cancelToken) {
+        AgentRun run = new AgentRun(runId, query, budget);
         if (store != null) {
             try {
                 store.createRun(run.runId(), userId == null || userId.isBlank() ? "anonymous" : userId, null, query,
@@ -430,6 +436,10 @@ public class AgentHarness {
         return "{\"model\":\"" + modelName + "\",\"prompt\":\"SYSTEM_PROMPT.v1\",\"tools\":"
                 + PolicyGuard.allowedToolCount()
                 + "}";
+    }
+
+    public static String newRunId() {
+        return "run_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
     }
 
     private static void emit(java.util.function.Consumer<HarnessEvent> listener, HarnessEvent event) {

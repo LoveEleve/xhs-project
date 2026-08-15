@@ -225,4 +225,68 @@ class RunManagerTest {
         assertTrue(received.size() >= 4, "应收到全部事件: " + received.size());
         assertEquals("COMPLETED", received.get(received.size() - 1).type());
     }
+
+    @Test
+    void 对外runId与事件视图一致_契约回归() throws Exception {
+        AgentHarness harness = new AgentHarness(new FakeModel(), new FakeTools(), new FakeObs(),
+                MAPPER, AgentBudget.defaults(), 0.002, 2, null, "fake");
+        RunManager mgr = new RunManager(harness, null);
+
+        RunManager.RunEntry e = mgr.submit("为什么订单量下降了", "u1");
+        e.future().get(10, TimeUnit.SECONDS);
+
+        // 提交返回的 runId 必须等于 run 视图/全部事件的 runId（M8-4 契约修复）
+        AgentRun run = e.future().join();
+        assertEquals(run.runId(), e.runId(), "视图 runId 应与提交返回一致");
+        List<HarnessEvent> events = new java.util.ArrayList<>();
+        HarnessEvent ev;
+        while ((ev = e.events().poll()) != null) {
+            events.add(ev);
+        }
+        assertTrue(events.size() > 0, "应有事件");
+        assertTrue(events.stream().allMatch(x -> e.runId().equals(x.runId())),
+                "所有事件 runId 应与提交返回一致");
+    }
+
+    @Test
+    void 客户端断开后_可重新订阅() throws Exception {
+        // 阻塞模型：首次 THINK 挂起，构造"执行中"的 run（泵不会自行退出）；之后委托 FakeModel 正常完成
+        java.util.concurrent.CountDownLatch block = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch modelCalled = new java.util.concurrent.CountDownLatch(1);
+        ChatModel fake = new FakeModel();
+        ChatModel blocking = new ChatModel() {
+            private final java.util.concurrent.atomic.AtomicInteger calls =
+                    new java.util.concurrent.atomic.AtomicInteger();
+
+            @Override
+            public ChatResponse chat(ChatRequest request) {
+                if (calls.incrementAndGet() == 1) {
+                    modelCalled.countDown();
+                    try {
+                        block.await(10, TimeUnit.SECONDS);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+                return fake.chat(request);
+            }
+        };
+        AgentHarness harness = new AgentHarness(blocking, new FakeTools(), new FakeObs(),
+                MAPPER, AgentBudget.defaults(), 0.002, 2, null, "fake");
+        RunManager mgr = new RunManager(harness, null);
+
+        RunManager.RunEntry e = mgr.submit("为什么订单量下降了", "u1");
+        assertTrue(modelCalled.await(5, TimeUnit.SECONDS), "run 应已开始执行");
+
+        // 客户端订阅后中途断开（刷新/断网）→ 标志必须释放，新订阅不再 409
+        java.util.concurrent.CountDownLatch released = new java.util.concurrent.CountDownLatch(1);
+        assertTrue(mgr.streamTo(e.runId(), x -> {}, released::countDown), "第一个订阅应成功");
+        mgr.cancelStream(e.runId());
+        assertTrue(released.await(5, TimeUnit.SECONDS), "断开后泵应退出并释放标志");
+        assertTrue(mgr.streamTo(e.runId(), x -> {}, () -> {}), "断开后应可重新订阅（M8-4 修复）");
+
+        block.countDown();
+        e.future().get(10, TimeUnit.SECONDS);
+        assertEquals("SUCCEEDED", e.future().join().status().name());
+    }
 }

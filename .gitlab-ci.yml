@@ -56,6 +56,37 @@ test:
     - develop
 
 # ============================================================
+# AI 模块：评测门禁（M6-4/M8，模板 my-xhs-ai/business-analysis/tech/ci-eval-gate.md）
+# 真库+真模型（deepseek-v4-flash，成本红线单模型）；无凭据自动跳过不阻塞
+# ============================================================
+ai-eval-gate:
+  stage: test
+  image: maven:3.9-eclipse-temurin-17
+  variables:
+    MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2"
+    MYXHS_DB_URL: "jdbc:mysql://21.130.247.89:3306/my_xhs_order_0?useSSL=false&serverTimezone=Asia/Shanghai"
+    MYXHS_DB_USER: "myxhs_ai_ro"
+    MYXHS_DB_PASSWORD: "$MYXHS_DB_PASSWORD"   # CI 变量（Masked）
+    MYXHS_AI_DB_URL: "jdbc:mysql://21.130.247.89:3306/my_xhs_ai?useSSL=false&serverTimezone=Asia/Shanghai"
+    MYXHS_AI_DB_USER: "myxhs_ai_rw"
+    MYXHS_AI_DB_PASSWORD: "$MYXHS_AI_DB_PASSWORD"   # CI 变量（Masked）
+    MYXHS_LLM_API_KEY: "$MYXHS_LLM_API_KEY"   # CI 变量（OpenCode Go，勿写明文）
+    MYXHS_ES_PASS: "$MYXHS_ES_PASS"
+    ARK_PLAN_API_KEY: "$ARK_PLAN_API_KEY"
+  script:
+    - mvn -pl my-xhs-ai-tools install -DskipTests
+    - mvn test -pl my-xhs-ai-app -Peval-gate -Dtest='EvalGateRunTest'
+  artifacts:
+    when: always
+    paths:
+      - my-xhs-ai-app/target/eval-gate-report.json
+    expire_in: 7 days
+  timeout: 1h
+  only:
+    - merge_requests
+    - main
+
+# ============================================================
 # Stage 3: 代码检查 (SpotBugs)
 # ============================================================
 spotbugs:

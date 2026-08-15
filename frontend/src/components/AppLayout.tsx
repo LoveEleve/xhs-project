@@ -83,6 +83,9 @@ export default function AppLayout() {
           <a onClick={() => navigate('/product')} style={{
             color: location.pathname.startsWith('/product') ? '#ff4d4f' : '#333', fontWeight: 500,
           }}>商品</a>
+          <a onClick={() => navigate('/ai')} style={{
+            color: location.pathname.startsWith('/ai') ? '#ff4d4f' : '#333', fontWeight: 500,
+          }}>AI 诊断</a>
         </div>
         <div style={{ flex: 1, display: 'flex', justifyContent: 'center', padding: '0 32px' }}>
           <Input.Search

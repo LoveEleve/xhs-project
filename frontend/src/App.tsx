@@ -34,6 +34,7 @@ import SearchPage from './pages/search';
 import NotificationPage from './pages/notification';
 import ImConversationsPage from './pages/im/ImConversationsPage';
 import ImChatPage from './pages/im/ImChatPage';
+import AgentConsolePage from './pages/ai/AgentConsolePage';
 
 function AuthRestore() {
   const restore = useAuthStore((s) => s.restore);
@@ -59,6 +60,7 @@ export default function App() {
               <Route path="/search" element={<SearchPage />} />
               <Route path="/product" element={<ProductListPage />} />
               <Route path="/product/:spuId" element={<ProductDetailPage />} />
+              <Route path="/ai" element={<AgentConsolePage />} />
               <Route path="/user/:userId" element={<UserProfilePage />} />
 
               {/* 需要鉴权 */}

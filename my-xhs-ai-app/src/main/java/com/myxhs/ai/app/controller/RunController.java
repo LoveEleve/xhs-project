@@ -89,8 +89,15 @@ public class RunController {
         }
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
         String traceId = java.util.UUID.randomUUID().toString().replace("-", "");
-        emitter.onTimeout(() -> log.warn("[sse] run={} 流超时", runId));
-        emitter.onCompletion(() -> log.info("[sse] run={} 流完成", runId));
+        // M8-4 修复：客户端断开/超时立即释放单消费者标志（否则 run 结束前新订阅全部 409）
+        emitter.onTimeout(() -> {
+            log.warn("[sse] run={} 流超时", runId);
+            runManager.cancelStream(runId);
+        });
+        emitter.onCompletion(() -> {
+            log.info("[sse] run={} 流完成", runId);
+            runManager.cancelStream(runId);
+        });
         MDC.put("traceId", traceId);
         try {
             boolean accepted = runManager.streamTo(runId, event -> send(emitter, event), emitter::complete);
