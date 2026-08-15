@@ -82,6 +82,10 @@ export default function AgentConsolePage() {
       setSteps((s) => [...s, { ...base, kind: 'TOOL', tool: ev.tool, window: ev.window, result: ev.message }]);
     } else if (ev.type === 'ANSWER') {
       setSteps((s) => [...s, { ...base, kind: 'ANSWER', reasoning: ev.message }]);
+    } else if (ev.type === 'WAITING_APPROVAL') {
+      // M11 HITL：挂起 → 拉取视图（pendingTool/pendingApproval）显示审批卡片
+      if (ev.message) setRunNote(ev.message);
+      if (runId) loadView(runId);
     } else if (TERMINAL_TYPES.has(ev.type)) {
       setStatus(ev.type);
       setTerminationReason(ev.terminationReason);
@@ -92,7 +96,8 @@ export default function AgentConsolePage() {
   const watchRun = useCallback((id: string, initialStatus?: string) => {
     closeStream();
     const es = openRunStream(id, (ev) => {
-      if (TERMINAL_TYPES.has(ev.type)) {
+      // WAITING_APPROVAL：挂起后无更多事件，流关闭（审批卡片由 applyEvent→loadView 渲染）
+      if (TERMINAL_TYPES.has(ev.type) || ev.type === 'WAITING_APPROVAL') {
         es.close();
         esRef.current = null;
       }

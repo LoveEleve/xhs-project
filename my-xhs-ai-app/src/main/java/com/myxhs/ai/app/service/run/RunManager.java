@@ -134,11 +134,13 @@ public class RunManager {
         }
         String userId = "recovered";
         String query = runId;
+        String convId = null;
         try {
             var rec = store.loadRun(runId);
             if (rec.isPresent()) {
                 userId = rec.get().userId();
                 query = rec.get().query();
+                convId = rec.get().sessionId();
             }
         } catch (Exception ignored) {
         }
@@ -152,6 +154,35 @@ public class RunManager {
                             "EXECUTION_ERROR", "恢复执行异常: " + ex.getMessage()));
                     return null;
                 });
+        // M11 审批恢复（会话续接）：run 挂起时未释放会话锁/未写终态消息——
+        // 恢复后重新登记锁 + 终态写消息/摘要/释放（与 submit 同语义）
+        if (convId != null && conversation != null) {
+            final String cid = convId;
+            String prev = activeByConv.putIfAbsent(cid, runId);
+            if (prev != null && !prev.equals(runId)) {
+                // 边缘竞态：恢复期间该会话已有活跃 run（崩溃恢复 + 用户并发新提交）——记录不阻断
+                log.warn("[runmgr] run={} 恢复时会话 {} 已被 run={} 占用", runId, cid, prev);
+            }
+            future.whenComplete((run, ex) -> {
+                boolean terminal = run != null
+                        && run.status() != com.myxhs.ai.app.service.agent.harness.RunStatus.WAITING_APPROVAL;
+                try {
+                    if (terminal) {
+                        conversation.appendAssistantMessage(cid, runId, run.finalAnswer(),
+                                run.evidenceChain().entries().stream()
+                                        .map(com.myxhs.ai.app.service.agent.harness.EvidenceChain.Evidence::evidenceId)
+                                        .toList());
+                        conversation.updateSummary(cid, run.finalAnswer());
+                    }
+                } catch (Exception e) {
+                    log.warn("[runmgr] 恢复 run 会话落库失败 conv={} run={} err={}", cid, runId, e.getMessage());
+                } finally {
+                    if (terminal) {
+                        activeByConv.remove(cid, runId);
+                    }
+                }
+            });
+        }
         // 恢复是既有 run 的续跑：不碰 running/runs_total 指标（避免口径失真，P1-2）
         RunEntry entry = new RunEntry(runId, userId, query, queue, future,
                 new AtomicBoolean(false), cancelToken);
@@ -224,16 +255,20 @@ public class RunManager {
             metrics.onRunSubmitted();
             future.whenComplete((run, ex) -> metrics.onRunFinished(run));
         }
-        // M10：终态后写 assistant 结论消息 + 更新会话摘要 + 释放会话锁
+        // M10/M11：终态后写 assistant 结论消息 + 更新会话摘要 + 释放会话锁。
+        // 挂起（WAITING_APPROVAL）不是终态：不写消息、不释放锁（会话仍被挂起 run 占用，审批后 resume 继续）
         if (convId != null && conversation != null) {
             final String cid = convId;
             future.whenComplete((run, ex) -> {
+                boolean terminal = run != null
+                        && run.status() != com.myxhs.ai.app.service.agent.harness.RunStatus.WAITING_APPROVAL;
                 try {
-                    // run → 会话追溯（ai_run.session_id=convId）：必须在异步 createRun(INSERT) 之后执行
+                    // run → 会话追溯（ai_run.session_id=convId）：无条件（createRun 已先执行；
+                    // 挂起也写——审批恢复 resumeEntry 依赖它续接会话）
                     if (store != null) {
                         store.updateSessionId(runId, cid);
                     }
-                    if (run != null) {
+                    if (terminal) {
                         conversation.appendAssistantMessage(cid, runId, run.finalAnswer(),
                                 run.evidenceChain().entries().stream()
                                         .map(com.myxhs.ai.app.service.agent.harness.EvidenceChain.Evidence::evidenceId)
@@ -243,7 +278,9 @@ public class RunManager {
                 } catch (Exception e) {
                     log.warn("[runmgr] 会话终态落库失败 conv={} run={} err={}", cid, runId, e.getMessage());
                 } finally {
-                    activeByConv.remove(cid, runId);
+                    if (terminal) {
+                        activeByConv.remove(cid, runId);
+                    }
                 }
             });
         }
@@ -339,13 +376,16 @@ public class RunManager {
             return false;
         }
         String who = approver == null || approver.isBlank() ? "anonymous" : approver;
-        String updated = approvalJson.replace("\"status\":\"PENDING\"", "\"status\":\"APPROVED\"");
-        if ("reject".equals(decision)) {
-            updated = updated.replace("\"status\":\"PENDING\"", "\"status\":\"REJECTED\"");
+        String updated = approvalJson.replace("\"status\":\"PENDING\"",
+                "\"status\":" + ("approve".equals(decision) ? "\"APPROVED\"" : "\"REJECTED\""));
+        // 审计字段注入到 JSON 末尾闭合符前（lastIndexOf 定位最外层 }，args 内的 } 不受影响）
+        int last = updated.lastIndexOf('}');
+        if (last > 0) {
+            updated = updated.substring(0, last)
+                    + ",\"approver\":\"" + who.replace("\"", "'")
+                    + "\",\"reason\":\"" + (reason == null ? "" : reason.replace("\"", "'"))
+                    + "\",\"decidedAt\":\"" + java.time.Instant.now() + "\"}";
         }
-        updated = updated.replace("}", ",\"approver\":\"" + who + "\",\"reason\":\""
-                + (reason == null ? "" : reason.replace("\"", "'"))
-                + "\",\"decidedAt\":\"" + java.time.Instant.now() + "\"}");
         try {
             store.updateApproval(runId, updated);
         } catch (Exception e) {

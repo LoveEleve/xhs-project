@@ -442,6 +442,23 @@ class RunControllerTest {
         assertTrue(done.contains("dlq.redeliver"), "证据链应含被审批工具: " + done);
         // 审计落库
         org.mockito.Mockito.verify(dlqRedeliverAccess).redeliver(any(), any());
+        // P1 回归：审批恢复后终态会话消息落库（挂起时未写，resume 完成后补写）
+        MvcResult cv = mockMvc.perform(get("/api/conversations/conv_hitl_1")).andExpect(status().isOk()).andReturn();
+        assertTrue(cv.getResponse().getContentAsString(StandardCharsets.UTF_8).contains("\"messageCount\":2"),
+                "审批恢复完成应写会话消息: " + cv.getResponse().getContentAsString(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void HITL_挂起期间同会话并发仍409() throws Exception {
+        stubModelForDlq();
+        String runId = submit("MQ 死信积压了，帮我重投死信消息", "conv_hitl_lock")
+                .replaceAll(".*\"runId\":\"([^\"]+)\".*", "$1");
+        awaitStatus(runId, "WAITING_APPROVAL");
+        // P1 回归：挂起不是终态，会话锁不释放——同会话第二个 run 仍 409
+        mockMvc.perform(post("/api/runs")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"为什么订单量下降了\",\"userId\":\"ops1\",\"conversationId\":\"conv_hitl_lock\"}"))
+                .andExpect(status().isConflict());
     }
 
     @Test
