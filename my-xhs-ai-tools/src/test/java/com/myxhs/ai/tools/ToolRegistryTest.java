@@ -80,11 +80,14 @@ class ToolRegistryTest {
         assertTrue(hoursSpec.validator().apply(Map.of("hours", "24")) == null);
         assertTrue(hoursSpec.validator().apply(Map.of("hours", "999")) != null);
         assertTrue(hoursSpec.validator().apply(Map.of()) != null, "hours 必填");
-        // logSearch：keyword 白名单 + tailLines 范围
+        // logSearch：keyword 白名单（委托 DirectLogSearchAccess 同规则）；tailLines 工具侧 clamp 恒合法
         var logSpec = reg.get(AgentToolNames.LOG_SEARCH).orElseThrow();
         assertTrue(logSpec.validator().apply(Map.of("keyword", "ERROR", "tailLines", "100")) == null);
+        assertTrue(logSpec.validator().apply(Map.of("keyword", "OutOfMemory Error")) == null,
+                "含空格合法 keyword 不得误拒（P0 回归）");
         assertTrue(logSpec.validator().apply(Map.of("keyword", "ERROR; rm -rf")) != null, "shell 语义拒绝");
-        assertTrue(logSpec.validator().apply(Map.of("keyword", "ERROR", "tailLines", "99999")) != null);
+        assertTrue(logSpec.validator().apply(Map.of("keyword", "ERROR", "tailLines", "99999")) == null,
+                "tailLines 越界由工具侧 clamp（原 PolicyGuard 同行为）");
         // 无参工具：validator=null
         var noArg = reg.get(AgentToolNames.MYSQL_DEADLOCKS).orElseThrow();
         assertTrue(noArg.validator() == null);

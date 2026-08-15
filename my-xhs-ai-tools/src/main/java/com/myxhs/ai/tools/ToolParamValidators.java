@@ -49,30 +49,14 @@ public class ToolParamValidators {
                 ? null : "组名仅允许字母数字下划线连字符";
     }
 
-    /** 受控日志检索 keyword 白名单（无 shell 语义字符） */
+    /** 受控日志检索 keyword 校验：委托 DirectLogSearchAccess（单一事实源——复制即漂移，P0 教训）。
+     *  原 PolicyGuard 亦委托同一实现，规则变化只改一处。 */
     public static String validateKeyword(String keyword) {
-        if (keyword == null || keyword.isBlank()) {
-            return "keyword 必填";
-        }
-        if (keyword.length() > 100) {
-            return "keyword 长度不能超过 100";
-        }
-        if (!keyword.matches("[A-Za-z0-9_\\-\\[\\].:/=]+")) {
-            return "keyword 仅允许字母数字与常见符号（_-[].:/=）";
-        }
-        return null;
+        return DirectLogSearchAccess.validateKeyword(keyword);
     }
 
-    /** tailLines 解析：返回行数（非法返回 -1） */
+    /** tailLines 解析：委托 DirectLogSearchAccess（clamp 到 1~5000，非法回退默认 500） */
     public static int parseTailLines(String tailLines) {
-        if (tailLines == null || tailLines.isBlank()) {
-            return 500;
-        }
-        try {
-            int n = Integer.parseInt(tailLines.trim());
-            return n >= 1 && n <= 5000 ? n : -1;
-        } catch (NumberFormatException e) {
-            return -1;
-        }
+        return DirectLogSearchAccess.parseTailLines(tailLines);
     }
 }

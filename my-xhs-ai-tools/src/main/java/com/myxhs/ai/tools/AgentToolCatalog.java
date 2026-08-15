@@ -91,14 +91,7 @@ public class AgentToolCatalog {
     }
 
     private static java.util.function.Function<java.util.Map<String, String>, String> logSearchValidator() {
-        return args -> {
-            String keyword = args == null ? null : args.get("keyword");
-            String invalid = ToolParamValidators.validateKeyword(keyword);
-            if (invalid != null) {
-                return invalid;
-            }
-            int tail = ToolParamValidators.parseTailLines(args == null ? null : args.get("tailLines"));
-            return tail < 1 ? "tailLines 必须在 1~5000" : null;
-        };
+        // 与原 PolicyGuard 行为一致：仅校验 keyword（tailLines 由工具侧 parseTailLines clamp，恒合法）
+        return args -> ToolParamValidators.validateKeyword(args == null ? null : args.get("keyword"));
     }
 }
