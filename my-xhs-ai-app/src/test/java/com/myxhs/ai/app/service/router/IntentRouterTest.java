@@ -3,6 +3,7 @@ package com.myxhs.ai.app.service.router;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * IntentRouter 规则单元测试（纯逻辑，无 DB/模型）。
@@ -131,5 +132,34 @@ class IntentRouterTest {
         assertEquals(Intent.AGENT, router.classify("今天天气怎么样"));   // "怎么"→Agent→模型 DECLINE
         assertEquals(Intent.AGENT, router.classify("为什么最近订单量异常"));
         assertEquals(Intent.AGENT, router.classify("帮我分析一下天气对订单的影响"));
+    }
+
+    /** 边界输入回归集（批量探针固化）：高频日常表达不进 Agent */
+    @Test
+    void 边界输入_高频日常表达不进Agent() {
+        String[] greeting = {
+                "你能帮我吗", "帮我看下", "哈哈", "今天心情不好", "我是谁", "hello world",
+                "在吗帮我看看", "help", "你好你好", "谢谢老板", "测一下", "帮忙看看这个报错",
+                "你是AI吗", "介绍一下你自己", "吃饭了吗", "周末去哪玩",
+        };
+        String[] outOfScope = {"最近有什么好电影", "写首诗", "今天吃什么", "什么是Nacos", "讲个恐怖故事"};
+        String[] metric = {"订单量", "帮我查下订单量", "内容互动"};
+        String[] agent = {
+                "随便聊聊", "怎么弄", "天气怎么样", "订单量怎么样", "为什么订单量下降了",
+                "订单量下降", "最近有 5xx 吗", "MySQL 主从延迟", "服务错误", "怎么查订单量",
+        };
+        for (String q : greeting) {
+            assertEquals(Intent.GREETING, router.classify(q), "应 GREETING: " + q);
+        }
+        for (String q : outOfScope) {
+            assertEquals(Intent.OUT_OF_SCOPE, router.classify(q), "应 OUT_OF_SCOPE: " + q);
+        }
+        for (String q : metric) {
+            assertTrue(router.classify(q) != Intent.AGENT && router.classify(q) != Intent.GREETING
+                    && router.classify(q) != Intent.OUT_OF_SCOPE, "应确定性指标: " + q);
+        }
+        for (String q : agent) {
+            assertEquals(Intent.AGENT, router.classify(q), "应 AGENT: " + q);
+        }
     }
 }

@@ -33,7 +33,7 @@ public class IntentRouter {
             compile("支付失败率"));
     private static final List<Pattern> CONTENT_INTERACTION_PATTERNS = List.of(
             compile("互动量"), compile("互动数"), compile("点赞"), compile("收藏"),
-            compile("评论数"), compile("分享数"), compile("曝光量"));
+            compile("评论数"), compile("分享数"), compile("曝光量"), compile("互动"));
     /** 归因/分析意图：命中即 AGENT（优先于指标关键词，也不走 LLM 兜底） */
     private static final List<Pattern> INVESTIGATION_PATTERNS = List.of(
             compile("为什么"), compile("为何"), compile("原因"), compile("怎么"),
@@ -42,17 +42,22 @@ public class IntentRouter {
     /** 问候/闲聊/无诊断目标：规则模糊时才判（归因/指标词已优先消耗），命中即 GREETING 不走 Agent */
     private static final List<Pattern> GREETING_PATTERNS = List.of(
             compile("你好"), compile("您好"), compile("嗨"), compile("哈喽"), compile("hello"),
-            compile("hi"), compile("在吗"), compile("你是谁"), compile("能干什么"),
-            compile("可以做什么"), compile("帮助"), compile("谢谢"), compile("再见"), compile("测试"));
+            compile("hi"), compile("在吗"), compile("你是谁"), compile("我是谁"), compile("能干什么"),
+            compile("可以做什么"), compile("帮助"), compile("帮我"), compile("帮忙"), compile("谢谢"),
+            compile("再见"), compile("测试"), compile("测一下"), compile("试试"), compile("哈哈"),
+            compile("心情"), compile("吃饭"), compile("去哪玩"), compile("介绍一下"), compile("你是ai"),
+            compile("help"));
 
-    /** 明显超范围话题（与诊断词几乎零重叠的通用闲聊域）：命中即 OUT_OF_SCOPE 直答拒答，零成本 */
+    /** 明显超范围话题（与诊断词几乎零重叠的通用闲聊域）：命中即 OUT_OF_SCOPE 直答拒答，零成本。
+     *  判定在 GREETING 之前（"帮我写代码"按主体话题拒答而非引导）。 */
     private static final List<Pattern> OUT_OF_SCOPE_PATTERNS = List.of(
             compile("天气"), compile("气温"), compile("下雨"), compile("新闻"), compile("股票"),
             compile("汇率"), compile("翻译"), compile("写代码"), compile("代码"), compile("数学"),
             compile("美食"), compile("旅游"), compile("电影"), compile("音乐"), compile("体育"),
             compile("足球"), compile("篮球"), compile("游戏"), compile("恋爱"), compile("星座"),
             compile("算命"), compile("笑话"), compile("故事"), compile("诗"), compile("作诗"),
-            compile("英语"), compile("学习"), compile("考试"), compile("招聘"), compile("工资"));
+            compile("英语"), compile("学习"), compile("考试"), compile("招聘"), compile("工资"),
+            compile("什么是"), compile("吃什么"));
 
     /** 超范围话题拒答内容（RunManager/AiQueryController 共用） */
     public static final String OUT_OF_SCOPE_ANSWER = """
@@ -97,12 +102,13 @@ public class IntentRouter {
         if (hits.size() == 1) {
             return hits.get(0); // 确定性
         }
-        // 0 个 或 >1 个指标命中 → 先问候判定（零成本直答），再超范围判定，再 LLM 兜底，最后保守 AGENT
-        if (matches(GREETING_PATTERNS, text)) {
-            return Intent.GREETING;
-        }
+        // 0 个 或 >1 个指标命中 → 先超范围判定（主体话题明确无关，如"帮我写代码"），
+        // 再问候判定（"帮我"类求助词），再 LLM 兜底，最后保守 AGENT
         if (matches(OUT_OF_SCOPE_PATTERNS, text)) {
             return Intent.OUT_OF_SCOPE;
+        }
+        if (matches(GREETING_PATTERNS, text)) {
+            return Intent.GREETING;
         }
         // 模糊：LLM 兜底（开启时）否则 AGENT
         if (llmClassifier != null) {
