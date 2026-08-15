@@ -4,6 +4,7 @@ import com.myxhs.ai.app.service.agent.harness.AgentHarness;
 import com.myxhs.ai.app.service.agent.harness.AgentRun;
 import com.myxhs.ai.app.service.agent.harness.AgentStep;
 import com.myxhs.ai.app.service.agent.harness.RunStatus;
+import com.myxhs.ai.app.service.agent.harness.TerminationReason;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,6 +50,12 @@ public class EvalRunner {
             r.put("query", c.query());
             try {
                 AgentRun run = harness.run(c.query());
+                // 限流类外部故障（模型不可用/超时）重试一次：评测门禁不应被随机限流打红
+                if (RunStatus.FAILED.name().equals(run.status().name())
+                        && TerminationReason.MODEL_UNAVAILABLE == run.terminationReason()) {
+                    log.warn("[eval] case={} 模型不可用，重试一次", c.id());
+                    run = harness.run(c.query());
+                }
                 r.put("status", run.status().name());
                 r.put("terminationReason", run.terminationReason() == null ? null
                         : run.terminationReason().name());

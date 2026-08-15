@@ -106,7 +106,9 @@
                         <artifactId>maven-surefire-plugin</artifactId>
                         <configuration>
                             <groups>eval-gate</groups>
-                            <excludedGroups></excludedGroups>
+                            <!-- 空值无法覆盖 base 的 excludedGroups=eval-gate（Maven 合并忽略空元素），
+                                 用不可能存在的 tag 显式覆盖，否则 -Peval-gate 跑 0 个测试 -->
+                            <excludedGroups>nonexistent-tag</excludedGroups>
                         </configuration>
                     </plugin>
                 </plugins>

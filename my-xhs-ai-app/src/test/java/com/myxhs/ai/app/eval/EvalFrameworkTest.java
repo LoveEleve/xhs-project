@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.ai.app.service.agent.harness.AgentBudget;
 import com.myxhs.ai.app.service.agent.harness.AgentRun;
 import com.myxhs.ai.app.service.agent.harness.AgentHarness;
+import com.myxhs.ai.app.service.agent.harness.TerminationReason;
 import com.myxhs.ai.tools.MetricToolAccess;
 import com.myxhs.ai.tools.ObsToolAccess;
 import dev.langchain4j.data.message.AiMessage;
@@ -226,6 +227,41 @@ class EvalFrameworkTest {
         assertEquals(java.util.Set.of("2", "1", "3"), a.extractNonPercentNumbers("浏览2加购1下单3"));
         assertEquals(java.util.Set.of("61"), a.extractNonPercentNumbers("[ev_8eb5f018f7fc] 下单量为61"));
         assertTrue(a.extractAllNumbers("{\"value\":61,\"success\":4}").containsAll(java.util.Set.of("61", "4")));
+    }
+
+    @Test
+    void 数字一致性_精度与时间戳不误报() {
+        EvalAsserter a = new EvalAsserter();
+        // 工具返回 67.0/0.0，答案正常舍入为整数 → 数值语义一致（旧逻辑字符串匹配误报）
+        var run = new AgentRun("r", "q", AgentBudget.defaults());
+        run.registry().register("httpErrors", Map.of(), "{\"status\":\"ok\",\"metric\":\"service.http_errors\","
+                + "\"asOf\":\"2026-08-15T07:37:53.403179046Z\",\"total5xx\":67.0,\"hours\":24,"
+                + "\"byUri\":[{\"uri\":\"/actuator/health\",\"rate5xxPerSec\":58.0},"
+                + "{\"uri\":\"UNKNOWN\",\"rate5xxPerSec\":7.0},{\"uri\":\"/api/home/feed\",\"rate5xxPerSec\":2.0}]}");
+        run.terminate(TerminationReason.COMPLETED,
+                "最近24小时5xx总数为67次，约58次集中在/actuator/health，7次UNKNOWN，/api/home/feed仅2次。"
+                        + "观测时间2026-08-15 07:42:53。");
+        assertTrue(a.checkNumberConsistency(run).isEmpty(), "舍入/时间戳数字不应误报: "
+                + a.checkNumberConsistency(run));
+        // 8-15 日期表达不参与比对（业务数字 46/7 保留）
+        assertEquals(java.util.Set.of("46", "7"), a.extractNonPercentNumbers("基线窗口订单量46，当前7（集中在8-15）"));
+        // 无秒时间（08:06）与年份（2025年）同样剥除
+        assertEquals(java.util.Set.of(), a.extractNonPercentNumbers("根据当前观测（2026-08-15T08:06Z），2025年1月无数据"));
+        // "2025-01 区间" 不得残留 "20"（\d{1,2}-\d{1,2} 从 4 位年份尾巴截取）
+        assertEquals(java.util.Set.of(), a.extractNonPercentNumbers("2025-01 区间无数据，asOf 2026-08-15"));
+        // 中文括号的裸证据 ID 引用（模型输出形态）不参与比对
+        assertEquals(java.util.Set.of("15"), a.extractNonPercentNumbers("发布事件15条（ev_c3d657ef1bd3）"));
+        // 推导值（65.1-21.1=44）在证据量级窗口内不报幻觉；数量级编造仍检出
+        var run3 = new AgentRun("r3", "q", AgentBudget.defaults());
+        run3.registry().register("httpErrors", Map.of(), "{\"total5xx\":67.1,\"byUri\":[{\"uri\":\"health\",\"rate5xxPerSec\":65.1},{\"uri\":\"order\",\"rate5xxPerSec\":21.1}]}");
+        run3.terminate(TerminationReason.COMPLETED, "网关约44/s的5xx，总量67.1/s");
+        assertTrue(a.checkNumberConsistency(run3).isEmpty(), "推导值不应误报: " + a.checkNumberConsistency(run3));
+        // 真实不一致仍须检出
+        var run2 = new AgentRun("r2", "q", AgentBudget.defaults());
+        run2.registry().register("queryOrderVolume", Map.of(), "{\"metric\":\"order.query_volume\",\"value\":9.0}");
+        run2.terminate(TerminationReason.COMPLETED, "订单量为10000单");
+        assertEquals(java.util.Set.of("10000"), a.checkNumberConsistency(run2),
+                "真实数字编造必须检出");
     }
 
     @Test
