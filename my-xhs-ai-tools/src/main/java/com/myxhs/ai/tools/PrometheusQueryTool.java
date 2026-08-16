@@ -189,14 +189,23 @@ public class PrometheusQueryTool {
         try {
             JsonNode resp = query("sum by (consumer_group) (rocketmq_dlq_backlog{" + filter + "})");
             double total = 0;
+            int sentinelCount = 0;
             java.util.List<Map.Entry<String, Double>> lags = new ArrayList<>();
             for (JsonNode s : resp) {
                 double v = s.path("value").get(1).asDouble();
+                // 哨兵口径（2026-08-16 中间件核实）：-1 = 无 DLQ 或查询失败（应用侧哨兵），
+                // 求和无意义（-283 是 -1 行的累加）——正确口径只计 >0 的组
+                if (v <= 0) {
+                    sentinelCount++;
+                    continue;
+                }
                 total += v;
                 lags.add(Map.entry(s.path("metric").path("consumer_group").asText(), v));
             }
             node.put("totalDlqBacklog", round(total));
+            node.put("sentinelGroups", sentinelCount);
             node.put("groupCount", lags.size());
+            node.put("note", "totalDlqBacklog 只计 backlog>0 的消费组；-1 为无 DLQ/查询失败哨兵，不参与聚合");
             node.put("window", "当前时点（客户端指标）");
             ArrayNode groups = node.putArray("topGroups");
             lags.stream().sorted(Map.Entry.<String, Double>comparingByValue().reversed())

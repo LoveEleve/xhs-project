@@ -22,6 +22,8 @@ class PrometheusQueryToolTest {
     private static HttpServer server;
     private static String baseUrl;
     private static volatile String lastQuery;
+    /** 测试覆盖：下一个查询响应（null=默认分支） */
+    private static volatile String overrideBody;
 
     @BeforeAll
     static void start() throws Exception {
@@ -31,7 +33,10 @@ class PrometheusQueryToolTest {
                     exchange.getRequestURI().getRawQuery().replaceFirst("^query=", ""), StandardCharsets.UTF_8));
             lastQuery = q;
             String body;
-            if (q.contains("status=~\"5..\"")) {
+            if (overrideBody != null) {
+                body = overrideBody;
+                overrideBody = null;
+            } else if (q.contains("status=~\"5..\"")) {
                 // 模拟 Prometheus 语义：带 service 过滤时只返回该服务（order 12+3=15），否则全部（+gateway 1=16）
                 boolean orderOnly = q.contains("service=\"my-xhs-order\"");
                 boolean gatewayOnly = q.contains("service=\"my-xhs-gateway\"");
@@ -151,6 +156,24 @@ class PrometheusQueryToolTest {
         assertEquals("ok", r.path("status").asText());
         assertEquals(42, r.path("totalDlqBacklog").asInt());
         assertTrue(lastQuery.contains("consumer_group=\"order-event-consumer-group\""), lastQuery);
+    }
+
+    @Test
+    void 死信积压_哨兵负值排除聚合() throws Exception {
+        // 中间件口径核实（2026-08-16）：-1 = 无 DLQ/查询失败哨兵，求和无意义——
+        // 混合 -1 与正值时，聚合只计 >0 组，哨兵组数单独输出
+        overrideBody = "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":["
+                + "{\"metric\":{\"consumer_group\":\"g-a\"},\"value\":[1,\"-1\"]},"
+                + "{\"metric\":{\"consumer_group\":\"g-b\"},\"value\":[1,\"5\"]},"
+                + "{\"metric\":{\"consumer_group\":\"g-c\"},\"value\":[1,\"-1\"]}"
+                + "]}}";
+        var r = om.readTree(tool.mqDlqBacklog(""));
+        assertEquals("ok", r.path("status").asText());
+        assertEquals(5, r.path("totalDlqBacklog").asInt(), "只计 >0 组（-283 类哨兵求和不再出现）");
+        assertEquals(2, r.path("sentinelGroups").asInt(), "哨兵组数单列");
+        assertEquals(1, r.path("groupCount").asInt());
+        assertEquals("g-b", r.path("topGroups").get(0).path("group").asText());
+        assertTrue(r.path("note").asText().contains("哨兵"), r.path("note").asText());
     }
 
     @Test

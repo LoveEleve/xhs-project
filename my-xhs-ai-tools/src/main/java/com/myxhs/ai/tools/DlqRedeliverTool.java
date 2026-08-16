@@ -98,8 +98,10 @@ public class DlqRedeliverTool implements DlqRedeliverAccess {
             ok.put("retryTopic", retryTopic);
             ok.put("httpStatus", resp.statusCode());
             String body = resp.body() == null ? "" : resp.body();
-            if (resp.statusCode() >= 200 && resp.statusCode() < 300 && !body.isBlank()
-                    && body.contains("\"status\":0")) {
+            // JSON 精确判断 status==0（字符串 contains 可能误匹配嵌套字段，P2 修复）
+            boolean success = resp.statusCode() >= 200 && resp.statusCode() < 300
+                    && parseStatus(body) == 0;
+            if (success) {
                 ok.put("result", body.length() > 1000 ? body.substring(0, 1000) + "…" : body);
             } else {
                 ok.put("status", "error");
@@ -124,6 +126,15 @@ public class DlqRedeliverTool implements DlqRedeliverAccess {
             return om.readTree(csrfBody).path("data").path("token").asText(null);
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    /** Dashboard 业务状态码：JSON path("status")；解析失败返回 -999（非 0=失败语义） */
+    private int parseStatus(String body) {
+        try {
+            return om.readTree(body).path("status").asInt(-999);
+        } catch (Exception e) {
+            return -999;
         }
     }
 
