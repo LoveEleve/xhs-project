@@ -28,6 +28,16 @@ class AgentDispatcherTest {
         assertEquals(AgentProfiles.OPS.id(), dispatcher.dispatch("帮我查一下日志").id());
         assertEquals(AgentProfiles.OPS.id(), dispatcher.dispatch("帮我重投死信消息").id());
         assertEquals(AgentProfiles.OPS.id(), dispatcher.dispatch("traceId 定位").id());
+        // P0 回归：纯 32 位 hex traceId 输入 → OPS（M9-1 查日志闭环依赖 logSearch 域）
+        assertEquals(AgentProfiles.OPS.id(),
+                dispatcher.dispatch("abcdef0123456789abcdef0123456789").id());
+    }
+
+    @Test
+    void 领域冲突_默认BUSINESS() {
+        // 业务词 + 排障词冲突（"订单支付错误"）→ BUSINESS（ops && !biz 才 OPS）
+        assertEquals(AgentProfiles.BUSINESS.id(), dispatcher.dispatch("订单支付报错了").id());
+        assertEquals(AgentProfiles.BUSINESS.id(), dispatcher.dispatch("为什么支付服务错误导致订单下降").id());
     }
 
     @Test

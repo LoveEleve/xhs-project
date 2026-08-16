@@ -52,6 +52,16 @@ public final class AgentProfiles {
             com.myxhs.ai.app.service.agent.harness.AgentHarness.SYSTEM_PROMPT,
             ALL_TOOLS, BUDGET);
 
+    private static final java.util.Map<String, AgentProfile> BY_ID = java.util.Map.of(
+            BUSINESS.id(), BUSINESS,
+            OPS.id(), OPS,
+            FULL.id(), FULL);
+
+    /** 按 id 查找（resume 从 versionsJson 恢复画像；未知/缺失返回 null=全量语义） */
+    public static AgentProfile byId(String id) {
+        return id == null ? null : BY_ID.get(id);
+    }
+
     private AgentProfiles() {
     }
 }

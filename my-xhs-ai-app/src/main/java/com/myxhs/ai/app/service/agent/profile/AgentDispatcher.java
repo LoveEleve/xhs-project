@@ -19,6 +19,9 @@ public class AgentDispatcher {
             compile("服务"), compile("重启"), compile("重投"), compile("网关"),
             compile("nacos"), compile("注册中心"), compile("健康检查"), compile("actuator"));
 
+    /** traceId/请求链路标识：32 位 hex 是查日志/链路的强信号（与 IntentRouter L0 同规则；P0 修复） */
+    private static final Pattern TRACE_ID_PATTERN = Pattern.compile("^[a-f0-9]{32}$");
+
     /** Business 强信号（业务指标归因） */
     private static final List<Pattern> BUSINESS_PATTERNS = List.of(
             compile("订单"), compile("支付"), compile("内容"), compile("互动"),
@@ -28,6 +31,10 @@ public class AgentDispatcher {
     public AgentProfile dispatch(String query) {
         if (query == null || query.isBlank()) {
             return AgentProfiles.BUSINESS;
+        }
+        // 纯 traceId：查日志链路 → Ops（M9-1 闭环：traceId 查询必须落到 logSearch 工具域）
+        if (TRACE_ID_PATTERN.matcher(query.trim()).matches()) {
+            return AgentProfiles.OPS;
         }
         String text = query.toLowerCase(Locale.ROOT);
         boolean ops = matches(OPS_PATTERNS, text);

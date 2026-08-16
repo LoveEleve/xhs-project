@@ -131,6 +131,29 @@ class HitlApprovalTest {
         assertTrue(store.loadApproval(run.runId()).isEmpty(), "非法参数不得进入审批: " + store.loadApproval(run.runId()));
     }
 
+    @Test
+    void M13_审批恢复保留画像() {
+        // Ops 画像挂起 → resume 后画像保留（工具子集过滤不丢失，P1 回归）
+        AgentHarness h = harnessWithDlq("{\"status\":\"ok\",\"tool\":\"dlq.redeliver\"}");
+        AgentRun run = h.run("MQ 死信积压了，帮我重投死信消息",
+                com.myxhs.ai.app.service.agent.profile.AgentProfiles.OPS);
+        String runId = run.runId();
+        assertEquals(RunStatus.WAITING_APPROVAL, run.status());
+        // versionsJson 含 profile（resume 依赖）
+        var rec = store.loadRun(runId).orElseThrow();
+        assertTrue(rec.versionsJson().contains("\"profile\":\"OPS\""), rec.versionsJson());
+
+        String approval = store.loadApproval(runId).orElseThrow()
+                .replace("\"status\":\"PENDING\"", "\"status\":\"APPROVED\"");
+        store.updateApproval(runId, approval);
+        store.claimApproval(runId);
+
+        AgentRun resumed = h.resume(runId, null, null);
+        assertEquals(com.myxhs.ai.app.service.agent.profile.AgentProfiles.OPS.id(),
+                resumed.profile().id(), "resume 应恢复画像");
+        assertEquals(RunStatus.SUCCEEDED, resumed.status());
+    }
+
     private static String lastEvId(List<String> texts) {
         String found = null;
         for (String t : texts) {

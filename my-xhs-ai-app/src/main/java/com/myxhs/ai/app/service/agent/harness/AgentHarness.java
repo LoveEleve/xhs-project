@@ -517,6 +517,18 @@ my-xhs-user / my-xhs-inventory / my-xhs-product / my-xhs-search / my-xhs-cart / 
         }
         AgentBudget budget = parseBudget(rec.budgetJson());
         AgentRun run = new AgentRun(runId, rec.query(), budget);
+        // M13：恢复画像（versionsJson 的 profile.id；审批/崩溃恢复后工具子集过滤不丢失）
+        try {
+            var vn = om.readTree(rec.versionsJson() == null ? "{}" : rec.versionsJson());
+            String profileId = vn.path("profile").asText(null);
+            com.myxhs.ai.app.service.agent.profile.AgentProfile p =
+                    com.myxhs.ai.app.service.agent.profile.AgentProfiles.byId(profileId);
+            if (p != null) {
+                run.setProfile(p);
+            }
+        } catch (Exception e) {
+            log.warn("[harness] run={} 恢复画像解析失败（按全量）: {}", runId, e.getMessage());
+        }
         List<RunStore.StepRecord> steps = store.loadSteps(runId);
         List<ChatMessage> messages = new ArrayList<>();
         LoopCtrl ctrl = new LoopCtrl(budget);
