@@ -10,7 +10,7 @@
 
 > 给 my-xhs 电商平台建**运营/运维诊断 AI Agent**：查订单/支付/内容/系统指标，多步归因，带证据链、可追溯、不越权、不编造。
 > **M10-M14 规划全部完成**（会话记忆 → 工具注册表 → HITL 审批 → 多智能体 → 评测闭环），每个里程碑经写前设计/写前 review/写后深度 review/二轮 review。
-> **229 个 @Test 全绿**（tools 50 + app 168 + mcp 11；口径=非 eval-gate 套件，其中 6 个集成测试无凭据自动跳过；eval-gate tag 的 4 个真库测试类另计）。
+> **231 个 @Test 全绿**（tools 52 + app 168 + mcp 11；口径=非 eval-gate 套件，其中 6 个集成测试无凭据自动跳过；eval-gate tag 的 4 个真库测试类另计）。
 > **下一步（顺序已定）**：① nightly 全量评测（100 条）首跑（P2 收尾已完：judge 装配 + badcase 路径配置化）→ ② 演示视频/作品集资产。
 
 ---
@@ -107,7 +107,7 @@
 > L3（dlq.redeliver 等）不上 MCP（仅 app 侧 Harness 经审批调用）。
 
 ### 配置项（application.yml，myxhs.ai.*）
-`llm.timeout-seconds`(60) / `router.llm-fallback.enabled`(true) / `router.semantic-threshold`(0.42) / `agent.max-steps|max-tokens|max-cost|price-per-1k-tokens|max-invalid-answers|tool-result-max-len` / `tools.mode`(mcp/direct) / `rag.*` / **`log-search.files`** / **`hitl.dlq-redeliver.url`（M11）** / `eval.gate.*`(10/60/40) / **`eval.judge.enabled`（M14，默认 false，已装配——P2 收尾）** / **`eval.badcase-file`（M14 回流路径配置化）**
+`llm.timeout-seconds`(60) / `router.llm-fallback.enabled`(true) / `router.semantic-threshold`(0.42) / `agent.max-steps|max-tokens|max-cost|price-per-1k-tokens|max-invalid-answers|tool-result-max-len` / `tools.mode`(mcp/direct) / `rag.*` / **`log-search.files`** / **`hitl.dlq-redeliver.url`（M11，推荐 http://21.130.247.89:18081）** / `eval.gate.*`(10/60/40) / **`eval.judge.enabled`（M14，默认 false，已装配——P2 收尾）** / **`eval.badcase-file`（M14 回流路径配置化）**
 
 ---
 
@@ -219,7 +219,7 @@ M5 Durable；M6 评测门禁；M7 安全；M8 容器化/UI 薄壳；M9-1 受控�
 | log.search 数据源 | V1 指向生产快照日志（配置化）；实时日志需部署环境挂载 |
 | traceId | 仅同步线程（/api/ai/query）；run 异步线程无 traceId（只有 runId）——已知边界 |
 | **真库挂起-审批 E2E 不可控** | 模型是否请求 dlq.redeliver 取决于数据（无真实死信时合理不请求）——链路由 fake 单测锁定 |
-| **dlq.redeliver 管理通道未配置** | 远端 MQ 不可达（10911 closed）——工具返回 ERROR 如实；生产配 `hitl.dlq-redeliver.url` 即接真实执行 |
+| dlq.redeliver 管理通道 | **已核实+改造（2026-08-16）**：Dashboard `http://21.130.247.89:18081`（无需登录，iptables 白名单含本机 21.214.97.212）；broker 实际监听 **11911**（非默认 10911）；执行器已按真实契约改造（csrf 会话 + consumeMessageDirectly.do，topic 推导 %RETRY%<group>）；真实重投未触发（无死信，留待审批场景）|
 | **MCP_API_KEY** | 生产必设（dev 放行 WARN）|
 | **评测依赖本地 MCP 服务** | eval-gate/对比评测/抽样冒烟前必须启动 19021（§10）|
 | eval-gate | **已跑绿**（前置债清）；阈值 10/60/40 实测校准文档化 |
