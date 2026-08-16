@@ -10,7 +10,7 @@
 
 > 给 my-xhs 电商平台建**运营/运维诊断 AI Agent**：查订单/支付/内容/系统指标，多步归因，带证据链、可追溯、不越权、不编造。
 > **M10-M14 规划全部完成**（会话记忆 → 工具注册表 → HITL 审批 → 多智能体 → 评测闭环），每个里程碑经写前设计/写前 review/写后深度 review/二轮 review。
-> **226 个 @Test 全绿**（tools 50 + app 165 + mcp 11，6 个集成测试无凭据自动跳过）。
+> **226 个 @Test 全绿**（tools 50 + app 165 + mcp 11；口径=非 eval-gate 套件，其中 6 个集成测试无凭据自动跳过；eval-gate tag 的 4 个真库测试类另计）。
 > **下一步（顺序已定）**：① judge Spring 装配 + badcase 路径配置化（P2 收尾）→ ② nightly 全量评测（100 条）首跑 → ③ 演示视频/作品集资产。
 
 ---
@@ -59,12 +59,12 @@
 ## 2. 代码结构与端口
 
 ### 模块
-| 模块 | 端口 | 规模(main/test) | 职责 |
+| 模块 | 端口 | 规模(main/test, 2026-08-16 实测) | 职责 |
 |------|:--:|:--:|------|
-| `my-xhs-ai-tools` | — | ~1450/850 | 共享工具纯类：业务×3、事件流水×3、baseline、观测×6、log.search、**dlq.redeliver（M11）**、**ToolRegistry/AgentToolCatalog/AgentToolBinder（M12）**、ToolJson/窗口/白名单 |
-| `my-xhs-ai-app` | 19020 | ~5500/3600 | AI 核心：路由/**AgentProfiles+AgentDispatcher（M13）**/Harness/**HITL 审批（M11）**/会话（M10）/RunManager/RunStore/评测/**EvalJudge+BadCaseCollector（M14）**/SSE |
-| `my-xhs-ai-mcp` | 19021 | 438/306 | MCP 服务：14 工具（**从注册表导出，M12**，Streamable HTTP，认证+审计）|
-| `frontend/` | 5173(dev) | pages/ai ~700 | AI 诊断台薄壳（SSE/证据链/**会话标识（M10）**/**审批卡片（M11）**/?run=/?conv=）|
+| `my-xhs-ai-tools` | — | 1818/897 | 共享工具纯类：业务×3、事件流水×3、baseline、观测×6、log.search、**dlq.redeliver（M11）**、**ToolRegistry/AgentToolCatalog/AgentToolBinder（M12）**、ToolJson/窗口/白名单 |
+| `my-xhs-ai-app` | 19020 | 6444/4391 | AI 核心：路由/**AgentProfiles+AgentDispatcher（M13）**/Harness/**HITL 审批（M11）**/会话（M10）/RunManager/RunStore/评测/**EvalJudge+BadCaseCollector（M14）**/SSE |
+| `my-xhs-ai-mcp` | 19021 | 305/306 | MCP 服务：14 工具（**从注册表导出，M12**，Streamable HTTP，认证+审计）|
+| `frontend/` | 5173(dev) | pages/ai 447 | AI 诊断台薄壳（SSE/证据链/**会话标识（M10）**/**审批卡片（M11）**/?run=/?conv=）|
 
 ### 关键类（app 模块）
 | 类 | 职责 |
@@ -250,7 +250,8 @@ mvn test -pl my-xhs-ai-tools,my-xhs-ai-app,my-xhs-ai-mcp
 # 真库评测门禁（前置：启动 MCP 19021！）
 export MYXHS_LOG_SEARCH_FILES="my-xhs-nacos=/data/workspace/my-xhs/config/production-env-config/05-logs/nacos.log"
 nohup java -jar my-xhs-ai-mcp/target/my-xhs-ai-mcp-1.0-SNAPSHOT.jar &   # 19021（先 mvn package）
-mvn test -pl my-xhs-ai-app -Peval-gate                                   # 锚点 7 条 ~10min
+mvn test -pl my-xhs-ai-app -Peval-gate                                   # 全部 eval-gate tag（4 类 ~55min）
+mvn test -pl my-xhs-ai-app -Peval-gate -Dtest=EvalGateRunTest            # 仅门禁锚点 7 条 ~10min
 
 # M13 对比评测（~30min，决策数据）：mvn test -pl my-xhs-ai-app -Peval-gate -Dtest=MultiAgentComparisonTest
 # M14 regression 抽样冒烟（~6min）：mvn test -pl my-xhs-ai-app -Peval-gate -Dtest=SampledRegressionTest
@@ -262,11 +263,11 @@ java -jar my-xhs-ai-mcp/target/my-xhs-ai-mcp-1.0-SNAPSHOT.jar &   # 19021
 java -jar my-xhs-ai-app/target/my-xhs-ai-app-1.0-SNAPSHOT.jar &   # 19020
 cd frontend && npm run dev                                        # 5173（/ai 页面）
 
-# 真实 E2E（多轮）：
-RID=$(curl -s -X POST http://127.0.0.1:19020/api/runs -H 'Content-Type: application/json' \
-     -d '{"message":"为什么订单量下降了？"}' | python3 -c "import json,sys; print(json.load(sys.stdin)['runId'])")
-CONV=$(curl -s -X POST http://127.0.0.1:19020/api/runs -H 'Content-Type: application/json' \
-     -d '{"message":"为什么订单量下降了？"}' | python3 -c "import json,sys; print(json.load(sys.stdin)['conversationId'])")
+# 真实 E2E（多轮）——一次提交同时拿 runId 与 conversationId：
+RESP=$(curl -s -X POST http://127.0.0.1:19020/api/runs -H 'Content-Type: application/json' \
+     -d '{"message":"为什么订单量下降了？"}')
+RID=$(echo "$RESP" | python3 -c "import json,sys; print(json.load(sys.stdin)['runId'])")
+CONV=$(echo "$RESP" | python3 -c "import json,sys; print(json.load(sys.stdin)['conversationId'])")
 curl -s -X POST http://127.0.0.1:19020/api/runs -H 'Content-Type: application/json' \
      -d "{\"message\":\"那支付呢？\",\"conversationId\":\"$CONV\"}"          # 第二问承接
 curl -s http://127.0.0.1:19020/api/conversations/$CONV                       # 会话详情
