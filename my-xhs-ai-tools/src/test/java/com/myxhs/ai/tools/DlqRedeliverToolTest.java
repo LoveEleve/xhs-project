@@ -102,4 +102,43 @@ class DlqRedeliverToolTest {
         DlqRedeliverTool noBase = new DlqRedeliverTool(null);
         assertTrue(noBase.redeliver("0123456789abcdef0123456789abcdef", "g").contains("未配置"));
     }
+
+    @Test
+    void csrf失败_如实报错() throws IOException {
+        HttpServer srv2 = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        srv2.createContext("/rocketmq-dashboard/csrf-token", ex -> {
+            respond(ex, 500, "oops");
+        });
+        srv2.start();
+        try {
+            DlqRedeliverTool tool = new DlqRedeliverTool("http://127.0.0.1:" + srv2.getAddress().getPort());
+            String result = tool.redeliver("0123456789abcdef0123456789abcdef", "g");
+            assertTrue(result.contains("会话初始化失败"), result);
+            assertTrue(result.contains("\"status\":\"error\""), result);
+        } finally {
+            srv2.stop(0);
+        }
+    }
+
+    @Test
+    void 重投响应非零_如实报错() throws IOException {
+        HttpServer srv2 = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        srv2.createContext("/rocketmq-dashboard/csrf-token", ex -> {
+            ex.getResponseHeaders().add("Set-Cookie", "XSRF-TOKEN=t; Path=/");
+            ex.getResponseHeaders().add("Set-Cookie", "SESSION=s; Path=/");
+            respond(ex, 200, "{\"status\":0,\"data\":{\"token\":\"tok\"}}");
+        });
+        srv2.createContext("/message/consumeMessageDirectly.do", ex -> {
+            respond(ex, 200, "{\"status\":-1,\"errMsg\":\"消息不存在\"}");
+        });
+        srv2.start();
+        try {
+            DlqRedeliverTool tool = new DlqRedeliverTool("http://127.0.0.1:" + srv2.getAddress().getPort());
+            String result = tool.redeliver("0123456789abcdef0123456789abcdef", "g");
+            assertTrue(result.contains("\"status\":\"error\""), result);
+            assertTrue(result.contains("消息不存在"), result);
+        } finally {
+            srv2.stop(0);
+        }
+    }
 }

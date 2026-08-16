@@ -57,8 +57,8 @@ public class AgentHarness {
             - logSearch(service, keyword, tailLines)：受控检索服务日志（白名单服务最近 N 行内过滤 keyword；
               用于找异常堆栈/报错明细，如 ERROR/Deadlock/OutOfMemory；keyword 仅字母数字与常见符号）
             - dlq.redeliver(msgId, consumerGroup)：**MQ 死信消息重投（L3 高危动作，执行需人工审批）**——
-              仅在用户明确要求重投死信消息且已确认风险时请求该工具；请求后系统挂起待审批，
-              审批通过才会真正执行；无审批绝不执行
+              仅在用户明确要求重投死信消息且已确认风险时请求该工具；msgId 为死信消息的原始消息 ID
+              （ORIGIN_MESSAGE_ID）；请求后系统挂起待审批，审批通过才会真正执行；无审批绝不执行
             排障提示：httpErrors 的 uri=/** 已由工具单列为 noiseScanRoutes（扫描/探测噪音），归因时排除；
             /api/coupon/*、/api/cart/* 的 [Gateway-异常] WARN 日志非 5xx
             已知服务名（L2 观测可用）：my-xhs-gateway / my-xhs-order / my-xhs-payment / my-xhs-content /

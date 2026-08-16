@@ -21,8 +21,12 @@ import java.util.stream.Collectors;
  *  1. 会话初始化：GET {base}/rocketmq-dashboard/csrf-token → session cookie + csrfToken
  *     （Dashboard 无需登录；POST 必须带 X-XSRF-TOKEN 头 + session cookie）
  *  2. 按 msgId 重投：POST {base}/message/consumeMessageDirectly.do
- *     ?msgId=<msgId>&consumerGroup=<group>&topic=%RETRY%<group>&clientId=
+ *     ?msgId=<ORIGIN_MESSAGE_ID>&consumerGroup=<group>&topic=%RETRY%<group>&clientId=
+ *     ★ msgId 语义 = DLQ 消息的 ORIGIN_MESSAGE_ID（原始消息 ID，非 DLQ 消息自身 ID）
  *  3. 批量重投备用：POST {base}/dlqMessage/batchResendDlqMessage.do
+ * 已知边界（2026-08-16 实测）：获取 ORIGIN_MESSAGE_ID 的查询接口
+ *  （/dlqMessage/queryDlqMessageByConsumerGroup.query）当前版本有 NPE（UI 同踩）——
+ *  端到端可用依赖该接口修复或 mqadmin 查询；执行器本身按契约实现。
  * 参数白名单（PolicyGuard 同规则）：msgId 32hex / consumerGroup 字母数字；
  * 每次调用新建会话（L3 低频动作，防 token 过期）；未配置通道 → ERROR 如实。
  */

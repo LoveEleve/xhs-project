@@ -56,3 +56,28 @@
 - 216 测试全绿（app 155 + tools 50 + mcp 11）
 - 下一步：M13 多智能体 PoC / M14 评测闭环
 
+
+---
+
+## 补充 review（2026-08-16）：dlq.redeliver 对接真实 Dashboard 契约
+
+**对象**：DlqRedeliverTool 两段式改造（csrf 会话 + consumeMessageDirectly.do）+ 真实环境实测。
+
+### P1-1：ORIGIN_MESSAGE_ID 语义断链（端到端不可用，如实记录）
+- 契约要求 msgId = **ORIGIN_MESSAGE_ID**（DLQ 消息的原始消息 ID），而获取它的查询接口
+  `queryDlqMessageByConsumerGroup` 实测 NPE（中间件团队提示 + 本机复现）——**数据获取路径断裂**。
+- 对策：执行器按契约实现（可测可用性=输入必须为 ORIGIN_MESSAGE_ID）；工具/prompt 语义明确标注；
+  端到端可用依赖接口修复或 mqadmin；未假装可用（HANDOFF 已知问题如实记录）。
+
+### P1-2：测试 error 路径缺失
+- 原测试只覆盖成功/参数非法/未配置——补：csrf 失败（HTTP 500）、重投响应非 0（消息不存在）→ 均如实 error。
+
+### P2（记录）
+- HTTP 明文传输 CSRF token/cookie（内网 iptables 白名单缓解，非公网暴露）
+- baseUrl 尾斜杠约定（配置规范）
+- FULL prompt 不动（评测基线稳定）；OPS 变体描述更新（ORIGIN_MESSAGE_ID）→ prompt 版本 v2
+
+### 方法论
+- **契约对接必须验证"数据闭环"**：执行器对接只是半程——输入从哪来（DLQ 查询接口）是另一半，
+  NPE 使端到端不可用——"能用"与"接口对上"是两回事
+- **错误路径与成功路径同等测试**（csrf/重投失败均如实报错，不吞）

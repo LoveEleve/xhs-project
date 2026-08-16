@@ -219,7 +219,7 @@ M5 Durable；M6 评测门禁；M7 安全；M8 容器化/UI 薄壳；M9-1 受控�
 | log.search 数据源 | V1 指向生产快照日志（配置化）；实时日志需部署环境挂载 |
 | traceId | 仅同步线程（/api/ai/query）；run 异步线程无 traceId（只有 runId）——已知边界 |
 | **真库挂起-审批 E2E 不可控** | 模型是否请求 dlq.redeliver 取决于数据（无真实死信时合理不请求）——链路由 fake 单测锁定 |
-| dlq.redeliver 管理通道 | **已核实+改造（2026-08-16）**：Dashboard `http://21.130.247.89:18081`（无需登录，iptables 白名单含本机 21.214.97.212）；broker 实际监听 **11911**（非默认 10911）；执行器已按真实契约改造（csrf 会话 + consumeMessageDirectly.do，topic 推导 %RETRY%<group>）；真实重投未触发（无死信，留待审批场景）|
+| dlq.redeliver 管理通道 | **已核实+改造（2026-08-16）**：Dashboard `http://21.130.247.89:18081`（无需登录，白名单含本机）；broker 监听 **11911**；执行器按真实契约改造（csrf 会话 + consumeMessageDirectly.do，topic 推导 %RETRY%<group>）；**端到端断链（如实）**：msgId 语义=ORIGIN_MESSAGE_ID（DLQ 原始消息 ID），而获取它的查询接口（queryDlqMessageByConsumerGroup）有 NPE——真实可用依赖该接口修复或 mqadmin 查询；重投端点未实际触发（L3 + 无死信）|
 | **MCP_API_KEY** | 生产必设（dev 放行 WARN）|
 | **评测依赖本地 MCP 服务** | eval-gate/对比评测/抽样冒烟前必须启动 19021（§10）|
 | eval-gate | **已跑绿**（前置债清）；阈值 10/60/40 实测校准文档化 |
