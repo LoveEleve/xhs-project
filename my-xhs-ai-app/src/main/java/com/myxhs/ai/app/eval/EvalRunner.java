@@ -26,9 +26,23 @@ public class EvalRunner {
     private final AgentHarness harness;
     private final EvalAsserter asserter = new EvalAsserter();
     private final ObjectMapper om = new ObjectMapper();
+    /** M14：LLM-as-judge（可选；enabled=false 时 score=-1 不进汇总） */
+    private EvalJudge judge = new EvalJudge(null, false);
+    /** M14：bad case 回流收集器（可选；null=不收集） */
+    private BadCaseCollector badCaseCollector;
 
     public EvalRunner(AgentHarness harness) {
         this.harness = harness;
+    }
+
+    public EvalRunner withJudge(EvalJudge judge) {
+        this.judge = judge;
+        return this;
+    }
+
+    public EvalRunner withBadCaseCollector(BadCaseCollector collector) {
+        this.badCaseCollector = collector;
+        return this;
     }
 
     /** 执行评测集；返回报告对象（可序列化为 JSON）。M13：profileFor 非空时按画像跑（双 Agent 对比评测） */
@@ -78,6 +92,11 @@ public class EvalRunner {
 
                 List<String> hardFails = asserter.checkHard(c, run);
                 r.put("hardFails", hardFails);
+                // M14 LLM-as-judge：主观质量分（0-5；未启用=-1）
+                if (judge != null && judge.enabled()) {
+                    double js = judge.score(c.query(), run.finalAnswer());
+                    r.put("judgeScore", js);
+                }
                 boolean pass = hardFails.isEmpty();
                 // 幻觉检测仅针对模型结论（SUCCEEDED）；PARTIAL 为确定性摘要（步骤数/预算等流程数字会误报）
                 if (c.numbersConsistent() && RunStatus.SUCCEEDED.name().equals(run.status().name())) {
@@ -109,6 +128,13 @@ public class EvalRunner {
             results.add(r);
         }
 
+        // M14 bad case 回流：质量失败（非 FAILED）追加到回流文件
+        if (badCaseCollector != null) {
+            List<Map<String, Object>> bad = results.stream()
+                    .filter(badCaseCollector::isQualityFailure).toList();
+            badCaseCollector.append(bad, 0);
+        }
+
         int n = Math.max(1, cases.size());
         long totalTokens = 0;
         long totalDuration = 0;
@@ -133,6 +159,16 @@ public class EvalRunner {
         summary.put("avgSteps", round(totalSteps * 1.0 / n));
         summary.put("avgEvidence", round(totalEvidence * 1.0 / n));
         summary.put("avgTokensPerRun", round(totalTokens * 1.0 / n));
+        // M14 judge 汇总（未启用=无字段）
+        if (judge != null && judge.enabled()) {
+            double totalJudge = results.stream()
+                    .mapToDouble(x -> ((Number) x.getOrDefault("judgeScore", -1.0)).doubleValue())
+                    .filter(v -> v >= 0).sum();
+            long scored = results.stream()
+                    .mapToDouble(x -> ((Number) x.getOrDefault("judgeScore", -1.0)).doubleValue())
+                    .filter(v -> v >= 0).count();
+            summary.put("avgJudgeScore", scored == 0 ? -1 : round(totalJudge / scored));
+        }
         summary.put("avgDurationMs", round(totalDuration * 1.0 / n));
 
         Map<String, Object> report = new LinkedHashMap<>();

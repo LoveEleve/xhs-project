@@ -22,22 +22,39 @@ public class EvalCaseLoader {
     }
 
     public List<EvalCase> load(String classpath) {
-        try (InputStream in = new ClassPathResource(classpath).getInputStream()) {
-            Map<?, ?> root = yaml.readValue(in, Map.class);
-            List<EvalCase> cases = new ArrayList<>();
-            Object raw = root.get("cases");
-            if (raw instanceof List<?> list) {
-                for (Object o : list) {
-                    if (o instanceof Map<?, ?> m) {
-                        @SuppressWarnings("unchecked")
-                        Map<String, Object> sm = (Map<String, Object>) m;
-                        cases.add(EvalCase.fromYaml(sm));
-                    }
+        return load(new String[]{classpath});
+    }
+
+    /** M14：多文件合并加载（smoke + regression + badcases；缺失文件容忍=跳过） */
+    public List<EvalCase> load(String... classpaths) {
+        List<EvalCase> all = new ArrayList<>();
+        for (String cp : classpaths) {
+            try (InputStream in = new ClassPathResource(cp).getInputStream()) {
+                all.addAll(parse(in));
+            } catch (Exception e) {
+                // badcases 可能尚未生成：缺失容忍（其他文件缺失则抛出）
+                if (cp.contains("badcases")) {
+                    continue;
+                }
+                throw new IllegalStateException("评测集加载失败: " + cp + " - " + e.getMessage(), e);
+            }
+        }
+        return all;
+    }
+
+    private List<EvalCase> parse(InputStream in) throws Exception {
+        Map<?, ?> root = yaml.readValue(in, Map.class);
+        List<EvalCase> cases = new ArrayList<>();
+        Object raw = root.get("cases");
+        if (raw instanceof List<?> list) {
+            for (Object o : list) {
+                if (o instanceof Map<?, ?> m) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> sm = (Map<String, Object>) m;
+                    cases.add(EvalCase.fromYaml(sm));
                 }
             }
-            return cases;
-        } catch (Exception e) {
-            throw new IllegalStateException("评测集加载失败: " + classpath + " - " + e.getMessage(), e);
         }
+        return cases;
     }
 }
