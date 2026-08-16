@@ -42,7 +42,8 @@ public class BadCaseCollector {
         return true;
     }
 
-    /** 追加失败 case 到回流文件（YAML 追加；文件不存在则创建带头） */
+    /** 追加失败 case 到回流文件（YAML 追加；文件不存在则创建带头）。
+     *  id 起点自动计算（现有 bad_N 最大值+1）——防多次回流 id 冲突（P1 修复）。 */
     public synchronized void append(List<Map<String, Object>> failedResults, int startIndex) {
         if (failedResults.isEmpty()) {
             return;
@@ -50,12 +51,12 @@ public class BadCaseCollector {
         try {
             File f = new File(outputPath);
             StringBuilder sb = new StringBuilder();
+            int n = Math.max(startIndex, maxExistingId(f));
             if (!f.exists()) {
                 f.getParentFile().mkdirs();
                 sb.append("# bad case 回流（M14 自动生成；人工确认后保留，误报删除）\n")
                         .append("cases:\n");
             }
-            int n = startIndex;
             for (Map<String, Object> r : failedResults) {
                 n++;
                 String reason = reasonTag(r);
@@ -72,6 +73,24 @@ public class BadCaseCollector {
             log.info("[badcase] 回流 {} 条 → {}", failedResults.size(), outputPath);
         } catch (Exception e) {
             log.warn("[badcase] 回流写入失败: {}", e.getMessage());
+        }
+    }
+
+    /** 已有文件中的最大 bad_N 编号（无则 0）——防 id 冲突 */
+    private static int maxExistingId(File f) {
+        if (!f.exists()) {
+            return 0;
+        }
+        try {
+            String content = new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
+            int max = 0;
+            var m = java.util.regex.Pattern.compile("bad_(\\d+)").matcher(content);
+            while (m.find()) {
+                max = Math.max(max, Integer.parseInt(m.group(1)));
+            }
+            return max;
+        } catch (Exception e) {
+            return 0;
         }
     }
 

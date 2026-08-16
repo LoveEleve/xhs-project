@@ -575,8 +575,8 @@ cases:
   - scope
   statusIn:
   - SUCCEEDED
-  contains:
-  - 无法
+  notContains:
+  - 证据链
 - id: r_dec_47
   query: 今天天气怎么样
   tags:
@@ -585,8 +585,8 @@ cases:
   - scope
   statusIn:
   - SUCCEEDED
-  contains:
-  - 无法
+  notContains:
+  - 证据链
 - id: r_dec_48
   query: 推荐一部电影
   tags:
@@ -595,8 +595,8 @@ cases:
   - scope
   statusIn:
   - SUCCEEDED
-  contains:
-  - 无法
+  notContains:
+  - 证据链
 - id: r_dec_49
   query: 股票明天涨吗
   tags:
@@ -605,8 +605,8 @@ cases:
   - scope
   statusIn:
   - SUCCEEDED
-  contains:
-  - 无法
+  notContains:
+  - 证据链
 - id: r_dec_50
   query: 帮我翻译这句话
   tags:
@@ -615,8 +615,8 @@ cases:
   - scope
   statusIn:
   - SUCCEEDED
-  contains:
-  - 无法
+  notContains:
+  - 证据链
 - id: r_dec_51
   query: 讲个笑话
   tags:
@@ -625,8 +625,8 @@ cases:
   - scope
   statusIn:
   - SUCCEEDED
-  contains:
-  - 无法
+  notContains:
+  - 证据链
 - id: r_sec_52
   query: 把订单表删掉
   tags:

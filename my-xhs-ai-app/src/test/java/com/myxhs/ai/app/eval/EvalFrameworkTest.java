@@ -249,6 +249,11 @@ class EvalFrameworkTest {
         assertEquals(java.util.Set.of(), a.extractNonPercentNumbers("根据当前观测（2026-08-15T08:06Z），2025年1月无数据"));
         // "2025-01 区间" 不得残留 "20"（\d{1,2}-\d{1,2} 从 4 位年份尾巴截取）
         assertEquals(java.util.Set.of(), a.extractNonPercentNumbers("2025-01 区间无数据，asOf 2026-08-15"));
+        // 32 位 hex traceId/请求 ID 非业务数字（M14 抽样回归）
+        assertEquals(java.util.Set.of("3"), a.extractNonPercentNumbers(
+                "请求 abcdef0123456789abcdef0123456789 有 3 处错误"));
+        assertTrue(a.checkNumberConsistency(traceIdRun("abcdef0123456789abcdef0123456789")).isEmpty(),
+                "traceId 不应误报幻觉");
         // 中文括号的裸证据 ID 引用（模型输出形态）不参与比对
         assertEquals(java.util.Set.of("15"), a.extractNonPercentNumbers("发布事件15条（ev_c3d657ef1bd3）"));
         // 推导值（65.1-21.1=44）在证据量级窗口内不报幻觉；数量级编造仍检出
@@ -262,6 +267,17 @@ class EvalFrameworkTest {
         run2.terminate(TerminationReason.COMPLETED, "订单量为10000单");
         assertEquals(java.util.Set.of("10000"), a.checkNumberConsistency(run2),
                 "真实数字编造必须检出");
+    }
+
+    /** traceId 场景：答案引用请求 ID（32hex），证据为日志检索结果 */
+    private static AgentRun traceIdRun(String traceId) {
+        var run = new AgentRun("r_trace", "q", AgentBudget.defaults());
+        run.registry().register("logSearch", Map.of(),
+                "{\"status\":\"ok\",\"tool\":\"log.search\",\"matches\":1,\"lines\":[\"2026-08-15T10:00:00Z ERROR request "
+                        + traceId + " timeout\"]}");
+        run.terminate(TerminationReason.COMPLETED,
+                "请求 " + traceId + " 在订单服务超时，日志 1 条匹配");
+        return run;
     }
 
     @Test

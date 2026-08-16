@@ -55,8 +55,12 @@ public class EvalJudge {
             if (text == null || text.isBlank()) {
                 return -1;
             }
-            String token = text.trim().split("[\\s，,。：:]+")[0];
-            double v = Double.parseDouble(token);
+            // P1 修复：正则提取首个数字（模型可能输出"评分：4.5"——split 取词会解析失败）
+            var m = java.util.regex.Pattern.compile("\\d+(?:\\.\\d+)?").matcher(text);
+            if (!m.find()) {
+                return -1;
+            }
+            double v = Double.parseDouble(m.group());
             return Math.max(0, Math.min(5, v));
         } catch (Exception e) {
             return -1;
