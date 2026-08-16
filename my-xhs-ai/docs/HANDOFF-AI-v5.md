@@ -10,8 +10,8 @@
 
 > 给 my-xhs 电商平台建**运营/运维诊断 AI Agent**：查订单/支付/内容/系统指标，多步归因，带证据链、可追溯、不越权、不编造。
 > **M10-M14 规划全部完成**（会话记忆 → 工具注册表 → HITL 审批 → 多智能体 → 评测闭环），每个里程碑经写前设计/写前 review/写后深度 review/二轮 review。
-> **226 个 @Test 全绿**（tools 50 + app 165 + mcp 11；口径=非 eval-gate 套件，其中 6 个集成测试无凭据自动跳过；eval-gate tag 的 4 个真库测试类另计）。
-> **下一步（顺序已定）**：① judge Spring 装配 + badcase 路径配置化（P2 收尾）→ ② nightly 全量评测（100 条）首跑 → ③ 演示视频/作品集资产。
+> **229 个 @Test 全绿**（tools 50 + app 168 + mcp 11；口径=非 eval-gate 套件，其中 6 个集成测试无凭据自动跳过；eval-gate tag 的 4 个真库测试类另计）。
+> **下一步（顺序已定）**：① nightly 全量评测（100 条）首跑（P2 收尾已完：judge 装配 + badcase 路径配置化）→ ② 演示视频/作品集资产。
 
 ---
 
@@ -107,7 +107,7 @@
 > L3（dlq.redeliver 等）不上 MCP（仅 app 侧 Harness 经审批调用）。
 
 ### 配置项（application.yml，myxhs.ai.*）
-`llm.timeout-seconds`(60) / `router.llm-fallback.enabled`(true) / `router.semantic-threshold`(0.42) / `agent.max-steps|max-tokens|max-cost|price-per-1k-tokens|max-invalid-answers|tool-result-max-len` / `tools.mode`(mcp/direct) / `rag.*` / **`log-search.files`** / **`hitl.dlq-redeliver.url`（M11）** / `eval.gate.*`(10/60/40) / **`eval.judge.enabled`（M14，默认 false，尚无装配载体——P2）**
+`llm.timeout-seconds`(60) / `router.llm-fallback.enabled`(true) / `router.semantic-threshold`(0.42) / `agent.max-steps|max-tokens|max-cost|price-per-1k-tokens|max-invalid-answers|tool-result-max-len` / `tools.mode`(mcp/direct) / `rag.*` / **`log-search.files`** / **`hitl.dlq-redeliver.url`（M11）** / `eval.gate.*`(10/60/40) / **`eval.judge.enabled`（M14，默认 false，已装配——P2 收尾）** / **`eval.badcase-file`（M14 回流路径配置化）**
 
 ---
 
@@ -183,8 +183,7 @@ M5 Durable；M6 评测门禁；M7 安全；M8 容器化/UI 薄壳；M9-1 受控�
 ### 未来方向（P2 收尾 + 后续增量）
 | 项 | 说明 |
 |----|------|
-| P2 收尾① | EvalJudge 的 Spring 装配（`eval.judge.enabled` 配置项无载体）|
-| P2 收尾② | BadCaseCollector 输出路径配置化（jar 部署）|
+| ~~P2 收尾~~ | ~~judge 装配 / badcase 路径~~——**已完成**（EvalConfig，2026-08-16）|
 | nightly | 全量 100 条评测首跑（~2.5h；门禁锚点 20 条不变）+ judge 开启采样 |
 | 作品集 | 演示视频（多轮归因/审批闭环/traceId 查询）、300+ 评测集、成本报告、Langfuse |
 | M15 模型分层 | 决策冻结维持（单一 flash 足够便宜）|
@@ -224,7 +223,7 @@ M5 Durable；M6 评测门禁；M7 安全；M8 容器化/UI 薄壳；M9-1 受控�
 | **MCP_API_KEY** | 生产必设（dev 放行 WARN）|
 | **评测依赖本地 MCP 服务** | eval-gate/对比评测/抽样冒烟前必须启动 19021（§10）|
 | eval-gate | **已跑绿**（前置债清）；阈值 10/60/40 实测校准文档化 |
-| judge/badcase | 无 Spring 装配（judge）；路径 cwd 相对（badcase）——P2 |
+| nightly | 全量 100 条评测未首跑（~2.5h，按需）；judge 默认关（装配就位，nightly 开）|
 | 全量 100 条评测 | 未首跑（~2.5h，nightly 项）|
 | gateway | 方案已交付待实施（外部）|
 
@@ -331,4 +330,4 @@ fuser -k 19020/tcp 19021/tcp 5173/tcp
 - [ ] 改动 tools 模块记得 install
 - [ ] 提交 git 前确认 `.env.local` 未跟踪（`git check-ignore .env.local`）
 - [ ] 密钥/凭据绝不落库、不入 git、不进文档
-- [ ] **下一步执行顺序**：① P2 收尾（judge 装配/badcase 路径）→ ② nightly 全量评测首跑（MCP 先行）→ ③ 演示视频/作品集
+- [ ] **下一步执行顺序**：① nightly 全量评测首跑（MCP 先行）→ ② 演示视频/作品集

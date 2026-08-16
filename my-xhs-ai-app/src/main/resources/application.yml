@@ -55,6 +55,11 @@ myxhs:
         max-hallucination-rate: 10
         min-pass-rate: 60
         min-completion-rate: 40
+      # M14 LLM-as-judge（0-5 主观质量分进报告；默认关——成本控制，nightly 开）
+      judge:
+        enabled: false
+      # M14 bad case 回流文件（cwd 相对；jar 部署配绝对路径）
+      badcase-file: src/main/resources/eval/cases-badcases.yaml
     rag:
       es-url: ${MYXHS_ES_URL:http://21.130.247.89:19200}
       es-user: ${MYXHS_ES_USER:elastic}

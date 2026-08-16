@@ -31,6 +31,11 @@ public class BadCaseCollector {
         this.outputPath = outputPath;
     }
 
+    /** 回流文件路径（测试/审计用） */
+    public String outputPath() {
+        return outputPath;
+    }
+
     /** 判定是否质量失败（回流候选）：pass=false 且非 FAILED（环境问题）→ 质量失败 */
     public boolean isQualityFailure(Map<String, Object> result) {
         if (Boolean.TRUE.equals(result.get("pass"))) {
