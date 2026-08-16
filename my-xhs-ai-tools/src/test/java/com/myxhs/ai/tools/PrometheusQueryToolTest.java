@@ -177,6 +177,22 @@ class PrometheusQueryToolTest {
     }
 
     @Test
+    void 消费积压_哨兵负值排除聚合() throws Exception {
+        // 同款口径（2026-08-16）：consumer_lag 的 -1 = mqadmin 哨兵（无在线消费者/无 offset），
+        // 排除聚合；0 = 真实无积压，保留
+        overrideBody = "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":["
+                + "{\"metric\":{\"group\":\"g-a\"},\"value\":[1,\"-1\"]},"
+                + "{\"metric\":{\"group\":\"g-b\"},\"value\":[1,\"120\"]},"
+                + "{\"metric\":{\"group\":\"g-c\"},\"value\":[1,\"0\"]}"
+                + "]}}";
+        var r = om.readTree(tool.mqConsumerLag(""));
+        assertEquals("ok", r.path("status").asText());
+        assertEquals(120, r.path("totalLag").asInt(), "排除 -1 哨兵，0 保留");
+        assertEquals(1, r.path("sentinelGroups").asInt());
+        assertEquals(2, r.path("groupCount").asInt(), "g-b + g-c");
+    }
+
+    @Test
     void 组名注入防护_非法字符拒绝() throws Exception {
         var r = om.readTree(tool.mqConsumerLag("a\";drop"));
         assertEquals("error", r.path("status").asText());

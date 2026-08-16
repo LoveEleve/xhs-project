@@ -97,3 +97,21 @@
 ### P2-3：契约端到端验证留待真实场景（记录）
 - 重投端点不经审批不实际调用（红队纪律，含"无效 ID 探测"）——端到端契约验证留待真实死信场景
   （审批后执行时自然验证）；当前可用性 = 会话/查询类端点实测 + 执行器 fake 单测。
+
+---
+
+## 补充 review（2026-08-16 三轮）：中间件口径全面对照代码
+
+### P1-4：mqConsumerLag 同款哨兵聚合问题（对照中间件回复逐一排查发现）
+- 中间件口径："rocketmq_consumer_lag 的 -1 = mqadmin 哨兵（无在线消费者/无已提交 offset）"——
+  原工具 `total += v` 不排除 -1（与 mqDlqBacklog 同款）。修复：排除 v<0（0=真实无积压保留），
+  sentinelGroups 单列 + note 口径；单测混合场景（-1/120/0 → total=120, sentinel=1）。
+
+### P2-4：RAG 索引未遵守单节点 ES 规范
+- 中间件约定："单节点环境 1 shard + 0 副本，日志类挂 ILM"——RAG createIndex 原只有 mappings
+  （默认 1 副本 → 单节点无法分配 → yellow）。修复：settings 加 number_of_shards=1/replicas=0
+  （新索引生效；已有索引需重建）。
+
+### 方法论
+- **外部回复是"逐条对照代码"的清单**：中间件每句话都可能对应一段代码缺陷——
+  "-1 哨兵"×2（dlq + lag）、"1shard/0 副本"（RAG）——review 必须把回复当 checklist 过代码。

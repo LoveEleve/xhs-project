@@ -50,10 +50,13 @@ public class RagKnowledgeService {
         this.embeddingClient = embeddingClient;
     }
 
-    /** 建索引（BM25 + dense_vector 2048 维） */
+    /** 建索引（BM25 + dense_vector 2048 维；单节点 ES 规范 1 shard/0 副本——中间件约定 2026-08-16） */
     public void createIndex() throws Exception {
-        ObjectNode mapping = om.createObjectNode();
-        ObjectNode props = mapping.putObject("mappings").putObject("properties");
+        ObjectNode body = om.createObjectNode();
+        ObjectNode settings = body.putObject("settings");
+        settings.putObject("index").put("number_of_shards", 1).put("number_of_replicas", 0);
+        ObjectNode mapping = body.putObject("mappings");
+        ObjectNode props = mapping.putObject("properties");
         props.putObject("title").put("type", "text");
         props.putObject("content").put("type", "text");
         props.putObject("source").put("type", "keyword");
@@ -63,7 +66,7 @@ public class RagKnowledgeService {
         vec.put("dims", 2048);
         vec.put("index", true);
         vec.put("similarity", "cosine");
-        String resp = es("PUT", "/" + INDEX, om.writeValueAsString(mapping));
+        String resp = es("PUT", "/" + INDEX, om.writeValueAsString(body));
         log.info("[rag] 索引就绪: {}", INDEX);
     }
 
