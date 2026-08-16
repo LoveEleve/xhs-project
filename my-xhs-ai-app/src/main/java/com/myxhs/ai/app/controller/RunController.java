@@ -36,7 +36,7 @@ import java.util.Map;
 public class RunController {
 
     private static final Logger log = LoggerFactory.getLogger(RunController.class);
-    private static final long SSE_TIMEOUT_MS = 30 * 60_000L; // 覆盖最坏 run（15 步 × 单步最坏 120s）
+    private static final long SSE_TIMEOUT_MS = 31 * 60_000L; // ≥31min（gateway response-timeout 对齐，2026-08-16）
 
     private final RunManager runManager;
     private final ObjectMapper om;
@@ -52,12 +52,14 @@ public class RunController {
     }
 
     @PostMapping
-    public Map<String, String> submit(@RequestBody Map<String, String> body) {
+    public Map<String, String> submit(@RequestBody Map<String, String> body,
+                                      @org.springframework.web.bind.annotation.RequestHeader(value = "X-User-Id", required = false) String headerUserId) {
         String message = body.getOrDefault("message", "");
         if (message.isBlank()) {
             throw new IllegalArgumentException("message 不能为空");
         }
-        String userId = body.getOrDefault("userId", "anonymous");
+        // Gateway 集成（2026-08-16）：X-User-Id header 优先（统一鉴权注入）、body 兜底（直连/开发兼容）
+        String userId = firstNonBlank(headerUserId, body.get("userId"), "anonymous");
         // M10：显式 conversationId 优先；无则新建会话（响应带 convId，前端缓存用于后续多轮）
         String convId = body.get("conversationId");
         boolean freshConv = convId == null || convId.isBlank();
@@ -216,6 +218,15 @@ public class RunController {
         } catch (Exception e) {
             log.warn("[sse] 推送失败 type={} err={}", event.type(), e.getMessage());
         }
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String v : values) {
+            if (v != null && !v.isBlank()) {
+                return v;
+            }
+        }
+        return null;
     }
 
     private static Map<String, Object> view(AgentRun run) {

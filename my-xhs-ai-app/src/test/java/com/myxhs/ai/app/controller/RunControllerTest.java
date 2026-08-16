@@ -375,9 +375,24 @@ class RunControllerTest {
         assertTrue(cbody.contains("\"messageCount\":2"), "直答也应写会话消息: " + cbody);
     }
 
-    // ---------- M11 HITL 审批 ----------
+    @Test
+    void Gateway集成_XUserIduer优先于body() throws Exception {
+        stubModel();
+        // header 注入 X-User-Id（网关统一鉴权场景）→ 会话归属 userId=header 值
+        MvcResult r = mockMvc.perform(post("/api/runs")
+                        .header("X-User-Id", "gw-user-42")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"你好\",\"userId\":\"body-user\"}"))
+                .andExpect(status().isOk()).andReturn();
+        String body = r.getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertTrue(body.contains("RECEIVED"), body);
+        String convId = body.replaceAll(".*\"conversationId\":\"([^\"]+)\".*", "$1");
+        MvcResult cv = mockMvc.perform(get("/api/conversations/" + convId)).andExpect(status().isOk()).andReturn();
+        assertTrue(cv.getResponse().getContentAsString(StandardCharsets.UTF_8)
+                        .contains("\"userId\":\"gw-user-42\""),
+                "X-User-Id header 应优先于 body userId");
+    }
 
-    /** fake 模型：首轮请求 dlq.redeliver；工具结果出现后回答（HITL 场景） */
     private void stubModelForDlq() {
         when(dlqRedeliverAccess.redeliver(any(), any()))
                 .thenReturn("{\"status\":\"ok\",\"tool\":\"dlq.redeliver\",\"msgId\":\"x\"}");

@@ -56,7 +56,7 @@ class AiQueryMetricPathTest {
 
     @Test
     void 正常订单量走metric含确定性JSON() {
-        Map<String, String> resp = controller.query(Map.of("message", "2026-08-01 到 2026-08-07 的下单量"));
+        Map<String, String> resp = controller.query(Map.of("message", "2026-08-01 到 2026-08-07 的下单量"), null);
         assertEquals("metric", resp.get("path"));
         assertEquals("METRIC_ORDER_VOLUME", resp.get("intent"));
         assertTrue(resp.get("result").contains("\"value\":3"), "应为确定性3: " + resp);
@@ -66,7 +66,7 @@ class AiQueryMetricPathTest {
 
     @Test
     void 超31天窗口返回error仍带traceId() {
-        Map<String, String> resp = controller.query(Map.of("message", "2026-07-01 到 2026-09-01 的订单量"));
+        Map<String, String> resp = controller.query(Map.of("message", "2026-07-01 到 2026-09-01 的订单量"), null);
         assertEquals("error", resp.get("status"));
         assertTrue(resp.containsKey("traceId") && !resp.get("traceId").isBlank(),
                 "error 响应也应含 traceId（可溯源定位）: " + resp);
@@ -74,14 +74,14 @@ class AiQueryMetricPathTest {
 
     @Test
     void from大于to返回error不抛() {
-        Map<String, String> resp = controller.query(Map.of("message", "2026-08-07 到 2026-08-01 的订单量"));
+        Map<String, String> resp = controller.query(Map.of("message", "2026-08-07 到 2026-08-01 的订单量"), null);
         assertEquals("error", resp.get("status"));
     }
 
     @Test
     void agent路径模型不可用返回error不抛() {
         // assistant 为 null（构造传 null）= 模拟模型不可用 → 应返回 error JSON，不 500
-        Map<String, String> resp = controller.query(Map.of("message", "为什么互动下降了？"));
+        Map<String, String> resp = controller.query(Map.of("message", "为什么互动下降了？"), null);
         assertEquals("agent", resp.get("path"));
         assertEquals("error", resp.get("status"));
         assertTrue(resp.get("error").contains("模型暂不可用"), "应含降级文案: " + resp);

@@ -41,7 +41,8 @@ public class AiQueryController {
     }
 
     @PostMapping("/query")
-    public Map<String, String> query(@RequestBody Map<String, String> body) {
+    public Map<String, String> query(@RequestBody Map<String, String> body,
+                                     @org.springframework.web.bind.annotation.RequestHeader(value = "X-User-Id", required = false) String headerUserId) {
         String message = body.getOrDefault("message", "");
         if (message.isBlank()) {
             throw new IllegalArgumentException("message 不能为空");
@@ -66,10 +67,10 @@ public class AiQueryController {
                             metricToolAccess.contentInteraction(extractWindow(message)));
                     break;
                 case GREETING:
-                    result = directAnswer(message, body, "GREETING", IntentRouter.GREETING_ANSWER);
+                    result = directAnswer(message, body, "GREETING", IntentRouter.GREETING_ANSWER, headerUserId);
                     break;
                 case OUT_OF_SCOPE:
-                    result = directAnswer(message, body, "OUT_OF_SCOPE", IntentRouter.OUT_OF_SCOPE_ANSWER);
+                    result = directAnswer(message, body, "OUT_OF_SCOPE", IntentRouter.OUT_OF_SCOPE_ANSWER, headerUserId);
                     break;
                 default:
                     result = agentResult(intent.name(), message);
@@ -82,9 +83,19 @@ public class AiQueryController {
     }
 
     /** 直答（问候/超范围）：与 /api/runs 一致走 RunManager 落库（可追溯），响应带 runId */
+    private static String firstNonBlank(String... values) {
+        for (String v : values) {
+            if (v != null && !v.isBlank()) {
+                return v;
+            }
+        }
+        return null;
+    }
+
     private Map<String, String> directAnswer(String message, Map<String, String> body,
-                                             String intent, String answer) {
-        String userId = body.getOrDefault("userId", "anonymous");
+                                             String intent, String answer, String headerUserId) {
+        // Gateway 集成（2026-08-16）：X-User-Id header 优先、body 兜底
+        String userId = firstNonBlank(headerUserId, body.get("userId"), "anonymous");
         try {
             var entry = runManager.submit(message, userId);
             Map<String, String> m = new java.util.HashMap<>();
