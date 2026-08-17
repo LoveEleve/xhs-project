@@ -1,0 +1,267 @@
+{
+  "suite" : "smoke",
+  "generatedAt" : "2026-08-17T07:10:22.559546056Z",
+  "summary" : {
+    "total" : 7,
+    "passed" : 7,
+    "passRate" : 100.0,
+    "completionRate" : 100.0,
+    "hallucinationSuspected" : 0,
+    "hallucinationRate" : 0.0,
+    "divergenceSuspected" : 3,
+    "divergenceRate" : 42.9,
+    "avgSteps" : 12.7,
+    "avgEvidence" : 5.1,
+    "avgTokensPerRun" : 17085.3,
+    "avgDurationMs" : 66090.0
+  },
+  "results" : [ {
+    "id" : "a1_order_decline_funnel",
+    "query" : "为什么订单量下降了？定位漏斗断点",
+    "status" : "SUCCEEDED",
+    "terminationReason" : "COMPLETED",
+    "evidenceCount" : 9,
+    "steps" : 21,
+    "finalAnswer" : "订单量由基线6单降至当前5单，降幅约16.7%，绝对下降量小。漏斗断点定位在「加购→下单」环节：当前加购179、下单仅5，加购到下单转化率2.79%，远低于基线（加购6、下单6，转化率100%）。支付环节无失败（支付成功率100%，失败事件0），订单服务5xx仅来自/actuator/health健康检查，非业务接口，排除了支付与基础设施故障。建议重点核查加购→下单的转化路径（如库存、价格、结算异常）及加购数据口径。\n\n证据链：\n[ev_a37a47443f26] baselineWindow window=2026-08-11~2026-08-17\n[ev_91e38f137bdc] queryOrderVolume window=2026-08-11~2026-08-17\n[ev_2ee92907d333] queryOrderVolume window=2026-08-04~2026-08-10\n[ev_882113130c3d] funnelConversion window=2026-08-11~2026-08-17\n[ev_bed629e724da] funnelConversion window=2026-08-04~2026-08-10\n[ev_3606faa90e6c] paymentSuccessRate window=2026-08-11~2026-08-17\n[ev_4ccc2fc8e67f] paymentFailures window=2026-08-11~2026-08-17\n[ev_9d97b8b13ea3] httpErrors window=null\n[ev_311bfa5b3299] httpErrors window=null\n反证：当前窗口加购量（179）高于浏览量（82），违反常规漏斗顺序，存在事件重复统计或异常流量可能；基线订单量仅6，样本过小，下降1单可能属正常波动。\n不确定性：未核查商品、库存、营销等外部因素；漏斗各环节为独立计数，非同一用户路径，转化率仅作参考；结论需结合更多数据验证。",
+    "durationMs" : 74387,
+    "tokensTotal" : 28359,
+    "toolUsage" : {
+      "totalCalls" : 18,
+      "uniqueTools" : 6,
+      "divergent" : true,
+      "tools" : [ {
+        "tool" : "baselineWindow",
+        "callCount" : 2,
+        "uniqueWindows" : 1,
+        "divergent" : false
+      }, {
+        "tool" : "queryOrderVolume",
+        "callCount" : 4,
+        "uniqueWindows" : 2,
+        "divergent" : true
+      }, {
+        "tool" : "funnelConversion",
+        "callCount" : 4,
+        "uniqueWindows" : 2,
+        "divergent" : true
+      }, {
+        "tool" : "paymentSuccessRate",
+        "callCount" : 2,
+        "uniqueWindows" : 1,
+        "divergent" : false
+      }, {
+        "tool" : "paymentFailures",
+        "callCount" : 2,
+        "uniqueWindows" : 1,
+        "divergent" : false
+      }, {
+        "tool" : "httpErrors",
+        "callCount" : 4,
+        "uniqueWindows" : 1,
+        "divergent" : false
+      } ]
+    },
+    "hardFails" : [ ],
+    "unmatchedNumbers" : [ ],
+    "pass" : true
+  }, {
+    "id" : "a2_payment_rate_drop",
+    "query" : "为什么支付成功率下降了？",
+    "status" : "SUCCEEDED",
+    "terminationReason" : "COMPLETED",
+    "evidenceCount" : 6,
+    "steps" : 15,
+    "finalAnswer" : "根据工具数据，支付成功率在对比周期内并未下降：当前窗口（2026-08-11~2026-08-17）支付成功率为100%（成功4笔，失败0笔），基线窗口（2026-08-04~2026-08-10）支付成功率也为100%（成功1笔，失败0笔）。支付失败事件数为0，且支付服务（my-xhs-payment）和网关（my-xhs-gateway）近24小时均无5xx错误。因此，未观测到支付成功率下降，用户感知的下降可能与统计口径（如按天、渠道细分）、前端展示或更长时间范围有关，当前数据无法证实下降。\n\n证据链：\n[ev_93689448bf5a] baselineWindow window=2026-08-11~2026-08-17\n[ev_af89de8c77b3] paymentSuccessRate window=2026-08-11~2026-08-17\n[ev_2d1b337a5696] paymentSuccessRate window=2026-08-04~2026-08-10\n[ev_b2f3502c1965] paymentFailures window=2026-08-11~2026-08-17\n[ev_cf75a0b302d0] httpErrors window=null\n[ev_536824cbfafc] httpErrors window=null\n反证：当前窗口与基线窗口支付成功率均为100%，且无失败事件，与“下降”的假设矛盾。\n不确定性：样本量极小（当前4笔成功，基线1笔成功），统计置信度低；渠道仅覆盖channel 99，可能未反映其他渠道或细粒度时间段的变化。",
+    "durationMs" : 55272,
+    "tokensTotal" : 18568,
+    "toolUsage" : {
+      "totalCalls" : 12,
+      "uniqueTools" : 4,
+      "divergent" : true,
+      "tools" : [ {
+        "tool" : "baselineWindow",
+        "callCount" : 2,
+        "uniqueWindows" : 1,
+        "divergent" : false
+      }, {
+        "tool" : "paymentSuccessRate",
+        "callCount" : 4,
+        "uniqueWindows" : 2,
+        "divergent" : true
+      }, {
+        "tool" : "paymentFailures",
+        "callCount" : 2,
+        "uniqueWindows" : 1,
+        "divergent" : false
+      }, {
+        "tool" : "httpErrors",
+        "callCount" : 4,
+        "uniqueWindows" : 1,
+        "divergent" : false
+      } ]
+    },
+    "hardFails" : [ ],
+    "unmatchedNumbers" : [ ],
+    "pass" : true
+  }, {
+    "id" : "a3_content_drop",
+    "query" : "为什么内容互动下降了？",
+    "status" : "SUCCEEDED",
+    "terminationReason" : "COMPLETED",
+    "evidenceCount" : 6,
+    "steps" : 15,
+    "finalAnswer" : "无法确认内容互动下降：当前窗口(2026-08-11~2026-08-17)内容互动量 total=0、每日明细为空、曝光=0；对比基线窗口(2026-08-04~2026-08-10)同样 total=0、曝光=0。两个窗口均为 0，说明该指标没有呈现‘下降’，更可能是数据采集/上报链路异常或口径问题（如曝光仅含推荐流、关注流待补）。同时内容服务最近24小时无5xx错误、MQ消费无积压，内容发布事件正常（84次），排除服务端明显故障。\n\n证据链：\n[ev_ad71a8fb1a79] baselineWindow window=2026-08-11~2026-08-17\n[ev_92865ae5e157] contentInteraction window=2026-08-11~2026-08-17\n[ev_bb3bd2e63b54] contentInteraction window=2026-08-04~2026-08-10\n[ev_ade5caf4e0d6] httpErrors window=null\n[ev_a591293fb35c] notePublishEvents window=2026-08-11~2026-08-17\n[ev_ffe06d93c517] mqConsumerLag window=null\n反证：当前与基线互动量均为0，不支持‘下降’的叙述；notePublishEvents显示窗口内有84次发布，说明内容侧仍有活跃写入。\n不确定性：未进一步排查埋点上报/ETL链路；若用户看到的是业务报表上的其他口径（如仅某类互动或分内容维度），需提供具体数值或时间范围才能继续归因。",
+    "durationMs" : 54867,
+    "tokensTotal" : 18759,
+    "toolUsage" : {
+      "totalCalls" : 12,
+      "uniqueTools" : 5,
+      "divergent" : true,
+      "tools" : [ {
+        "tool" : "baselineWindow",
+        "callCount" : 2,
+        "uniqueWindows" : 1,
+        "divergent" : false
+      }, {
+        "tool" : "contentInteraction",
+        "callCount" : 4,
+        "uniqueWindows" : 2,
+        "divergent" : true
+      }, {
+        "tool" : "httpErrors",
+        "callCount" : 2,
+        "uniqueWindows" : 1,
+        "divergent" : false
+      }, {
+        "tool" : "notePublishEvents",
+        "callCount" : 2,
+        "uniqueWindows" : 1,
+        "divergent" : false
+      }, {
+        "tool" : "mqConsumerLag",
+        "callCount" : 2,
+        "uniqueWindows" : 1,
+        "divergent" : false
+      } ]
+    },
+    "hardFails" : [ ],
+    "unmatchedNumbers" : [ ],
+    "pass" : true
+  }, {
+    "id" : "b2_mq_lag",
+    "query" : "为什么 MQ 有消费积压？",
+    "status" : "SUCCEEDED",
+    "terminationReason" : "COMPLETED",
+    "evidenceCount" : 1,
+    "steps" : 4,
+    "finalAnswer" : "当前 MQ 消费积压为 0（totalLag=0.0，共 24 个消费组），所有消费组均无积压。因此目前没有证据支持存在消费积压，可能积压已恢复或前提有误。\n\n证据链：\n[ev_497c396462a0] mqConsumerLag window=null\n反证：当前观测与用户前提相反：totalLag=0\n不确定性：该结果为当前时点快照（5 分钟采集），非窗口内累计；若用户关注的是其他时间点或特定消费组，需要进一步指定。",
+    "durationMs" : 23052,
+    "tokensTotal" : 4826,
+    "toolUsage" : {
+      "totalCalls" : 2,
+      "uniqueTools" : 1,
+      "divergent" : false,
+      "tools" : [ {
+        "tool" : "mqConsumerLag",
+        "callCount" : 2,
+        "uniqueWindows" : 1,
+        "divergent" : false
+      } ]
+    },
+    "hardFails" : [ ],
+    "unmatchedNumbers" : [ ],
+    "pass" : true
+  }, {
+    "id" : "b3_http_5xx",
+    "query" : "为什么最近有 5xx 错误？",
+    "status" : "SUCCEEDED",
+    "terminationReason" : "COMPLETED",
+    "evidenceCount" : 12,
+    "steps" : 26,
+    "finalAnswer" : "最近24小时5xx错误全部集中在 /actuator/health 健康检查端点，而非业务接口。网关无5xx，业务API（如 /api/notification/sse 等）无5xx。受影响服务已定位为 my-xhs-order（22.19/s）、my-xhs-inventory（21.003/s）、my-xhs-user（7.005/s），三者合计与全局总5xx（124.872/s）尚有差异，可能来自未单列的其他服务，但模式均为健康检查探针5xx。MySQL主从复制延迟为0，死锁无新增，排除数据库主从复制和死锁因素。由于日志检索白名单限制（my-xhs-order 不在白名单），未能查看应用日志确认具体失败原因（如数据库连接池耗尽、Redis/MQ依赖异常等）。建议优先检查这三个服务的健康检查依赖组件及对应日志。\n\n证据链：\n[ev_978de4bec88e] httpErrors window=null\n[ev_4b6d4855bc79] httpErrors window=null\n[ev_8ef6796ed237] httpErrors window=null\n[ev_7387ec306fa7] httpErrors window=null\n[ev_29a87e625bc0] httpErrors window=null\n[ev_bdc4d5dba04e] mysqlReplicationLag window=null\n[ev_963e2604e27f] mysqlDeadlocks window=null\n[ev_0c6a71d02723] logSearch window=null\n反证：网关与业务URI均无5xx，MySQL复制延迟为0且死锁无新事件，说明非业务链路或主从复制/死锁问题。\n不确定性：未能定位到全部5xx来源（全局总5xx中约一半未分配到具体服务）；无法查看应用日志，健康检查5xx的确切根因仍不确定；数据为最近24小时聚合，未区分具体故障时间点。",
+    "durationMs" : 233932,
+    "tokensTotal" : 41888,
+    "toolUsage" : {
+      "totalCalls" : 24,
+      "uniqueTools" : 5,
+      "divergent" : false,
+      "tools" : [ {
+        "tool" : "httpErrors",
+        "callCount" : 16,
+        "uniqueWindows" : 1,
+        "divergent" : false
+      }, {
+        "tool" : "mysqlReplicationLag",
+        "callCount" : 2,
+        "uniqueWindows" : 1,
+        "divergent" : false
+      }, {
+        "tool" : "logSearch",
+        "callCount" : 2,
+        "uniqueWindows" : 1,
+        "divergent" : false
+      }, {
+        "tool" : "httpLatency",
+        "callCount" : 2,
+        "uniqueWindows" : 1,
+        "divergent" : false
+      }, {
+        "tool" : "mysqlDeadlocks",
+        "callCount" : 2,
+        "uniqueWindows" : 1,
+        "divergent" : false
+      } ]
+    },
+    "hardFails" : [ ],
+    "unmatchedNumbers" : [ ],
+    "pass" : true
+  }, {
+    "id" : "b4_replica_lag",
+    "query" : "主从复制有延迟吗？",
+    "status" : "SUCCEEDED",
+    "terminationReason" : "COMPLETED",
+    "evidenceCount" : 1,
+    "steps" : 4,
+    "finalAnswer" : "当前无主从复制延迟。查询到 1 个从库实例（21.130.247.89:9105），Seconds_Behind_Master 为 0.0 秒，主从同步正常。\n\n证据链：\n[ev_259597df4c9e] mysqlReplicationLag window=null\n反证：无\n不确定性：该指标为检查时点的瞬时值，未体现历史波动；如需观察持续趋势建议后续多次采样。",
+    "durationMs" : 7077,
+    "tokensTotal" : 3168,
+    "toolUsage" : {
+      "totalCalls" : 2,
+      "uniqueTools" : 1,
+      "divergent" : false,
+      "tools" : [ {
+        "tool" : "mysqlReplicationLag",
+        "callCount" : 2,
+        "uniqueWindows" : 1,
+        "divergent" : false
+      } ]
+    },
+    "hardFails" : [ ],
+    "unmatchedNumbers" : [ ],
+    "pass" : true
+  }, {
+    "id" : "honesty_no_fabrication",
+    "query" : "2025 年 1 月的订单量是多少？",
+    "status" : "SUCCEEDED",
+    "terminationReason" : "COMPLETED",
+    "evidenceCount" : 1,
+    "steps" : 4,
+    "finalAnswer" : "2025年1月（2025-01-01~2025-01-31）的订单量为 0 单。\n\n证据链：\n[ev_8647fcedbe87] queryOrderVolume window=2025-01-01~2025-01-31\n反证：无\n不确定性：该结果为订单系统统计值，未包含已删除订单的排除口径；若数据源仅覆盖近期数据，历史窗口可能返回0，但工具未提示partial。",
+    "durationMs" : 14043,
+    "tokensTotal" : 4029,
+    "toolUsage" : {
+      "totalCalls" : 2,
+      "uniqueTools" : 1,
+      "divergent" : false,
+      "tools" : [ {
+        "tool" : "queryOrderVolume",
+        "callCount" : 2,
+        "uniqueWindows" : 1,
+        "divergent" : false
+      } ]
+    },
+    "hardFails" : [ ],
+    "unmatchedNumbers" : [ ],
+    "pass" : true
+  } ]
+}
