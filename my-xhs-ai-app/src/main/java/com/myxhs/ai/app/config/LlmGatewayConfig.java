@@ -14,8 +14,8 @@ import org.springframework.util.StringUtils;
 /**
  * LLM 网关模型配置（手工集成 LangChain4j，无官方 Boot starter）。
  * OpenAI 兼容格式；密钥只从环境变量/配置读取，绝不落库。
- * 2026-08-14：Provider 切 OpenCode Go（opencode.ai/zen/go/v1，deepseek-v4-flash，
- * $10/月订阅 + $60 月度额度，ZDR 零留存）；原 TeamoRouter 按量费改用不起（见 ADR-001 备注）。
+ * 2026-08-14：Provider 切 OpenCode Go（opencode.ai/zen/go/v1）；
+ * 2026-08-17：主模型切到 `mimo-v2.5-pro`（go 通道模型目录实测存在，付费档，可稳定通过 eval-gate 关键门禁）。
  */
 @Configuration
 public class LlmGatewayConfig {
@@ -25,7 +25,7 @@ public class LlmGatewayConfig {
     @Bean
     public ChatModel chatModel(
             @Value("${myxhs.ai.llm.base-url:" + DEFAULT_BASE_URL + "}") String baseUrl,
-            @Value("${myxhs.ai.llm.model:deepseek-v4-flash}") String model,
+            @Value("${myxhs.ai.llm.model:mimo-v2.5-pro}") String model,
             @Value("${myxhs.ai.llm.api-key:}") String apiKey,
             @Value("${myxhs.ai.llm.timeout-seconds:60}") long timeoutSeconds) {
         return OpenAiChatModel.builder()
@@ -40,7 +40,7 @@ public class LlmGatewayConfig {
     @Bean
     public StreamingChatModel streamingChatModel(
             @Value("${myxhs.ai.llm.base-url:" + DEFAULT_BASE_URL + "}") String baseUrl,
-            @Value("${myxhs.ai.llm.model:deepseek-v4-flash}") String model,
+            @Value("${myxhs.ai.llm.model:mimo-v2.5-pro}") String model,
             @Value("${myxhs.ai.llm.api-key:}") String apiKey,
             @Value("${myxhs.ai.llm.timeout-seconds:60}") long timeoutSeconds) {
         return OpenAiStreamingChatModel.builder()
@@ -64,7 +64,7 @@ public class LlmGatewayConfig {
 
     private static String resolveModel(String configured) {
         if (!StringUtils.hasText(configured)) {
-            throw new IllegalStateException("myxhs.ai.teamo.model 未配置");
+            throw new IllegalStateException("myxhs.ai.llm.model 未配置");
         }
         return configured;
     }

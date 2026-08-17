@@ -1,7 +1,7 @@
 # eval-gate 门禁报告归档（2026-08-17）
 
 > 原始 JSON：`eval-gate-report-20260817.json`（同目录）
-> 运行条件：真库 + 真模型（deepseek-v4-flash）+ 本地 MCP（19021）
+> 运行条件：真库 + 真模型（`mimo-v2.5-pro`，OpenCode Go）+ 本地 MCP（19021）
 > 测试类：`EvalGateRunTest`（门禁锚点 7 条）
 
 ## 汇总

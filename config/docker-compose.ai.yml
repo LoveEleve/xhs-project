@@ -38,7 +38,7 @@ services:
       MYXHS_AI_DB_URL: jdbc:mysql://127.0.0.1:3306/my_xhs_ai?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
       MYXHS_AI_DB_USER: myxhs_ai_rw
       MYXHS_AI_DB_PASSWORD: "${MYXHS_AI_DB_PASSWORD}"
-      MYXHS_LLM_API_KEY: "${MYXHS_LLM_API_KEY}"   # OpenCode Go（仅 deepseek-v4-flash，成本红线）
+      MYXHS_LLM_API_KEY: "${MYXHS_LLM_API_KEY}"   # OpenCode Go（当前默认 mimo-v2.5-pro；切模型需重跑 eval-gate）
       MYXHS_ES_URL: http://127.0.0.1:19200
       MYXHS_ES_USER: elastic
       MYXHS_ES_PASS: "${MYXHS_ES_PASS}"

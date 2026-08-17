@@ -24,11 +24,10 @@ spring:
 myxhs:
   ai:
     llm:
-      # LLM 网关（OpenAI 兼容）：2026-08-14 起切 OpenCode Go（$10/月，DeepSeek V4 Flash $0.14/M
-      # 输入，ZDR 零留存；原 TeamoRouter 按量费改用不起）。密钥不落库，走环境变量。
-      # 端点 https://opencode.ai/zen/go/v1（模型 deepseek-v4-flash，ID 前缀 opencode-go/）
+      # LLM 网关（OpenAI 兼容）：OpenCode Go，使用 MiMo V2.5 Pro 付费模型。
+      # 密钥不落库，走环境变量；端点与模型均通过 opencode go 模型目录核验。
       base-url: https://opencode.ai/zen/go/v1
-      model: deepseek-v4-flash
+      model: mimo-v2.5-pro
       api-key: ${MYXHS_LLM_API_KEY:}
       # 单次模型调用超时（秒）；配合 Harness 失败重试一次，最坏单步 2×超时
       timeout-seconds: 60

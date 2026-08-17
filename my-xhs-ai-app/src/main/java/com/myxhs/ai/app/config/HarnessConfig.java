@@ -30,7 +30,7 @@ public class HarnessConfig {
                                      @Value("${myxhs.ai.agent.price-per-1k-tokens:0.002}") double pricePer1k,
                                      @Value("${myxhs.ai.agent.max-invalid-answers:2}") int maxInvalidAnswers,
                                      @Value("${myxhs.ai.agent.tool-result-max-len:400}") int toolResultMaxLen,
-                                     @Value("${myxhs.ai.llm.model:deepseek-v4-flash}") String modelName,
+                                      @Value("${myxhs.ai.llm.model:mimo-v2.5-pro}") String modelName,
                                      RunStore runStore) {
         return new AgentHarness(chatModel, metricToolAccess, obsToolAccess, logSearchAccess, dlqRedeliverAccess,
                 mapper, new AgentBudget(maxSteps, maxTokens, maxCost), pricePer1k, maxInvalidAnswers,

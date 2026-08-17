@@ -30,7 +30,7 @@
 ### 凭据（`.env.local` 变量，绝不落库/不入 git）
 | 变量 | 用途 | 备注 |
 |------|------|------|
-| `MYXHS_LLM_API_KEY` | **主模型 OpenCode Go**（`opencode.ai/zen/go/v1`，deepseek-v4-flash）| **成本红线：仅 flash，禁止多模型** |
+| `MYXHS_LLM_API_KEY` | **主模型 OpenCode Go**（`opencode.ai/zen/go/v1`，`mimo-v2.5-pro`）| **当前单模型：MiMo V2.5 Pro；如再切模型需重新跑 eval-gate** |
 | `TEAMO_API_KEY` | 旧 TeamoRouter key（已不用，保留）| |
 | `MYXHS_DB_USER/PASSWORD` | 只读账号 `myxhs_ai_ro`（SELECT）| 真实 MySQL |
 | `MYXHS_ROOT_PASSWORD` | 集成测试自愈 seed + DDL（root）| 仅测试/建表 |

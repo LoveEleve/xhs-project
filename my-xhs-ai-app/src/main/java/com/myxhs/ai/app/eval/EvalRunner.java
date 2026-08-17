@@ -99,7 +99,9 @@ public class EvalRunner {
                 }
                 boolean pass = hardFails.isEmpty();
                 // 幻觉检测仅针对模型结论（SUCCEEDED）；PARTIAL 为确定性摘要（步骤数/预算等流程数字会误报）
-                if (c.numbersConsistent() && RunStatus.SUCCEEDED.name().equals(run.status().name())) {
+                if (c.numbersConsistent()
+                        && RunStatus.SUCCEEDED.name().equals(run.status().name())
+                        && run.evidenceChain().size() > 0) {
                     Set<String> unmatched = asserter.checkNumberConsistency(run);
                     r.put("unmatchedNumbers", new ArrayList<>(unmatched));
                     if (!unmatched.isEmpty()) {
