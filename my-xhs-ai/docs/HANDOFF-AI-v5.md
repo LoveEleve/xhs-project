@@ -10,8 +10,8 @@
 
 > 给 my-xhs 电商平台建**运营/运维诊断 AI Agent**：查订单/支付/内容/系统指标，多步归因，带证据链、可追溯、不越权、不编造。
 > **M10-M14 规划全部完成**（会话记忆 → 工具注册表 → HITL 审批 → 多智能体 → 评测闭环），每个里程碑经写前设计/写前 review/写后深度 review/二轮 review。
-> **231 个 @Test 全绿**（tools 52 + app 168 + mcp 11；口径=非 eval-gate 套件，其中 6 个集成测试无凭据自动跳过；eval-gate tag 的 4 个真库测试类另计）。
-> **下一步（顺序已定）**：① nightly 全量评测（100 条）首跑（P2 收尾已完：judge 装配 + badcase 路径配置化）→ ② 演示视频/作品集资产。
+> **非 eval-gate 套件 173 个 app 测试全绿**（另有 tools/mcp 测试此前已稳定全绿）；**eval-gate 关键门禁已再次跑绿**：`EvalGateRunTest` ✅、`SampledRegressionTest` ✅（2026-08-17，真库+真模型）。
+> **下一步（顺序已定）**：① nightly 全量评测（100 条）首跑（P2 收尾已完：judge 装配 + badcase 路径配置化）→ ② 演示视频/作品集资产 → ③ 视成本/限速再评估后续模型切换（MiMo 作为后续选项，不阻塞收官）。
 
 ---
 
@@ -168,8 +168,8 @@ M5 Durable；M6 评测门禁；M7 安全；M8 容器化/UI 薄壳；M9-1 受控�
 
 ### 实测数据（本会话）
 - **对比评测**（M13，锚点 7 条）：单 Agent pass=85.7%/幻觉=14.3% vs 双 Agent pass=100%/幻觉=0%——**D-A 决策：全量双 Agent**
-- **eval-gate 修复后**：pass 57.1-100%、幻觉 0-14.3%——阈值 10/60/40 实测校准保留
-- **抽样冒烟**（M14 regression 代表性 8 条）：8/8 通过
+- **eval-gate 修复后**：pass 57.1-100%、幻觉 0-14.3%——阈值 10/60/40 实测校准保留；**2026-08-17 再次实跑**：`EvalGateRunTest` 7/7 通过、completion=100%、hallucination=0%（修复枚举序号误报后）
+- **抽样冒烟 / regression**：代表性 8 条 8/8 通过；**`SampledRegressionTest` 已于 2026-08-17 真库+真模型重跑通过**
 
 ---
 
@@ -222,9 +222,9 @@ M5 Durable；M6 评测门禁；M7 安全；M8 容器化/UI 薄壳；M9-1 受控�
 | dlq.redeliver 管理通道 | **已核实+改造（2026-08-16）**：Dashboard `http://21.130.247.89:18081`（无需登录，白名单含本机）；broker 监听 **11911**；执行器按真实契约改造（csrf 会话 + consumeMessageDirectly.do，topic 推导 %RETRY%<group>）；**端到端断链（如实）**：msgId 语义=ORIGIN_MESSAGE_ID（DLQ 原始消息 ID），而获取它的查询接口（queryDlqMessageByConsumerGroup）有 NPE——真实可用依赖该接口修复或 mqadmin 查询；重投端点未实际触发（L3 + 无死信）|
 | **MCP_API_KEY** | 生产必设（dev 放行 WARN）|
 | **评测依赖本地 MCP 服务** | eval-gate/对比评测/抽样冒烟前必须启动 19021（§10）|
-| eval-gate | **已跑绿**（前置债清）；阈值 10/60/40 实测校准文档化 |
+| eval-gate | **已跑绿**（前置债清 + 2026-08-17 再次真库验证：GateRun/Sampled 均通过）；阈值 10/60/40 实测校准文档化 |
 | nightly | 全量 100 条评测未首跑（~2.5h，按需）；judge 默认关（装配就位，nightly 开）|
-| 全量 100 条评测 | 未首跑（~2.5h，nightly 项）|
+| 全量 100 条评测 | **仍未首跑**（~2.5h，nightly 项）——当前唯一剩余评测项 |
 | gateway | 方案已交付待实施（外部）|
 
 ---
@@ -232,7 +232,7 @@ M5 Durable；M6 评测门禁；M7 安全；M8 容器化/UI 薄壳；M9-1 受控�
 ## 9. 数据现状（2026-08-16 实测）
 
 - my_xhs_ai 库：ai_run **38 行** / ai_step **425 行** / ai_conversation **7 行** / ai_message **20 行** / approval_json **0 条**（无真实审批发生）
-- 业务表：t_order **8 行（AI seed，4 分片覆盖）** / t_payment **6** / t_cart_event **316+18** / t_note_event **71+20** / t_counter（VIEW seed 待对方修正）——**2026-08-16 造数已执行**（前后 7 天对比 3:5 有效；漏斗 8:18 成形，VIEW 缺失）
+- 业务表：t_order **8 行（AI seed，4 分片覆盖）** / t_payment **6** / t_cart_event **316+18** / t_note_event **71+20** / **browse 已改落 `my_xhs_product.t_product_behavior` 60 条（前 15 / 后 45；后 7 天窗口叠加历史残留后观测 82）**——**2026-08-16~17 造数闭环已完成**（订单前后 7 天 3:5、漏斗 browse:cart:order=60:18:8 可复现；t_counter 方案已废弃）
 - 日志快照：22 个中间件日志（config/production-env-config/.../05-logs/）
 
 ---
@@ -249,11 +249,11 @@ mvn test -pl my-xhs-ai-tools,my-xhs-ai-app,my-xhs-ai-mcp
 # 真库评测门禁（前置：启动 MCP 19021！）
 export MYXHS_LOG_SEARCH_FILES="my-xhs-nacos=/data/workspace/my-xhs/config/production-env-config/05-logs/nacos.log"
 nohup java -jar my-xhs-ai-mcp/target/my-xhs-ai-mcp-1.0-SNAPSHOT.jar &   # 19021（先 mvn package）
-mvn test -pl my-xhs-ai-app -Peval-gate                                   # 全部 eval-gate tag（4 类 ~55min）
-mvn test -pl my-xhs-ai-app -Peval-gate -Dtest=EvalGateRunTest            # 仅门禁锚点 7 条 ~10min
+mvn test -pl my-xhs-ai-app -Peval-gate                                   # 全部 eval-gate tag（4 类；受模型限速/配额影响，耗时浮动）
+mvn test -pl my-xhs-ai-app -Peval-gate -Dtest=EvalGateRunTest            # 仅门禁锚点 7 条（2026-08-17 已再次跑绿）
 
-# M13 对比评测（~30min，决策数据）：mvn test -pl my-xhs-ai-app -Peval-gate -Dtest=MultiAgentComparisonTest
-# M14 regression 抽样冒烟（~6min）：mvn test -pl my-xhs-ai-app -Peval-gate -Dtest=SampledRegressionTest
+# M13 对比评测（决策数据）：mvn test -pl my-xhs-ai-app -Peval-gate -Dtest=MultiAgentComparisonTest
+# M14 regression 抽样冒烟：mvn test -pl my-xhs-ai-app -Peval-gate -Dtest=SampledRegressionTest  # 2026-08-17 已再次跑绿
 
 # 打包+启动（改动 tools 先 install）
 mvn -pl my-xhs-ai-tools install -DskipTests
