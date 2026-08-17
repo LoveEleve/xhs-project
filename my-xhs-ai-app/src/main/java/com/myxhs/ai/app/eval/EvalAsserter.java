@@ -131,6 +131,18 @@ public class EvalAsserter {
         while (m.find()) {
             int start = m.start();
             int end = m.end();
+            // 枚举序号跳过（"1) xxx"、"2、xxx"、"3. xxx"）：数字后紧跟序号标点且后随空白/句末，
+            // 否则模型用列表列举原因时序号会被误抽为业务数字（b2_mq_lag 实测误报幻觉）
+            if (end < cleaned.length()) {
+                char c = cleaned.charAt(end);
+                if (c == ')' || c == '、') {
+                    continue;
+                }
+                if (c == '.' && end + 1 < cleaned.length()
+                        && Character.isWhitespace(cleaned.charAt(end + 1))) {
+                    continue;
+                }
+            }
             boolean percentBefore = start > 0 && cleaned.charAt(start - 1) == '%';
             boolean percentAfter = end < cleaned.length() && cleaned.charAt(end) == '%';
             if (!percentBefore && !percentAfter) {
