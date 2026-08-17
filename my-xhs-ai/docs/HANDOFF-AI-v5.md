@@ -232,7 +232,7 @@ M5 Durable；M6 评测门禁；M7 安全；M8 容器化/UI 薄壳；M9-1 受控�
 ## 9. 数据现状（2026-08-16 实测）
 
 - my_xhs_ai 库：ai_run **38 行** / ai_step **425 行** / ai_conversation **7 行** / ai_message **20 行** / approval_json **0 条**（无真实审批发生）
-- 业务表：t_order **0 行** / t_payment **0 行** / t_cart_event **316 行** / t_note_event 0 行
+- 业务表：t_order **8 行（AI seed，4 分片覆盖）** / t_payment **6** / t_cart_event **316+18** / t_note_event **71+20** / t_counter（VIEW seed 待对方修正）——**2026-08-16 造数已执行**（前后 7 天对比 3:5 有效；漏斗 8:18 成形，VIEW 缺失）
 - 日志快照：22 个中间件日志（config/production-env-config/.../05-logs/）
 
 ---

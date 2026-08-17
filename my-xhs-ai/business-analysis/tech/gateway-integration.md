@@ -17,25 +17,22 @@ spring:
   cloud:
     gateway:
       routes:
-        # AI 诊断台静态资源（前端 dist，SPA fallback 到 index.html）
-        - id: ai-web
-          uri: http://ai-web-host:80
-          predicates:
-            - Path=/ai/**
-          filters:
-            - RewritePath=/ai/(?<seg>.*), /$ {seg}
-            - TokenRelay=
-        # AI 后端 API（app:19020）
+        # AI 诊断台静态资源：AI 前端在主前端 my-xhs-frontend 的 dist 内（/ai 路由），
+        # 由主前端静态托管统一负责（SPA fallback 到 index.html），无需独立 ai-web 路由
+        # AI 后端 API（app:19020）——前端 baseURL=/ai-api，请求形如 /ai-api/api/runs；
+        # RewritePath 去 /ai-api 前缀（与 vite dev proxy 一致，2026-08-16 修正）
         - id: ai-api
           uri: http://my-xhs-ai-app:19020
           predicates:
-            - Path=/api/ai/**,/api/runs/**
+            - Path=/ai-api/**
           filters:
-            - TokenRelay=
+            - RewritePath=/ai-api/(?<seg>.*), /${seg}
+            # 网关自研 JWT 鉴权后注入 X-User-Id（AI 后端已改造读取 header 优先，2026-08-16）
+            # （非 Spring OAuth2 TokenRelay——gateway 无 oauth2 依赖）
 ```
 
-> 说明：`/api/runs/**` 是 M5 异步 Run 端点（POST 提交/GET 查询/DELETE 取消/SSE 订阅），
-> SSE 长连接请确认网关不缓存、不缓冲（禁用 response buffering，超时 ≥ 31min 覆盖 SSE 30min 上限）。
+> 说明：前端请求 `/ai-api/api/runs` → RewritePath 去前缀 → 后端 `/api/runs`（与 vite dev proxy 的 `rewrite: path.replace(/^\/ai-api/,'')` 一致）。
+> `/api/runs/{id}/stream` SSE 长连接请确认网关不缓存、不缓冲（禁用 response buffering，超时 ≥ 31min 覆盖 SSE 31min 上限）。
 
 ## 3. 角色与权限（L1 运营 / L2 技术）
 
@@ -68,6 +65,5 @@ spring:
 
 ## 6. 前端联调说明
 
-- 前端 API 基础路径 `/ai-api`（vite dev 代理→19020）；**经网关后改为 `/api/ai` 前缀**
-  （网关 RewritePath 或前端构建时配置 `VITE_API_BASE`）
-- 生产构建产物：`frontend/dist`（静态托管，SPA fallback 必须指向 index.html）
+- 前端 API 基础路径 `/ai-api`（vite dev 代理→19020；**生产经网关同样走 /ai-api 前缀 + RewritePath 去前缀**——与 dev 一致，无需前端构建期改 `VITE_API_BASE`，2026-08-16 修正）
+- 生产构建产物：`frontend/dist`（**AI 诊断台在主前端内**，/ai 路由同托管，SPA fallback 指向 index.html）
