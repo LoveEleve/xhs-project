@@ -22,7 +22,7 @@ public class EvalAsserter {
             "\\d{4}-\\d{1,2}-\\d{1,2}(?:[T ]\\d{1,2}:\\d{2}(?::\\d{2})?(?:\\.\\d+)?(?:Z)?)?"
                     + "|\\d{4}-\\d{1,2}(?!-\\d)"
                     + "|(?<!\\d)\\d{1,2}-\\d{1,2}(?!\\d)"
-                    + "|\\d{4}年(?:\\d{1,2}月(?:\\d{1,2}日)?)?"
+                    + "|\\d{4}\\s*年(?:\\s*\\d{1,2}\\s*月(?:\\s*\\d{1,2}\\s*日)?)?"
                     + "|\\d{1,2}月(?:\\d{1,2}日)?"
                     + "|\\d{1,2}:\\d{2}(?::\\d{2})?(?:\\.\\d+)?(?:Z)?"
                     // traceId/请求 ID：32 位 hex 非业务数字（M14 抽样暴露：traceId 查询用例误报幻觉）
@@ -42,6 +42,10 @@ public class EvalAsserter {
             if (!answer.contains(k)) {
                 fails.add("答案缺少关键词: " + k);
             }
+        }
+        if (!c.anyContains().isEmpty()
+                && c.anyContains().stream().noneMatch(answer::contains)) {
+            fails.add("答案未命中任一关键词: " + c.anyContains());
         }
         for (String k : c.notContains()) {
             if (answer.contains(k)) {
@@ -83,6 +87,17 @@ public class EvalAsserter {
         if (a == b) {
             return true;
         }
+        if (approxEqualsRaw(a, b)) {
+            return true;
+        }
+        // 时间单位换算容忍：模型常把 0.553 秒写成 553ms，语义一致不应判幻觉
+        if (approxEqualsRaw(a * 1000.0, b) || approxEqualsRaw(a, b * 1000.0)) {
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean approxEqualsRaw(double a, double b) {
         double diff = Math.abs(a - b);
         if (diff <= 0.5) {
             return true;
@@ -127,6 +142,9 @@ public class EvalAsserter {
         String cleaned = text.replaceAll("\\[[^\\]]*\\]|\\bev_[a-z0-9]+", " ");
         // 剥掉日期时间（asOf/时间戳/8-15 日期表达）
         cleaned = DATETIME.matcher(cleaned).replaceAll(" ");
+        cleaned = cleaned.replaceAll("\\d+\\s*天", " ");
+        cleaned = cleaned.replaceAll("(?m)^\\s*\\|\\s*\\d+\\s*\\|", "| ");
+        cleaned = cleaned.replaceAll("(?m)^\\s*\\d+\\s*[|.)、]\\s*", " ");
         Matcher m = NUMBER.matcher(cleaned);
         while (m.find()) {
             int start = m.start();
@@ -135,7 +153,7 @@ public class EvalAsserter {
             // 否则模型用列表列举原因时序号会被误抽为业务数字（b2_mq_lag 实测误报幻觉）
             if (end < cleaned.length()) {
                 char c = cleaned.charAt(end);
-                if (c == ')' || c == '、') {
+                if (c == ')' || c == '、' || c == '天') {
                     continue;
                 }
                 if (c == '.' && end + 1 < cleaned.length()

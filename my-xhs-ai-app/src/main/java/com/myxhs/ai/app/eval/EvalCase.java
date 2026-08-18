@@ -16,6 +16,7 @@ public record EvalCase(
         List<String> statusIn,
         int minEvidence,
         List<String> contains,
+        List<String> anyContains,
         List<String> notContains,
         List<String> notRegex,
         boolean numbersConsistent) {
@@ -28,6 +29,7 @@ public record EvalCase(
                 strList(m.get("statusIn")),
                 intOf(m.get("minEvidence")),
                 strList(m.get("contains")),
+                strList(m.get("anyContains")),
                 strList(m.get("notContains")),
                 strList(m.get("notRegex")),
                 boolOf(m.get("numbersConsistent")));

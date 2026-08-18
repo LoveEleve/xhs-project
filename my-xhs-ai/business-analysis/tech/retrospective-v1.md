@@ -137,9 +137,10 @@ YAML 用例集 + 硬断言 + 数字一致性 + 统计阈值 + LLM-as-judge + bad
 | `EvalGateRunTest`（门禁锚点 7 条） | 7/7 通过、completion 100%、幻觉 0%（修复误报后；归档 `docs/reports/eval-gate-report-20260817`） |
 | `SampledRegressionTest` | 通过 |
 | 造数闭环 | 订单 8（4 分片）/支付 6/加购 18/笔记 20/浏览 60，漏斗 60:18:8 |
-| 成本 / 时延 / 发散率 | **未产出**（nightly 全量后补齐，T4） |
+| 成本 / 时延 / 发散率 | **nightly 首跑已产出基础结果**：100 条合计 avgDuration ≈ 25.6s/条；发散率仍需单独 bad case 汇总（见 `docs/reports/nightly-100-report-20260817.md`） |
 
 > 数据成熟度：核心指标为 seed 数据 + 真基础设施链路；"真实线上流量"场景仍受业务流量限制，文档已如实标注。
+> nightly 状态：2026-08-17 已完成 **100 条全量首跑**（smoke 20 = 100/100/0；regression 80 = 98.8/97.5/1.3；合计 99/98/1）。
 
 ---
 

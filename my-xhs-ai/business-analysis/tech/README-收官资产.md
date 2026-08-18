@@ -14,6 +14,7 @@
 | 九问讲稿 | `nine-questions-v1.md` | 架构九问 + 高频追问深度答法 |
 | JD 命中矩阵 | `jd-hit-matrix-v1.md` | 投递地图（语言过滤 + 能力命中 + 补位话术） |
 | 评测证据 | `docs/reports/eval-gate-report-20260817.{json,md}` | 真库真模型门禁结果归档 |
+| nightly 全量报告 | `docs/reports/nightly-100-report-20260817.md` | smoke 20 + regression 80 = 100 条全量首跑 |
 
 ---
 
@@ -39,8 +40,8 @@
 
 | 项 | 状态 |
 |----|------|
-| T2 业务案例卡（5 个） | 未做 |
-| T1 nightly 全量评测 | 未跑 |
-| T4 成本/时延/发散率报告 | 未产出 |
+| T2 业务案例卡（5 个） | 已完成 |
+| T1 nightly 全量评测 | 已完成（100 条首跑） |
+| T4 成本/时延/发散率报告 | 已有 nightly 基础版，待细化 bad case/分布 |
 | T9/T10 理论讲解系列 | 未做 |
 | T13/T14 专题长文 + 外部对照 | 未做 |

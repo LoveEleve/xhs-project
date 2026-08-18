@@ -11,7 +11,8 @@
 > 给 my-xhs 电商平台建**运营/运维诊断 AI Agent**：查订单/支付/内容/系统指标，多步归因，带证据链、可追溯、不越权、不编造。
 > **M10-M14 规划全部完成**（会话记忆 → 工具注册表 → HITL 审批 → 多智能体 → 评测闭环），每个里程碑经写前设计/写前 review/写后深度 review/二轮 review。
 > **非 eval-gate 套件 173 个 app 测试全绿**（另有 tools/mcp 测试此前已稳定全绿）；**eval-gate 关键门禁已再次跑绿**：`EvalGateRunTest` ✅、`SampledRegressionTest` ✅（2026-08-17，真库+真模型）。
-> **下一步（顺序已定）**：① nightly 全量评测（100 条）首跑（P2 收尾已完：judge 装配 + badcase 路径配置化）→ ② 演示视频/作品集资产 → ③ 视成本/限速再评估后续模型切换（MiMo 作为后续选项，不阻塞收官）。
+> **当前状态更新（2026-08-17）**：nightly 全量评测（100 条）**已首跑完成**，`mimo-v2.5-pro` 下 smoke 20 = 100/100/0、regression 80 = 98.8/97.5/1.3，合计 99/98/1。 
+> **下一步（顺序已定）**：① 抽取 nightly bad case / 成本时延分布 → ② 演示视频/作品集资产 → ③ 理论讲解与专题长文 → ④ 再评估后续模型切换。
 
 ---
 
@@ -30,7 +31,7 @@
 ### 凭据（`.env.local` 变量，绝不落库/不入 git）
 | 变量 | 用途 | 备注 |
 |------|------|------|
-| `MYXHS_LLM_API_KEY` | **主模型 OpenCode Go**（`opencode.ai/zen/go/v1`，`mimo-v2.5-pro`）| **当前单模型：MiMo V2.5 Pro；如再切模型需重新跑 eval-gate** |
+| `MYXHS_LLM_API_KEY` | **主模型 OpenCode Go**（`opencode.ai/zen/go/v1`，`mimo-v2.5-pro`）| **当前单模型：MiMo V2.5 Pro；2026-08-17 已通过 eval-gate + nightly 100 条首跑；如再切模型需重新跑评测** |
 | `TEAMO_API_KEY` | 旧 TeamoRouter key（已不用，保留）| |
 | `MYXHS_DB_USER/PASSWORD` | 只读账号 `myxhs_ai_ro`（SELECT）| 真实 MySQL |
 | `MYXHS_ROOT_PASSWORD` | 集成测试自愈 seed + DDL（root）| 仅测试/建表 |
@@ -170,6 +171,7 @@ M5 Durable；M6 评测门禁；M7 安全；M8 容器化/UI 薄壳；M9-1 受控�
 - **对比评测**（M13，锚点 7 条）：单 Agent pass=85.7%/幻觉=14.3% vs 双 Agent pass=100%/幻觉=0%——**D-A 决策：全量双 Agent**
 - **eval-gate 修复后**：pass 57.1-100%、幻觉 0-14.3%——阈值 10/60/40 实测校准保留；**2026-08-17 再次实跑**：`EvalGateRunTest` 7/7 通过、completion=100%、hallucination=0%（修复枚举序号误报后）
 - **抽样冒烟 / regression**：代表性 8 条 8/8 通过；**`SampledRegressionTest` 已于 2026-08-17 真库+真模型重跑通过**
+- **nightly 100 条首跑（2026-08-17）**：`mimo-v2.5-pro` 下 smoke 20 = 100/100/0；regression 80 = 98.8/97.5/1.3；合计 **99% 通过 / 98% 完成 / 1% 幻觉**（报告见 `docs/reports/nightly-100-report-20260817.md`）
 
 ---
 
@@ -222,9 +224,9 @@ M5 Durable；M6 评测门禁；M7 安全；M8 容器化/UI 薄壳；M9-1 受控�
 | dlq.redeliver 管理通道 | **已核实+改造（2026-08-16）**：Dashboard `http://21.130.247.89:18081`（无需登录，白名单含本机）；broker 监听 **11911**；执行器按真实契约改造（csrf 会话 + consumeMessageDirectly.do，topic 推导 %RETRY%<group>）；**端到端断链（如实）**：msgId 语义=ORIGIN_MESSAGE_ID（DLQ 原始消息 ID），而获取它的查询接口（queryDlqMessageByConsumerGroup）有 NPE——真实可用依赖该接口修复或 mqadmin 查询；重投端点未实际触发（L3 + 无死信）|
 | **MCP_API_KEY** | 生产必设（dev 放行 WARN）|
 | **评测依赖本地 MCP 服务** | eval-gate/对比评测/抽样冒烟前必须启动 19021（§10）|
-| eval-gate | **已跑绿**（前置债清 + 2026-08-17 再次真库验证：GateRun/Sampled 均通过）；阈值 10/60/40 实测校准文档化 |
-| nightly | 全量 100 条评测未首跑（~2.5h，按需）；judge 默认关（装配就位，nightly 开）|
-| 全量 100 条评测 | **仍未首跑**（~2.5h，nightly 项）——当前唯一剩余评测项 |
+| eval-gate | **已跑绿**（前置债清 + 2026-08-17 真库验证：GateRun/Sampled 均通过）；阈值 10/60/40 实测校准文档化 |
+| nightly | **已完成首跑**（2026-08-17，100 条全量，详见 `docs/reports/nightly-100-report-20260817.md`）；judge 默认关（后续可按需开启采样）|
+| 全量 100 条评测 | **已首跑完成**——当前评测剩余工作转为 bad case 汇总与成本/时延分析 |
 | gateway | 方案已交付待实施（外部）|
 
 ---
