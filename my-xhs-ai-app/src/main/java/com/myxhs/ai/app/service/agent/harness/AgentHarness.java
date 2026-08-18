@@ -48,17 +48,18 @@ public class AgentHarness {
             - httpErrors(service, hours)：服务 HTTP 5xx 错误统计（按 uri 聚合，最近 N 小时；service 如 my-xhs-gateway，空=全部）
             - httpLatency(service, hours)：服务 HTTP 慢端点 top（P95 延迟秒，最近 N 小时）
             - mqConsumerLag(group)：RocketMQ 消费积压（按消费组聚合 lag；空=全部）
-            - mqDlqBacklog(consumerGroup)：RocketMQ 死信积压（空=全部；**-1 为应用侧哨兵值=无 DLQ 或查询失败，非真实积压**）
-            - mysqlReplicationLag()：MySQL 主从复制延迟（Seconds_Behind_Master，全部从库）
+             - mqDlqBacklog(consumerGroup)：RocketMQ 死信积压（空=全部；**-1 为应用侧哨兵值=无 DLQ 或查询失败，非真实积压**）
+             - mqDlqQuery(consumerGroup)：查询 DLQ 消息并提取 originMsgId/retryTopic，供 dlq.redeliver 使用
+             - mysqlReplicationLag()：MySQL 主从复制延迟（Seconds_Behind_Master，全部从库）
             - mysqlDeadlocks()：MySQL 死锁事件（累计 total + 最新 new_events）
             - funnelConversion(window)：电商漏斗各环节量（商品浏览/加购/下单/支付，窗口内）
             - paymentFailures(window)：支付失败事件（PAY_FAIL 按失败码聚合，窗口内）
             - notePublishEvents(window)：内容发布事件数（PUBLISH 按天，窗口内）
             - logSearch(service, keyword, tailLines)：受控检索服务日志（白名单服务最近 N 行内过滤 keyword；
               用于找异常堆栈/报错明细，如 ERROR/Deadlock/OutOfMemory；keyword 仅字母数字与常见符号）
-            - dlq.redeliver(msgId, consumerGroup)：**MQ 死信消息重投（L3 高危动作，执行需人工审批）**——
-              仅在用户明确要求重投死信消息且已确认风险时请求该工具；msgId 为死信消息的原始消息 ID
-              （ORIGIN_MESSAGE_ID）；请求后系统挂起待审批，审批通过才会真正执行；无审批绝不执行
+             - dlq.redeliver(msgId, consumerGroup, retryTopic)：**MQ 死信消息重投（L3 高危动作，执行需人工审批）**——
+               必须先调用 mqDlqQuery；msgId 使用返回的 originMsgId（ORIGIN_MESSAGE_ID），retryTopic 使用返回的 retryTopic（RETRY_TOPIC）；
+               请求后系统挂起待审批，审批通过才会真正执行；无审批绝不执行
             排障提示：httpErrors 的 uri=/** 已由工具单列为 noiseScanRoutes（扫描/探测噪音），归因时排除；
             /api/coupon/*、/api/cart/* 的 [Gateway-异常] WARN 日志非 5xx
             已知服务名（L2 观测可用）：my-xhs-gateway / my-xhs-order / my-xhs-payment / my-xhs-content /
@@ -100,14 +101,15 @@ public class AgentHarness {
 - httpErrors(service, hours)：服务 HTTP 5xx 错误统计（按 uri 聚合，最近 N 小时；service 如 my-xhs-gateway，空=全部）
 - httpLatency(service, hours)：服务 HTTP 慢端点 top（P95 延迟秒，最近 N 小时）
 - mqConsumerLag(group)：RocketMQ 消费积压（按消费组聚合 lag；空=全部）
-- mqDlqBacklog(consumerGroup)：RocketMQ 死信积压（空=全部；**-1 为应用侧哨兵值=无 DLQ 或查询失败，非真实积压**）
-- mysqlReplicationLag()：MySQL 主从复制延迟（Seconds_Behind_Master，全部从库）
+ - mqDlqBacklog(consumerGroup)：RocketMQ 死信积压（空=全部；**-1 为应用侧哨兵值=无 DLQ 或查询失败，非真实积压**）
+ - mqDlqQuery(consumerGroup)：查询 DLQ 消息并提取 originMsgId/retryTopic，供 dlq.redeliver 使用
+ - mysqlReplicationLag()：MySQL 主从复制延迟（Seconds_Behind_Master，全部从库）
 - mysqlDeadlocks()：MySQL 死锁事件（累计 total + 最新 new_events）
 - logSearch(service, keyword, tailLines)：受控检索服务日志（白名单服务最近 N 行内过滤 keyword；
   用于找异常堆栈/报错明细，如 ERROR/Deadlock/OutOfMemory；keyword 仅字母数字与常见符号）
-- dlq.redeliver(msgId, consumerGroup)：**MQ 死信消息重投（L3 高危动作，执行需人工审批）**——
-  仅在用户明确要求重投死信消息且已确认风险时请求该工具；请求后系统挂起待审批，
-  审批通过才会真正执行；无审批绝不执行
+ - dlq.redeliver(msgId, consumerGroup, retryTopic)：**MQ 死信消息重投（L3 高危动作，执行需人工审批）**——
+   必须先调用 mqDlqQuery；msgId 使用返回的 originMsgId，retryTopic 使用返回的 retryTopic；请求后系统挂起待审批，
+   审批通过才会真正执行；无审批绝不执行
             """;
     public static final String PROMPT_TAIL = """
 排障提示：httpErrors 的 uri=/** 已由工具单列为 noiseScanRoutes（扫描/探测噪音），归因时排除；

@@ -29,6 +29,7 @@ class DlqRedeliverToolTest {
     private final AtomicReference<String> csrfHeader = new AtomicReference<>();
     private final AtomicReference<String> cookieHeader = new AtomicReference<>();
     private final AtomicReference<String> query = new AtomicReference<>();
+    private final AtomicReference<String> requestBody = new AtomicReference<>();
 
     @BeforeEach
     void startServer() throws IOException {
@@ -39,12 +40,17 @@ class DlqRedeliverToolTest {
             ex.getResponseHeaders().add("Set-Cookie", "SESSION=fake-session; Path=/");
             respond(ex, 200, "{\"status\":0,\"data\":{\"token\":\"fake-csrf-token\"}}");
         });
-        server.createContext("/message/consumeMessageDirectly.do", ex -> {
+        server.createContext("/dlqMessage/batchResendDlqMessage.do", ex -> {
             requests.add(ex.getRequestMethod() + " " + ex.getRequestURI().getPath());
             csrfHeader.set(ex.getRequestHeaders().getFirst("X-XSRF-TOKEN"));
             cookieHeader.set(ex.getRequestHeaders().getFirst("Cookie"));
             query.set(ex.getRequestURI().getQuery());
-            respond(ex, 200, "{\"status\":0,\"data\":{\"recvTotal\":1,\"successCount\":1}}");
+            try {
+                requestBody.set(new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+            respond(ex, 200, "{\"status\":0,\"data\":[{\"consumeResult\":\"CR_SUCCESS\"}]}");
         });
         server.start();
     }
@@ -75,14 +81,10 @@ class DlqRedeliverToolTest {
         // 两段请求顺序与路径（真实契约）
         assertEquals(2, requests.size());
         assertEquals("GET /rocketmq-dashboard/csrf-token", requests.get(0));
-        assertEquals("POST /message/consumeMessageDirectly.do", requests.get(1));
-        // 重投参数（msgId/consumerGroup/topic=推导 RETRY/clientId 空）
-        String q = query.get();
-        assertTrue(q.contains("msgId=0123456789abcdef0123456789abcdef"), q);
-        assertTrue(q.contains("consumerGroup=inventory-order-transaction-consumer-group"), q);
-        // getQuery() 返回解码后值（实际发送为 %25RETRY%25 编码形式）
-        assertTrue(q.contains("topic=%RETRY%inventory-order-transaction-consumer-group"), q);
-        assertTrue(q.endsWith("clientId="), q);
+         assertEquals("POST /dlqMessage/batchResendDlqMessage.do", requests.get(1));
+        assertTrue(query.get() == null);
+        assertTrue(requestBody.get().contains("\"msgId\":\"0123456789abcdef0123456789abcdef\""));
+        assertTrue(requestBody.get().contains("\"consumerGroup\":\"inventory-order-transaction-consumer-group\""));
         // 头（CSRF token + session cookie）
         assertEquals("fake-csrf-token", csrfHeader.get());
         assertTrue(cookieHeader.get().contains("XSRF-TOKEN=fake-xsrf"), cookieHeader.get());
@@ -128,8 +130,8 @@ class DlqRedeliverToolTest {
             ex.getResponseHeaders().add("Set-Cookie", "SESSION=s; Path=/");
             respond(ex, 200, "{\"status\":0,\"data\":{\"token\":\"tok\"}}");
         });
-        srv2.createContext("/message/consumeMessageDirectly.do", ex -> {
-            respond(ex, 200, "{\"status\":-1,\"errMsg\":\"消息不存在\"}");
+        srv2.createContext("/dlqMessage/batchResendDlqMessage.do", ex -> {
+            respond(ex, 200, "{\"status\":0,\"data\":[{\"consumeResult\":\"CR_LATER\",\"remark\":\"消息不存在\"}]}");
         });
         srv2.start();
         try {
@@ -200,9 +202,13 @@ class DlqRedeliverToolTest {
                     + "]}}}";
             respond(ex, 200, body);
         });
-        srv3.createContext("/message/consumeMessageDirectly.do", ex -> {
-            redeliverQuery.set(ex.getRequestURI().getQuery());
-            respond(ex, 200, "{\"status\":0,\"data\":{\"successCount\":1}}");
+        srv3.createContext("/dlqMessage/batchResendDlqMessage.do", ex -> {
+            try {
+                redeliverQuery.set(new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+            respond(ex, 200, "{\"status\":0,\"data\":[{\"consumeResult\":\"CR_SUCCESS\"}]}");
         });
         srv3.start();
         try {
@@ -212,10 +218,10 @@ class DlqRedeliverToolTest {
             assertTrue(dlqResult.contains("\"status\":\"ok\""), dlqResult);
             assertTrue(dlqResult.contains("abcdef0123456789abcdef0123456789"), dlqResult);
             // Step 2: 用查询到的 ORIGIN_MESSAGE_ID 重投
-            String redeliverResult = tool.redeliver("abcdef0123456789abcdef0123456789", "test-group");
+            String redeliverResult = tool.redeliver("abcdef0123456789abcdef0123456789", "test-group", "ORDER_TOPIC");
             assertTrue(redeliverResult.contains("\"status\":\"ok\""), redeliverResult);
-            // 验证重投请求里的 msgId 就是查询到的 ORIGIN_MESSAGE_ID
-            assertTrue(redeliverQuery.get().contains("msgId=abcdef0123456789abcdef0123456789"), redeliverQuery.get());
+            assertTrue(redeliverQuery.get().contains("\"msgId\":\"abcdef0123456789abcdef0123456789\""), redeliverQuery.get());
+            assertTrue(redeliverQuery.get().contains("\"topic\":\"ORDER_TOPIC\""), redeliverQuery.get());
         } finally {
             srv3.stop(0);
         }

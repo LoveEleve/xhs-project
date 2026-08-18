@@ -110,7 +110,11 @@ public class AgentToolCatalog {
             if (invalid != null) {
                 return invalid;
             }
-            return ToolParamValidators.validateConsumerGroup(args == null ? null : args.get("consumerGroup"));
+            invalid = ToolParamValidators.validateConsumerGroup(args == null ? null : args.get("consumerGroup"));
+            if (invalid != null) {
+                return invalid;
+            }
+            return ToolParamValidators.validateRetryTopic(args == null ? null : args.get("retryTopic"));
         };
     }
 

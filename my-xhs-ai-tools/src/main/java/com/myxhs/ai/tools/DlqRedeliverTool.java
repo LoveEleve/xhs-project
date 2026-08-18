@@ -21,10 +21,10 @@ import java.util.stream.Collectors;
  * 真实契约（中间件团队核实 + 本机实测）：
  *  1. 会话初始化：GET {base}/rocketmq-dashboard/csrf-token → session cookie + csrfToken
  *     （Dashboard 无需登录；POST 必须带 X-XSRF-TOKEN 头 + session cookie）
- *  2. 按 msgId 重投：POST {base}/message/consumeMessageDirectly.do
- *     ?msgId=<ORIGIN_MESSAGE_ID>&consumerGroup=<group>&topic=%RETRY%<group>&clientId=
+ *  2. 按 msgId 重投：POST {base}/dlqMessage/batchResendDlqMessage.do
+ *     body=[{topic:<RETRY_TOPIC>,msgId:<ORIGIN_MESSAGE_ID>,consumerGroup:<group>}]
  *     ★ msgId 语义 = DLQ 消息的 ORIGIN_MESSAGE_ID（原始消息 ID，非 DLQ 消息自身 ID）
- *  3. 批量重投备用：POST {base}/dlqMessage/batchResendDlqMessage.do
+ *  3. Dashboard 返回 consumeResult=CR_SUCCESS 才算重投成功；CR_LATER 仍是失败
  * queryDlqMessages 使用 Dashboard 的 POST /dlqMessage/queryDlqMessageByConsumerGroup.query
  * 契约，从 data.page.content[].properties.ORIGIN_MESSAGE_ID 提取原始消息 ID，并保留 RETRY_TOPIC。
  * E2E 链路：queryDlqMessages → 提取 ORIGIN_MESSAGE_ID/RETRY_TOPIC → 审批 → redeliver。
@@ -80,14 +80,17 @@ public class DlqRedeliverTool implements DlqRedeliverAccess {
             // 2. 按 msgId 重投（命令模板写死：固定路径 + 白名单参数；topic 由消费组推导 %RETRY%<group>）
             String targetTopic = retryTopic == null || retryTopic.isBlank()
                     ? "%RETRY%" + consumerGroup : retryTopic;
-            String url = baseUrl + "/message/consumeMessageDirectly.do?msgId=" + enc(msgId)
-                    + "&consumerGroup=" + enc(consumerGroup)
-                    + "&topic=" + enc(targetTopic) + "&clientId=";
-            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+            ObjectNode resend = om.createObjectNode();
+            resend.put("topic", targetTopic);
+            resend.put("msgId", msgId);
+            resend.put("consumerGroup", consumerGroup);
+            HttpRequest req = HttpRequest.newBuilder(
+                            URI.create(baseUrl + "/dlqMessage/batchResendDlqMessage.do"))
                     .timeout(Duration.ofSeconds(REQUEST_TIMEOUT_S))
                     .header("X-XSRF-TOKEN", token)
                     .header("Cookie", cookies)
-                    .POST(HttpRequest.BodyPublishers.noBody())
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString("[" + resend + "]"))
                     .build();
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
             ObjectNode ok = om.createObjectNode();
@@ -232,7 +235,11 @@ public class DlqRedeliverTool implements DlqRedeliverAccess {
 
     private String parseConsumeResult(String body) {
         try {
-            return om.readTree(body).path("data").path("consumeResult").asText(null);
+            var data = om.readTree(body).path("data");
+            if (data.isArray() && !data.isEmpty()) {
+                return data.get(0).path("consumeResult").asText(null);
+            }
+            return data.path("consumeResult").asText(null);
         } catch (Exception e) {
             return null;
         }
