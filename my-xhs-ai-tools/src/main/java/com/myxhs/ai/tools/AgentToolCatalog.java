@@ -22,6 +22,9 @@ public class AgentToolCatalog {
     private static final String LOG_SEARCH_SCHEMA = """
             {"type":"object","properties":{"service":{"type":"string","description":"白名单服务名，如 my-xhs-order"},"keyword":{"type":"string","description":"检索关键词，字母数字与常见符号，长度≤100"},"tailLines":{"type":"string","description":"最近多少行内检索（1~5000，默认 500）"}},"required":["service","keyword"]}
             """;
+    private static final String DLQ_QUERY_SCHEMA = """
+            {"type":"object","properties":{"consumerGroup":{"type":"string","description":"消费组名，如 cart-sync-consumer-group"}},"required":["consumerGroup"]}
+            """;
     private static final String L3_SCHEMA = """
             {"type":"object","properties":{"msgId":{"type":"string","description":"RocketMQ 消息 ID（32 位 hex）"},"consumerGroup":{"type":"string","description":"消费组名，如 cart-sync-consumer-group"}},"required":["msgId","consumerGroup"]}
             """;
@@ -57,6 +60,8 @@ public class AgentToolCatalog {
                         AccessLevel.L2, MQ_SCHEMA, groupValidator()),
                 spec(AgentToolNames.MQ_DLQ_BACKLOG, "mq.dlq_backlog", "RocketMQ 死信积压（按 consumer_group 聚合 backlog，空=全部；-1 为应用侧哨兵值=无 DLQ）",
                         AccessLevel.L2, MQ_SCHEMA, groupValidator()),
+                spec(AgentToolNames.MQ_DLQ_QUERY, "mq.dlq_query", "查询 RocketMQ 死信消息列表（提取 ORIGIN_MESSAGE_ID，为 dlq.redeliver 提供参数；绕过有 NPE 的 queryDlqMessageByConsumerGroup 接口）",
+                        AccessLevel.L2, DLQ_QUERY_SCHEMA, consumerGroupValidator()),
                 spec(AgentToolNames.MYSQL_REPLICA_LAG, "mysql.replication_lag", "MySQL 主从复制延迟（Seconds_Behind_Master，全部从库）",
                         AccessLevel.L2, NOARG_SCHEMA, null),
                 spec(AgentToolNames.MYSQL_DEADLOCKS, "mysql.deadlocks", "MySQL 死锁事件（累计 total + 最新 new_events）",
@@ -107,5 +112,9 @@ public class AgentToolCatalog {
             }
             return ToolParamValidators.validateConsumerGroup(args == null ? null : args.get("consumerGroup"));
         };
+    }
+
+    private static java.util.function.Function<java.util.Map<String, String>, String> consumerGroupValidator() {
+        return args -> ToolParamValidators.validateConsumerGroup(args == null ? null : args.get("consumerGroup"));
     }
 }

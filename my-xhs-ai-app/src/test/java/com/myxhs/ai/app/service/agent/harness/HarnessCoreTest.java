@@ -124,7 +124,7 @@ class HarnessCoreTest {
     @Test
     void M13_画像工具子集过滤() {
         PolicyGuard guard = new PolicyGuard(AgentToolBinder.build(null, null, null,
-                (msgId, group) -> "ok"));
+                fakeDlq("ok")));
         // Business 画像：业务工具放行、观测工具子集外拒绝
         var business = com.myxhs.ai.app.service.agent.profile.AgentProfiles.BUSINESS;
         assertEquals(true, guard.evaluate("queryOrderVolume", window("2026-08-01~2026-08-07"),
@@ -154,7 +154,7 @@ class HarnessCoreTest {
         // M11：dlq.redeliver 已绑定执行器（真实审批工具）→ requiresApproval；
         // 预留工具（无执行器）→ deny（未开放，不挂起）
         PolicyGuard guard = new PolicyGuard(AgentToolBinder.build(null, null, null,
-                (msgId, group) -> "fake-redeliver"));
+                fakeDlq("fake-redeliver")));
         PolicyDecision d1 = guard.evaluate("dlq.redeliver",
                 Map.of("msgId", "0123456789abcdef0123456789abcdef", "consumerGroup", "cart-sync-group"));
         assertEquals(true, d1.requiresApproval(), "已开放 L3 应要求审批: " + d1.reason());
@@ -251,5 +251,12 @@ class HarnessCoreTest {
         run2.terminate(TerminationReason.CANCELLED, "已取消");
         assertEquals(RunStatus.CANCELLED, run2.status());
         assertEquals(TerminationReason.CANCELLED, run2.terminationReason());
+    }
+
+    private static com.myxhs.ai.tools.DlqRedeliverAccess fakeDlq(String result) {
+        return new com.myxhs.ai.tools.DlqRedeliverAccess() {
+            @Override public String redeliver(String msgId, String consumerGroup) { return result; }
+            @Override public String queryDlqMessages(String consumerGroup) { return "{\"status\":\"ok\",\"count\":0}"; }
+        };
     }
 }

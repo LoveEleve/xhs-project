@@ -21,6 +21,8 @@ public final class AgentToolNames {
     public static final String MYSQL_DEADLOCKS = "mysqlDeadlocks";
     public static final String LOG_SEARCH = "logSearch";
 
+    public static final String MQ_DLQ_QUERY = "mqDlqQuery";
+
     /** L3 高危动作（V1 无执行器，M11 HITL 挂点） */
     public static final String L3_DLQ_REDELIVER = "dlq.redeliver";
     public static final String L3_SERVICE_RESTART = "service.restart";

@@ -126,14 +126,14 @@ class McpContractTest {
     }
 
     @Test
-    void tools_list_返回十四个工具() throws Exception {
+    void tools_list_返回十五个工具() throws Exception {
         send("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\","
                 + "\"params\":{\"protocolVersion\":\"2025-03-26\",\"capabilities\":{},"
                 + "\"clientInfo\":{\"name\":\"test\",\"version\":\"1\"}}}");
         send("{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\",\"params\":{}}");
         JsonNode resp = send("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}");
         JsonNode tools = resp.path("result").path("tools");
-        assertTrue(tools.size() == 14, "应 14 个工具: " + tools);
+        assertTrue(tools.size() == 15, "应 15 个工具: " + tools);
         assertEquals("order.query_volume", tools.get(0).path("name").asText());
         assertEquals("payment.success_rate", tools.get(1).path("name").asText());
         assertEquals("content.interaction", tools.get(2).path("name").asText());
@@ -146,8 +146,9 @@ class McpContractTest {
         assertEquals("service.http_latency", tools.get(9).path("name").asText());
         assertEquals("mq.consumer_lag", tools.get(10).path("name").asText());
         assertEquals("mq.dlq_backlog", tools.get(11).path("name").asText());
-        assertEquals("mysql.replication_lag", tools.get(12).path("name").asText());
-        assertEquals("mysql.deadlocks", tools.get(13).path("name").asText());
+        assertEquals("mq.dlq_query", tools.get(12).path("name").asText());
+        assertEquals("mysql.replication_lag", tools.get(13).path("name").asText());
+        assertEquals("mysql.deadlocks", tools.get(14).path("name").asText());
         assertTrue(tools.get(0).path("inputSchema").path("properties").has("window"),
                 "应声明 window 参数 schema");
         assertTrue(tools.get(8).path("inputSchema").path("properties").has("hours"),
@@ -158,6 +159,8 @@ class McpContractTest {
                 "漏斗工具应声明 window 参数 schema");
         assertTrue(tools.get(7).path("inputSchema").path("properties").has("keyword"),
                 "log.search 应声明 keyword 参数 schema");
+        assertTrue(tools.get(12).path("inputSchema").path("properties").has("consumerGroup"),
+                "mq.dlq_query 应声明 consumerGroup 参数 schema");
     }
 
     @Test

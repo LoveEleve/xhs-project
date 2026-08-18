@@ -65,7 +65,7 @@
 - 100% 通过率不等于 100% 生产正确率；
 - regression 完成率不是 100%，而是 95%；
 - `PARTIAL/BUDGET_STEPS` 是复杂样本的允许观察点，不应隐藏；
-- 真正的 `dlq.redeliver` 外部 E2E 仍未完全闭环；
+- `dlq.redeliver` 真实 E2E 已闭环（新增 `mq.dlq_query` → 提取 `ORIGIN_MESSAGE_ID` → `redeliver`）；
 - 远端 CI 未真实验收，不应说 CI 已全面跑绿；
 - 当前没有 Docker 部署交付，不应扩讲部署完成。
 
@@ -79,7 +79,7 @@
 | 自动化测试 | ✅ | tools/app/mcp 测试已回归通过 |
 | 真模型验证 | ✅ | eval-gate、sampled regression、nightly 均有真实模型验证 |
 | nightly 验证 | ✅ | smoke 20 + regression 80 已完成首跑 |
-| 真实外部 E2E | ⚠️ 部分 | 数据链路真实，但 `dlq.redeliver` 仍受外部接口 NPE 阻塞 |
+| 真实外部 E2E | ✅ | 数据链路真实；`dlq.redeliver` E2E 已闭环（新增 `mq.dlq_query` 工具用 `queryMessageByTopic` 绕过 Dashboard NPE，提取 `ORIGIN_MESSAGE_ID` 后重投）|
 | 规划中 | ✅ | T14 对照、Langfuse/OTel、Temporal、长期 Memory、A2A |
 
 ---
@@ -88,7 +88,7 @@
 
 当前真正剩下的，不是核心功能缺失，而是外部边界与平台化增强：
 
-1. `dlq.redeliver` 真正的 RocketMQ E2E 仍未闭环；
+1. ~~`dlq.redeliver` 真正的 RocketMQ E2E 已闭环~~：新增 `mq.dlq_query` 工具（L2 只读），用 Dashboard `queryMessageByTopic` 查 `%DLQ%<group>` topic 绕过有 NPE 的 `queryDlqMessageByConsumerGroup`，提取 `ORIGIN_MESSAGE_ID` 后传给 `redeliver`；
 2. Langfuse/OTel 级别的 LLM 可观测尚未接入；
 3. Temporal 级 Durable 平台尚未做对照 PoC；
 4. 长期 Memory、A2A、跨系统 Agent 协作都还不是当前收官前置项；

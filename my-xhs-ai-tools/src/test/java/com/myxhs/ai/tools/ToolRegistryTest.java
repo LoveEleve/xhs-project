@@ -46,11 +46,11 @@ class ToolRegistryTest {
     void 可用数与L3区分() {
         ToolRegistry reg = new ToolRegistry();
         AgentToolCatalog.specs().forEach(reg::register);
-        // catalog 是元数据（invoker=null）：17 条全不可用——执行器由模块装配时绑定
-        assertEquals(17, reg.count());
+        // catalog 是元数据（invoker=null）：18 条全不可用——执行器由模块装配时绑定
+        assertEquals(18, reg.count());
         assertFalse(reg.all().stream().anyMatch(ToolSpec::usable));
         assertTrue(reg.get(AgentToolNames.L3_DLQ_REDELIVER).orElseThrow().level() == AccessLevel.L3);
-        // 模拟 app 装配：14 个可用工具绑执行器（30 分钟接入演示：零改 Harness/PolicyGuard）
+        // 模拟 app 装配：15 个可用工具绑执行器（30 分钟接入演示：零改 Harness/PolicyGuard）
         ToolRegistry wired = new ToolRegistry();
         for (ToolSpec s : AgentToolCatalog.specs()) {
             if (s.level() != AccessLevel.L3 && s.mcpName() != null) {
@@ -60,8 +60,8 @@ class ToolRegistryTest {
                 wired.register(s);
             }
         }
-        assertEquals(14, wired.usableCount(), "装配执行器后 14 可用");
-        assertEquals(17, wired.count());
+        assertEquals(15, wired.usableCount(), "装配执行器后 15 可用");
+        assertEquals(18, wired.count());
         // 14 个可用工具均有 mcpName（MCP 契约依赖）
         assertTrue(wired.all().stream().filter(ToolSpec::usable).allMatch(s -> s.mcpName() != null));
     }

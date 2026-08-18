@@ -141,4 +141,84 @@ class DlqRedeliverToolTest {
             srv2.stop(0);
         }
     }
+
+    @Test
+    void 查询DLQ消息_提取ORIGIN_MESSAGE_ID() {
+        server.createContext("/message/queryMessageByTopic", ex -> {
+            requests.add(ex.getRequestMethod() + " " + ex.getRequestURI().getPath());
+            csrfHeader.set(ex.getRequestHeaders().getFirst("X-XSRF-TOKEN"));
+            query.set(ex.getRequestURI().getQuery());
+            String body = "{\"status\":0,\"data\":{\"messages\":["
+                    + "{\"msgId\":\"dlq001\",\"properties\":{\"ORIGIN_MESSAGE_ID\":\"aabbccdd11223344aabbccdd11223344\"},\"storeHost\":\"127.0.0.1:10911\",\"queueId\":\"0\",\"queueOffset\":\"10\"}"
+                    + "]}}";
+            respond(ex, 200, body);
+        });
+        DlqRedeliverTool tool = new DlqRedeliverTool(base());
+        String result = tool.queryDlqMessages("inventory-order-transaction-consumer-group");
+        assertTrue(result.contains("\"status\":\"ok\""), result);
+        assertTrue(result.contains("\"originMsgId\":\"aabbccdd11223344aabbccdd11223344\""), result);
+        assertTrue(result.contains("\"count\":1"), result);
+        assertTrue(result.contains("\"dlqTopic\":\"%DLQ%inventory-order-transaction-consumer-group\""), result);
+        // 验证请求路径和参数
+        assertTrue(requests.stream().anyMatch(r -> r.contains("queryMessageByTopic")), requests.toString());
+        assertTrue(query.get().contains("topic=%DLQ%inventory-order-transaction-consumer-group"), query.get());
+        assertEquals("fake-csrf-token", csrfHeader.get());
+    }
+
+    @Test
+    void 查询DLQ消息_无死信() {
+        server.createContext("/message/queryMessageByTopic", ex -> {
+            respond(ex, 200, "{\"status\":0,\"data\":{\"messages\":[]}}");
+        });
+        DlqRedeliverTool tool = new DlqRedeliverTool(base());
+        String result = tool.queryDlqMessages("g");
+        assertTrue(result.contains("\"status\":\"ok\""), result);
+        assertTrue(result.contains("\"count\":0"), result);
+        assertTrue(result.contains("无死信"), result);
+    }
+
+    @Test
+    void 查询DLQ消息_参数非法() {
+        DlqRedeliverTool tool = new DlqRedeliverTool(base());
+        String bad = tool.queryDlqMessages("");
+        assertTrue(bad.contains("\"status\":\"error\""), bad);
+        DlqRedeliverTool noBase = new DlqRedeliverTool(null);
+        assertTrue(noBase.queryDlqMessages("g").contains("未配置"), "未配置");
+    }
+
+    @Test
+    void E2E闭环_查询DLQ后重投() throws IOException {
+        HttpServer srv3 = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        srv3.createContext("/rocketmq-dashboard/csrf-token", ex -> {
+            ex.getResponseHeaders().add("Set-Cookie", "XSRF-TOKEN=t; Path=/");
+            ex.getResponseHeaders().add("Set-Cookie", "SESSION=s; Path=/");
+            respond(ex, 200, "{\"status\":0,\"data\":{\"token\":\"tok\"}}");
+        });
+        AtomicReference<String> redeliverQuery = new AtomicReference<>();
+        srv3.createContext("/message/queryMessageByTopic", ex -> {
+            String body = "{\"status\":0,\"data\":{\"messages\":["
+                    + "{\"msgId\":\"dlq001\",\"properties\":{\"ORIGIN_MESSAGE_ID\":\"abcdef0123456789abcdef0123456789\"}}"
+                    + "]}}";
+            respond(ex, 200, body);
+        });
+        srv3.createContext("/message/consumeMessageDirectly.do", ex -> {
+            redeliverQuery.set(ex.getRequestURI().getQuery());
+            respond(ex, 200, "{\"status\":0,\"data\":{\"successCount\":1}}");
+        });
+        srv3.start();
+        try {
+            DlqRedeliverTool tool = new DlqRedeliverTool("http://127.0.0.1:" + srv3.getAddress().getPort());
+            // Step 1: 查 DLQ
+            String dlqResult = tool.queryDlqMessages("test-group");
+            assertTrue(dlqResult.contains("\"status\":\"ok\""), dlqResult);
+            assertTrue(dlqResult.contains("abcdef0123456789abcdef0123456789"), dlqResult);
+            // Step 2: 用查询到的 ORIGIN_MESSAGE_ID 重投
+            String redeliverResult = tool.redeliver("abcdef0123456789abcdef0123456789", "test-group");
+            assertTrue(redeliverResult.contains("\"status\":\"ok\""), redeliverResult);
+            // 验证重投请求里的 msgId 就是查询到的 ORIGIN_MESSAGE_ID
+            assertTrue(redeliverQuery.get().contains("msgId=abcdef0123456789abcdef0123456789"), redeliverQuery.get());
+        } finally {
+            srv3.stop(0);
+        }
+    }
 }

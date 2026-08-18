@@ -10,4 +10,6 @@ package com.myxhs.ai.tools;
 public interface DlqRedeliverAccess {
 
     String redeliver(String msgId, String consumerGroup);
+
+    String queryDlqMessages(String consumerGroup);
 }

@@ -71,7 +71,7 @@ class HitlApprovalTest {
         };
         ChatModel model = new FakeChatModel(responder);
         return new AgentHarness(model, null, null, null,
-                (msgId, group) -> dlqResult, MAPPER, AgentBudget.defaults(), 0.002, 2, store, "fake", 400);
+                fakeDlq(dlqResult), MAPPER, AgentBudget.defaults(), 0.002, 2, store, "fake", 400);
     }
 
     @Test
@@ -124,7 +124,7 @@ class HitlApprovalTest {
                 "{\"action\":\"TOOL_CALL\",\"tool\":\"dlq.redeliver\","
                         + "\"args\":{\"msgId\":\"bad-id\",\"consumerGroup\":\"cart-sync-group\"},\"reasoning\":\"\"}";
         AgentHarness h = new AgentHarness(new FakeChatModel(responder), null, null, null,
-                (msgId, group) -> "ok", MAPPER, AgentBudget.defaults(), 0.002, 2, store, "fake", 400);
+                fakeDlq("ok"), MAPPER, AgentBudget.defaults(), 0.002, 2, store, "fake", 400);
         AgentRun run = h.run("重投", AgentBudget.defaults(), null);
         // 模型连续请求非法参数：POLICY_EXHAUSTED 终止（不挂起）
         assertTrue(run.status() == RunStatus.PARTIAL || run.status() == RunStatus.FAILED, run.status().name());
@@ -163,6 +163,13 @@ class HitlApprovalTest {
             }
         }
         return found;
+    }
+
+    private static com.myxhs.ai.tools.DlqRedeliverAccess fakeDlq(String result) {
+        return new com.myxhs.ai.tools.DlqRedeliverAccess() {
+            @Override public String redeliver(String msgId, String consumerGroup) { return result; }
+            @Override public String queryDlqMessages(String consumerGroup) { return "{\"status\":\"ok\",\"count\":0}"; }
+        };
     }
 
     private static final class FakeChatModel implements ChatModel {
