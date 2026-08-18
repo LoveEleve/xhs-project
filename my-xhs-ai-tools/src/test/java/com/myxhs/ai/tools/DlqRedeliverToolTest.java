@@ -144,13 +144,13 @@ class DlqRedeliverToolTest {
 
     @Test
     void 查询DLQ消息_提取ORIGIN_MESSAGE_ID() {
-        server.createContext("/message/queryMessageByTopic", ex -> {
+        server.createContext("/dlqMessage/queryDlqMessageByConsumerGroup.query", ex -> {
             requests.add(ex.getRequestMethod() + " " + ex.getRequestURI().getPath());
             csrfHeader.set(ex.getRequestHeaders().getFirst("X-XSRF-TOKEN"));
             query.set(ex.getRequestURI().getQuery());
-            String body = "{\"status\":0,\"data\":{\"messages\":["
-                    + "{\"msgId\":\"dlq001\",\"properties\":{\"ORIGIN_MESSAGE_ID\":\"aabbccdd11223344aabbccdd11223344\"},\"storeHost\":\"127.0.0.1:10911\",\"queueId\":\"0\",\"queueOffset\":\"10\"}"
-                    + "]}}";
+            String body = "{\"status\":0,\"data\":{\"page\":{\"content\":["
+                    + "{\"msgId\":\"dlq001\",\"properties\":{\"ORIGIN_MESSAGE_ID\":\"aabbccdd11223344aabbccdd11223344\",\"RETRY_TOPIC\":\"ORDER_TOPIC\"},\"storeHost\":\"127.0.0.1:10911\",\"queueId\":\"0\",\"queueOffset\":\"10\"}"
+                    + "]}}}";
             respond(ex, 200, body);
         });
         DlqRedeliverTool tool = new DlqRedeliverTool(base());
@@ -160,15 +160,14 @@ class DlqRedeliverToolTest {
         assertTrue(result.contains("\"count\":1"), result);
         assertTrue(result.contains("\"dlqTopic\":\"%DLQ%inventory-order-transaction-consumer-group\""), result);
         // 验证请求路径和参数
-        assertTrue(requests.stream().anyMatch(r -> r.contains("queryMessageByTopic")), requests.toString());
-        assertTrue(query.get().contains("topic=%DLQ%inventory-order-transaction-consumer-group"), query.get());
+        assertTrue(requests.stream().anyMatch(r -> r.contains("queryDlqMessageByConsumerGroup")), requests.toString());
         assertEquals("fake-csrf-token", csrfHeader.get());
     }
 
     @Test
     void 查询DLQ消息_无死信() {
-        server.createContext("/message/queryMessageByTopic", ex -> {
-            respond(ex, 200, "{\"status\":0,\"data\":{\"messages\":[]}}");
+        server.createContext("/dlqMessage/queryDlqMessageByConsumerGroup.query", ex -> {
+            respond(ex, 200, "{\"status\":0,\"data\":{\"page\":{\"content\":[]}}}");
         });
         DlqRedeliverTool tool = new DlqRedeliverTool(base());
         String result = tool.queryDlqMessages("g");
@@ -195,10 +194,10 @@ class DlqRedeliverToolTest {
             respond(ex, 200, "{\"status\":0,\"data\":{\"token\":\"tok\"}}");
         });
         AtomicReference<String> redeliverQuery = new AtomicReference<>();
-        srv3.createContext("/message/queryMessageByTopic", ex -> {
-            String body = "{\"status\":0,\"data\":{\"messages\":["
-                    + "{\"msgId\":\"dlq001\",\"properties\":{\"ORIGIN_MESSAGE_ID\":\"abcdef0123456789abcdef0123456789\"}}"
-                    + "]}}";
+        srv3.createContext("/dlqMessage/queryDlqMessageByConsumerGroup.query", ex -> {
+            String body = "{\"status\":0,\"data\":{\"page\":{\"content\":["
+                    + "{\"msgId\":\"dlq001\",\"properties\":{\"ORIGIN_MESSAGE_ID\":\"abcdef0123456789abcdef0123456789\",\"RETRY_TOPIC\":\"ORDER_TOPIC\"}}"
+                    + "]}}}";
             respond(ex, 200, body);
         });
         srv3.createContext("/message/consumeMessageDirectly.do", ex -> {

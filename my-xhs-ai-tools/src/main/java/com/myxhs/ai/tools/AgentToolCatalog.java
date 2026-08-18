@@ -26,7 +26,7 @@ public class AgentToolCatalog {
             {"type":"object","properties":{"consumerGroup":{"type":"string","description":"消费组名，如 cart-sync-consumer-group"}},"required":["consumerGroup"]}
             """;
     private static final String L3_SCHEMA = """
-            {"type":"object","properties":{"msgId":{"type":"string","description":"RocketMQ 消息 ID（32 位 hex）"},"consumerGroup":{"type":"string","description":"消费组名，如 cart-sync-consumer-group"}},"required":["msgId","consumerGroup"]}
+            {"type":"object","properties":{"msgId":{"type":"string","description":"RocketMQ 消息 ID（32 位 hex）"},"consumerGroup":{"type":"string","description":"消费组名，如 cart-sync-consumer-group"},"retryTopic":{"type":"string","description":"原始消息 topic，来自 DLQ 消息属性 RETRY_TOPIC"}},"required":["msgId","consumerGroup"]}
             """;
 
     private AgentToolCatalog() {
@@ -60,7 +60,7 @@ public class AgentToolCatalog {
                         AccessLevel.L2, MQ_SCHEMA, groupValidator()),
                 spec(AgentToolNames.MQ_DLQ_BACKLOG, "mq.dlq_backlog", "RocketMQ 死信积压（按 consumer_group 聚合 backlog，空=全部；-1 为应用侧哨兵值=无 DLQ）",
                         AccessLevel.L2, MQ_SCHEMA, groupValidator()),
-                spec(AgentToolNames.MQ_DLQ_QUERY, "mq.dlq_query", "查询 RocketMQ 死信消息列表（提取 ORIGIN_MESSAGE_ID，为 dlq.redeliver 提供参数；绕过有 NPE 的 queryDlqMessageByConsumerGroup 接口）",
+                spec(AgentToolNames.MQ_DLQ_QUERY, "mq.dlq_query", "查询 RocketMQ 死信消息列表（提取 ORIGIN_MESSAGE_ID/RETRY_TOPIC，为 dlq.redeliver 提供参数）",
                         AccessLevel.L2, DLQ_QUERY_SCHEMA, consumerGroupValidator()),
                 spec(AgentToolNames.MYSQL_REPLICA_LAG, "mysql.replication_lag", "MySQL 主从复制延迟（Seconds_Behind_Master，全部从库）",
                         AccessLevel.L2, NOARG_SCHEMA, null),

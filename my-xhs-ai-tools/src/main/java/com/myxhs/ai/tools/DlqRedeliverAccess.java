@@ -11,5 +11,9 @@ public interface DlqRedeliverAccess {
 
     String redeliver(String msgId, String consumerGroup);
 
+    default String redeliver(String msgId, String consumerGroup, String retryTopic) {
+        return redeliver(msgId, consumerGroup);
+    }
+
     String queryDlqMessages(String consumerGroup);
 }

@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -24,11 +25,9 @@ import java.util.stream.Collectors;
  *     ?msgId=<ORIGIN_MESSAGE_ID>&consumerGroup=<group>&topic=%RETRY%<group>&clientId=
  *     ★ msgId 语义 = DLQ 消息的 ORIGIN_MESSAGE_ID（原始消息 ID，非 DLQ 消息自身 ID）
  *  3. 批量重投备用：POST {base}/dlqMessage/batchResendDlqMessage.do
- * 已知边界（2026-08-16 实测）：获取 ORIGIN_MESSAGE_ID 的查询接口
- *  （/dlqMessage/queryDlqMessageByConsumerGroup.query）当前版本有 NPE（UI 同踩）——
- *  **已解决**：新增 queryDlqMessages 方法，用 /message/queryMessageByTopic 查 %DLQ%<group>
- *  topic 绕过 NPE 接口，从 message.properties.ORIGIN_MESSAGE_ID 提取原始消息 ID。
- *  E2E 闭环：queryDlqMessages → 提取 ORIGIN_MESSAGE_ID → redeliver(msgId, group)。
+ * queryDlqMessages 使用 Dashboard 的 POST /dlqMessage/queryDlqMessageByConsumerGroup.query
+ * 契约，从 data.page.content[].properties.ORIGIN_MESSAGE_ID 提取原始消息 ID，并保留 RETRY_TOPIC。
+ * E2E 链路：queryDlqMessages → 提取 ORIGIN_MESSAGE_ID/RETRY_TOPIC → 审批 → redeliver。
  * 参数白名单（PolicyGuard 同规则）：msgId 32hex / consumerGroup 字母数字；
  * 每次调用新建会话（L3 低频动作，防 token 过期）；未配置通道 → ERROR 如实。
  */
@@ -53,6 +52,11 @@ public class DlqRedeliverTool implements DlqRedeliverAccess {
 
     @Override
     public String redeliver(String msgId, String consumerGroup) {
+        return redeliver(msgId, consumerGroup, null);
+    }
+
+    @Override
+    public String redeliver(String msgId, String consumerGroup, String retryTopic) {
         ObjectNode node = om.createObjectNode();
         node.put("status", "error");
         node.put("tool", "dlq.redeliver");
@@ -74,10 +78,11 @@ public class DlqRedeliverTool implements DlqRedeliverAccess {
             String token = session[0];
             String cookies = session[1];
             // 2. 按 msgId 重投（命令模板写死：固定路径 + 白名单参数；topic 由消费组推导 %RETRY%<group>）
-            String retryTopic = "%RETRY%" + consumerGroup;
+            String targetTopic = retryTopic == null || retryTopic.isBlank()
+                    ? "%RETRY%" + consumerGroup : retryTopic;
             String url = baseUrl + "/message/consumeMessageDirectly.do?msgId=" + enc(msgId)
                     + "&consumerGroup=" + enc(consumerGroup)
-                    + "&topic=" + enc(retryTopic) + "&clientId=";
+                    + "&topic=" + enc(targetTopic) + "&clientId=";
             HttpRequest req = HttpRequest.newBuilder(URI.create(url))
                     .timeout(Duration.ofSeconds(REQUEST_TIMEOUT_S))
                     .header("X-XSRF-TOKEN", token)
@@ -90,12 +95,16 @@ public class DlqRedeliverTool implements DlqRedeliverAccess {
             ok.put("tool", "dlq.redeliver");
             ok.put("msgId", msgId);
             ok.put("consumerGroup", consumerGroup);
-            ok.put("retryTopic", retryTopic);
+            ok.put("retryTopic", targetTopic);
             ok.put("httpStatus", resp.statusCode());
             String body = resp.body() == null ? "" : resp.body();
-            // JSON 精确判断 status==0（字符串 contains 可能误匹配嵌套字段，P2 修复）
+            String consumeResult = parseConsumeResult(body);
+            if (consumeResult != null) {
+                ok.put("consumeResult", consumeResult);
+            }
             boolean success = resp.statusCode() >= 200 && resp.statusCode() < 300
-                    && parseStatus(body) == 0;
+                    && parseStatus(body) == 0
+                    && (consumeResult == null || "CR_SUCCESS".equals(consumeResult));
             if (success) {
                 ok.put("result", body.length() > 1000 ? body.substring(0, 1000) + "…" : body);
             } else {
@@ -109,9 +118,9 @@ public class DlqRedeliverTool implements DlqRedeliverAccess {
         }
     }
 
-    /** 查询 DLQ 消息列表，提取 ORIGIN_MESSAGE_ID（绕过有 NPE 的 queryDlqMessageByConsumerGroup 接口）。
-     *  使用 Dashboard /message/queryMessageByTopic?topic=%DLQ%<group> 查 DLQ topic，
-     *  从返回的 message.properties.ORIGIN_MESSAGE_ID 提取原始消息 ID。
+    /** 查询 DLQ 消息列表，提取 ORIGIN_MESSAGE_ID。
+     *  使用 Dashboard 的 POST /dlqMessage/queryDlqMessageByConsumerGroup.query 契约，
+     *  从 data.page.content[].properties.ORIGIN_MESSAGE_ID 提取原始消息 ID。
      *  返回 JSON：{status, tool, consumerGroup, dlqTopic, count, messages:[{originMsgId, msgId, storeHost, queueId, queueOffset}]}
      */
     @Override
@@ -130,14 +139,22 @@ public class DlqRedeliverTool implements DlqRedeliverAccess {
         try {
             String[] session = initSession();
             String dlqTopic = "%DLQ%" + consumerGroup;
-            String url = baseUrl + "/message/queryMessageByTopic?topic=" + enc(dlqTopic)
-                    + "&begin=" + enc(System.currentTimeMillis() - 72 * 3600_000L + "")
-                    + "&end=" + enc(System.currentTimeMillis() + "");
-            HttpRequest req = HttpRequest.newBuilder(URI.create(url))
+            long now = System.currentTimeMillis();
+            ObjectNode requestBody = om.createObjectNode();
+            requestBody.put("topic", dlqTopic);
+            requestBody.put("begin", now - 7 * 24 * 3600_000L);
+            requestBody.put("end", now);
+            requestBody.put("pageNum", 1);
+            requestBody.put("pageSize", 100);
+            requestBody.put("taskId", UUID.randomUUID().toString());
+            HttpRequest req = HttpRequest.newBuilder(
+                            URI.create(baseUrl + "/dlqMessage/queryDlqMessageByConsumerGroup.query"))
                     .timeout(Duration.ofSeconds(REQUEST_TIMEOUT_S))
                     .header("X-XSRF-TOKEN", session[0])
                     .header("Cookie", session[1])
-                    .GET().build();
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(requestBody.toString()))
+                    .build();
             HttpResponse<String> resp = http.send(req, HttpResponse.BodyHandlers.ofString());
             String body = resp.body() == null ? "" : resp.body();
             if (resp.statusCode() < 200 || resp.statusCode() >= 300) {
@@ -149,7 +166,7 @@ public class DlqRedeliverTool implements DlqRedeliverAccess {
             if (dashStatus != 0) {
                 return node.put("message", "DLQ 查询业务失败（status=" + dashStatus + "）").toString();
             }
-            var messages = root.path("data").path("messages");
+            var messages = root.path("data").path("page").path("content");
             if (!messages.isArray() || messages.isEmpty()) {
                 node.put("status", "ok");
                 node.put("consumerGroup", consumerGroup);
@@ -162,17 +179,16 @@ public class DlqRedeliverTool implements DlqRedeliverAccess {
             for (var msg : messages) {
                 String originId = msg.path("properties").path("ORIGIN_MESSAGE_ID").asText(null);
                 if (originId == null || originId.isBlank()) {
-                    originId = msg.path("msgId").asText(null);
+                    continue;
                 }
-                if (originId != null && !originId.isBlank()) {
-                    var item = om.createObjectNode();
-                    item.put("originMsgId", originId);
-                    item.put("msgId", msg.path("msgId").asText(""));
-                    item.put("storeHost", msg.path("storeHost").asText(""));
-                    item.put("queueId", msg.path("queueId").asText(""));
-                    item.put("queueOffset", msg.path("queueOffset").asText(""));
-                    arr.add(item);
-                }
+                var item = om.createObjectNode();
+                item.put("originMsgId", originId);
+                item.put("msgId", msg.path("msgId").asText(""));
+                item.put("retryTopic", msg.path("properties").path("RETRY_TOPIC").asText(""));
+                item.put("storeHost", msg.path("storeHost").asText(""));
+                item.put("queueId", msg.path("queueId").asText(""));
+                item.put("queueOffset", msg.path("queueOffset").asText(""));
+                arr.add(item);
             }
             node.put("status", "ok");
             node.put("consumerGroup", consumerGroup);
@@ -209,6 +225,14 @@ public class DlqRedeliverTool implements DlqRedeliverAccess {
     private String parseToken(String csrfBody) {
         try {
             return om.readTree(csrfBody).path("data").path("token").asText(null);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private String parseConsumeResult(String body) {
+        try {
+            return om.readTree(body).path("data").path("consumeResult").asText(null);
         } catch (Exception e) {
             return null;
         }

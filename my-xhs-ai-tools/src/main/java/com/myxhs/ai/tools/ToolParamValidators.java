@@ -75,4 +75,14 @@ public class ToolParamValidators {
         }
         return validateGroup(consumerGroup);
     }
+
+    public static String validateRetryTopic(String retryTopic) {
+        if (retryTopic == null || retryTopic.isBlank()) {
+            return null;
+        }
+        if (!retryTopic.matches("[A-Za-z0-9_.%\\-]{1,255}")) {
+            return "retryTopic 含非法字符";
+        }
+        return null;
+    }
 }

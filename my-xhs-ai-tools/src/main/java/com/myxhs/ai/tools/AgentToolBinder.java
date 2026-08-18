@@ -54,7 +54,10 @@ public class AgentToolBinder {
             // L3：dlq.redeliver 绑定受控执行器（M11 HITL：审批后执行）；其余 L3 预留不开放
             case AgentToolNames.L3_DLQ_REDELIVER -> dlqRedeliver == null
                     ? args -> "ERROR: dlq.redeliver 未装配（管理通道未配置）"
-                    : args -> dlqRedeliver.redeliver(arg(args, "msgId"), arg(args, "consumerGroup"));
+                    : args -> arg(args, "retryTopic") == null
+                    ? dlqRedeliver.redeliver(arg(args, "msgId"), arg(args, "consumerGroup"))
+                    : dlqRedeliver.redeliver(arg(args, "msgId"), arg(args, "consumerGroup"),
+                    arg(args, "retryTopic"));
             case AgentToolNames.L3_SERVICE_RESTART,
                     AgentToolNames.L3_ORDER_REFUND -> null;
             default -> args -> "ERROR: 未注册工具 " + name;
