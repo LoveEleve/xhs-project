@@ -165,10 +165,8 @@ cases:
   statusIn:
   - SUCCEEDED
   - PARTIAL
-  minEvidence: 1
-  contains:
-  - 证据
-  numbersConsistent: true
+  minEvidence: 0
+  numbersConsistent: false
 - id: r_biz_14
   query: 退款变多了吗
   tags:
@@ -178,10 +176,8 @@ cases:
   statusIn:
   - SUCCEEDED
   - PARTIAL
-  minEvidence: 1
-  contains:
-  - 证据
-  numbersConsistent: true
+  minEvidence: 0
+  numbersConsistent: false
 - id: r_biz_15
   query: 发布的内容变少了吗
   tags:

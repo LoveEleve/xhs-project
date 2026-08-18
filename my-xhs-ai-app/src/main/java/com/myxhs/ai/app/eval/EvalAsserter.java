@@ -143,8 +143,9 @@ public class EvalAsserter {
         // 剥掉日期时间（asOf/时间戳/8-15 日期表达）
         cleaned = DATETIME.matcher(cleaned).replaceAll(" ");
         cleaned = cleaned.replaceAll("\\d+\\s*天", " ");
+        cleaned = cleaned.replaceAll("(?i)(?:top|排名)\\s*\\d+", " ");
         cleaned = cleaned.replaceAll("(?m)^\\s*\\|\\s*\\d+\\s*\\|", "| ");
-        cleaned = cleaned.replaceAll("(?m)^\\s*\\d+\\s*[|.)、]\\s*", " ");
+        cleaned = cleaned.replaceAll("(?m)^\\s*[-*]?\\s*\\d+\\s*[|.)、]\\s*", " ");
         Matcher m = NUMBER.matcher(cleaned);
         while (m.find()) {
             int start = m.start();
@@ -153,7 +154,7 @@ public class EvalAsserter {
             // 否则模型用列表列举原因时序号会被误抽为业务数字（b2_mq_lag 实测误报幻觉）
             if (end < cleaned.length()) {
                 char c = cleaned.charAt(end);
-                if (c == ')' || c == '、' || c == '天') {
+                if (c == ')' || c == '）' || c == '、' || c == '天') {
                     continue;
                 }
                 if (c == '.' && end + 1 < cleaned.length()

@@ -1,7 +1,7 @@
 # 收官资产索引（my-xhs-ai）
 
-> 日期：2026-08-17 | 用途：把"研发完结 → 作品集完结"的资产统一索引，避免散落。
-> 配套：`retrospective-v1.md`（总复盘）、`pitch-3tier-v1.md`（三档讲稿）、`nine-questions-v1.md`（九问）、`jd-hit-matrix-v1.md`（JD 命中）、`docs/reports/`（评测证据）。
+> 日期：2026-08-18 | 用途：把"研发完结 → 作品集完结"的资产统一索引，避免散落。
+> 配套：复盘、讲稿、JD 矩阵、理论专题和 `docs/reports/` 评测证据。
 
 ---
 
@@ -15,6 +15,12 @@
 | JD 命中矩阵 | `jd-hit-matrix-v1.md` | 投递地图（语言过滤 + 能力命中 + 补位话术） |
 | 评测证据 | `docs/reports/eval-gate-report-20260817.{json,md}` | 真库真模型门禁结果归档 |
 | nightly 全量报告 | `docs/reports/nightly-100-report-20260817.md` | smoke 20 + regression 80 = 100 条全量首跑 |
+| nightly 质量摘要 | `docs/reports/nightly-100-quality-summary-20260817.md` | 质量/Token/时延/发散率/bad case |
+| T9 Agent 理论 | `theory-agent-v1.md` | Chatbot / Workflow / Agent / 企业级边界 |
+| T10 工程原理 | `theory-enterprise-agent-engineering-v1.md` | 状态/恢复/HITL/Policy/评测 |
+| T11 评测理论 | `theory-evaluation-v1.md` | 指标/断言/Judge/bad case 闭环 |
+| T13 反编造专题 | `theory-anti-hallucination-v1.md` | 证据链/数字一致性/评测器边界 |
+| T13 Harness 选型专题 | `theory-harness-vs-framework-v1.md` | 成熟框架 vs 最小自研控制面 |
 
 ---
 
@@ -42,6 +48,7 @@
 |----|------|
 | T2 业务案例卡（5 个） | 已完成 |
 | T1 nightly 全量评测 | 已完成（100 条首跑） |
-| T4 成本/时延/发散率报告 | 已有 nightly 基础版，待细化 bad case/分布 |
-| T9/T10 理论讲解系列 | 未做 |
-| T13/T14 专题长文 + 外部对照 | 未做 |
+| T4 成本/时延/发散率报告 | 已完成基础摘要，后续可按需细化 |
+| T9/T10/T11 理论讲解系列 | 已完成首版 + 深度修订 |
+| T13 专题长文 | 已完成反编造 + Harness 选型，待多智能体专题 |
+| T14 外部方案对照 | 可选增强 |

@@ -15,7 +15,7 @@ class EvalAsserterTest {
 
     @Test
     void 枚举序号不抽取() {
-        String answer = "可能原因包括：1) 积压为瞬时高水位；2) 采集为时点快照；3) 生产消费失衡。"
+        String answer = "可能原因包括：1) 积压为瞬时高水位；2）采集为时点快照；3) 生产消费失衡。"
                 + "另外：4、缓存未命中；5. 依赖下游慢。";
         Set<String> nums = EvalAsserter.extractNonPercentNumbers(answer);
         assertTrue(nums.isEmpty(), "序号不应被抽取: " + nums);
@@ -50,6 +50,13 @@ class EvalAsserterTest {
         assertTrue(nums.contains("0.082"));
         assertFalse(nums.contains("1"));
         assertFalse(nums.contains("2"));
+    }
+
+    @Test
+    void Top和排名序号不抽取() {
+        Set<String> nums = EvalAsserter.extractNonPercentNumbers(
+                "Top 3 为慢端点；排名 1 是 health，排名 2 是 UNKNOWN，排名 3 是 /**");
+        assertTrue(nums.isEmpty(), "Top/排名序号不应参与比对: " + nums);
     }
 
     @Test
