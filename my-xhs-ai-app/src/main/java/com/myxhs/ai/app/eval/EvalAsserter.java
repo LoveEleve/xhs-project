@@ -19,14 +19,17 @@ public class EvalAsserter {
      *  2026-08-15 / 2025年 / 8-15 / 07:42 / 07:42:53.123Z / T07:42:53。
      *  注意不用 \b 边界——JDK 的 \b 把中文当 word 字符（"在8" 之间无边界），须按形态直接匹配。 */
     private static final Pattern DATETIME = Pattern.compile(
-            "\\d{4}-\\d{1,2}-\\d{1,2}(?:[T ]\\d{1,2}:\\d{2}(?::\\d{2})?(?:\\.\\d+)?(?:Z)?)?"
-                    + "|\\d{4}-\\d{1,2}(?!-\\d)"
-                    + "|(?<!\\d)\\d{1,2}-\\d{1,2}(?!\\d)"
-                    + "|\\d{4}\\s*年(?:\\s*\\d{1,2}\\s*月(?:\\s*\\d{1,2}\\s*日)?)?"
-                    + "|\\d{1,2}月(?:\\d{1,2}日)?"
+            "(?<![0-9])(?:"
+                    + "\\d{4}-(?:1[0-2]|0?[1-9])-(?:3[01]|[12]\\d|0?[1-9])(?:[T ]\\d{1,2}:\\d{2}(?::\\d{2})?(?:\\.\\d+)?(?:Z)?)?"
+                    + "|\\d{4}-(?:1[0-2]|0?[1-9])"
+                    + "|(?:1[0-2]|0?[1-9])-(?:3[01]|[12]\\d|0?[1-9])"
+                    + "|\\d{4}\\s*年(?:\\s*(?:1[0-2]|0?[1-9])\\s*月(?:\\s*(?:3[01]|[12]\\d|0?[1-9])\\s*日)?)?"
+                    + "|(?:1[0-2]|0?[1-9])\\s*月(?:\\s*(?:3[01]|[12]\\d|0?[1-9])\\s*日)?"
                     + "|\\d{1,2}:\\d{2}(?::\\d{2})?(?:\\.\\d+)?(?:Z)?"
                     // traceId/请求 ID：32 位 hex 非业务数字（M14 抽样暴露：traceId 查询用例误报幻觉）
-                    + "|[0-9a-fA-F]{32}");
+                    + "|[0-9a-fA-F]{32}"
+                    + ")(?!\\d)");
+
 
     /** 逐条执行硬断言；返回未通过的断言描述（空=硬断言全过） */
     public List<String> checkHard(EvalCase c, AgentRun run) {
@@ -67,13 +70,14 @@ public class EvalAsserter {
         Set<String> ansNums = extractNonPercentNumbers(answer);
         Set<Double> evValues = new LinkedHashSet<>();
         run.registry().records().forEach(r -> evValues.addAll(toValues(extractAllNumbers(r.result()))));
+        long nonIntegerEvidence = evValues.stream().filter(v -> !isIntegerLike(v)).count();
         Set<String> unmatched = new LinkedHashSet<>();
         for (String a : ansNums) {
             Double av = parse(a);
             if (av == null) {
                 continue;
             }
-            boolean matched = evValues.stream().anyMatch(ev -> approxEquals(av, ev));
+            boolean matched = evValues.stream().anyMatch(ev -> approxEquals(av, ev, nonIntegerEvidence));
             if (!matched) {
                 unmatched.add(a);
             }
@@ -81,20 +85,23 @@ public class EvalAsserter {
         return unmatched;
     }
 
-    /** 数值一致性容差：直接近似（±0.5 或 ±10%）或量级窗口（证据的 0.5x~3x，覆盖模型
-     *  推导值如 65.1-21.1=44；编造的数量级跳变如 46→10000 仍检出） */
+    /** 数值一致性容差：直接近似（±0.5 或 ±10%）+ 秒/毫秒换算；
+     *  推导值容忍仅覆盖同量级的非整数结果，避免 9→10000 这类编造被量级规则吞掉。 */
     static boolean approxEquals(double a, double b) {
+        return approxEquals(a, b, 0);
+    }
+
+    static boolean approxEquals(double a, double b, long nonIntegerEvidence) {
         if (a == b) {
             return true;
         }
         if (approxEqualsRaw(a, b)) {
             return true;
         }
-        // 时间单位换算容忍：模型常把 0.553 秒写成 553ms，语义一致不应判幻觉
-        if (approxEqualsRaw(a * 1000.0, b) || approxEqualsRaw(a, b * 1000.0)) {
+        if (approxEqualsUnit(a * 1000.0, b) || approxEqualsUnit(a, b * 1000.0)) {
             return true;
         }
-        return false;
+        return approxEqualsDerived(a, b, nonIntegerEvidence);
     }
 
     private static boolean approxEqualsRaw(double a, double b) {
@@ -103,14 +110,30 @@ public class EvalAsserter {
             return true;
         }
         double scale = Math.max(Math.abs(a), Math.abs(b));
-        if (scale > 0 && diff <= 0.10 * scale) {
-            return true;
+        return scale > 0 && diff <= 0.10 * scale;
+    }
+
+    private static boolean approxEqualsUnit(double a, double b) {
+        double diff = Math.abs(a - b);
+        double scale = Math.max(Math.abs(a), Math.abs(b));
+        return diff <= 0.5 || (scale > 0 && diff <= 0.01 * scale);
+    }
+
+    private static boolean approxEqualsDerived(double a, double b, long nonIntegerEvidence) {
+        if (a <= 0 || b <= 0) {
+            return false;
         }
-        if (a > 0 && b > 0) {
-            double ratio = Math.max(a, b) / Math.min(a, b);
-            return ratio <= 3.0;
+        boolean anyNonInteger = !isIntegerLike(a) || !isIntegerLike(b);
+        if (!anyNonInteger || nonIntegerEvidence < 2) {
+            return false;
         }
-        return false;
+        double min = Math.min(a, b);
+        double max = Math.max(a, b);
+        return max / min <= 3.0;
+    }
+
+    private static boolean isIntegerLike(double v) {
+        return Math.abs(v - Math.rint(v)) < 1e-9;
     }
 
     static Double parse(String s) {
@@ -142,6 +165,7 @@ public class EvalAsserter {
         String cleaned = text.replaceAll("\\[[^\\]]*\\]|\\bev_[a-z0-9]+", " ");
         // 剥掉日期时间（asOf/时间戳/8-15 日期表达）
         cleaned = DATETIME.matcher(cleaned).replaceAll(" ");
+        cleaned = cleaned.replaceAll("\\d{4}\\s*年\\s*(?:1[0-2]|0?[1-9])\\s*月(?:\\s*(?:3[01]|[12]\\d|0?[1-9])\\s*日)?", " ");
         cleaned = cleaned.replaceAll("\\d+\\s*天", " ");
         cleaned = cleaned.replaceAll("(?i)(?:top|排名)\\s*\\d+", " ");
         cleaned = cleaned.replaceAll("(?m)^\\s*\\|\\s*\\d+\\s*\\|", "| ");

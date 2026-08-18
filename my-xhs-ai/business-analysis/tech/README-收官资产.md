@@ -21,6 +21,9 @@
 | T11 评测理论 | `theory-evaluation-v1.md` | 指标/断言/Judge/bad case 闭环 |
 | T13 反编造专题 | `theory-anti-hallucination-v1.md` | 证据链/数字一致性/评测器边界 |
 | T13 Harness 选型专题 | `theory-harness-vs-framework-v1.md` | 成熟框架 vs 最小自研控制面 |
+| T13 多智能体专题 | `theory-multiagent-v1.md` | M13 双 Agent PoC、分派式边界与评测取舍 |
+| T14 外部方案对照 | `t14-external-comparison-v1.md` | Anthropic / OWASP / Promptfoo / Temporal / Langfuse 对照 |
+| 项目最终状态页 | `final-status-v1.md` | 收官口径、真实边界与阅读路径统一页 |
 
 ---
 
@@ -38,7 +41,10 @@
 2. 深聊追问 → `nine-questions-v1.md`（九问）
 3. 投递定位 → `jd-hit-matrix-v1.md`（矩阵）
 4. 作品集/博客 → `retrospective-v1.md`（复盘）
-5. 证据引用 → `docs/reports/`（评测报告）
+5. 理论总入口 → `theory-agent-v1.md` → `theory-enterprise-agent-engineering-v1.md` → `theory-evaluation-v1.md`
+6. 专题补强 → `theory-anti-hallucination-v1.md` → `theory-harness-vs-framework-v1.md` → `theory-multiagent-v1.md`
+7. 外部对照与状态页 → `t14-external-comparison-v1.md` → `final-status-v1.md`
+8. 证据引用 → `docs/reports/`（评测报告）
 
 ---
 
@@ -50,5 +56,5 @@
 | T1 nightly 全量评测 | 已完成（100 条首跑） |
 | T4 成本/时延/发散率报告 | 已完成基础摘要，后续可按需细化 |
 | T9/T10/T11 理论讲解系列 | 已完成首版 + 深度修订 |
-| T13 专题长文 | 已完成反编造 + Harness 选型，待多智能体专题 |
-| T14 外部方案对照 | 可选增强 |
+| T13 专题长文 | 已完成反编造 + Harness 选型 + 多智能体专题 |
+| T14 外部方案对照 | 已完成首版 |
