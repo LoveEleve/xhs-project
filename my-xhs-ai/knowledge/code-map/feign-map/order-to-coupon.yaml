@@ -1,0 +1,12 @@
+edge_id: order-to-coupon
+caller_service: order
+callee_service: coupon
+client_class: CouponFeignClient
+priority: P0
+main_endpoints:
+  - /api/coupon/discount
+  - /api/coupon/use
+  - /api/coupon/return
+semantic_role: 查询折扣、核销优惠券、失败后返券
+why_it_matters: 券不是静态折扣值，而是交易状态参与者
+source: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/feign/CouponFeignClient.java

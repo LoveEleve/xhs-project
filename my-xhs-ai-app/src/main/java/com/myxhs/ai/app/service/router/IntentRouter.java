@@ -84,12 +84,21 @@ public class IntentRouter {
         }
         String text = userMessage.toLowerCase(Locale.ROOT);
 
+        // L0 系统知识问答：先于通用 AGENT，避免“整体架构是什么”误走运行态调查
+        if (containsAny(text, "整体架构", "系统架构", "服务分层", "主链路", "边界是什么", "为什么这样设计", "为什么复杂",
+                "bff", "编排中心", "三级扣减", "事务消息", "本地消息表", "补偿任务", "支付链", "退款链", "关单", "补偿路径")) {
+            return Intent.SYSTEM_KNOWLEDGE;
+        }
+        if (containsAny(text, "哪个类", "哪个核心类", "核心类", "哪个consumer", "哪个 consumer", "哪个job", "哪个 job", "哪个topic", "哪个 topic", "哪个feign", "哪个 feign", "代码里在哪", "哪一层负责", "主逻辑在哪", "负责库存预扣主逻辑", "负责支付主逻辑", "负责退款主逻辑")) {
+            return Intent.CODE_STRUCTURE;
+        }
+
+        if (looksLikeRequestTraceQuery(userMessage, text)) {
+            return Intent.REQUEST_TRACE;
+        }
+
         // L0 归因/分析优先：为什么订单量下降 → Agent（确定信号不走模型）
         if (matches(INVESTIGATION_PATTERNS, text)) {
-            return Intent.AGENT;
-        }
-        // traceId 强信号
-        if (TRACE_ID_PATTERN.matcher(userMessage.trim()).matches()) {
             return Intent.AGENT;
         }
 
@@ -139,5 +148,22 @@ public class IntentRouter {
 
     private static Pattern compile(String keyword) {
         return Pattern.compile(Pattern.quote(keyword), Pattern.CASE_INSENSITIVE);
+    }
+
+    private static boolean containsAny(String text, String... keys) {
+        for (String k : keys) {
+            if (text.contains(k.toLowerCase(Locale.ROOT))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean looksLikeRequestTraceQuery(String userMessage, String text) {
+        String trimmed = userMessage == null ? "" : userMessage.trim();
+        if (TRACE_ID_PATTERN.matcher(trimmed).matches()) {
+            return true;
+        }
+        return containsAny(text, "traceid", "requestid", "request id", "请求id", "请求号", "调用链", "请求流转", "链路追踪", "trace id");
     }
 }

@@ -1,0 +1,53 @@
+id: compensation-path
+category: business
+priority: P1
+question: my-xhs 里的补偿链为什么存在，它到底在收什么残局？
+answer_shape: long
+serve_mode: direct
+scope: compensation-boundary
+boundary:
+  - 不替代 transaction-message-anchor 对第一跳绑定器的解释
+  - 不展开每一个补偿 topic / job / retry 参数的实现细节
+  - 不把所有失败问题都归因成补偿问题
+answer: >
+  补偿链存在的原因，不是因为系统“不够稳定”，而是因为一笔交易即使已经合法成立，后续某个局部链路仍然可能失败：例如库存释放没成功、优惠券返还失败、通知没发出去。补偿的职责，就是让这些“已经成立、但后续残局没收干净”的状态继续向最终一致性收敛。
+structured_points:
+  trigger: 订单已成立后，后续局部链路失败或超时
+  state_role: 补偿不是让交易从未发生，而是收拾已发生交易留下的残局
+  typical_cases: 库存释放失败、退券失败、通知失败、局部链路重试失败
+  async_nature: 补偿通常通过 MQ / job / retry 继续推进，而不是要求原请求同步成功
+  boundary: 补偿解决的是“后续链路收敛”，不是“订单如何安全成立”
+  output: 局部失败被继续重试、对账或收敛，避免半完成状态长期存在
+why_it_matters: >
+  如果把系统想成“订单一旦成功，后面就不会再出事”，就无法理解为什么会有补偿消费者、重试任务、死信和对账链路；
+  补偿的存在本身说明：在分布式系统里，成立和收尾是两件不同的事。
+anti_confusion:
+  - 补偿不是事务消息的替代物
+  - 补偿处理的是成立后的残局，不是成立前的原子性
+  - 补偿不是一次性救火，而是系统化收敛机制
+best_for_questions:
+  - 为什么需要补偿链？
+  - 补偿到底在收什么残局？
+  - 为什么交易成立了，系统后面还会继续重试很多动作？
+sources:
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/03-transaction-message.md
+    role: doc-primary
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/job/LocalMessageRetryJob.java
+    role: code-retry
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/service/OrderService.java
+    role: code-core
+source_version: 2026-08-20
+last_verified_at: 2026-08-20
+evidence_level:
+  - L0
+  - L1
+confidence: medium
+notes:
+  - 当前这张卡先解释“补偿为什么存在”，未来还可以拆成库存补偿 / 券补偿 / 通知补偿等更细卡片
+followup_docs:
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/03-transaction-message.md
+related_cards:
+  - transaction-message-anchor
+  - close-order
+  - refund-flow
+  - coupon-lifecycle

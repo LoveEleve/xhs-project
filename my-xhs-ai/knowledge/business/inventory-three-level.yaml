@@ -1,0 +1,61 @@
+id: inventory-three-level
+category: business
+priority: P0
+question: 为什么 my-xhs 的库存不是简单扣减，而是三级扣减？
+answer_shape: long
+serve_mode: direct
+scope: inventory-rule-boundary
+boundary:
+  - 不展开 Redis Lua / bucket 具体实现细节
+  - 不替代 inventory-state-role 和 order-inventory-payment-flow 的架构层解释
+  - 不完整覆盖所有补偿/释放/确认分支
+answer: >
+  my-xhs 的库存不是“下单时把 available_stock 减掉”这么简单，而是把库存拆成至少三个状态层：可售、冻结/预占、已扣减（或锁定后的确认态）。
+  原因不是为了把逻辑写复杂，而是为了把“订单成立前”“支付前后”“取消/超时/补偿”这些不同时间点上的库存语义分开。没有这种分层，系统很容易在高并发和失败恢复场景下出现超卖、重复释放或状态回滚污染。
+structured_points:
+  problem: 单层库存扣减无法同时表达下单瞬间、待支付、取消回滚、支付成功后的不同语义
+  state_split: 至少需要把可售库存、预扣/锁定库存、最终扣减状态分开
+  order_boundary: 订单成立时先预扣，不应等支付成功后才第一次动库存
+  payment_boundary: 支付成功后库存才真正从“预留”进入“最终消耗”
+  failure_boundary: 订单取消、超时、支付失败时，需要能回滚预留而不污染最终已扣减状态
+  output: 通过多层库存状态，系统才能既防超卖，又支持取消/补偿/重试
+why_it_matters: >
+  如果不把库存拆层，后面几乎所有交易链失败路径都会变得不可控：
+  你既无法在订单刚成立时安全预扣，也无法在取消/超时/支付失败时只回滚预留部分，最终会把“成立中的订单”和“已经完成的消耗”混在一起。
+anti_confusion:
+  - 三级扣减不是为了炫技，而是为了把库存的时间语义拆开
+  - 预扣不等于最终消耗
+  - 支付成功不是第一次碰库存，而是把预留状态推进到最终状态
+best_for_questions:
+  - 为什么库存要三级扣减？
+  - 为什么不能只在支付成功时扣库存？
+  - 为什么库存会比商品服务复杂得多？
+trigger_keywords:
+  - 库存
+  - 三级扣减
+  - 预扣
+  - 支付成功时扣库存
+  - 可售库存
+sources:
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/01-inventory-three-level.md
+    role: doc-primary
+  - path: /data/workspace/my-xhs/my-xhs-inventory/src/main/java/com/myxhs/inventory/service/InventoryService.java
+    role: code-core
+  - path: /data/workspace/my-xhs/my-xhs-inventory/src/main/java/com/myxhs/inventory/consumer/OrderTransactionConsumer.java
+    role: code-consumer
+source_version: 2026-08-20
+last_verified_at: 2026-08-20
+evidence_level:
+  - L0
+  - L1
+confidence: high
+notes:
+  - 这张卡先解释业务规则与时间语义，不负责讲透 Lua、Redis key、补偿任务的全部实现细节
+followup_docs:
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/01-inventory-three-level.md
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/03-transaction-message.md
+related_cards:
+  - inventory-state-role
+  - transaction-chain
+  - order-inventory-payment-flow
+  - transaction-message-anchor

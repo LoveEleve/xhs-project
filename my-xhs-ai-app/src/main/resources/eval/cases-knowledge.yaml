@@ -1,0 +1,62 @@
+cases:
+  - id: k_arch_global
+    query: "my-xhs 的整体架构是什么？"
+    tags: [knowledge, architecture]
+    statusIn: [SUCCEEDED]
+    minEvidence: 0
+    anyContains: ["gateway", "order", "inventory", "RocketMQ", "MySQL"]
+
+  - id: k_arch_bff
+    query: "为什么 home 是 BFF，而不是事务中心？"
+    tags: [knowledge, architecture]
+    statusIn: [SUCCEEDED]
+    minEvidence: 0
+    anyContains: ["BFF", "聚合", "事务中心", "order"]
+
+  - id: k_business_inventory
+    query: "为什么库存要三级扣减？"
+    tags: [knowledge, business]
+    statusIn: [SUCCEEDED]
+    minEvidence: 0
+    anyContains: ["可售", "预扣", "最终", "支付成功"]
+
+  - id: k_business_txmsg
+    query: "为什么事务消息、本地消息表和补偿任务必须同时存在？"
+    tags: [knowledge, business]
+    statusIn: [SUCCEEDED]
+    minEvidence: 0
+    anyContains: ["事务消息", "本地消息表", "补偿", "第一跳"]
+
+  - id: k_code_topic
+    query: "哪个 topic 负责把订单推进到库存世界？"
+    tags: [knowledge, code]
+    statusIn: [SUCCEEDED]
+    minEvidence: 0
+    contains: ["ORDER_TRANSACTION_TOPIC"]
+
+  - id: k_code_consumer
+    query: "哪个 consumer 负责库存预扣？"
+    tags: [knowledge, code]
+    statusIn: [SUCCEEDED]
+    minEvidence: 0
+    contains: ["OrderTransactionConsumer"]
+
+  - id: k_code_listener
+    query: "哪个类负责事务消息回查？"
+    tags: [knowledge, code]
+    statusIn: [SUCCEEDED]
+    minEvidence: 0
+    contains: ["OrderTransactionListener"]
+
+  - id: k_code_job
+    query: "哪个 job 负责本地消息补发与死信扫描？"
+    tags: [knowledge, code]
+    statusIn: [SUCCEEDED]
+    minEvidence: 0
+    contains: ["LocalMessageRetryJob"]
+
+  - id: k_code_service
+    query: "哪个核心类负责库存预扣主逻辑？"
+    tags: [knowledge, code]
+    statusIn: [SUCCEEDED]
+    anyContains: ["InventoryService", "preDeduct", "doPreDeduct"]

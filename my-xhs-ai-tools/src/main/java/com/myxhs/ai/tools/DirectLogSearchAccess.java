@@ -39,6 +39,11 @@ public class DirectLogSearchAccess implements LogSearchAccess {
     }
 
     @Override
+    public java.util.List<String> services() {
+        return new java.util.ArrayList<>(fileWhitelist.keySet());
+    }
+
+    @Override
     public String searchLog(String service, String keyword, String tailLines) {
         String path = fileWhitelist.get(service == null ? "" : service.trim());
         if (path == null) {

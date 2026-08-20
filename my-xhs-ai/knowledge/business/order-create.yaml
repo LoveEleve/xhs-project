@@ -1,0 +1,55 @@
+id: order-create
+category: business
+priority: P0
+question: my-xhs 的下单创建过程到底做了什么？
+answer_shape: long
+serve_mode: direct
+scope: order-create-rule
+boundary:
+  - 不替代 transaction-message-anchor 对一致性第一跳的解释
+  - 不展开库存三级扣减和支付成功后的全部后续分支
+  - 不回答首页/推荐等读侧问题
+answer: >
+  my-xhs 的下单不是一次简单的“插订单表”动作，而是一次同步编排：先校验用户地址、SKU、库存、优惠券等前置事实，再生成订单和订单明细，并把“订单已经合法成立”推进到后续库存/支付世界。
+  所以下单创建的核心，不在“插入成功”，而在“这笔订单为什么现在可以成立，以及成立之后怎样继续推进”。
+structured_points:
+  entry: 用户提交下单请求，order 服务接管主链
+  preconditions: 地址、商品、库存、优惠等前置事实必须先拉齐
+  write_phase: 订单主表、明细、事件、本地消息表等在本地事务中形成锚点
+  state_anchor: 订单创建成功只是交易链锚点，不是整条链的终点
+  handoff: 创建成功后通过事务消息/本地消息把库存预扣和后续链路推进出去
+  failure_boundary: 创建前失败是“订单不成立”，创建后失败是“订单已成立但后续链路继续收敛”
+why_it_matters: >
+  如果把下单理解成“插一行订单表”，后面事务消息、本地消息表、库存预扣、支付推进、补偿任务都会显得多余；
+  实际上下单创建是整条交易链最关键的状态锚点。
+anti_confusion:
+  - 下单成功不等于整条交易链已经完成
+  - 订单服务不拥有全部事实，但负责把它们收束成一次合法下单动作
+  - 订单创建后的问题，通常不是“订单没建成功”，而是“后续链路没有继续收敛”
+best_for_questions:
+  - 下单创建过程到底做了什么？
+  - 为什么下单不是简单插表？
+  - 为什么订单创建成功只是状态锚点？
+sources:
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/02-order-create.md
+    role: doc-primary
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/service/OrderService.java
+    role: code-core
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/service/OrderTransactionService.java
+    role: code-transaction
+source_version: 2026-08-20
+last_verified_at: 2026-08-20
+evidence_level:
+  - L0
+  - L1
+confidence: high
+notes:
+  - 这张卡先解释“下单创建”的业务主线，不单独承担消息一致性和补偿链的全部细节
+followup_docs:
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/02-order-create.md
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/03-transaction-message.md
+related_cards:
+  - order-orchestration-role
+  - transaction-chain
+  - transaction-message-anchor
+  - inventory-three-level

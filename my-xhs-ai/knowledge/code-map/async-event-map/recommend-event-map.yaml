@@ -1,0 +1,16 @@
+event_network: recommend
+priority: P1
+question: 推荐行为事件是怎样被推进到推荐侧的？
+answer_shape: medium
+serve_mode: direct
+main_topics:
+  - RECOMMEND_BEHAVIOR_TOPIC
+producers:
+  - search(RecommendService)
+consumers:
+  - 推荐/特征构建消费链
+semantic_role: 把用户行为推进到推荐特征与召回侧
+why_it_matters: 说明推荐不是在线直接算完，而依赖行为事件的异步积累。
+sources:
+  - /data/workspace/my-xhs/my-xhs-search/src/main/java/com/myxhs/search/service/RecommendService.java
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/06-search-recommendation-home/README.md

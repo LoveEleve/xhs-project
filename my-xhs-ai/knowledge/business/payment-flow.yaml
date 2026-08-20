@@ -1,0 +1,52 @@
+id: payment-flow
+category: business
+priority: P0
+question: my-xhs 的支付链路是怎样推进的？
+answer_shape: long
+serve_mode: direct
+scope: payment-rule-boundary
+boundary:
+  - 不展开支付渠道 SDK 或第三方网关细节
+  - 不替代 order-create / transaction-message-anchor 的前置成立条件解释
+  - 不完整覆盖退款链与所有补偿细节
+answer: >
+  在 my-xhs 里，支付不是一条孤立链路，而是主交易链的后半段状态推进：订单先合法成立，库存先进入预扣/锁定语义，之后支付链才接管资金状态，并根据支付成功、失败、超时等不同结果把订单和库存继续推进到不同分支。
+structured_points:
+  precondition: 只有订单已成立、库存已进入预留语义后，支付链才有意义
+  state_role: 支付的职责不是创建交易事实，而是决定已成立交易如何进入完成/失败/取消分支
+  success_path: 支付成功后，库存从预留推进到最终消耗，订单进入后续完成态
+  failure_path: 支付失败/超时不会让订单“从未存在”，而是进入待收敛/关闭/回滚路径
+  async_followup: 支付结果之后仍可能触发通知、补偿、退款等后续链路
+  boundary: 支付链处理的是“已成立订单的资金状态推进”，不是前置事实拉齐阶段
+why_it_matters: >
+  如果把支付看成一条独立服务动作，就会误以为支付只是“调个接口看成不成功”；
+  实际上它在交易主链里承担的是后半段状态机推进者的角色。
+anti_confusion:
+  - 支付不是订单成立前的前置条件收集者
+  - 支付失败不等于订单从未成立
+  - 支付成功也不是唯一需要处理的后续状态，后面仍可能有通知/补偿/退款
+best_for_questions:
+  - 支付链路是怎样推进的？
+  - 为什么支付不只是一个外部附属接口？
+  - 支付成功/失败后订单和库存分别会怎样？
+sources:
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/04-payment-flow.md
+    role: doc-primary
+  - path: /data/workspace/my-xhs/my-xhs-payment/src/main/java/com/myxhs/payment/service/PaymentService.java
+    role: code-core
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/feign/PaymentFeignClient.java
+    role: code-feign
+source_version: 2026-08-20
+last_verified_at: 2026-08-20
+evidence_level:
+  - L0
+  - L1
+confidence: medium
+notes:
+  - 这张卡解释的是支付在主交易链中的角色，不直接承担第三方支付协议或退款全链细节
+followup_docs:
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/04-payment-flow.md
+related_cards:
+  - order-inventory-payment-flow
+  - inventory-three-level
+  - order-create

@@ -14,6 +14,13 @@ import dev.langchain4j.agent.tool.Tool;
  */
 public interface LogSearchAccess {
 
+    default java.util.List<String> services() {
+        return java.util.List.of("my-xhs-gateway", "my-xhs-home", "my-xhs-order", "my-xhs-payment",
+                "my-xhs-inventory", "my-xhs-product", "my-xhs-user", "my-xhs-content", "my-xhs-search",
+                "my-xhs-cart", "my-xhs-coupon", "my-xhs-notification", "my-xhs-ai-app");
+    }
+
+
     @Tool("检索服务日志（白名单服务+最近 N 行内过滤 keyword；service 如 my-xhs-order / my-xhs-gateway / my-xhs-elasticsearch；" +
             "keyword 仅允许字母数字与常见符号，长度≤100）")
     String searchLog(@P("服务名（白名单），如 my-xhs-order") String service,

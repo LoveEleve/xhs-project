@@ -10,6 +10,7 @@ import com.myxhs.ai.app.service.conversation.ConversationService;
 import com.myxhs.ai.app.service.router.Intent;
 import com.myxhs.ai.app.service.router.IntentRouter;
 import com.myxhs.ai.app.service.store.RunStore;
+import com.myxhs.ai.tools.LogSearchAccess;
 import dev.langchain4j.data.message.ChatMessage;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -78,6 +79,9 @@ public class RunManager {
     private final IntentRouter intentRouter;
     /** 会话服务（M10；=null 时多轮功能关闭，兼容旧测试构造） */
     private final ConversationService conversation;
+    /** 第一版系统知识问答服务（=null 时知识路由关闭） */
+    private final com.myxhs.ai.app.service.knowledge.KnowledgeRoutingService knowledgeRoutingService;
+    private final LogSearchAccess logSearchAccess;
     /** M10 用户级长期记忆（跨会话持久化；=null 时记忆功能关闭） */
     private final com.myxhs.ai.app.service.memory.MemoryService memory;
     /** D6 Langfuse Trace：Agent 事件 → OTel span（=null 时 trace 功能关闭） */
@@ -94,6 +98,10 @@ public class RunManager {
                       @org.springframework.beans.factory.annotation.Autowired(required = false)
                       ConversationService conversation,
                       @org.springframework.beans.factory.annotation.Autowired(required = false)
+                      com.myxhs.ai.app.service.knowledge.KnowledgeRoutingService knowledgeRoutingService,
+                      @org.springframework.beans.factory.annotation.Autowired(required = false)
+                      com.myxhs.ai.tools.LogSearchAccess logSearchAccess,
+                      @org.springframework.beans.factory.annotation.Autowired(required = false)
                       com.myxhs.ai.app.service.memory.MemoryService memory,
                       @org.springframework.beans.factory.annotation.Autowired(required = false)
                       com.myxhs.ai.app.service.agent.tracing.LangfuseTracingListener tracingListener,
@@ -104,6 +112,8 @@ public class RunManager {
         this.metrics = metrics;
         this.intentRouter = intentRouter;
         this.conversation = conversation;
+        this.knowledgeRoutingService = knowledgeRoutingService;
+        this.logSearchAccess = logSearchAccess;
         this.memory = memory;
         this.tracingListener = tracingListener;
         this.runMetadataStore = runMetadataStore;
@@ -112,7 +122,7 @@ public class RunManager {
 
     /** 纯规则降级（测试/离线；无 LLM 分类时无信号输入默认引导） */
     public RunManager(AgentHarness harness, RunStore store, RunMetrics metrics, IntentRouter intentRouter) {
-        this(harness, store, metrics, intentRouter, null, null, null, null);
+        this(harness, store, metrics, intentRouter, null, null, null, null, null, null);
     }
 
     public RunManager(AgentHarness harness, RunStore store, RunMetrics metrics) {
@@ -220,6 +230,17 @@ public class RunManager {
     /** 多轮提交（M10）：convId 非空时挂接会话（历史注入/消息落库/同会话串行 409） */
     public RunEntry submit(String query, String userId, String convId) {
         purgeDone();
+        // 第一版知识问答主路径：先于传统 IntentRouter，避免“整体架构是什么”误走运行态诊断或 out-of-scope
+        if (knowledgeRoutingService != null && knowledgeRoutingService.matches(query)) {
+            String answer = knowledgeRoutingService.answer(query);
+            String note = query.contains("哪个类") || query.contains("哪个核心类") || query.contains("哪个consumer")
+                    || query.contains("哪个 consumer") || query.contains("哪个job") || query.contains("哪个 topic")
+                    || query.contains("哪个topic") || query.contains("哪个feign") || query.contains("哪个 feign")
+                    ? "源码结构问答（cards/maps 主路径）"
+                    : "系统知识问答（cards/maps 主路径）";
+            return submitDirectAnswer(query, userId, convId, answer, note);
+        }
+
         Intent intent = intentRouter.classify(query);
         if (intent == Intent.GREETING) {
             return submitDirectAnswer(query, userId, convId, IntentRouter.GREETING_ANSWER,
@@ -228,6 +249,10 @@ public class RunManager {
         if (intent == Intent.OUT_OF_SCOPE) {
             return submitDirectAnswer(query, userId, convId, IntentRouter.OUT_OF_SCOPE_ANSWER,
                     "超范围话题拒答（非诊断任务，未调用工具/模型）");
+        }
+        if (intent == Intent.REQUEST_TRACE) {
+            return submitDirectAnswer(query, userId, convId, diagnoseRequestTrace(query),
+                    "requestId/traceId 请求流转诊断（跨服务日志汇总）");
         }
         String runId = AgentHarness.newRunId();
         if (convId != null && conversation != null) {
@@ -387,6 +412,111 @@ public class RunManager {
 
     public RunEntry get(String runId) {
         return runs.get(runId);
+    }
+
+    private String diagnoseRequestTrace(String query) {
+        String keyword = extractTraceKeyword(query);
+        if (keyword == null) {
+            return "未识别到 requestId/traceId，请直接提供 32 位 traceId，或在问题里带上 requestId/traceId 关键字。";
+        }
+        if (logSearchAccess == null || logSearchAccess.services().isEmpty()) {
+            return "当前未配置可检索的日志服务白名单，暂时无法做 requestId/traceId 请求流转诊断。";
+        }
+        java.util.List<String> services = logSearchAccess.services().stream().distinct().toList();
+        java.util.List<CompletableFuture<TraceServiceResult>> scans = services.stream()
+                .map(service -> CompletableFuture.supplyAsync(
+                        () -> scanTraceService(service, keyword), executor)
+                        .completeOnTimeout(TraceServiceResult.failed(service), 3, TimeUnit.SECONDS)
+                        .exceptionally(ex -> TraceServiceResult.failed(service)))
+                .toList();
+        java.util.List<TraceServiceResult> results = scans.stream().map(CompletableFuture::join).toList();
+        java.util.List<String> hits = results.stream()
+                .filter(TraceServiceResult::hit)
+                .map(r -> r.service() + layerHint(r.service()) + " 命中")
+                .toList();
+        java.util.List<String> miss = results.stream()
+                .filter(r -> !r.hit() && !r.failed())
+                .map(TraceServiceResult::service)
+                .toList();
+        java.util.List<String> failed = results.stream()
+                .filter(TraceServiceResult::failed)
+                .map(TraceServiceResult::service)
+                .toList();
+        if (hits.isEmpty()) {
+            StringBuilder answer = new StringBuilder("未在当前白名单服务日志中检索到 `")
+                    .append(keyword).append("`。已扫描服务：").append(String.join(", ", services));
+            appendFailures(answer, failed);
+            answer.append("。建议扩大日志行数、补齐业务服务白名单，或换 traceId/requestId 原值重试。");
+            return answer.toString();
+        }
+        StringBuilder answer = new StringBuilder();
+        answer.append("已按 requestId/traceId=`").append(keyword).append("` 扫描白名单服务日志。\n\n命中服务：")
+                .append(String.join("、", hits));
+        if (!miss.isEmpty()) {
+            answer.append("\n未命中服务：").append(String.join("、", miss));
+        }
+        appendFailures(answer, failed);
+        answer.append("\n\n这说明请求大致经过以上命中服务；优先查看最靠后的命中服务与其下游依赖，再结合对应服务日志定位卡点或异常代码层。\n如果你愿意，我下一步可以继续把命中服务映射到具体 code structure card / 类职责。\n");
+        return answer.toString();
+    }
+
+    private TraceServiceResult scanTraceService(String service, String keyword) {
+        try {
+            String result = logSearchAccess.searchLog(service, keyword, "2000");
+            return new TraceServiceResult(service, hasLogMatch(result), false);
+        } catch (Exception e) {
+            log.warn("[runmgr] trace scan failed service={} keyword={} err={}", service, keyword, e.getMessage());
+            return TraceServiceResult.failed(service);
+        }
+    }
+
+    private static boolean hasLogMatch(String result) {
+        if (result == null || !result.contains("\"status\":\"ok\"")) {
+            return false;
+        }
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\\\"matches\\\"\\s*:\\s*([1-9][0-9]*)").matcher(result);
+        return matcher.find();
+    }
+
+    private static void appendFailures(StringBuilder answer, java.util.List<String> failed) {
+        if (!failed.isEmpty()) {
+            answer.append("\n扫描失败服务：").append(String.join("、", failed));
+        }
+    }
+
+    private record TraceServiceResult(String service, boolean hit, boolean failed) {
+        private static TraceServiceResult failed(String service) {
+            return new TraceServiceResult(service, false, true);
+        }
+    }
+
+    private static String extractTraceKeyword(String query) {
+        if (query == null) {
+            return null;
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("([a-fA-F0-9]{32})").matcher(query);
+        if (m.find()) {
+            return m.group(1).toLowerCase(java.util.Locale.ROOT);
+        }
+        java.util.regex.Matcher kv = java.util.regex.Pattern.compile("(?:traceid|trace id|requestid|request id|请求id|请求号)\\s*[:：=]?\\s*([A-Za-z0-9._\\-]{6,100})",
+                java.util.regex.Pattern.CASE_INSENSITIVE).matcher(query);
+        if (kv.find()) {
+            return kv.group(1);
+        }
+        return null;
+    }
+
+    private static String layerHint(String service) {
+        if (service.contains("gateway") || service.contains("home")) {
+            return "（入口/聚合层）";
+        }
+        if (service.contains("order") || service.contains("payment") || service.contains("inventory") || service.contains("coupon")) {
+            return "（交易链路）";
+        }
+        if (service.contains("content") || service.contains("search") || service.contains("product") || service.contains("user") || service.contains("cart")) {
+            return "（业务服务层）";
+        }
+        return "";
     }
 
     public boolean isDone(String runId) {

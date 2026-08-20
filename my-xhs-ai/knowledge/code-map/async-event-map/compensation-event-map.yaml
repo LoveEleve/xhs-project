@@ -1,0 +1,17 @@
+event_network: compensation
+priority: P1
+question: 交易成立后的补偿与重试链大致怎样分布？
+answer_shape: medium
+serve_mode: direct
+main_topics:
+  - ORDER_TRANSACTION_TOPIC
+  - 本地消息表补发 / 死信扫描 / 各域补偿任务
+producers:
+  - order / payment / inventory 等交易相关服务
+consumers:
+  - 各域补偿消费者 / job
+semantic_role: 处理“交易已成立，但后续局部链路还没收干净”的残局
+why_it_matters: 说明分布式交易的复杂度不在成立那一瞬，而在成立之后的持续收敛。
+sources:
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/03-transaction-message.md
+  - /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/job/LocalMessageRetryJob.java

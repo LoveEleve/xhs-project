@@ -1,0 +1,60 @@
+id: middleware-role
+category: architecture
+priority: P1
+question: 系统里的 MySQL、Redis、RocketMQ、Nacos、XXL-Job、Elasticsearch 分别承担什么职责？
+answer_shape: medium
+serve_mode: direct
+scope: middleware-boundary
+boundary:
+  - 不展开每种中间件的内部参数调优细节
+  - 不替代 transaction-message / caching / observability 等更细分卡片
+  - 不回答某个具体故障的排查步骤
+answer: >
+  my-xhs 的中间件不是一组“部署附件”，而是系统职责的一部分：MySQL 持有核心业务事实，Redis 承担缓存/原子扣减/会话类热点状态，RocketMQ 负责异步扩散与最终一致性推进，Nacos 负责配置与服务发现，XXL-Job 负责补偿/对账/周期任务，Elasticsearch 负责搜索与检索视图。
+  它们之所以同时存在，不是因为“微服务都这么配”，而是因为不同职责根本不能被一层存储或一个同步调用模式统一解决。
+structured_points:
+  position: 数据与中间件支撑层
+  depends_on: 所有业务服务都会通过不同方式依赖它们
+  responsibility: 分别承担事实存储、热点状态、异步传播、配置发现、周期任务、检索视图
+  failure_mode: 中间件故障通常不会被感知为“单个业务方法报错”，而会扩散成缓存不一致、消息堆积、配置漂移、任务补偿失败等系统级问题
+  non_responsibility: 中间件本身不决定业务规则，它们承载的是不同层面的系统职责
+  output: 为业务服务提供事实、状态、消息、任务和检索支撑
+why_it_matters: >
+  如果把这些中间件理解成“基础设施附件”，就会低估系统复杂度；实际上 `my-xhs` 的很多核心问题——库存预扣、事务消息、补偿任务、搜索视图、配置覆盖——都直接建立在它们的角色差异上。
+anti_confusion:
+  - MySQL 不等于所有真相，Redis 也可能暂时承载权威运行态状态
+  - RocketMQ 不是为了替代 Feign，而是为了扩散和收敛异步影响
+  - XXL-Job 不是装饰，它是补偿和对账链路的重要执行者
+  - Elasticsearch 不是业务真相源，而是检索/聚合视图
+best_for_questions:
+  - 这些中间件分别干什么？
+  - 为什么系统不能只靠 MySQL + Feign？
+  - 为什么说中间件职责差异本身就是复杂度来源？
+sources:
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/09-data-model-storage/01-mysql-sharding.md
+    role: doc-primary
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/10-async-task-transaction/01-async-overview.md
+    role: doc-transaction
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/08-gateway-security-observability/04-observability.md
+    role: doc-observability
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/resources/application.yml
+    role: code-config
+  - path: /data/workspace/my-xhs/my-xhs-search/src/main/resources/application.yml
+    role: code-config
+source_version: 2026-08-20
+last_verified_at: 2026-08-20
+evidence_level:
+  - L0
+  - L1
+confidence: medium
+notes:
+  - 这张卡回答的是“职责分层”，不直接证明每个中间件在某次运行态中的具体值或行为
+followup_docs:
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/09-data-model-storage/01-mysql-sharding.md
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/10-async-task-transaction/01-async-overview.md
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/08-gateway-security-observability/04-observability.md
+related_cards:
+  - service-topology
+  - sync-async-boundary
+  - order-orchestration-role
+  - async-event-map

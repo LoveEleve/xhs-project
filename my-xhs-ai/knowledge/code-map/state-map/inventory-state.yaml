@@ -1,0 +1,23 @@
+domain: inventory
+priority: P0
+question: 库存状态机大致落在哪些类和阶段里？
+answer_shape: medium
+serve_mode: direct
+state_owner: my-xhs-inventory
+key_classes:
+  - InventoryService
+  - OrderTransactionConsumer
+  - InventoryReconcileJob
+transitions:
+  - available -> prededucted/locked
+  - prededucted -> confirmed(consumed)
+  - prededucted -> released(rollback)
+failure_paths:
+  - 库存不足
+  - 未初始化
+  - Redis / bucket 状态异常
+why_it_matters: 库存状态不是单层扣减，而是时间语义状态机；解释 inventory 复杂度时必须落回这层。
+sources:
+  - /data/workspace/my-xhs/my-xhs-inventory/src/main/java/com/myxhs/inventory/service/InventoryService.java
+  - /data/workspace/my-xhs/my-xhs-inventory/src/main/java/com/myxhs/inventory/consumer/OrderTransactionConsumer.java
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/01-inventory-three-level.md

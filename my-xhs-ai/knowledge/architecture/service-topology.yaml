@@ -1,0 +1,61 @@
+id: service-topology
+category: architecture
+priority: P0
+question: my-xhs 的整体架构是什么？
+answer_shape: medium
+serve_mode: composable
+scope: global-architecture
+boundary:
+  - 不展开每个服务的内部实现细节
+  - 不回答具体业务规则（如库存三级扣减细节）
+  - 不替代 transaction-chain / async-event-map / middleware-role 等后续卡
+answer: >
+  my-xhs 不是“16 个并排摆开的 Spring Boot 服务”，而是一个由统一入口、业务服务分层分组、同步编排链和异步扩散网叠加出来的系统。
+  其中 gateway 负责统一入口治理；order / inventory / payment 等属于交易主链；home 更偏 BFF 聚合；analytics / counter / notification 等承担动作扩散与视图支撑；
+  再往下是 MySQL、Redis、Elasticsearch、RocketMQ、Nacos、XXL-Job 等数据与中间件层。
+structured_points:
+  entry_layer: gateway 统一接收请求、做路由与鉴权
+  core_domains: 用户、内容、商品、购物车、订单、支付、库存、搜索、首页、通知、IM 等按职责分组
+  transaction_centers: order 负责同步编排，inventory / payment / coupon 等在链上承担强状态角色
+  async_fanout: RocketMQ 把通知、推荐、Feed、补偿等动作异步扩散到下游
+  middleware_layer: MySQL / Redis / Elasticsearch / RocketMQ / Nacos / XXL-Job 提供数据与基础设施能力
+why_it_matters: >
+  这张总图决定了后续所有模块分析的基线：如果先不立住“入口在哪、同步收束在哪、异步扩散在哪”，
+  后面的订单、库存、支付、搜索、通知分析就会被看成零散局部实现，而不是同一个分布式系统中的不同角色。
+anti_confusion:
+  - my-xhs 不是“前端直打每个微服务”的扁平结构
+  - 服务数量本身不是复杂度来源，职责差异才是
+  - home 不是 transaction center，order 才是交易编排中心
+best_for_questions:
+  - my-xhs 的整体架构是什么？
+  - 这个系统为什么复杂？
+  - 服务是怎么分层的？
+sources:
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/00-overview-architecture/01-service-topology.md
+    role: doc-primary
+  - path: /data/workspace/my-xhs/my-xhs-gateway/src/main/resources/application.yml
+    role: code-route
+  - path: /data/workspace/my-xhs/my-xhs-home/src/main/java/com/myxhs/home/feign/ProductFeignClient.java
+    role: code-bff
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/feign/InventoryFeignClient.java
+    role: code-orchestration
+  - path: /data/workspace/my-xhs/my-xhs-notification/src/main/java/com/myxhs/notification/consumer/NotificationEventConsumer.java
+    role: code-async
+source_version: 2026-08-20
+last_verified_at: 2026-08-20
+evidence_level:
+  - L0
+  - L1
+confidence: high
+notes:
+  - 这张卡主要回答系统拓扑与职责分组，不以运行态指标为主证据，因此不强求 L2
+followup_docs:
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/00-overview-architecture/01-service-topology.md
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/00-overview-architecture/02-business-domains.md
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/10-async-task-transaction/01-async-overview.md
+related_cards:
+  - gateway-role
+  - domain-groups
+  - sync-async-boundary
+  - order-orchestration-role
+  - middleware-role

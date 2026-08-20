@@ -1,0 +1,16 @@
+scope: async-event-network
+priority: P1
+question: my-xhs 的异步事件网络大致怎样组成？
+answer_shape: long
+serve_mode: composable
+answer: >
+  my-xhs 的异步网络不是一条单线，而是至少由交易补偿、通知扩散、Feed 分发、推荐行为四类事件网组成。它们共同承担的是“动作成立后，影响如何继续传播和收敛”，而不是“动作本身如何成立”。
+structured_points:
+  transaction_compensation: 订单成立后的补偿、重试、死信收敛
+  notification_fanout: 评论/点赞/关注/交易等动作扩散到通知域
+  feed_fanout: 内容发布推进到 Feed 分发链
+  recommend_fanout: 行为事件推进到推荐/特征链
+sources:
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/10-async-task-transaction/01-async-overview.md
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/02-content-feed-interaction/README.md
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/07-im-notification-message/README.md

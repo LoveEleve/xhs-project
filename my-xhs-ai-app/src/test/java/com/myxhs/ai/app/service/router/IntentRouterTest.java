@@ -57,6 +57,13 @@ class IntentRouterTest {
     }
 
     @Test
+    void requestTrace查询_走专用路由() {
+        assertEquals(Intent.REQUEST_TRACE, router.classify("26f97b1880974a4f86eb5f0f0d950f9b"));
+        assertEquals(Intent.REQUEST_TRACE, router.classify("帮我查一下这个 traceId 的日志"));
+        assertEquals(Intent.REQUEST_TRACE, router.classify("requestId=abc123-def456 帮我看下调用链"));
+    }
+
+    @Test
     void 同时含两个指标词_保守走Agent() {
         assertEquals(Intent.AGENT, router.classify("订单量和支付成功率都下降了，为什么"));
     }
@@ -196,7 +203,12 @@ class IntentRouterTest {
                     && router.classify(q) != Intent.OUT_OF_SCOPE, "应确定性指标: " + q);
         }
         for (String q : agent) {
-            assertEquals(Intent.AGENT, router.classify(q), "应 AGENT: " + q);
+            Intent intent = router.classify(q);
+            if (q.contains("traceId") || q.matches("[a-f0-9]{32}")) {
+                assertEquals(Intent.REQUEST_TRACE, intent, "应 REQUEST_TRACE: " + q);
+            } else {
+                assertEquals(Intent.AGENT, intent, "应 AGENT: " + q);
+            }
         }
     }
 }

@@ -1,0 +1,13 @@
+topic: FEED_TOPIC
+priority: P1
+semantic_role: 把内容发布动作推进到 Feed 分发链
+producers:
+  - my-xhs-content (NoteService)
+consumers:
+  - feed 相关消费链（收件箱/分发）
+main_payload:
+  - noteId / authorId / 发布事件
+why_it_matters: 说明内容成立和 Feed 呈现不是同一动作，而是成立后再扩散
+sources:
+  - /data/workspace/my-xhs/my-xhs-content/src/main/java/com/myxhs/content/service/NoteService.java
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/02-content-feed-interaction/README.md

@@ -1,0 +1,26 @@
+id: inventory-service-prededuct-card
+category: code-structure
+priority: P1
+question: 哪个核心类负责库存预扣主逻辑？
+answer_shape: medium
+serve_mode: direct
+answer: 负责库存预扣主逻辑的核心类是 `InventoryService`，尤其是 `preDeduct()` 及其内部的 `doPreDeduct()` 路径。这里会处理幂等占位、Redis bucket/总量、库存不足、未初始化等关键分支，因此如果你要追库存预扣的真实落点，应该优先看 `InventoryService`。
+trigger_keywords:
+  - 哪个类
+  - 库存预扣主逻辑
+  - InventoryService
+  - preDeduct
+  - doPreDeduct
+sources:
+  - path: /data/workspace/my-xhs/my-xhs-inventory/src/main/java/com/myxhs/inventory/service/InventoryService.java
+    role: code-service
+source_version: 2026-08-20
+last_verified_at: 2026-08-20
+evidence_level:
+  - L0
+confidence: high
+followup_docs:
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/01-inventory-three-level.md
+related_cards:
+  - inventory-three-level
+  - inventory-pre-deduct-mainline

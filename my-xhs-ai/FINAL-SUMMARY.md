@@ -64,11 +64,16 @@
 这给了项目一个很值钱的 D5 证据：
 **我不仅会写 Agent，还理解 durable execution 的边界。**
 
-### 5. 3 个 demo 可现场演示
+### 5. 4 个 demo 可现场演示
 - `demo-dlq.sh`
 - `demo-order-decline.sh`
 - `demo-5xx.sh`
-- （外加 `demo-temporal-restart.sh` 作为 PoC demo）
+- `demo-temporal-restart.sh`
+
+### 6. 系统知识问答主路径已成立
+- architecture / business / code structure 三层知识已接入主路由
+- `KnowledgeEvalRunnerTest` 真实跑出 **9 / 9 通过**
+- 说明项目已从“只会查运行态”升级到“能回答系统本体问题”
 
 ---
 

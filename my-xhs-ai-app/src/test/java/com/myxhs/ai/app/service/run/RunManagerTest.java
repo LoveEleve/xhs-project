@@ -6,6 +6,7 @@ import com.myxhs.ai.app.service.agent.harness.AgentRun;
 import com.myxhs.ai.app.service.agent.harness.AgentHarness;
 import com.myxhs.ai.app.service.agent.harness.HarnessEvent;
 import com.myxhs.ai.app.service.agent.harness.HarnessEventType;
+import com.myxhs.ai.tools.LogSearchAccess;
 import com.myxhs.ai.tools.MetricToolAccess;
 import com.myxhs.ai.tools.ObsToolAccess;
 import dev.langchain4j.data.message.AiMessage;
@@ -102,6 +103,23 @@ class RunManagerTest {
         @Override
         public String notePublishEvents(String window) {
             return "publishes";
+        }
+    }
+
+    private static class FakeLogSearch implements LogSearchAccess {
+        @Override
+        public java.util.List<String> services() {
+            return List.of("my-xhs-gateway", "my-xhs-order", "my-xhs-payment");
+        }
+
+        @Override
+        public String searchLog(String service, String keyword, String tailLines) {
+            if ("my-xhs-gateway".equals(service) || "my-xhs-order".equals(service)) {
+                return "{\"status\":\"ok\",\"tool\":\"log.search\",\"service\":\"" + service
+                        + "\",\"keyword\":\"" + keyword + "\",\"scannedLines\":2000,\"matches\":2,\"lines\":[\"trace hit\"]}";
+            }
+            return "{\"status\":\"ok\",\"tool\":\"log.search\",\"service\":\"" + service
+                    + "\",\"keyword\":\"" + keyword + "\",\"scannedLines\":2000,\"matches\":0,\"lines\":[]}";
         }
     }
 
@@ -319,7 +337,6 @@ class RunManagerTest {
     void 超范围话题_零成本拒答不调工具() throws Exception {
         AgentHarness harness = new AgentHarness(new FakeModel(), new FakeTools(), new FakeObs(),
                 MAPPER, AgentBudget.defaults(), 0.002, 2, null, "fake");
-        // 注入 LLM 分类器（超范围语义由 LLM 判断；纯规则模式无信号默认引导）
         RunManager mgr = new RunManager(harness, null, null,
                 new com.myxhs.ai.app.service.router.IntentRouter(null,
                         msg -> com.myxhs.ai.app.service.router.Intent.OUT_OF_SCOPE));
@@ -338,5 +355,46 @@ class RunManagerTest {
         }
         assertEquals(2, events.size());
         assertEquals(HarnessEventType.COMPLETED, events.get(1).type());
+    }
+
+    @Test
+    void requestTrace查询_走跨服务直答() throws Exception {
+        AgentHarness harness = new AgentHarness(new FakeModel(), new FakeTools(), new FakeObs(),
+                MAPPER, AgentBudget.defaults(), 0.002, 2, null, "fake");
+        RunManager mgr = new RunManager(harness, null, null, new com.myxhs.ai.app.service.router.IntentRouter(),
+                null, null, new FakeLogSearch(), null, null, null);
+
+        RunManager.RunEntry e = mgr.submit("26f97b1880974a4f86eb5f0f0d950f9b", "u1");
+        e.future().get(10, TimeUnit.SECONDS);
+
+        AgentRun run = e.future().join();
+        assertEquals("SUCCEEDED", run.status().name());
+        assertTrue(run.finalAnswer().contains("my-xhs-gateway"), run.finalAnswer());
+        assertTrue(run.finalAnswer().contains("my-xhs-order"), run.finalAnswer());
+        assertTrue(run.finalAnswer().contains("my-xhs-payment"), run.finalAnswer());
+        assertEquals(0, run.steps().size(), "request trace 直答分支不应进入 Agent 循环");
+    }
+
+    @Test
+    void requestTrace查询_单服务失败不影响其他命中() throws Exception {
+        AgentHarness harness = new AgentHarness(new FakeModel(), new FakeTools(), new FakeObs(),
+                MAPPER, AgentBudget.defaults(), 0.002, 2, null, "fake");
+        LogSearchAccess access = new FakeLogSearch() {
+            @Override
+            public String searchLog(String service, String keyword, String tailLines) {
+                if ("my-xhs-order".equals(service)) {
+                    throw new IllegalStateException("日志源不可用");
+                }
+                return super.searchLog(service, keyword, tailLines);
+            }
+        };
+        RunManager mgr = new RunManager(harness, null, null, new com.myxhs.ai.app.service.router.IntentRouter(),
+                null, null, access, null, null, null);
+
+        RunManager.RunEntry e = mgr.submit("26f97b1880974a4f86eb5f0f0d950f9b", "u1");
+        AgentRun run = e.future().get(10, TimeUnit.SECONDS);
+
+        assertTrue(run.finalAnswer().contains("my-xhs-gateway"), run.finalAnswer());
+        assertTrue(run.finalAnswer().contains("扫描失败服务：my-xhs-order"), run.finalAnswer());
     }
 }

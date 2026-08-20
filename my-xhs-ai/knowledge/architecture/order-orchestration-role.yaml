@@ -1,0 +1,69 @@
+id: order-orchestration-role
+category: architecture
+priority: P0
+question: 为什么 order 是交易链的编排中心？
+answer_shape: long
+serve_mode: direct
+scope: transaction-orchestration-boundary
+boundary:
+  - 不展开 inventory 三级扣减实现细节
+  - 不替代 transaction-chain / order-inventory-payment-flow 的完整长链分析
+  - 不回答页面聚合/BFF 问题
+answer: >
+  order 在 my-xhs 里不是一个只改自己数据库的“订单服务”，而是交易主链上的同步编排中心：地址、商品、库存、优惠券、支付这些分散事实，
+  都要在订单创建时被临时拉成一条同步业务链。它的职责不是“拥有所有事实”，而是“把这些事实组织成一次能合法成立的交易动作”。
+structured_points:
+  position: 交易主链上的同步编排中心
+  depends_on: user / product / inventory / coupon / payment 等 Feign 下游
+  responsibility: 把地址、商品、库存、优惠、支付这些事实收束成一次下单动作
+  failure_mode: 下游任何一环失效都会让整条交易链进入回滚/补偿/不成立状态
+  non_responsibility: 不拥有库存真相、不拥有支付真相，但负责交易成立时的编排责任
+  output: 合法订单创建 + 交易链后续推进锚点（库存预扣、支付、补偿）
+why_it_matters: >
+  如果不把 order 看成编排中心，而只看成“订单表服务”，后面事务消息、本地消息表、补偿任务、库存预扣和支付链路为什么都围着它转，就会完全讲不通；
+  这也是为什么它比看起来同样依赖很多下游的 home 复杂度高一个量级。
+anti_confusion:
+  - order 不是“只负责插订单表”的 CRUD 服务
+  - order 不拥有全部业务事实，但负责把分散事实收束成一次交易动作
+  - order 和 home 都依赖很多下游，但前者是事务编排中心，后者是读聚合中心
+best_for_questions:
+  - 为什么 order 是编排中心？
+  - 为什么下单不能只理解成插订单表？
+  - 为什么事务消息 / 本地消息表都围着 order 展开？
+trigger_keywords:
+  - order
+  - 编排中心
+  - 下单
+  - 插订单表
+  - 事务中心
+  - 订单服务
+sources:
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/00-overview-architecture/01-service-topology.md
+    role: doc-primary
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/feign/UserFeignClient.java
+    role: code-feign
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/feign/ProductFeignClient.java
+    role: code-feign
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/feign/InventoryFeignClient.java
+    role: code-feign
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/feign/CouponFeignClient.java
+    role: code-feign
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/feign/PaymentFeignClient.java
+    role: code-feign
+source_version: 2026-08-20
+last_verified_at: 2026-08-20
+evidence_level:
+  - L0
+  - L1
+confidence: high
+notes:
+  - 这张卡只解释“order 为什么是编排中心”，更长的一致性与消息收敛逻辑应由 transaction-message / local-message / compensation 相关卡继续展开
+followup_docs:
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/03-transaction-message.md
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/02-order-create.md
+related_cards:
+  - service-topology
+  - bff-role
+  - transaction-chain
+  - feign-dependency-map
+  - order-inventory-payment-flow

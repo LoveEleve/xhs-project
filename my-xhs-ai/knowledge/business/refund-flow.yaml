@@ -1,0 +1,53 @@
+id: refund-flow
+category: business
+priority: P1
+question: my-xhs 的退款链是怎样推进的？
+answer_shape: long
+serve_mode: direct
+scope: refund-rule-boundary
+boundary:
+  - 不展开第三方支付退款网关细节
+  - 不替代 payment-flow 对支付主链前半段的解释
+  - 不完整覆盖所有异常补偿分支
+answer: >
+  在 my-xhs 里，退款不是支付的逆动作那么简单，而是一条建立在“订单已成立、支付可能已成功”之后的补偿型状态推进链。
+  它关心的不是订单如何成立，而是已完成或部分完成的交易如何安全逆转：资金怎么退、库存要不要恢复、券要不要返还、订单状态怎样收束。
+structured_points:
+  precondition: 退款只发生在订单已成立、且通常支付链已经发生之后
+  trigger: 用户取消、售后、异常回滚等都会把链路引向退款
+  state_role: 退款负责把已推进的资金与交易状态往回收敛，而不是重新定义订单是否成立
+  inventory_link: 若订单已占用或消耗库存，退款链通常需要和库存恢复逻辑协同
+  coupon_link: 若优惠券已参与交易，退款后往往要考虑返券或一致性恢复
+  output: 让已发生的交易影响被有控制地逆转，而不是留下半完成状态
+why_it_matters: >
+  如果把退款理解成“支付接口再调一次反向操作”，就会忽略它真正复杂的地方：退款不是一条孤立 API，而是交易尾部收敛链的一部分。
+anti_confusion:
+  - 退款不是下单前置逻辑
+  - 退款不是单纯的资金动作，还会牵动库存、券和订单状态
+  - 退款链关注的是逆向收敛，不是正向成立
+best_for_questions:
+  - 退款链是怎样推进的？
+  - 为什么退款不是支付的简单反向接口？
+  - 为什么退款会牵动库存和优惠券？
+sources:
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/feign/PaymentFeignClient.java
+    role: code-feign
+  - path: /data/workspace/my-xhs/my-xhs-payment/src/main/java/com/myxhs/payment/service/RefundService.java
+    role: code-core
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/04-payment-flow.md
+    role: doc-primary
+source_version: 2026-08-20
+last_verified_at: 2026-08-20
+evidence_level:
+  - L0
+  - L1
+confidence: medium
+notes:
+  - 当前先把退款作为交易尾部收敛链来解释，不等于已经完整覆盖售后/逆向全流程
+followup_docs:
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/04-payment-flow.md
+related_cards:
+  - payment-flow
+  - close-order
+  - compensation-path
+  - coupon-lifecycle

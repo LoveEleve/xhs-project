@@ -1,0 +1,29 @@
+scope: mq-core-topics
+priority: P0
+question: my-xhs 最关键的几个 MQ topic 在系统里分别承担什么语义？
+answer_shape: long
+serve_mode: direct
+answer: >
+  my-xhs 的 MQ 不是单纯拿来“替代远程调用”的，而是把系统拆成两种链路：成立前的同步收束链、成立后的异步扩散与收敛链。
+  在当前最关键的几个 topic 里，`ORDER_TRANSACTION_TOPIC` 负责把订单成立这件事推进到库存世界；`NOTIFICATION_TOPIC` 负责把社交/交易动作扩散到通知域；`FEED_TOPIC` 负责把内容发布推进到 Feed 收件箱；`RECOMMEND_BEHAVIOR_TOPIC` 负责把行为事件推进到推荐侧。
+structured_points:
+  precondition_vs_fanout: 有的 topic 是主链第一跳绑定器，有的 topic 是成立后的扩散器
+  order_transaction: 把订单成立推进到库存预扣
+  notification: 把评论/点赞/关注等动作推进到通知域
+  feed: 把内容发布推进到 Feed 分发链
+  recommend: 把行为日志推进到推荐侧特征链
+sources:
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/10-async-task-transaction/01-async-overview.md
+    role: doc-primary
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/03-transaction-message.md
+    role: doc-transaction
+source_version: 2026-08-20
+last_verified_at: 2026-08-20
+evidence_level:
+  - L0
+  - L1
+related_maps:
+  - order-transaction-topic
+  - notification-topic
+  - feed-topic
+  - recommend-behavior-topic

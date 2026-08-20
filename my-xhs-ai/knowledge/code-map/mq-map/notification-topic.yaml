@@ -1,0 +1,16 @@
+topic: NOTIFICATION_TOPIC
+priority: P1
+semantic_role: 把评论/点赞/关注/交易等动作扩散到通知域
+producers:
+  - my-xhs-content (CommentService)
+  - my-xhs-analytics (LikeService / FollowService)
+consumers:
+  - my-xhs-notification (NotificationEventConsumer)
+main_payload:
+  - sender/receiver/eventType/objectId 等通知事件语义
+why_it_matters: 这条消息链说明通知不是原动作的一部分，而是成立后的体验扩散层
+sources:
+  - /data/workspace/my-xhs/my-xhs-content/src/main/java/com/myxhs/content/service/CommentService.java
+  - /data/workspace/my-xhs/my-xhs-analytics/src/main/java/com/myxhs/analytics/service/LikeService.java
+  - /data/workspace/my-xhs/my-xhs-analytics/src/main/java/com/myxhs/analytics/service/FollowService.java
+  - /data/workspace/my-xhs/my-xhs-notification/src/main/java/com/myxhs/notification/consumer/NotificationEventConsumer.java

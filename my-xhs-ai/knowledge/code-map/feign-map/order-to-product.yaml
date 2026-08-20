@@ -1,0 +1,10 @@
+edge_id: order-to-product
+caller_service: order
+callee_service: product
+client_class: ProductFeignClient
+priority: P0
+main_endpoints:
+  - /api/product/sku/batch
+semantic_role: 获取 SKU 详情与商品侧结算事实
+why_it_matters: 没有 SKU 事实，下单无法确定真实商品和价格语义
+source: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/feign/ProductFeignClient.java

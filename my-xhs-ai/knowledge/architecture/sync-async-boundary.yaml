@@ -1,0 +1,61 @@
+id: sync-async-boundary
+category: architecture
+priority: P0
+question: 哪些链路是同步 Feign，哪些链路是异步 RocketMQ？
+answer_shape: long
+serve_mode: composable
+scope: collaboration-boundary
+boundary:
+  - 不展开每个 topic 的全部消费者实现细节
+  - 不替代 transaction-chain / async-event-map 等更细分卡片
+  - 不回答某一条具体消息的恢复策略细节
+answer: >
+  my-xhs 的主线不是“全同步”也不是“全异步”，而是同步编排链和异步扩散网并存：
+  交易成立前，order 通过 Feign 同步拉齐地址、商品、库存、优惠券、支付等必要事实；
+  交易或内容动作成立后，再通过 RocketMQ 把通知、Feed、推荐、补偿等后续影响异步扩散到下游。
+structured_points:
+  entry: 用户请求先经 gateway，再进入各业务服务
+  sync_chain: order 在交易成立前通过 Feign 同步编排 user/product/inventory/coupon/payment
+  async_chain: 内容发布、通知、推荐、补偿等通过 RocketMQ 向下游扩散
+  state_anchor: 同步链负责收束成立条件，异步链负责扩散影响与最终收敛
+  failure_split: 同步失败更像“这次动作不成立”，异步失败更像“动作已成立但后续传播/补偿要继续收敛”
+  boundary: 不是所有依赖都该同步，也不是所有问题都能异步兜底
+why_it_matters: >
+  如果不先分清同步编排和异步扩散，就会把 order 的复杂度误讲成普通远程调用问题，
+  也会把通知、推荐、补偿这类“成立后再扩散”的链路误看成交易主链的一部分。
+anti_confusion:
+  - 同步链负责让动作成立，异步链负责让影响扩散
+  - RocketMQ 不是替代 Feign 的统一答案
+  - 事务消息不是“全异步系统”，而是同步主链里的关键绑定器
+best_for_questions:
+  - 哪些链路是同步，哪些是异步？
+  - 为什么 order 同时依赖 Feign 和 RocketMQ？
+  - 为什么不能把所有事情都放进 MQ？
+sources:
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/00-overview-architecture/01-service-topology.md
+    role: doc-primary
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/03-transaction-message.md
+    role: doc-transaction
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/feign/InventoryFeignClient.java
+    role: code-feign
+  - path: /data/workspace/my-xhs/my-xhs-content/src/main/java/com/myxhs/content/service/NoteService.java
+    role: code-async
+  - path: /data/workspace/my-xhs/my-xhs-notification/src/main/java/com/myxhs/notification/consumer/NotificationEventConsumer.java
+    role: code-async
+source_version: 2026-08-20
+last_verified_at: 2026-08-20
+evidence_level:
+  - L0
+  - L1
+confidence: high
+notes:
+  - 这张卡适合拼进“整体架构”类回答，不建议单独承担事务消息全部细节解释
+followup_docs:
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/10-async-task-transaction/01-async-overview.md
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/03-transaction-message.md
+related_cards:
+  - service-topology
+  - gateway-role
+  - order-orchestration-role
+  - transaction-chain
+  - async-event-map

@@ -1,0 +1,63 @@
+id: transaction-message-anchor
+category: architecture
+priority: P1
+question: 为什么事务消息是主交易链的第一跳绑定器？
+answer_shape: long
+serve_mode: direct
+scope: consistency-binding-boundary
+boundary:
+  - 不展开 MQ broker 内部实现细节
+  - 不替代 compensation / local-message-retry / dead-letter 的后续卡片
+  - 不回答库存三级扣减内部算法细节
+answer: >
+  在 my-xhs 的交易主链里，事务消息之所以关键，不是因为“用了 RocketMQ”，而是因为它把“订单本地事务成功”和“库存预扣消息对下游可见”这两件事绑进了同一条推进链。
+  如果没有这条绑定器，系统就会出现最危险的状态：订单已经成立，但库存世界根本不知道这笔订单存在。
+structured_points:
+  problem: 订单成立与库存看见订单之间存在一跳最危险的跨服务边界
+  failed_plan_1: 先写订单再发普通消息，会坏在“订单成功但消息没发出去”
+  failed_plan_2: 在订单事务里同步调库存，也无法形成跨服务单事务提交
+  binding: 事务消息把“本地提交成功”和“下游消息可见性”绑定在一起
+  local_anchor: 本地消息表是订单事务对外宣告“我已提交”的证据锚点
+  output: 订单合法成立后，库存世界至少能可靠看见这笔订单的存在
+why_it_matters: >
+  如果不把事务消息理解成交易主链的第一跳绑定器，而只是理解成“可靠消息优化”，那后面本地消息表、回查、补发、补偿这些设计都会显得多余；
+  实际上它们不是优化，而是在解决订单世界与库存世界之间最危险的断裂点。
+anti_confusion:
+  - 事务消息不是“全链路一次提交”
+  - 本地消息表不是附属表，而是提交证据锚点
+  - 事务消息绑定的是“订单本地提交”和“库存可见性”，不是“全链路最终成功”
+best_for_questions:
+  - 为什么事务消息是第一跳绑定器？
+  - 为什么不能先写订单再发普通 MQ？
+  - 本地消息表为什么必须和订单同事务出现？
+trigger_keywords:
+  - 事务消息
+  - 本地消息表
+  - 补偿任务
+  - 第一跳
+  - 普通 mq
+  - 回查
+sources:
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/03-transaction-message.md
+    role: doc-primary
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/listener/OrderTransactionListener.java
+    role: code-transaction
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/service/OrderTransactionService.java
+    role: code-transaction
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/job/LocalMessageRetryJob.java
+    role: code-retry
+source_version: 2026-08-20
+last_verified_at: 2026-08-20
+evidence_level:
+  - L0
+  - L1
+confidence: high
+notes:
+  - 这张卡解释的是“为什么事务消息必须存在”，不是讲完所有 MQ / 补偿 / 死信机制
+followup_docs:
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/03-transaction-message.md
+related_cards:
+  - transaction-chain
+  - order-inventory-payment-flow
+  - order-orchestration-role
+  - sync-async-boundary

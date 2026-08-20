@@ -1,0 +1,25 @@
+id: order-transaction-consumer-card
+category: code-structure
+priority: P0
+question: 哪个 consumer 负责库存预扣？
+answer_shape: short
+serve_mode: direct
+answer: 负责库存预扣的 consumer 是 `OrderTransactionConsumer`，位于 `my-xhs-inventory` 服务，消费 `ORDER_TRANSACTION_TOPIC`，在订单成立后接管库存预扣这条链。
+trigger_keywords:
+  - 哪个 consumer
+  - 库存预扣
+  - OrderTransactionConsumer
+  - ORDER_TRANSACTION_TOPIC
+sources:
+  - path: /data/workspace/my-xhs/my-xhs-inventory/src/main/java/com/myxhs/inventory/consumer/OrderTransactionConsumer.java
+    role: code-consumer
+source_version: 2026-08-20
+last_verified_at: 2026-08-20
+evidence_level:
+  - L0
+confidence: high
+followup_docs:
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/03-transaction-message.md
+related_cards:
+  - order-transaction-topic
+  - inventory-pre-deduct-mainline

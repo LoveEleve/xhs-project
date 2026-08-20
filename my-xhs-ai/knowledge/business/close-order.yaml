@@ -1,0 +1,52 @@
+id: close-order
+category: business
+priority: P1
+question: my-xhs 的关单链路是怎样收尾的？
+answer_shape: long
+serve_mode: direct
+scope: close-order-boundary
+boundary:
+  - 不替代 refund-flow 对已支付逆向链的解释
+  - 不展开所有延迟消息和 job 的实现细节
+  - 不完整覆盖所有异常关闭场景
+answer: >
+  在 my-xhs 里，关单不是“把订单状态改成已关闭”这么简单，而是未完成交易的一次收尾动作：对于超时未支付、创建后未继续推进、或者某些失败场景，系统需要把订单从“悬而未决”的状态收束到一个明确终态，并触发库存释放、券恢复等后续动作。
+structured_points:
+  trigger: 超时未支付、主动取消、链路中断后长期未推进等都会触发关单
+  state_role: 关单负责给未完成交易一个明确终态，防止订单长期悬挂
+  inventory_link: 若库存已预留，关单通常意味着释放预留库存
+  coupon_link: 若优惠券已绑定但交易未完成，关单可能触发返券或状态恢复
+  async_followup: 关单往往依赖延迟消息、任务调度或补偿链来最终收敛
+  output: 未完成订单被明确收束，资源不再长期悬挂
+why_it_matters: >
+  如果没有关单机制，交易链里大量“已创建但未完成”的状态会永久悬挂，库存、优惠券、支付等待态都会逐步污染系统。
+anti_confusion:
+  - 关单不是退款；退款是已推进交易的逆向收敛，关单更多针对未完成交易
+  - 关单不是简单改状态，而是伴随资源释放的收尾动作
+  - 关单往往依赖异步机制，不是一次同步 if 分支就结束
+best_for_questions:
+  - 关单链路是怎样收尾的？
+  - 为什么关单不仅仅是改订单状态？
+  - 为什么关单会影响库存和优惠券？
+sources:
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/job/OrderCloseJob.java
+    role: code-job
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/service/OrderService.java
+    role: code-core
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/02-order-create.md
+    role: doc-primary
+source_version: 2026-08-20
+last_verified_at: 2026-08-20
+evidence_level:
+  - L0
+  - L1
+confidence: medium
+notes:
+  - 当前先把关单解释为未完成交易收尾机制，后续若补延迟消息/任务细节可再拆子卡
+followup_docs:
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/02-order-create.md
+related_cards:
+  - order-create
+  - inventory-three-level
+  - coupon-lifecycle
+  - compensation-path

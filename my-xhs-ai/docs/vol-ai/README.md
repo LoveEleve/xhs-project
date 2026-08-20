@@ -5,13 +5,11 @@
 
 ## 阅读入口
 
-1. 先读 `00-overview-architecture/` 建立全局心智模型
-2. 再读 `01-intent-router-harness/` 理解核心执行状态机
-3. 再读 `02-tool-mcp-policy/` 看工具与权限边界
-4. 再读 `03-memory-conversation-rag/` 看会话、记忆、RAG 的分层
-5. 再读 `04-hitl-dlq-observability/` 看审批、DLQ、Langfuse
-6. 再读 `05-eval-quality-release/` 看评测与收官边界
-7. 最后读 `06-temporal-durable-poc/` 看 Durable Execution PoC
+1. 先读 `HANDOFF-AI-VOL.md` 了解这卷现在写到了哪里、该怎么读
+2. 再读 `METHODOLOGY.md` 了解本卷写作纪律与证据分级
+3. 再读 `00-overview-architecture/` 建立全局心智模型
+4. 再按模块推进：Harness → Tool 边界 → Memory → HITL/DLQ → Eval/收官
+5. 最后按需看 `06-temporal-durable-poc/`（PoC / 收尾增强）
 
 ## 目录结构
 

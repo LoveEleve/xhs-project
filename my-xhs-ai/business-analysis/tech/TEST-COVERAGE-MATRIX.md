@@ -137,6 +137,12 @@
 - 通过率：80%
 - 幻觉误报：1（评测器误把错误消息中的数字当成幻觉）
 
+### 4.3 系统知识问答评测
+- `KnowledgeEvalRunnerTest`
+- 真实结果：**9 / 9 通过**
+- 覆盖 architecture / business / code structure 三类问题
+- 说明 cards/maps 已经不只是静态资产，而是问答主路径中的可运行能力
+
 ---
 
 ## 五、哪些只是 PoC / 不能夸大

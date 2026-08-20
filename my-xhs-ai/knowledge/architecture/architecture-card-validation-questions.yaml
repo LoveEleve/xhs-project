@@ -1,0 +1,90 @@
+questions:
+  - id: arch-validate-001
+    question: my-xhs 的整体架构是什么？
+    expected_main_cards:
+      - service-topology
+    expected_support_cards:
+      - gateway-role
+      - order-orchestration-role
+      - sync-async-boundary
+    should_not_use:
+      - bff-role
+    why: 先立总图，再补入口、交易中心和同步/异步边界
+
+  - id: arch-validate-002
+    question: gateway 的角色是什么？
+    expected_main_cards:
+      - gateway-role
+    expected_support_cards:
+      - service-topology
+    should_not_use:
+      - order-orchestration-role
+      - sync-async-boundary
+    why: 这是典型 direct 卡问题，不需要扯到交易主链
+
+  - id: arch-validate-003
+    question: 为什么 home 是 BFF，而不是事务中心？
+    expected_main_cards:
+      - bff-role
+    expected_support_cards:
+      - gateway-role
+      - order-orchestration-role
+    should_not_use:
+      - sync-async-boundary
+    why: 需要拿 order 做对照，但不需要异步扩散细节
+
+  - id: arch-validate-004
+    question: 为什么 order 是交易链的编排中心？
+    expected_main_cards:
+      - order-orchestration-role
+    expected_support_cards:
+      - service-topology
+      - sync-async-boundary
+    should_not_use:
+      - gateway-role
+    why: 这是交易中心问题，应由 order 主卡主导
+
+  - id: arch-validate-005
+    question: 哪些链路是同步 Feign，哪些链路是异步 RocketMQ？
+    expected_main_cards:
+      - sync-async-boundary
+    expected_support_cards:
+      - order-orchestration-role
+      - service-topology
+    should_not_use:
+      - bff-role
+    why: 需要先讲协作边界，再补 order 的同步编排角色
+
+  - id: arch-validate-006
+    question: 为什么系统复杂度不是来自服务数量，而是来自职责差异？
+    expected_main_cards:
+      - service-topology
+    expected_support_cards:
+      - gateway-role
+      - bff-role
+      - order-orchestration-role
+    should_not_use:
+      - sync-async-boundary
+    why: 这是角色差异问题，应该用服务角色卡来解释
+
+  - id: arch-validate-007
+    question: 为什么不能把所有调用都理解成远程调用而已？
+    expected_main_cards:
+      - sync-async-boundary
+    expected_support_cards:
+      - gateway-role
+      - order-orchestration-role
+      - bff-role
+    should_not_use: []
+    why: 需要说明入口治理、事务编排、读聚合和异步扩散的语义差异
+
+  - id: arch-validate-008
+    question: 为什么说 home 和 order 都依赖很多服务，但复杂度不是同一种？
+    expected_main_cards:
+      - bff-role
+      - order-orchestration-role
+    expected_support_cards:
+      - service-topology
+    should_not_use:
+      - gateway-role
+    why: 这是两个“中心角色”的对照问题，应直接使用两张角色卡

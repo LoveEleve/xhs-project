@@ -13,6 +13,11 @@ public enum Intent {
     METRIC_CONTENT_INTERACTION,
     /** 开放调查/其他 → Agent（多步归因） */
     AGENT,
+    REQUEST_TRACE,
+    /** 系统知识问答（架构/设计/边界） */
+    SYSTEM_KNOWLEDGE,
+    /** 源码结构问答（类/consumer/job/topic/feign 落点） */
+    CODE_STRUCTURE,
     /** 问候/闲聊/无诊断目标 → 直接应答（零模型/工具成本，不进 Agent） */
     GREETING,
     /** 明显超范围话题（天气/新闻等）→ 直接拒答（零成本，不进 Agent） */
