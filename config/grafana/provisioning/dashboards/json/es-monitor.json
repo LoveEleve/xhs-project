@@ -1,0 +1,388 @@
+{
+ "uid": "myxhs-es",
+ "title": "Elasticsearch 监控",
+ "schemaVersion": 38,
+ "panels": [
+  {
+   "type": "timeseries",
+   "title": "集群健康(green/yellow/red 按颜色 0/1)",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 0
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "elasticsearch_cluster_health_status{color=\"green\"}",
+     "legendFormat": "green"
+    },
+    {
+     "expr": "elasticsearch_cluster_health_status{color=\"yellow\"}",
+     "legendFormat": "yellow"
+    },
+    {
+     "expr": "elasticsearch_cluster_health_status{color=\"red\"}",
+     "legendFormat": "red"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line"
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "节点 CPU",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 0
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "elasticsearch_os_cpu_percent",
+     "legendFormat": "{{__name__}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "custom": {
+      "drawStyle": "line"
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "节点内存使用",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "elasticsearch_os_mem_actual_used_bytes",
+     "legendFormat": "{{__name__}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes",
+     "custom": {
+      "drawStyle": "line"
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "文档总数",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(elasticsearch_indices_docs)",
+     "legendFormat": "{{__name__}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line"
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "索引数量",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 16
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "count(elasticsearch_indices_docs)",
+     "legendFormat": "{{__name__}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line"
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "查询速率",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 16
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "rate(elasticsearch_indices_search_query_total[5m])",
+     "legendFormat": "{{__name__}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "drawStyle": "line"
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "索引写入速率",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 24
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "rate(elasticsearch_indices_indexing_index_total[5m])",
+     "legendFormat": "{{__name__}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "drawStyle": "line"
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "删除文档数",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 24
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(elasticsearch_indices_docs_deleted)",
+     "legendFormat": "{{__name__}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line"
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "数据盘可用空间",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "elasticsearch_filesystem_data_available_bytes",
+     "legendFormat": ""
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 32
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "JVM 堆内存",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "elasticsearch_jvm_memory_used_bytes",
+     "legendFormat": "{{node}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 32
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "查询延迟",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "rate(elasticsearch_indices_search_query_time_seconds[5m])",
+     "legendFormat": ""
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 40
+   }
+  }
+ ],
+ "templating": {
+  "list": []
+ },
+ "time": {
+  "from": "now-1h",
+  "to": "now"
+ }
+}

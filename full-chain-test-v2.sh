@@ -75,7 +75,7 @@ CAPTCHA_CODE=$(python3 -c "
 import socket,re
 s=socket.socket();s.settimeout(3)
 try:
-    s.connect(('21.91.124.110',16379))
+    s.connect(('21.130.247.89',6379))
     s.send(b'AUTH Xhs@2026#Redis\r\n');s.recv(1024)
     s.send(f'GET myxhs:user:captcha:${CAPTCHA_KEY}\r\n'.encode())
     resp=s.recv(4096).decode()
@@ -103,7 +103,7 @@ if [[ "$CAPTCHA_CODE" == ERROR:* ]] || [[ "$CAPTCHA_CODE" == "NOTFOUND" ]] || [ 
   CAPTCHA_CODE2=$(python3 -c "
 try:
     import redis
-    r=redis.Redis(host='21.91.124.110',port=16379,password='Xhs@2026#Redis',decode_responses=True,socket_timeout=3)
+    r=redis.Redis(host='21.130.247.89',port=6379,password='Xhs@2026#Redis',decode_responses=True,socket_timeout=3)
     v=r.get(f'myxhs:user:captcha:${CAPTCHA_KEY2}')
     print(v if v else 'NOVALUE')
 except Exception as ex:

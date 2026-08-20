@@ -1,0 +1,15 @@
+[
+    {
+        "CreatedAt": "2026-07-09T22:09:01+08:00",
+        "Driver": "local",
+        "Labels": {
+            "com.docker.compose.project": "my-xhs",
+            "com.docker.compose.version": "2.29.2",
+            "com.docker.compose.volume": "mq-master-store"
+        },
+        "Mountpoint": "/data/docker/lib/volumes/my-xhs_mq-master-store/_data",
+        "Name": "my-xhs_mq-master-store",
+        "Options": null,
+        "Scope": "local"
+    }
+]

@@ -57,6 +57,8 @@ public class LikeController {
     @DeleteMapping
     @RateLimit(windowSeconds = 60, maxRequests = 30, perUser = true, prefix = "social:unlike",
             message = "操作过于频繁，请稍后重试")
+    @Idempotent(key = "'unlike:' + #userId + ':' + #request.bizType + ':' + #request.bizId",
+            expireSeconds = 5, message = "请勿重复操作")
     public R<Void> unlike(
             @RequestHeader("X-User-Id") Long userId,
             @Valid @RequestBody LikeRequest request) {

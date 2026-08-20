@@ -41,7 +41,7 @@ fetch_captcha() {
   local raw=$(python3 -c "
 import socket
 s=socket.socket();s.settimeout(5)
-s.connect(('21.91.124.110',16379))
+s.connect(('21.130.247.89',6379))
 s.send(b'AUTH Xhs@2026#Redis\r\n');s.recv(1024)
 s.send(f'GET myxhs:user:captcha:{CAPTCHA_KEY}\r\n'.encode())
 print(s.recv(1024).decode().strip().split('\r\n')[-1].strip('\"'))

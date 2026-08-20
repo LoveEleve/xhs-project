@@ -1,0 +1,15 @@
+{
+    "registry-mirrors": [
+        "https://mirror.ccs.tencentyun.com",
+        "https://dockerhub.woa.com",
+        "https://csighub.woa.com"
+    ],
+    "insecure-registries": [ 
+        "mirrors.tencent.com",
+        "hub.oa.com",
+        "docker.oa.com:8080",
+        "csighub.tencentyun.com",
+        "bk.artifactory.oa.com:8080"
+    ],
+    "data-root": "/data/docker/lib/"
+}

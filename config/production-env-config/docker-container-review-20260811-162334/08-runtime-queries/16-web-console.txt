@@ -1,0 +1,6 @@
+########## xxl-job 首页
+HTTP 404########## sentinel 首页
+HTTP 200########## rocketmq-dashboard 首页
+HTTP 200########## filebeat 状态(5044 是否监听)
+LISTEN 0      1024                    *:15044            *:*    users:(("java",pid=3322982,fd=100))         
+LISTEN 0      4096                    *:15045            *:*    users:(("java",pid=3322982,fd=101))         

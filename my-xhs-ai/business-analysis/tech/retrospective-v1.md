@@ -121,10 +121,10 @@ YAML 用例集 + 硬断言 + 数字一致性 + 统计阈值 + LLM-as-judge + bad
 
 **启示**：深度 review 的价值在于发现"一致性"类问题，这类问题单测和 happy-path E2E 都覆盖不到。
 
-### 5.4 dlq.redeliver 真实契约与断链
-执行型工具 `dlq.redeliver` 对接真实 RocketMQ Dashboard 契约（csrf 会话 + consumeMessageDirectly.do）。改造后发现端到端断链：重投需要 ORIGIN_MESSAGE_ID（DLQ 原始消息 ID），而获取它的查询接口有 NPE。**如实记录**：真实死信重投 E2E 依赖上游接口修复或换 mqadmin。
+### 5.4 dlq.redeliver 真实契约与 E2E 闭环
+执行型工具 `dlq.redeliver` 对接真实 RocketMQ Dashboard 契约（csrf 会话 + batchResendDlqMessage.do）。2026-08-19 首次跑通真实 E2E：Agent → mqDlqQuery → 提取 ORIGIN_MESSAGE_ID → HITL 审批 → dlq.redeliver → **CR_SUCCESS**。此前历史 DLQ 样本（`skuId=6/999`）返回 `CR_LATER`，本次新造合法消息首次拿到 `CR_SUCCESS`。
 
-**启示**：企业 Agent 对接真实中间件时，"诚实标注断链"比"假装闭环"更重要。
+**启示**：真实 E2E 不能跳过——契约测试通过不代表外部链路通，必须造真实数据跑一遍。
 
 ---
 
@@ -151,8 +151,8 @@ YAML 用例集 + 硬断言 + 数字一致性 + 统计阈值 + LLM-as-judge + bad
 | nightly 全量 100 条 | 未首跑（收官项） |
 | 远端 CI | 未真实验证（凭据/MCP/超时待接入） |
 | dlq.redeliver 真实 E2E | 外部未闭环（ORIGIN_MESSAGE_ID 接口 NPE） |
-| 长期 Memory Store | 未实现（会话内规则摘要已做） |
-| Langfuse/OTel 可观测 | 未接入（先自研 run 级指标） |
+| 长期 Memory Store | 已实现基础版（豆包 embedding + 语义检索 + 多用户隔离），仍可继续扩展 |
+| Langfuse/OTel 可观测 | 已接通（run/generation/tool/answer trace），可直接展示 Langfuse trace |
 | 微调 | 未做（诊断场景 flash 已够，属学习项） |
 | A2A / CodeAct / 多租户 | 刻意不引入（见 §八） |
 | kill -9 恢复演示 | 未做（checkpoint/恢复代码已实现 + 测试；故障注入演示是作品集缺口） |
@@ -195,8 +195,8 @@ YAML 用例集 + 硬断言 + 数字一致性 + 统计阈值 + LLM-as-judge + bad
 | Anthropic《Building Effective Agents》 | 采纳 Workflow/Agent 分层、ground truth、停止条件 | 拒绝 CodeAct/个人助手模型：与"受限、可审计"铁律冲突 |
 | OWASP LLM Top10 | 覆盖 LLM06 Excessive Agency（HITL）、LLM05 输出处理（存在性校验） | LLM01 注入靠确定性兜底（注入无法绕过 allowlist）；LLM07 Prompt Leakage 深化中 |
 | Promptfoo | 采纳声明式用例、评测缓存思想 | 自研 JUnit 方案，本地运行无数据外泄，比 SaaS 更契合隐私约束 |
-| Temporal | 采纳 Durable 六价值，自研子集 | 单服务 20 并发、只读工具，自研成本低；重平台只在价值显著时才引入 |
-| Langfuse | 采纳可观测理念，先自研 run 级指标 | token/成本/状态已落库；后段 PoC 走 OTLP 接入，防 SDK 锁定 |
+| Temporal | 采纳 Durable 六价值，自研子集 + PoC 完成 | 已用审批型长任务验证 worker kill / restart / approve / complete；主线暂不切，但对照证据已具备 |
+| Langfuse | 采纳可观测理念并完成接入 | 已展示 run/generation/tool/answer trace + user/session/model/tokens/cost；当前已可面试展示 |
 
 ---
 

@@ -155,6 +155,19 @@ public class OrderService {
             Map<Long, SkuInfoDTO> skuMap = skuResp.getData().stream()
                     .collect(Collectors.toMap(SkuInfoDTO::getId, s -> s));
 
+            // 3.3 前置 SPU/SKU 状态校验（T-047：下单层双状态校验，防御纵深——cart 展示层已拦，下单层必须拦）
+            for (OrderCreateRequest.SkuItem item : request.getSkuItems()) {
+                SkuInfoDTO skuInfo = skuMap.get(item.getSkuId());
+                if (skuInfo == null) {
+                    throw new BizException(ResultCode.SKU_NOT_FOUND, "商品信息不存在: skuId=" + item.getSkuId());
+                }
+                // SPU 下架（status!=1）→ 拒绝下单（与 cart valid=false"商品已下架"语义一致）
+                if (skuInfo.getSpuStatus() == null || skuInfo.getSpuStatus() != 1) {
+                    throw new BizException(ResultCode.PRODUCT_OFF_SHELF,
+                            "商品已下架: skuId=" + item.getSkuId());
+                }
+            }
+
             // 3.5 前置库存校验（避免创建订单后预扣失败进DLQ）
             for (OrderCreateRequest.SkuItem item : request.getSkuItems()) {
                 R<Map<String, Object>> stockResp = inventoryFeignClient.queryStock(item.getSkuId());
@@ -299,15 +312,15 @@ public class OrderService {
             return buildOrderVO(order);
 
         } catch (BizException e) {
-            // 业务异常：仅事务未提交时释放幂等键允许重试
-            if (context.getOrderId() == null) {
+            // 业务异常：仅事务未提交时释放幂等键允许重试（context 可能为 null——前置校验在事务消息之前）
+            if (context == null || context.getOrderId() == null) {
                 stringRedisTemplate.delete(idempotentKey);
             }
             businessMetrics.recordOrderCreated("fail");
             throw e;
         } catch (Exception e) {
             // 非业务异常：仅事务未提交时释放幂等键，已提交则保留(防重复下单)
-            if (context.getOrderId() == null) {
+            if (context == null || context.getOrderId() == null) {
                 stringRedisTemplate.delete(idempotentKey);
             }
             businessMetrics.recordOrderCreated("fail");
@@ -510,11 +523,21 @@ public class OrderService {
      * 用于释放库存时定位预扣记录
      */
     private static long derivePseudoOrderId(String orderNo) {
-        long pseudoOrderId = 0;
-        for (int i = 0; i < orderNo.length(); i++) {
-            pseudoOrderId = pseudoOrderId * 31 + orderNo.charAt(i);
+        // P2-12: 原 fold-hash（*31+char）在 ~24 字符 orderNo 上必然 long 溢出环绕，跨单碰撞概率高
+        //        （碰撞 → 两个订单共用 inventory:prededuct:{id} 预扣记录 → 库存扣减/释放错乱）
+        // 改为 SHA-256 截取前 8 字节（64bit），分布均匀，生日碰撞概率 ~2^-32，可忽略。
+        // 注意：算法变更只影响新订单；跨版本"预扣旧算法/确认新算法"的进行中订单需人工核对（30min 窗口内）。
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(orderNo.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            long result = 0;
+            for (int i = 0; i < 8; i++) {
+                result = (result << 8) | (digest[i] & 0xFF);
+            }
+            return result;
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 不可用", e);
         }
-        return pseudoOrderId;
     }
 
     /**
@@ -762,6 +785,37 @@ public class OrderService {
         } catch (Exception e) {
             log.error("[订单] 超时关单异常, 发送补偿消息: orderId={}, userId={}", orderId, userId, e);
             sendCompensationMessage("CLOSE_ORDER", orderId, userId, e.getMessage());
+        }
+    }
+
+    /**
+     * T-071（2026-08-14）：退款回补库存
+     * <p>
+     * 全额退款（订单置 5）后，将订单明细数量回补库存（Redis total/桶 + MySQL available）。
+     * 幂等：order 状态机（status==1 才处理一次）+ inventory 侧 SETNX(orderId)。
+     * </p>
+     */
+    private void restoreStockOnRefund(Long orderId, Long userId) {
+        try {
+            List<OrderItem> items = orderItemMapper.selectList(
+                    new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<OrderItem>()
+                            .eq(OrderItem::getUserId, userId)
+                            .eq(OrderItem::getOrderId, orderId));
+            for (OrderItem item : items) {
+                Map<String, Object> req = Map.of(
+                        "orderId", orderId, "skuId", item.getSkuId(),
+                        "quantity", item.getQuantity(), "userId", userId);
+                R<Void> resp = inventoryFeignClient.refundRestore(req);
+                if (resp == null || !resp.isSuccess()) {
+                    log.error("[订单] 退款回补库存失败(依赖对账): orderId={}, skuId={}, resp={}",
+                            orderId, item.getSkuId(), resp);
+                } else {
+                    log.info("[订单] 退款回补库存成功: orderId={}, skuId={}, qty={}",
+                            orderId, item.getSkuId(), item.getQuantity());
+                }
+            }
+        } catch (Exception e) {
+            log.error("[订单] 退款回补库存异常(依赖对账): orderId={}", orderId, e);
         }
     }
 
@@ -1030,12 +1084,12 @@ public class OrderService {
      * 必须通过 t_order_no_mapping 映射表反查 userId，才能路由到正确的分片。
      * </p>
      */
-    public void onRefundSuccess(Long orderId) {
+    public boolean onRefundSuccess(Long orderId) {
         // 1. 通过映射表反查 userId（分库分表后 selectById 无法路由，必须带分片键）
         OrderNoMapping mapping = orderNoMappingRepository.selectByOrderId(orderId);
         if (mapping == null) {
             log.error("[订单] 退款回调但映射表中找不到orderId: orderId={}", orderId);
-            return;
+            return false;
         }
         Long userId = mapping.getUserId();
 
@@ -1046,19 +1100,20 @@ public class OrderService {
                         .eq(Order::getId, orderId));
         if (order == null) {
             log.warn("[订单] 退款回调但订单不存在: orderId={}, userId={}", orderId, userId);
-            return;
+            return false;
         }
         if (order.getStatus() != 1) {
             log.warn("[订单] 退款回调但订单状态不是已支付: orderId={}", orderId);
-            return;
+            return order.getStatus() == 5;
         }
 
         // 3. Event Sourcing: 追加退款事件并更新状态
         orderEventService.appendEvent(order, OrderEventService.EVENT_REFUNDED,
                 Map.of("refundTime", LocalDateTime.now().toString()));
 
-        // 4. 释放库存
+        // 4. 释放库存（预扣阶段无记录则无操作）+ T-071 退款回补（confirm 已清预扣记录 → 独立 refund-restore 语义）
         releaseInventory(orderId, order.getOrderNo(), userId);
+        restoreStockOnRefund(orderId, userId);
 
         // 5. 退还优惠券
         returnCouponIfUsed(order);
@@ -1066,6 +1121,7 @@ public class OrderService {
         takeSnapshot(orderId, userId, "REFUNDED");
         stringRedisTemplate.delete("myxhs:order:info:" + orderId);
         log.info("[订单] 退款成功: orderId={}", orderId);
+        return true;
     }
 
     /**
@@ -1099,6 +1155,10 @@ public class OrderService {
         // Event Sourcing: 记录支付失败取消事件
         orderEventService.appendEvent(order, OrderEventService.EVENT_CANCELLED,
                 Map.of("cancelReason", "支付失败", "cancelTime", LocalDateTime.now().toString()));
+
+        // T-070（2026-08-14 G5 执行发现）：appendEvent 只设 status=4，补设 cancelled_at
+        // （cancelOrder/closeTimeoutOrder 均有，onPaymentFailed 遗漏 → 支付失败取消单无取消时点）
+        orderMapper.setCancelledAt(orderId, userId);
 
         // 并行释放库存 + 退还优惠券
         CompletableFuture<Void> releaseFuture = CompletableFuture.runAsync(() -> releaseInventory(orderId, order.getOrderNo(), userId), ORDER_ASYNC_EXECUTOR);

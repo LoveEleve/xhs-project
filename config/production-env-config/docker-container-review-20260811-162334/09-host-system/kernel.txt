@@ -1,0 +1,1 @@
+Linux version 6.6.119-49.27.tl4.x86_64 (mockbuild@VM-81-29-TS3) (gcc (Tencent Compiler 12.3.1.8) 12.3.1 20230912 (TencentOS 12.3.1.8-3), GNU ld (GNU Binutils) 2.41) #1 SMP Mon Jun 22 12:02:51 CST 2026

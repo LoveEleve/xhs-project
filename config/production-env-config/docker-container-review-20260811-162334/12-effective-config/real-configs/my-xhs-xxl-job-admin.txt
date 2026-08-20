@@ -1,0 +1,22 @@
+############ my-xhs-xxl-job-admin 真实生效配置(进程实际使用的)
+#### ENTRYPOINT
+[
+    "sh",
+    "-c",
+    "java -jar $JAVA_OPTS /app.jar $PARAMS"
+]
+#### CMD(命令行参数=多数服务真实配置)
+null
+#### ENV(环境变量)
+JAVA_HOME=/opt/kona-jdk17
+PARAMS=--spring.datasource.url=jdbc:mysql://127.0.0.1:3306/xxl_job?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai --spring.datasource.username=root --spring.datasource.password=Xhs@2026#MySQL --server.port=18080 --xxl.job.accessToken=my-xhs-xxl-job-token-2026 --xxl.job.i18n=zh_CN
+PATH=/usr/local/openjdk-8/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+LANG=C.UTF-8
+JAVA_VERSION=8u342
+TZ=PRC
+
+#### 资源限制
+MemLimit=1073741824 CPULimit=500000000 Restart=unless-stopped
+#### 挂载的配置文件
+/opt/kona-jdk17 -> /opt/kona-jdk17
+

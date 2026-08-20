@@ -1,0 +1,15 @@
+[
+    {
+        "CreatedAt": "2026-08-08T22:01:41+08:00",
+        "Driver": "local",
+        "Labels": {
+            "com.docker.compose.project": "my-xhs-deploy-zip",
+            "com.docker.compose.version": "2.29.2",
+            "com.docker.compose.volume": "grafana-data"
+        },
+        "Mountpoint": "/data/docker/lib/volumes/my-xhs-deploy-zip_grafana-data/_data",
+        "Name": "my-xhs-deploy-zip_grafana-data",
+        "Options": null,
+        "Scope": "local"
+    }
+]

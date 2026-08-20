@@ -48,6 +48,8 @@ myxhs:
       max-cost: 1.0
       price-per-1k-tokens: 0.002
       max-invalid-answers: 2
+      # 工具结果截断长度（默认 400 太小，DLQ 查询等返回大量数据时截断导致 agent 无法定位目标消息）
+      tool-result-max-len: 2000
     eval:
       # M6-4 评测门禁阈值（PR 放行红线；实测校准后收紧）
       gate:
@@ -67,6 +69,10 @@ myxhs:
       embedding-url: ${ARK_PLAN_BASE_URL:https://ark.cn-beijing.volces.com/api/plan/v3}
       embedding-key: ${ARK_PLAN_API_KEY:}
       embedding-model: ${ARK_EMBEDDING_MODEL:doubao-embedding-vision-large}
+    hitl:
+      dlq-redeliver:
+        # M11 HITL：DLQ 管理通道 URL（RocketMQ Dashboard）；未配置 → dlq.redeliver / mq.dlq_query 返回 ERROR
+        url: ${MYXHS_AI_DLQ_REDIVER_URL:http://21.130.247.89:18081}
     log-search:
       # M9-1 受控日志检索白名单（service=日志文件绝对路径；不在白名单的服务一律拒绝）
       files: ${MYXHS_LOG_SEARCH_FILES:}
@@ -79,7 +85,19 @@ management:
   metrics:
     tags:
       application: my-xhs-ai-app
+  # D6 Langfuse trace：OTel tracing 配置
+  tracing:
+    sampling:
+      probability: ${LANGFUSE_TRACE_SAMPLE:1.0}
+
+# D6 Langfuse：OTel OTLP 导出到 Langfuse Cloud
+otel:
+  exporter:
+    otlp:
+      endpoint: ${LANGFUSE_OTEL_ENDPOINT:https://cloud.langfuse.com/api/public/otel}
+      headers: ${LANGFUSE_OTEL_HEADERS:}
 
 logging:
   level:
     root: info
+    com.myxhs.ai.app.service.agent.tracing: debug

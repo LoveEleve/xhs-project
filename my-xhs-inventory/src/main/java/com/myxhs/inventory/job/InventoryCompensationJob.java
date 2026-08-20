@@ -39,6 +39,8 @@ public class InventoryCompensationJob {
 
     private static final String TOTAL_KEY_TPL = "inventory:{%d}:total";
     private static final String BUCKET_KEY_TPL = "inventory:{%d}:bucket:";
+    /** T-063（2026-08-14）：release.lua 需要 KEYS[4]=index——原补偿调用缺省，预扣 Hash 清空时 ZREM nil 脚本错 */
+    private static final String PREDEDUCT_INDEX_KEY = "inventory:prededuct:index";
 
     private static String totalKey(Long skuId) { return String.format(TOTAL_KEY_TPL, skuId); }
     private static String bucketKey(Long skuId, int bucketNo) { return String.format(BUCKET_KEY_TPL, skuId) + bucketNo; }
@@ -71,11 +73,15 @@ public class InventoryCompensationJob {
 
             try {
                 String predeductKey = "inventory:prededuct:" + orderId;
-                // 使用 release.lua 重试回退
+                // 【F-037】从预扣 hash 读取实际来源桶号，而非固定 bucket 0
+                Object bucketNoObj = stringRedisTemplate.opsForHash().get(predeductKey, skuId + ":bucket");
+                int bucketNo = bucketNoObj != null ? Integer.parseInt(bucketNoObj.toString()) : 0;
+                // 使用 release.lua 重试回退（T-063：补齐 KEYS[4]=index；T-065：补齐 ARGV[2]=orderId——
+                // 原实现仅传 skuId，ZREM index 时 ARGV[2]=nil 脚本错 → total 已回退但标记失败 → 下周期重复回退超发）
                 Long result = stringRedisTemplate.execute(
                         releaseScript,
-                        List.of(totalKey(skuId), predeductKey, bucketKey(skuId, 0)),
-                        String.valueOf(skuId));
+                        List.of(totalKey(skuId), predeductKey, bucketKey(skuId, bucketNo), PREDEDUCT_INDEX_KEY),
+                        String.valueOf(skuId), String.valueOf(orderId));
 
                 if (result != null && result > 0) {
                     inventoryMapper.markCompensationResolved(id);

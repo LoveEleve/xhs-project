@@ -89,31 +89,6 @@
         </dependency>
 
         <!-- 内部服务模块依赖 -->
-        <dependency>
-            <groupId>com.myxhs</groupId>
-            <artifactId>my-xhs-counter</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.myxhs</groupId>
-            <artifactId>my-xhs-coupon</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.myxhs</groupId>
-            <artifactId>my-xhs-cart</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.myxhs</groupId>
-            <artifactId>my-xhs-analytics</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.myxhs</groupId>
-            <artifactId>my-xhs-notification</artifactId>
-            <version>${project.version}</version>
-        </dependency>
         
         <!-- Lombok -->
         <dependency>

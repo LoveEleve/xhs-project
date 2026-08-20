@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
+import com.myxhs.search.service.ProductIndexDocumentBuilder;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -51,6 +52,7 @@ public class IndexRebuildJob {
     private final JdbcTemplate jdbcTemplate;
     private final StringRedisTemplate stringRedisTemplate;
     private final RedissonClient redissonClient;
+    private final ProductIndexDocumentBuilder productIndexDocumentBuilder;
 
     @Value("${search.note.index-name:note_index}")
     private String noteIndexName;
@@ -175,8 +177,7 @@ public class IndexRebuildJob {
             // 断点续传安全策略：只有全部成功才推进断点
             // 部分失败时不推进，下次重试会重新索引这批数据（ES upsert 幂等）
             if (indexed < notes.size()) {
-                log.warn("[索引重建] 笔记批次部分失败: 成功={}/{}, 断点不推进", indexed, notes.size());
-                break; // 中断本次重建，下次从当前位置重试
+                throw new IllegalStateException("笔记索引批次部分失败: 成功=" + indexed + "/" + notes.size());
             }
 
             // 全部成功，推进断点
@@ -198,7 +199,7 @@ public class IndexRebuildJob {
                 log.info("[索引重建] 建议关键词已索引{}条", suggestIndexed);
             }
         } catch (Exception e) {
-            log.error("[索引重建] 建议索引重建失败（不影响其他索引）", e);
+            throw new IllegalStateException("建议索引重建失败", e);
         }
 
         // ===== 重建商品索引 =====
@@ -208,10 +209,13 @@ public class IndexRebuildJob {
 
         while (true) {
             List<Map<String, Object>> products = jdbcTemplate.queryForList(
-                    // t_spu 表实际字段 — category_name/price/image 由 buildProductDocument 默认值补全
-                    // 【修复】t_spu 在 my_xhs_product 库，search 默认数据源是 my_xhs_content，必须跨库限定
-                    "SELECT id, name, category_id, brand_id, description, images, status, created_at FROM my_xhs_product.t_spu " +
-                            "WHERE id > ? AND deleted = 0 ORDER BY id ASC LIMIT ?",
+                    // t_spu 在 my_xhs_product 库，search 默认数据源是 my_xhs_content，必须跨库限定
+                    "SELECT s.id, s.name, s.category_id, s.brand_id, s.description, s.images, s.status, s.created_at, " +
+                            "c.name AS category_name, MIN(k.price) AS min_price " +
+                            "FROM my_xhs_product.t_spu s " +
+                            "LEFT JOIN my_xhs_product.t_category c ON c.id = s.category_id AND c.deleted = 0 " +
+                            "LEFT JOIN my_xhs_product.t_sku k ON k.spu_id = s.id AND k.deleted = 0 AND k.status = 1 " +
+                            "WHERE s.id > ? AND s.deleted = 0 GROUP BY s.id ORDER BY s.id ASC LIMIT ?",
                     lastSpuId, batchSize);
 
             if (products.isEmpty()) {
@@ -223,8 +227,7 @@ public class IndexRebuildJob {
 
             // 断点续传安全策略：部分失败时不推进断点
             if (indexed < products.size()) {
-                log.warn("[索引重建] 商品批次部分失败: 成功={}/{}, 断点不推进", indexed, products.size());
-                break;
+                throw new IllegalStateException("商品索引批次部分失败: 成功=" + indexed + "/" + products.size());
             }
 
             lastSpuId = ((Number) products.get(products.size() - 1).get("id")).longValue();
@@ -236,7 +239,7 @@ public class IndexRebuildJob {
             }
         }
         } catch (Exception e) {
-            log.error("[索引重建] 商品索引重建失败（不影响笔记和建议索引）", e);
+            throw new IllegalStateException("商品索引重建失败", e);
         }
 
         long elapsed = System.currentTimeMillis() - startTime;
@@ -254,10 +257,11 @@ public class IndexRebuildJob {
     private int bulkIndexNotes(List<Map<String, Object>> notes) {
         try {
             BulkRequest.Builder bulkBuilder = new BulkRequest.Builder();
+            Map<Long, Map<Integer, Long>> countsByNote = loadNoteCounts(notes);
 
             for (Map<String, Object> note : notes) {
                 Long noteId = ((Number) note.get("id")).longValue();
-                Map<String, Object> doc = buildNoteDocument(note);
+                Map<String, Object> doc = buildNoteDocument(note, countsByNote.getOrDefault(noteId, Map.of()));
 
                 bulkBuilder.operations(op -> op
                         .index(idx -> idx
@@ -295,7 +299,7 @@ public class IndexRebuildJob {
 
             for (Map<String, Object> product : products) {
                 Long spuId = ((Number) product.get("id")).longValue();
-                Map<String, Object> doc = buildProductDocument(product);
+                Map<String, Object> doc = productIndexDocumentBuilder.build(product, Map.of());
 
                 bulkBuilder.operations(op -> op
                         .index(idx -> idx
@@ -322,7 +326,41 @@ public class IndexRebuildJob {
         }
     }
 
-    private Map<String, Object> buildNoteDocument(Map<String, Object> note) {
+    private Map<String, Object> buildNoteDocument(Map<String, Object> note, Map<Integer, Long> counts) {
+        Map<String, Object> doc = new HashMap<>();
+        doc.put("noteId", note.getOrDefault("id", 0L));
+        doc.put("userId", note.getOrDefault("user_id", 0L));
+        doc.put("title", note.getOrDefault("title", ""));
+        doc.put("content", note.getOrDefault("content", ""));
+        doc.put("coverImage", note.getOrDefault("cover_url", ""));
+        doc.put("likeCount", counts.getOrDefault(1, 0L));
+        doc.put("collectCount", counts.getOrDefault(2, 0L));
+        doc.put("commentCount", counts.getOrDefault(3, 0L));
+        doc.put("status", note.getOrDefault("status", 1));
+        doc.put("createdAt", note.get("created_at") != null ? note.get("created_at").toString() : null);
+        return doc;
+    }
+
+    private Map<Long, Map<Integer, Long>> loadNoteCounts(List<Map<String, Object>> notes) {
+        if (notes.isEmpty()) {
+            return Map.of();
+        }
+        String placeholders = String.join(",", notes.stream().map(note -> "?").toList());
+        Object[] ids = notes.stream().map(note -> note.get("id")).toArray();
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                "SELECT target_id, count_type, count_value FROM my_xhs_counter.t_counter " +
+                        "WHERE target_type = 1 AND target_id IN (" + placeholders + ") AND deleted = 0", ids);
+        Map<Long, Map<Integer, Long>> counts = new HashMap<>();
+        for (Map<String, Object> row : rows) {
+            Long noteId = ((Number) row.get("target_id")).longValue();
+            counts.computeIfAbsent(noteId, ignored -> new HashMap<>()).put(
+                    ((Number) row.get("count_type")).intValue(),
+                    ((Number) row.get("count_value")).longValue());
+        }
+        return counts;
+    }
+
+    private Map<String, Object> legacyNoteDocument(Map<String, Object> note) {
         Map<String, Object> doc = new HashMap<>();
         doc.put("noteId", note.getOrDefault("id", 0L));
         doc.put("userId", note.getOrDefault("user_id", 0L));
@@ -338,33 +376,7 @@ public class IndexRebuildJob {
     }
 
     private Map<String, Object> buildProductDocument(Map<String, Object> product) {
-        // 从 images JSON 数组提取第一张图片
-        String firstImage = "";
-        Object imagesObj = product.get("images");
-        if (imagesObj instanceof String imagesStr && !imagesStr.isEmpty()) {
-            try {
-                JSONArray arr = JSON.parseArray(imagesStr);
-                if (arr != null && !arr.isEmpty()) {
-                    firstImage = arr.getString(0);
-                }
-            } catch (Exception e) {
-                log.debug("[索引重建] images 解析失败，使用空图片: {}", imagesStr);
-            }
-        }
-
-        Map<String, Object> doc = new HashMap<>();
-        doc.put("spuId", product.get("id"));
-        doc.put("name", product.getOrDefault("name", ""));
-        doc.put("categoryId", product.getOrDefault("category_id", 0));
-        doc.put("categoryName", "");    // t_spu 无此字段，需 product 服务补全
-        doc.put("brandId", product.getOrDefault("brand_id", 0));
-        doc.put("brandName", "");       // t_spu 无此字段
-        doc.put("price", 0);            // 价格在 t_sku 表，重建时不补
-        doc.put("image", firstImage);
-        doc.put("sales", 0);            // 无销量统计
-        doc.put("status", product.getOrDefault("status", 1));
-        doc.put("createdAt", product.get("created_at") != null ? product.get("created_at").toString() : null);
-        return doc;
+        return productIndexDocumentBuilder.build(product, Map.of());
     }
 
     /**

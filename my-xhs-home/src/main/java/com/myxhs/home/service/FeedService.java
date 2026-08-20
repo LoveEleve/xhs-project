@@ -4,6 +4,7 @@ import com.myxhs.common.constants.RedisKeyConstants;
 import com.myxhs.common.response.R;
 import com.myxhs.home.dto.FeedVO;
 import com.myxhs.home.dto.NoteCardVO;
+import com.myxhs.home.exception.DownstreamUnavailableException;
 import com.myxhs.home.feign.AnalyticsFeignClient;
 import com.myxhs.home.feign.ContentFeignClient;
 import com.myxhs.home.feign.CounterFeignClient;
@@ -82,8 +83,9 @@ public class FeedService {
         // 【P0-C 修复】reverseRangeByScoreWithScores(key, min, max,...) 参数 min/max 颠倒：
         // 收件箱 score 是正数时间戳，原 (minScore, 0) 使区间 [minScore,0] 恒空 → 收件箱恒空。
         // 应为 (0, minScore)：score ∈ [0, minScore]（minScore 为 lastScore 的开区间上界）倒序取 size 条。
+        // T-085：多取 1 条判断 hasMore（原 merged.size()>=size 尾页取满误报 true）
         Set<ZSetOperations.TypedTuple<String>> inboxTuples = stringRedisTemplate.opsForZSet()
-                .reverseRangeByScoreWithScores(inboxKey, 0, minScore, 0, size);
+                .reverseRangeByScoreWithScores(inboxKey, 0, minScore, 0, size + 1);
 
         // 1b. 获取用户关注的大V列表，从大V发件箱拉取
         List<ZSetOperations.TypedTuple<String>> bigVTuples = pullBigVOutbox(userId, lastScore, size);
@@ -99,14 +101,32 @@ public class FeedService {
                     .build();
         }
 
+        // T-085：多取的 1 条仅用于 hasMore 判断，实际返回 size 条
+        boolean hasMoreFromRedis = merged.size() > size;
+        if (merged.size() > size) {
+            merged = new ArrayList<>(merged.subList(0, size));
+        }
+
         // 提取 noteId 列表和最小 score（下一页游标）
-        List<Long> noteIds = merged.stream()
-                .map(t -> Long.valueOf(t.getValue()))
-                .collect(Collectors.toList());
+        // T-084：解析失败（脏成员非数字）跳过而非 500——原 Long.valueOf 抛 NumberFormatException
+        List<Long> noteIds = new ArrayList<>();
+        for (ZSetOperations.TypedTuple<String> t : merged) {
+            try {
+                noteIds.add(Long.valueOf(t.getValue()));
+            } catch (NumberFormatException e) {
+                log.warn("[Feed] 收件箱脏成员跳过: member={}, score={}", t.getValue(), t.getScore());
+            }
+        }
+        if (noteIds.isEmpty()) {
+            return FeedVO.builder()
+                    .notes(Collections.emptyList())
+                    .hasMore(false)
+                    .unreadCount(0)
+                    .build();
+        }
         Double nextScore = merged.get(merged.size() - 1).getScore();
 
         // ========== 第 2 步：CompletableFuture 并行聚合 ==========
-        boolean hasMoreFromRedis = merged.size() >= size;
         return aggregateFeed(userId, noteIds, nextScore, size, hasMoreFromRedis);
     }
 
@@ -147,7 +167,7 @@ public class FeedService {
                         R<Map<String, Object>> r = notificationFeignClient.getUnreadCount(userId);
                         if (r != null && r.isSuccess() && r.getData() != null) {
                             Object total = r.getData().get("total");
-                            return total != null ? ((Number) total).intValue() : 0;
+                            return toIntValue(total, 0);
                         }
                     } catch (Exception e) {
                         log.warn("[Feed] 获取未读通知数失败", e);
@@ -165,6 +185,10 @@ public class FeedService {
             log.warn("[Feed] 第1层聚合异常", e);
         }
 
+        if (notesFuture.isCompletedExceptionally()) {
+            throw new DownstreamUnavailableException("内容服务不可用");
+        }
+
         Map<Long, Map<String, Object>> notesMap = notesFuture.getNow(Collections.emptyMap());
         Map<Long, Boolean> likesMap = likesFuture.getNow(Collections.emptyMap());
         int unreadCount = unreadFuture.getNow(0);
@@ -172,9 +196,9 @@ public class FeedService {
         // 提取作者 ID 列表
         Set<Long> authorIds = new HashSet<>();
         for (Map<String, Object> note : notesMap.values()) {
-            Object uid = note.get("userId");
+            Long uid = toLongValue(note.get("userId"));
             if (uid != null) {
-                authorIds.add(((Number) uid).longValue());
+                authorIds.add(uid);
             }
         }
 
@@ -209,7 +233,7 @@ public class FeedService {
                 continue; // 笔记不存在或已删除，跳过
             }
 
-            Long authorId = note.get("userId") != null ? ((Number) note.get("userId")).longValue() : null;
+            Long authorId = toLongValue(note.get("userId"));
             Map<String, Object> author = authorId != null ? usersMap.getOrDefault(authorId, Collections.emptyMap()) : Collections.emptyMap();
             String counterKey = "1:" + noteId; // targetType=1(笔记):targetId
             Map<String, Long> counters = countersMap.getOrDefault(counterKey, Collections.emptyMap());
@@ -218,13 +242,13 @@ public class FeedService {
                     .noteId(noteId)
                     .title((String) note.get("title"))
                     .coverUrl((String) note.get("coverUrl"))
-                    .noteType(note.get("noteType") != null ? ((Number) note.get("noteType")).intValue() : 0)
+                    .noteType(toIntValue(note.get("noteType"), 0))
                     .authorId(authorId)
                     .authorNickname((String) author.get("nickname"))
                     .authorAvatar((String) author.get("avatar"))
-                    .likeCount(counters.getOrDefault("like", 0L))
-                    .collectCount(counters.getOrDefault("collect", 0L))
-                    .commentCount(counters.getOrDefault("comment", 0L))
+                    .likeCount(toLongValue(counters.get("like"), 0L))
+                    .collectCount(toLongValue(counters.get("collect"), 0L))
+                    .commentCount(toLongValue(counters.get("comment"), 0L))
                     .isLiked(likesMap.getOrDefault(noteId, false))
                     .isCollected(false) // 收藏状态需要额外接口，暂不聚合
                     .isFollowed(true) // Feed 流中的笔记都是关注的人发的
@@ -242,6 +266,35 @@ public class FeedService {
     }
 
     // ==================== 私有方法 ====================
+
+    /**
+     * 兼容 Long→ToStringSerializer（R4：全局 Long 序列化为 String）：
+     * 下游 Feign 返回的 Map 中 Long 字段实际为 String，统一转换避免 ClassCastException
+     */
+    private Long toLongValue(Object o) {
+        if (o == null) return null;
+        if (o instanceof Number) return ((Number) o).longValue();
+        try {
+            return Long.parseLong(o.toString());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private Long toLongValue(Object o, long def) {
+        Long v = toLongValue(o);
+        return v != null ? v : def;
+    }
+
+    private int toIntValue(Object o, int def) {
+        if (o == null) return def;
+        if (o instanceof Number) return ((Number) o).intValue();
+        try {
+            return Integer.parseInt(o.toString());
+        } catch (Exception e) {
+            return def;
+        }
+    }
 
     /**
      * 从关注的大V发件箱拉取笔记（拉模式）
@@ -342,7 +395,10 @@ public class FeedService {
                 .collect(Collectors.toMap(t -> t.getValue(), t -> t, (a, b) -> a.getScore() > b.getScore() ? a : b)) // 去重：同 noteId 保留高分
                 .values().stream()
                 .sorted((a, b) -> Double.compare(b.getScore(), a.getScore()))
-                .limit(size)
+                // T-125（2026-08-16）：limit(size+1) 保留 T-085 多取的 1 条供 hasMore 判断——
+                // 修复前 limit(size) 在合并阶段截断，调用方 hasMoreFromRedis=merged.size()>size 恒 false
+                // （收件箱已取 size+1 条但合并时被截回 size 条）→ 首页/中间页 hasMore 恒 false，无限滚动失效
+                .limit(size + 1)
                 .collect(Collectors.toList());
     }
 
@@ -375,43 +431,33 @@ public class FeedService {
      * </p>
      */
     private Map<Long, Map<String, Object>> batchGetNoteDetails(List<Long> noteIds) {
-        Map<Long, CompletableFuture<Map.Entry<Long, Map<String, Object>>>> futures = new LinkedHashMap<>();
-        for (Long noteId : noteIds) {
-            CompletableFuture<Map.Entry<Long, Map<String, Object>>> future = CompletableFuture
-                    .supplyAsync(() -> {
-                        try {
-                            R<Map<String, Object>> r = contentFeignClient.getNoteDetail(noteId);
-                            if (r != null && r.isSuccess() && r.getData() != null) {
-                                return Map.entry(noteId, r.getData());
-                            }
-                        } catch (Exception e) {
-                            log.warn("[Feed] 获取笔记详情失败: noteId={}", noteId);
-                        }
-                        return null;
-                    }, batchFeignPool);
-            futures.put(noteId, future);
+        // P2-3: 逐条 Feign 调用（N 次 HTTP）→ content 批量接口（1 次 HTTP，服务端内部逐条查，含缓存/防穿透语义）
+        if (noteIds == null || noteIds.isEmpty()) {
+            return Collections.emptyMap();
         }
-
-        // 使用 allOf 并行等待所有 future，总超时 3 秒（而非 N × 2 秒）
         try {
-            CompletableFuture.allOf(futures.values().toArray(new CompletableFuture[0]))
-                    .get(3, TimeUnit.SECONDS);
-        } catch (Exception e) {
-            log.warn("[Feed] 批量获取笔记详情超时(部分降级)");
-        }
-
-        Map<Long, Map<String, Object>> result = new LinkedHashMap<>();
-        for (Map.Entry<Long, CompletableFuture<Map.Entry<Long, Map<String, Object>>>> entry : futures.entrySet()) {
-            try {
-                Map.Entry<Long, Map<String, Object>> pair = entry.getValue().getNow(null);
-                if (pair != null) {
-                    result.put(pair.getKey(), pair.getValue());
-                }
-            } catch (Exception e) {
-                log.warn("[Feed] 获取笔记详情异常: noteId={}", entry.getKey());
+            R<Map<String, Object>> r = contentFeignClient.batchGetNoteDetail(noteIds);
+            if (r != null && r.getCode() == 503) {
+                throw new DownstreamUnavailableException("内容服务不可用");
             }
+            if (r != null && r.isSuccess() && r.getData() != null) {
+                Map<Long, Map<String, Object>> result = new LinkedHashMap<>();
+                for (Map.Entry<String, Object> entry : r.getData().entrySet()) {
+                    try {
+                        result.put(Long.valueOf(entry.getKey()),
+                                entry.getValue() instanceof Map ? (Map<String, Object>) entry.getValue() : Collections.emptyMap());
+                    } catch (NumberFormatException ignored) {
+                        log.warn("[Feed] 批量详情返回异常 key: {}", entry.getKey());
+                    }
+                }
+                return result;
+            }
+        } catch (DownstreamUnavailableException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("[Feed] 批量获取笔记详情失败(整体降级为空): noteIds={}", noteIds, e);
         }
-        return result;
+        return Collections.emptyMap();
     }
 
     /**

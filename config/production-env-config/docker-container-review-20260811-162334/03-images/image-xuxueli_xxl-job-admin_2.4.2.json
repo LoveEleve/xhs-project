@@ -1,0 +1,63 @@
+[
+    {
+        "Id": "sha256:776d09cf1493d76b6bb694b005fa46c894ef0758cd6de846378209cc01953069",
+        "RepoTags": [
+            "xuxueli/xxl-job-admin:2.4.2"
+        ],
+        "RepoDigests": [
+            "xuxueli/xxl-job-admin@sha256:183c2de77e8d9959d5c375b21841c23827f89dbc0e89c648aa34821415921a89"
+        ],
+        "Parent": "",
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2024-11-16T14:55:53.580808562Z",
+        "DockerVersion": "",
+        "Author": "xuxueli",
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 235479016,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/data/docker/lib/overlay2/4426be24fcac9e37a5dcc67a135b364235c382c70d492b286a584daf47b5f3a4/diff:/data/docker/lib/overlay2/ed7cf75faa01193768fa9c0d403aa3f8ec084539b192565f7ba246c6230740f6/diff:/data/docker/lib/overlay2/31e72ac1f9531d88131cfbdff73160da2fc15a662a909d0ee3270bf888a2fa7e/diff:/data/docker/lib/overlay2/0ff9f7b4ea9d18dc8ffed0ec35baace7b85a91b4341a0e0afcaada8d00a12946/diff:/data/docker/lib/overlay2/0c06535ea80c58c534e8b7305d8f0a1109fcb3e32d337ca2ac81c37901de0e85/diff",
+                "MergedDir": "/data/docker/lib/overlay2/4e8f6d237c7dcea4cc3c112a0f4c64bcd852c71397d7e3573da344715ba99d83/merged",
+                "UpperDir": "/data/docker/lib/overlay2/4e8f6d237c7dcea4cc3c112a0f4c64bcd852c71397d7e3573da344715ba99d83/diff",
+                "WorkDir": "/data/docker/lib/overlay2/4e8f6d237c7dcea4cc3c112a0f4c64bcd852c71397d7e3573da344715ba99d83/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:92a4e8a3140f7a04a0e5a15793adef2d0e8889ed306a8f95a6cfb67cecb5f212",
+                "sha256:eafe6e032dbd1979848a323c4c84071be765d175661d6ea2ac148dbd673c6713",
+                "sha256:cd5a0a9f1e018d0861ca738588413c2906a36f5b5ae87906e8718961e44c3a7f",
+                "sha256:b66078cf4b4146848eb677f38d6fa83559b6c92d010d5cff63759bedd87e318e",
+                "sha256:65b66e7abce194b9cdba01de113154c3e9215c059a5d3b0cc3e216f6126cd008",
+                "sha256:a78f62069e19677ac6be4b83612623254c610a3298ba8b8c3c290555066b48ef"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        },
+        "Config": {
+            "Cmd": null,
+            "Entrypoint": [
+                "sh",
+                "-c",
+                "java -jar $JAVA_OPTS /app.jar $PARAMS"
+            ],
+            "Env": [
+                "PATH=/usr/local/openjdk-8/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "JAVA_HOME=/usr/local/openjdk-8",
+                "LANG=C.UTF-8",
+                "JAVA_VERSION=8u342",
+                "PARAMS=",
+                "TZ=PRC"
+            ],
+            "Labels": null,
+            "OnBuild": null,
+            "User": "",
+            "Volumes": null,
+            "WorkingDir": ""
+        }
+    }
+]

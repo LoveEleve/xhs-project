@@ -237,28 +237,54 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
      * <p>
      * 被限流时返回统一格式的 429 响应，与鉴权失败的 401 响应格式保持一致：
      * {"code": 429, "message": "请求过于频繁，请稍后再试", "data": null}
+     * <p>
+     * 注意：必须同时注册 Gateway 适配器（SentinelGatewayFilter）与 WebFlux 适配器
+     * （SentinelWebFluxFilter，spring-cloud-starter-alibaba-sentinel 自动装配）两个 BlockHandler。
+     * T-106（2026-08-15 回归发现）：Sentinel 1.8.8 的 DefaultBlockRequestHandler 编译于 Spring 5.x
+     * （调用 ServerResponse.status(HttpStatus)），WebFlux 6.1.6 已改为 HttpStatusCode 签名——
+     * 触发限流时 NoSuchMethodError，block 响应无法生成 → 请求悬挂 30s 超时。
+     * 仅注册 GatewayCallbackManager 不够：WebFlux 适配器走独立的 WebFluxCallbackManager。
      */
     private void initBlockHandler() {
+        // Gateway 适配器（SentinelGatewayFilter 触发）
         GatewayCallbackManager.setBlockHandler((exchange, t) -> {
             log.info("[Gateway-Sentinel] 请求被限流, path={}",
                     exchange.getRequest().getURI().getPath());
 
-            Map<String, Object> result = new LinkedHashMap<>();
-            result.put("code", 429);
-            result.put("message", "请求过于频繁，请稍后再试");
-            result.put("data", null);
-
-            byte[] bytes;
-            try {
-                bytes = objectMapper.writeValueAsBytes(result);
-            } catch (JsonProcessingException e) {
-                bytes = ("{\"code\":429,\"message\":\"请求过于频繁，请稍后再试\",\"data\":null}")
-                        .getBytes(StandardCharsets.UTF_8);
-            }
-
+            byte[] bytes = buildBlockResponse();
             return ServerResponse.status(HttpStatus.TOO_MANY_REQUESTS)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(Mono.just(bytes), byte[].class);
         });
+
+        // WebFlux 适配器（T-106：SentinelWebFluxFilter + SentinelBlockExceptionHandler 触发）
+        // 使用 HttpStatusCode 重载避免 NoSuchMethodError（Spring 6.x 兼容）
+        com.alibaba.csp.sentinel.adapter.spring.webflux.callback.WebFluxCallbackManager
+                .setBlockHandler((exchange, t) -> {
+                    log.info("[Gateway-Sentinel-WebFlux] 请求被限流, path={}",
+                            exchange.getRequest().getURI().getPath());
+
+                    byte[] bytes = buildBlockResponse();
+                    return ServerResponse.status(
+                                    org.springframework.http.HttpStatusCode.valueOf(429))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .body(Mono.just(bytes), byte[].class);
+                });
+    }
+
+    /**
+     * 构造统一限流响应体（Gateway/WebFlux 两个适配器共用）
+     */
+    private byte[] buildBlockResponse() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("code", 429);
+        result.put("message", "请求过于频繁，请稍后再试");
+        result.put("data", null);
+        try {
+            return objectMapper.writeValueAsBytes(result);
+        } catch (JsonProcessingException e) {
+            return ("{\"code\":429,\"message\":\"请求过于频繁，请稍后再试\",\"data\":null}")
+                    .getBytes(StandardCharsets.UTF_8);
+        }
     }
 }

@@ -200,10 +200,11 @@ class OrderControllerTest {
     @Test
     @DisplayName("GET /api/order/by-order-no/{orderNo} - 查询成功")
     void getOrderByOrderNo_success() throws Exception {
-        when(orderService.getOrderByOrderNo(1L, "ORD20250101000000001"))
+        when(orderService.getOrderByOrderNo(USER_ID, "ORD20250101000000001"))
                 .thenReturn(buildOrderVO());
 
-        mockMvc.perform(get("/api/order/by-order-no/{orderNo}", "ORD20250101000000001"))
+        mockMvc.perform(get("/api/order/by-order-no/{orderNo}", "ORD20250101000000001")
+                        .header(USER_ID_HEADER, USER_ID))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.orderNo").value("ORD20250101000000001"));
@@ -212,10 +213,11 @@ class OrderControllerTest {
     @Test
     @DisplayName("GET /api/order/by-order-no/{orderNo} - 订单不存在")
     void getOrderByOrderNo_notFound() throws Exception {
-        when(orderService.getOrderByOrderNo(1L, "ORD-NOT-EXIST"))
+        when(orderService.getOrderByOrderNo(USER_ID, "ORD-NOT-EXIST"))
                 .thenThrow(new BizException(ResultCode.ORDER_NOT_FOUND, "订单不存在"));
 
-        mockMvc.perform(get("/api/order/by-order-no/{orderNo}", "ORD-NOT-EXIST"))
+        mockMvc.perform(get("/api/order/by-order-no/{orderNo}", "ORD-NOT-EXIST")
+                        .header(USER_ID_HEADER, USER_ID))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(ResultCode.ORDER_NOT_FOUND.getCode()));
     }
@@ -229,7 +231,8 @@ class OrderControllerTest {
 
         mockMvc.perform(post("/api/order/cancel")
                         .header(USER_ID_HEADER, USER_ID)
-                        .param("orderId", ORDER_ID.toString()))
+                        .param("orderId", ORDER_ID.toString())
+                        .header("X-Internal-Call", "test-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
     }
@@ -242,7 +245,8 @@ class OrderControllerTest {
 
         mockMvc.perform(post("/api/order/cancel")
                         .header(USER_ID_HEADER, USER_ID)
-                        .param("orderId", ORDER_ID.toString()))
+                        .param("orderId", ORDER_ID.toString())
+                        .header("X-Internal-Call", "test-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(ResultCode.ORDER_NOT_FOUND.getCode()));
     }
@@ -256,7 +260,8 @@ class OrderControllerTest {
 
         mockMvc.perform(post("/api/order/confirm")
                         .header(USER_ID_HEADER, USER_ID)
-                        .param("orderId", ORDER_ID.toString()))
+                        .param("orderId", ORDER_ID.toString())
+                        .header("X-Internal-Call", "test-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
     }
@@ -324,8 +329,10 @@ class OrderControllerTest {
     void getPaymentStatus_success() throws Exception {
         Payment payment = buildPayment();
         when(mockPayService.getPaymentByOrderId(ORDER_ID)).thenReturn(payment);
+        when(orderService.isOrderOwner(USER_ID, ORDER_ID)).thenReturn(true);
 
-        mockMvc.perform(get("/api/order/pay/status/{orderId}", ORDER_ID))
+        mockMvc.perform(get("/api/order/pay/status/{orderId}", ORDER_ID)
+                        .header(USER_ID_HEADER, USER_ID))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
     }
@@ -339,7 +346,8 @@ class OrderControllerTest {
 
         mockMvc.perform(post("/api/order/pay-success")
                         .param("orderId", ORDER_ID.toString())
-                        .param("tradeNo", "TRADE_001"))
+                        .param("tradeNo", "TRADE_001")
+                        .header("X-Internal-Call", "test-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
     }
@@ -349,19 +357,20 @@ class OrderControllerTest {
     void notifyPaySuccess_updateFailed() throws Exception {
         when(orderService.onPaymentSuccess(ORDER_ID, null)).thenReturn(false);
 
-        // 即使更新失败，接口仍返回 200（降级处理）
         mockMvc.perform(post("/api/order/pay-success")
                         .param("orderId", ORDER_ID.toString())
-                        .param("tradeNo", "TRADE_001"))
+                        .param("tradeNo", "TRADE_001")
+                        .header("X-Internal-Call", "test-token"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(200));
+                .andExpect(jsonPath("$.code").value(ResultCode.ORDER_STATUS_ERROR.getCode()));
     }
 
     @Test
     @DisplayName("POST /api/order/pay-fail - 支付失败回调")
     void notifyPayFail() throws Exception {
         mockMvc.perform(post("/api/order/pay-fail")
-                        .param("orderId", ORDER_ID.toString()))
+                        .param("orderId", ORDER_ID.toString())
+                        .header("X-Internal-Call", "test-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
     }
@@ -371,11 +380,12 @@ class OrderControllerTest {
     @Test
     @DisplayName("POST /api/order/refund-success - 退款成功回调")
     void notifyRefundSuccess() throws Exception {
-        doNothing().when(orderService).onRefundSuccess(ORDER_ID);
+        when(orderService.onRefundSuccess(ORDER_ID)).thenReturn(true);
 
         mockMvc.perform(post("/api/order/refund-success")
                         .param("orderId", ORDER_ID.toString())
-                        .param("refundNo", "REFUND_001"))
+                        .param("refundNo", "REFUND_001")
+                        .header("X-Internal-Call", "test-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
     }
@@ -385,7 +395,8 @@ class OrderControllerTest {
     void notifyRefundFail() throws Exception {
         mockMvc.perform(post("/api/order/refund-fail")
                         .param("orderId", ORDER_ID.toString())
-                        .param("refundNo", "REFUND_001"))
+                        .param("refundNo", "REFUND_001")
+                        .header("X-Internal-Call", "test-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));
     }
@@ -399,7 +410,8 @@ class OrderControllerTest {
                 .thenReturn(new BigDecimal("198.00"));
 
         mockMvc.perform(get("/api/order/pay-amount")
-                        .param("orderId", ORDER_ID.toString()))
+                        .param("orderId", ORDER_ID.toString())
+                        .header("X-Internal-Call", "test-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data").value(198.00));

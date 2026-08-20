@@ -1,0 +1,41 @@
+############ my-xhs-nacos 真实生效配置(进程实际使用的)
+#### ENTRYPOINT
+[
+    "bin/docker-startup.sh"
+]
+#### CMD(命令行参数=多数服务真实配置)
+null
+#### ENV(环境变量)
+NACOS_APPLICATION_PORT=18848
+MYSQL_SERVICE_HOST=127.0.0.1
+SPRING_DATASOURCE_PLATFORM=mysql
+JAVA_HOME=/opt/kona-jdk17
+NACOS_SERVER_IP=21.130.247.89
+MODE=standalone
+MYSQL_SERVICE_PORT=3306
+MYSQL_SERVICE_DB_NAME=nacos_config
+MYSQL_SERVICE_USER=root
+MYSQL_SERVICE_PASSWORD=Xhs@2026#MySQL
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+PREFER_HOST_MODE=ip
+BASE_DIR=/home/nacos
+CLASSPATH=.:/home/nacos/conf:
+CLUSTER_CONF=/home/nacos/conf/cluster.conf
+FUNCTION_MODE=all
+NACOS_USER=nacos
+JAVA=/usr/lib/jvm/java-1.8.0-openjdk/bin/java
+JVM_XMS=1g
+JVM_XMX=1g
+JVM_XMN=512m
+JVM_MS=128m
+JVM_MMS=320m
+NACOS_DEBUG=n
+TOMCAT_ACCESSLOG_ENABLED=false
+TIME_ZONE=Asia/Shanghai
+
+#### 资源限制
+MemLimit=1610612736 CPULimit=1000000000 Restart=unless-stopped
+#### 挂载的配置文件
+/opt/kona-jdk17 -> /opt/kona-jdk17
+/data/workspace/my-xhs-deploy-zip/config/mysql-connector.jar -> /home/nacos/plugins/mysql/mysql-connector.jar
+

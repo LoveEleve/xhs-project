@@ -37,17 +37,35 @@ public final class JwtUtil {
      * @return JWT Token 字符串
      */
     public static String generateToken(String subject, String tokenType, long expireMs, String secret) {
+        return generateToken(subject, tokenType, expireMs, secret, null);
+    }
+
+    /**
+     * 生成 Token（带附加 claim）
+     *
+     * @param subject    主体（通常是 userId）
+     * @param tokenType  Token 类型（access / refresh）
+     * @param expireMs   过期时间（毫秒）
+     * @param secret     签名密钥（至少 32 字节）
+     * @param extraClaims 附加 claim（如 role），可空
+     * @return JWT Token 字符串
+     */
+    public static String generateToken(String subject, String tokenType, long expireMs, String secret,
+                                       java.util.Map<String, Object> extraClaims) {
         long now = System.currentTimeMillis();
         SecretKey key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
 
-        return Jwts.builder()
+        JwtBuilder builder = Jwts.builder()
                 .id(UUID.randomUUID().toString().replace("-", ""))
                 .subject(subject)
                 .claim("type", tokenType)
                 .issuedAt(new Date(now))
                 .expiration(new Date(now + expireMs))
-                .signWith(key)
-                .compact();
+                .signWith(key);
+        if (extraClaims != null) {
+            extraClaims.forEach(builder::claim);
+        }
+        return builder.compact();
     }
 
     /**

@@ -1,0 +1,15 @@
+[
+    {
+        "CreatedAt": "2026-07-09T22:05:28+08:00",
+        "Driver": "local",
+        "Labels": {
+            "com.docker.compose.project": "my-xhs",
+            "com.docker.compose.version": "2.29.2",
+            "com.docker.compose.volume": "mysql-inventory-data"
+        },
+        "Mountpoint": "/data/docker/lib/volumes/my-xhs_mysql-inventory-data/_data",
+        "Name": "my-xhs_mysql-inventory-data",
+        "Options": null,
+        "Scope": "local"
+    }
+]

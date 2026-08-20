@@ -22,7 +22,7 @@ export default function NotePublishPage() {
 
   useEffect(() => {
     if (!editId) return;
-    getNoteRawDetail(Number(editId))
+    getNoteRawDetail(editId)
       .then((resp) => {
         const n = resp.data.data;
         form.setFieldsValue({
@@ -64,7 +64,7 @@ export default function NotePublishPage() {
     setSubmitting(true);
     try {
       if (editId) {
-        await updateNote(Number(editId), payload);
+        await updateNote(editId, payload);
         message.success('已保存');
       } else if (draft) {
         await saveDraft(payload);

@@ -1,13 +1,13 @@
 # 项目总述三档讲稿（my-xhs-ai）
 
-> 日期：2026-08-17 | 定位：面试/作品集母稿 | 配套：`retrospective-v1.md`（总复盘）、`jd-hit-matrix-v1.md`（JD 命中）、`docs/reports/eval-gate-report-20260817.md`（评测证据）
+> 日期：2026-08-19 | 定位：面试/作品集母稿 | 配套：`retrospective-v1.md`（总复盘）、`jd-hit-matrix-v1.md`（JD 命中）、`docs/reports/e2e-eval-report.json`（E2E 评测证据）
 > 用法：30 秒版用于开场/电梯；3 分钟版用于自我介绍；10 分钟版用于深聊。三档共用同一套事实，不互相矛盾。
 
 ---
 
 ## 一、30 秒版
 
-我做的是一个面向电商运营和运维场景的企业级诊断 Agent，核心不是聊天，而是让 Agent 能够基于真实数据完成可追溯调查。系统采用"确定性查询优先、复杂归因进入受限 Agent"的架构，通过 MCP 工具、证据链、存在性校验、HITL 审批和 eval-gate，重点解决三个问题：**不编造、不越权、可评测**。目前已完成会话记忆、工具注册表、审批闭环、多智能体和评测闭环，真库真模型门禁与抽样回归均已跑绿。
+我做的是一个面向电商运营和运维场景的企业级诊断 Agent，核心不是聊天，而是让 Agent 能够基于真实数据完成可追溯调查。系统采用"确定性查询优先、复杂归因进入受限 Agent"的架构，通过 MCP 工具、证据链、存在性校验、HITL 审批和 eval-gate，重点解决三个问题：**不编造、不越权、可评测**。目前已完成会话记忆、工具注册表、审批闭环、多智能体、向量语义记忆和评测闭环，**真实外部 E2E 已跑通**（Agent → mqDlqQuery → HITL 审批 → dlq.redeliver → CR_SUCCESS），E2E 评测 5 case 全部完成、80% 通过；此外还补了一个 **Temporal PoC**，验证审批型长任务在独立 worker 被 kill 后可以恢复并继续完成。
 
 ---
 
@@ -107,7 +107,7 @@ Harness 是一个状态机，不是无限 ReAct 循环。它负责：
 - **Run**：一次执行的状态、步骤、证据和终止原因；
 - **Conversation**：用户多轮会话和消息关系；
 - **RAG**：外部知识库和口径文档；
-- **Memory**：长期偏好或历史摘要。
+- **Memory**：长期偏好或历史摘要（向量语义检索，豆包 embedding 2048 维）。
 
 跨轮只注入摘要和历史结论，不直接复用旧工具原文。需要新的业务数字时必须重新查询，避免把过期证据当成当前事实。
 
@@ -137,10 +137,12 @@ Harness 是一个状态机，不是无限 ReAct 循环。它负责：
 
 最近真实验证中：
 
+- E2E 评测 5 case 全部完成（100% 完成率），4/5 通过（80% 通过率）；
+- 1 个幻觉嫌疑为误报（评测器把错误消息中的数字当成幻觉）；
+- 真实外部 E2E 首次跑通：Agent → mqDlqQuery → HITL 审批 → dlq.redeliver → CR_SUCCESS；
 - `EvalGateRunTest` 7 条关键用例通过；
-- completion rate 为 100%；
-- 修复评测器误报后 hallucination rate 为 0；
-- `SampledRegressionTest` 通过。
+- `SampledRegressionTest` 通过；
+- 向量语义记忆验证：豆包 embedding + 余弦相似度检索，多用户隔离通过。
 
 这里的原则是：**Agent 的非确定性不能靠人工感觉管理，必须转化成可重复的质量指标。**
 
@@ -178,5 +180,9 @@ Harness 是一个状态机，不是无限 ReAct 循环。它负责：
 ## 四、使用说明
 
 - 三档共用同一套事实，避免"30 秒说 A、10 分钟说 B"的矛盾。
-- 边界与未完成项（nightly、CI、dlq E2E、长期 Memory）在 `retrospective-v1.md` §七 集中声明，讲稿内点到即止，不主动展开。
+- 边界与未完成项（Temporal、长期 Memory 扩展、多 Agent 深化）在 `retrospective-v1.md` §七 集中声明，讲稿内点到即止，不主动展开。
+- **E2E 证据**：`demo-dlq.sh`（DLQ 重投）、`demo-order-decline.sh`（订单归因）、`demo-5xx.sh`（5xx 排障）可现场演示；对应 Langfuse trace：
+  - DLQ：`https://cloud.langfuse.com/project/cmszt286u009oad0jpm40exh0/traces/8a487e394887d9b70c17549dcc005618`
+  - 订单归因：`https://cloud.langfuse.com/project/cmszt286u009oad0jpm40exh0/traces/9c4a3cf82c2ea631a98cab1bba49a526`
+  - 5xx 排障：`https://cloud.langfuse.com/project/cmszt286u009oad0jpm40exh0/traces/299302066f6cd66bbbafa94df7f1e019`
 - 证据引用统一指向 `docs/reports/` 与 `review-m*-impl.md`，可当场打开。

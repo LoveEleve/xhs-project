@@ -1,395 +1,407 @@
 {
-  "annotations": {
-    "list": [
-      {
-        "builtIn": 1,
-        "datasource": "-- Grafana --",
-        "enable": true,
-        "hide": true,
-        "iconColor": "rgba(0, 211, 255, 1)",
-        "name": "Annotations & Alerts",
-        "type": "dashboard"
-      }
-    ]
+  "uid": "biz-metrics-2026",
+  "title": "\u4e1a\u52a1\u6307\u6807",
+  "tags": [
+    "my-xhs",
+    "biz"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 3,
+  "time": {
+    "from": "now-1h",
+    "to": "now"
   },
-  "editable": true,
-  "gnetId": null,
-  "graphTooltip": 0,
-  "id": null,
-  "links": [],
+  "refresh": "30s",
+  "templating": {
+    "list": []
+  },
   "panels": [
     {
-      "datasource": "Prometheus",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
+      "type": "timeseries",
+      "title": "\u8ba2\u5355\u521b\u5efa/\u652f\u4ed8/\u8d85\u65f6\u5173\u5355(5m)",
       "gridPos": {
         "h": 8,
-        "w": 8,
+        "w": 12,
         "x": 0,
         "y": 0
       },
-      "id": 1,
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(orders_created_total[5m]))",
+          "legendFormat": "created"
+        },
+        {
+          "expr": "sum(increase(orders_paid_total[5m]))",
+          "legendFormat": "paid"
+        },
+        {
+          "expr": "sum(increase(orders_timeout_closed[5m]))",
+          "legendFormat": "timeout_closed"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 0
+          }
+        }
+      },
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
-          "displayMode": "table",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi"
+          "displayMode": "list"
         }
-      },
-      "targets": [
-        {
-          "expr": "rate(counter_buffer_flush_total[5m])",
-          "legendFormat": "Buffer Flush Rate",
-          "refId": "A"
-        }
-      ],
-      "title": "Counter Buffer Flush 速率",
-      "type": "timeseries"
+      }
     },
     {
-      "datasource": "Prometheus",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 100
-              },
-              {
-                "color": "red",
-                "value": 500
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
+      "type": "timeseries",
+      "title": "\u652f\u4ed8\u56de\u8c03(5m)",
       "gridPos": {
         "h": 8,
-        "w": 8,
-        "x": 8,
+        "w": 12,
+        "x": 12,
         "y": 0
       },
-      "id": 2,
-      "options": {
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true,
-        "text": {}
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
       },
       "targets": [
         {
-          "expr": "counter_buffer_size",
-          "legendFormat": "Buffer Size",
-          "refId": "A"
+          "expr": "sum(increase(payment_callback_total[5m]))",
+          "legendFormat": "callback"
         }
       ],
-      "title": "Counter Buffer 当前积压",
-      "type": "gauge"
-    },
-    {
-      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 0
-      },
-      "id": 3,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "text": {},
-        "textMode": "auto"
-      },
-      "targets": [
-        {
-          "expr": "rate(counter_reconcile_total[5m])",
-          "legendFormat": "",
-          "refId": "A"
-        }
-      ],
-      "title": "对账任务执行速率",
-      "type": "stat"
-    },
-    {
-      "datasource": "Prometheus",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
+          "unit": "short",
           "custom": {
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
             "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
+            "fillOpacity": 0
+          }
+        }
       },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "\u5238\u52a8\u4f5c(5m)",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
         "y": 8
       },
-      "id": 4,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "table",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
       },
       "targets": [
         {
-          "expr": "rate(mq_consumer_total{application=~\"$application\"}[5m])",
-          "legendFormat": "{{application}} - {{topic}}",
-          "refId": "A"
+          "expr": "sum(increase(coupon_action_total[5m])) by (action)",
+          "legendFormat": "{{action}}"
         }
       ],
-      "title": "MQ 消费速率",
-      "type": "timeseries"
-    },
-    {
-      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
+          "unit": "short",
           "custom": {
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
             "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
+            "fillOpacity": 0
+          }
+        }
       },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "\u5e93\u5b58\u52a8\u4f5c/\u9884\u6263(5m)",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 12,
         "y": 8
       },
-      "id": 5,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "table",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
       },
       "targets": [
         {
-          "expr": "rate(redis_operation_total{application=~\"$application\"}[5m])",
-          "legendFormat": "{{application}} - {{operation}}",
-          "refId": "A"
+          "expr": "sum(increase(inventory_action_total[5m])) by (action)",
+          "legendFormat": "{{action}}"
+        },
+        {
+          "expr": "sum(increase(inventory_prededuct_total[5m]))",
+          "legendFormat": "prededuct"
         }
       ],
-      "title": "Redis 操作速率",
-      "type": "timeseries"
-    }
-  ],
-  "refresh": "10s",
-  "schemaVersion": 27,
-  "style": "dark",
-  "tags": ["myxhs", "business"],
-  "templating": {
-    "list": [
-      {
-        "current": {},
-        "datasource": "Prometheus",
-        "definition": "label_values(http_server_requests_seconds_count, application)",
-        "hide": 0,
-        "includeAll": false,
-        "label": "Application",
-        "multi": false,
-        "name": "application",
-        "options": [],
-        "query": {
-          "query": "label_values(http_server_requests_seconds_count, application)",
-          "refId": "Prometheus-application-Variable-Query"
-        },
-        "refresh": 1,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 0,
-        "type": "query"
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 0
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        }
       }
-    ]
-  },
-  "time": {
-    "from": "now-30m",
-    "to": "now"
-  },
-  "timepicker": {},
-  "timezone": "",
-  "title": "业务指标",
-  "uid": "myxhs-biz",
-  "version": 1
+    },
+    {
+      "type": "timeseries",
+      "title": "Feed \u63a8\u9001(5m)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(feed_push_total[5m]))",
+          "legendFormat": "push"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 0
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "MQ \u6d88\u8d39\u901f\u7387(by topic)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(mq_consume_total[5m])) by (topic)",
+          "legendFormat": "{{topic}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 0
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "MQ \u6d88\u8d39\u7ed3\u679c(5m)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "targets": [
+        {
+          "expr": "sum(increase(mq_consume_total[5m])) by (result)",
+          "legendFormat": "{{result}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 0
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "DLQ \u79ef\u538b",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "targets": [
+        {
+          "expr": "sum(myxhs_mq_dlq_total)",
+          "legendFormat": "dlq"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 0
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "\u8ba2\u5355\u521b\u5efa\u5ef6\u8fdf P99(\u65e0bucket\u56de\u9000max)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(orders_create_latency_seconds_bucket[5m])) by (le)) or max(orders_create_latency_seconds_max)",
+          "legendFormat": "orders.create"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 0
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Feed \u63a8\u9001\u5ef6\u8fdf P99(\u65e0bucket\u56de\u9000max)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(feed_push_latency_seconds_bucket[5m])) by (le)) or max(feed_push_latency_seconds_max)",
+          "legendFormat": "feed.push"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 0
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "\u9884\u6263\u5ef6\u8fdf P99(\u65e0bucket\u56de\u9000max)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(inventory_prededuct_latency_seconds_bucket[5m])) by (le)) or max(inventory_prededuct_latency_seconds_max)",
+          "legendFormat": "prededuct"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 0
+          }
+        }
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        }
+      }
+    }
+  ]
 }

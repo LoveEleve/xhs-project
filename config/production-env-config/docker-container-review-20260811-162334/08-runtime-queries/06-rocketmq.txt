@@ -1,0 +1,123 @@
+########## clusterList
+#Cluster Name           #Broker Name            #BID  #Addr                  #Version              #InTPS(LOAD)     #OutTPS(LOAD)  #Timer(Progress)        #PCWait(ms)  #Hour         #SPACE    #ACTIVATED
+DefaultCluster          broker-a                0     21.130.247.89:11911    V5_1_4                 0.00(0,0ms)       0.00(0,0ms)  0-0(0.0w, 0.0, 0.0)               0  66.38         0.4500          true
+########## topicList
+RMQ_SYS_TRANS_HALF_TOPIC
+NOTIFICATION_TOPIC
+%RETRY%DLQ_MONITOR_notification-event-consumer-group
+BenchmarkTest
+%RETRY%inventory-cache-evict-consumer-group
+TBW102
+rmq_sys_REVIVE_LOG_DefaultCluster
+%RETRY%counter-consumer-group
+SELF_TEST_TOPIC
+%RETRY%favorite-unlike-consumer-group
+%RETRY%inventory-deduct-consumer-group
+%RETRY%note-delete-consumer-group
+COUPON_CLAIM_TOPIC
+%RETRY%inventory-order-transaction-consumer-group
+SCHEDULE_TOPIC_XXXX
+NOTE_INDEX_TOPIC
+DefaultCluster_REPLY_TOPIC
+%RETRY%like-unlike-consumer-group
+%RETRY%coupon-claim-consumer-group
+CART_TOPIC
+ORDER_TRANSACTION_TOPIC
+RMQ_SYS_TRANS_OP_HALF_TOPIC
+ORDER_CLOSE_TOPIC
+%RETRY%order-close-consumer-group
+PAY_RESULT_TOPIC
+broker-a
+%DLQ%notification-event-consumer-group
+%RETRY%payment-pay-result-consumer-group
+%RETRY%recommend-behavior-consumer-group
+OFFSET_MOVED_EVENT
+FEED_TOPIC
+%RETRY%notification-event-consumer-group
+INVENTORY_CACHE_TOPIC
+DefaultCluster
+%RETRY%cart-sync-consumer-group
+%RETRY%note-index-sync-consumer-group
+INVENTORY_TOPIC
+%RETRY%product-index-sync-consumer-group
+%RETRY%order-compensation-consumer-group
+SOCIAL_TOPIC
+RECOMMEND_BEHAVIOR_TOPIC
+rmq_sys_SYNC_BROKER_MEMBER_broker-a
+%RETRY%feed-push-consumer-group
+PRODUCT_INDEX_TOPIC
+########## consumerGroupList
+The sub command consumerGroupList not exist.
+########## brokerStatus
+EndTransactionQueueSize         : 0
+EndTransactionThreadPoolQueueCapacity: 100000
+bootTimestamp                   : 1786197703959
+brokerActive                    : true
+brokerVersion                   : 441
+brokerVersionDesc               : V5_1_4
+commitLogDirCapacity            : Total : 97.9 GiB, Free : 56.8 GiB.
+commitLogDiskRatio              : 0.45
+commitLogDiskRatio_/home/rocketmq/store/commitlog: 0.45
+commitLogMaxOffset              : 241676
+commitLogMinOffset              : 0
+consumeQueueDiskRatio           : 0.45
+dispatchBehindBytes             : 0
+dispatchMaxBuffer               : 0
+earliestMessageTimeStamp        : 1786198483186
+getFoundTps                     : 0.0 0.0 0.0016663500601552372
+getMessageEntireTimeMax         : 16
+getMissTps                      : 54.97564370215728 50.696768393187156 50.42375282029748
+getTotalTps                     : 54.97564370215728 50.696768393187156 50.425419170357635
+getTransferredTps               : 0.0 0.0 0.0016663500601552372
+litePullThreadPoolQueueCapacity : 100000
+litePullThreadPoolQueueHeadWaitTimeMills: 0
+litePullThreadPoolQueueSize     : 0
+msgGetTotalTodayMorning         : 95
+msgGetTotalTodayNow             : 203
+msgGetTotalYesterdayMorning     : 3
+msgPutTotalTodayMorning         : 92
+msgPutTotalTodayNow             : 187
+msgPutTotalYesterdayMorning     : 10
+pageCacheLockTimeMills          : 0
+pullThreadPoolQueueCapacity     : 100000
+pullThreadPoolQueueHeadWaitTimeMills: 0
+pullThreadPoolQueueSize         : 0
+putLatency99                    : 0.00
+putLatency999                   : 0.00
+putMessageAverageSize           : 966.704
+putMessageDistributeTime        : [<=0ms]:0 [0~10ms]:0 [10~50ms]:0 [50~100ms]:0 [100~200ms]:0 [200~500ms]:0 [500ms~1s]:0 [1~2s]:0 [2~3s]:0 [3~4s]:0 [4~5s]:0 [5~10s]:0 [10s~]:0 
+putMessageEntireTimeMax         : 8
+putMessageFailedTimes           : 0
+putMessageSizeTotal             : 241676
+putMessageTimesTotal            : 250
+putTps                          : 0.0 0.0 0.0016663500601552372
+queryThreadPoolQueueCapacity    : 20000
+queryThreadPoolQueueHeadWaitTimeMills: 0
+queryThreadPoolQueueSize        : 0
+remainHowManyDataToFlush        : 0 B
+remainTransientStoreBufferNumbs : 2147483647
+runtime                         : [ 2 days, 18 hours, 35 minutes, 59 seconds ]
+scheduleMessageOffset_16        : 13,13
+scheduleMessageOffset_3         : 3,3
+scheduleMessageOffset_4         : 3,3
+scheduleMessageOffset_5         : 3,3
+sendThreadPoolQueueCapacity     : 10000
+sendThreadPoolQueueHeadWaitTimeMills: 0
+sendThreadPoolQueueSize         : 0
+startAcceptSendRequestTimeStamp : 0
+timerCongestNum                 : 0
+timerDequeueTps                 : 0.0
+timerEnqueueTps                 : 0.0
+timerOffsetBehind               : 0
+timerReadBehind                 : 0
+########## store 目录大小
+1.8M	/home/rocketmq/store
+abort
+abort.bak
+checkpoint
+commitlog
+config
+consumequeue
+index
+lock
+timerwheel

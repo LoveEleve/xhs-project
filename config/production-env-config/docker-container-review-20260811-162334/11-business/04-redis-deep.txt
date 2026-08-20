@@ -1,0 +1,66 @@
+########## INFO keyspace + DBSIZE
+# Keyspace
+db0:keys=345,expires=126,avg_ttl=227703467,subexpiry=0
+346
+########## key 类型统计(SCAN 采样)
+     20 hash
+      1 list
+     11 set
+    302 string
+     11 zset
+########## SLOWLOG
+
+########## clients 详情
+id=17222 addr=21.214.97.212:39820 laddr=21.130.247.89:6379 fd=99 name= age=2722 idle=360 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=zrevrange user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+id=16846 addr=21.214.97.212:33932 laddr=21.130.247.89:6379 fd=28 name= age=5818 idle=2506 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=info user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+id=16873 addr=21.214.97.212:33556 laddr=21.130.247.89:6379 fd=53 name= age=5788 idle=5788 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=auth user=default redir=-1 resp=2 lib-name= lib-ver=
+id=16874 addr=21.214.97.212:33578 laddr=21.130.247.89:6379 fd=54 name= age=5788 idle=5788 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=auth user=default redir=-1 resp=2 lib-name= lib-ver=
+id=16902 addr=21.214.97.212:48734 laddr=21.130.247.89:6379 fd=80 name= age=5758 idle=2506 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=info user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+id=16903 addr=21.214.97.212:48746 laddr=21.130.247.89:6379 fd=81 name= age=5758 idle=2506 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=info user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+id=16875 addr=21.214.97.212:33566 laddr=21.130.247.89:6379 fd=55 name= age=5788 idle=5788 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=auth user=default redir=-1 resp=2 lib-name= lib-ver=
+id=16840 addr=21.214.97.212:40226 laddr=21.130.247.89:6379 fd=22 name= age=5822 idle=5822 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=auth user=default redir=-1 resp=2 lib-name= lib-ver=
+id=16841 addr=21.214.97.212:40228 laddr=21.130.247.89:6379 fd=23 name= age=5822 idle=5822 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=auth user=default redir=-1 resp=2 lib-name= lib-ver=
+id=16842 addr=21.214.97.212:40244 laddr=21.130.247.89:6379 fd=24 name= age=5822 idle=5822 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=auth user=default redir=-1 resp=2 lib-name= lib-ver=
+id=11780 addr=21.130.247.89:47160 laddr=21.130.247.89:6379 fd=83 name=sentinel-4565d928-pubsub age=76876 idle=1 flags=P db=0 sub=1 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=141 obl=0 oll=0 omem=0 tot-mem=1984 events=r cmd=subscribe user=default redir=-1 resp=2 lib-name= lib-ver=
+id=16870 addr=21.214.97.212:48948 laddr=21.130.247.89:6379 fd=51 name= age=5800 idle=41 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=zrangebyscore user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+id=16871 addr=21.214.97.212:48956 laddr=21.130.247.89:6379 fd=52 name= age=5800 idle=2506 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=info user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+id=17362 addr=21.214.97.212:33670 laddr=21.130.247.89:6379 fd=103 name= age=717 idle=335 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=get user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+id=16830 addr=21.214.97.212:40122 laddr=21.130.247.89:6379 fd=12 name= age=5823 idle=29 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=evalsha user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+id=16848 addr=21.214.97.212:33940 laddr=21.130.247.89:6379 fd=30 name= age=5818 idle=2506 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=info user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+id=16881 addr=21.214.97.212:42808 laddr=21.130.247.89:6379 fd=60 name= age=5777 idle=2506 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=info user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+id=16847 addr=21.214.97.212:33936 laddr=21.130.247.89:6379 fd=29 name= age=5818 idle=2506 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=info user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+id=16843 addr=21.214.97.212:33902 laddr=21.130.247.89:6379 fd=25 name= age=5819 idle=5819 flags=P db=0 sub=1 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1984 events=r cmd=subscribe user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+id=16863 addr=21.214.97.212:48884 laddr=21.130.247.89:6379 fd=44 name= age=5801 idle=2506 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=info user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+########## INFO keyspace + DBSIZE
+# Keyspace
+db0:keys=345,expires=126,avg_ttl=232785346,subexpiry=0
+345
+########## key 类型统计(SCAN 采样)
+     20 hash
+      1 list
+     11 set
+    302 string
+     11 zset
+########## SLOWLOG
+
+########## clients 详情
+id=16927 addr=21.214.97.212:46264 laddr=21.130.247.89:6379 fd=91 name= age=5597 idle=383 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=evalsha user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+id=16928 addr=21.214.97.212:46272 laddr=21.130.247.89:6379 fd=92 name= age=5597 idle=400 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=sismember user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+id=16929 addr=21.214.97.212:46280 laddr=21.130.247.89:6379 fd=93 name= age=5597 idle=765 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=get user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+id=16958 addr=21.214.97.212:43118 laddr=21.130.247.89:6379 fd=94 name= age=5179 idle=5179 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=del user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+id=16864 addr=21.214.97.212:48886 laddr=21.130.247.89:6379 fd=45 name= age=5849 idle=2554 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=info user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+id=16858 addr=21.214.97.212:48838 laddr=21.130.247.89:6379 fd=39 name= age=5852 idle=4 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=del user=default redir=-1 resp=2 lib-name= lib-ver=
+id=17297 addr=21.214.97.212:57470 laddr=21.130.247.89:6379 fd=100 name= age=1650 idle=400 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=get user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+id=17298 addr=21.214.97.212:57484 laddr=21.130.247.89:6379 fd=101 name= age=1650 idle=383 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=sismember user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+id=17299 addr=21.214.97.212:57498 laddr=21.130.247.89:6379 fd=102 name= age=1650 idle=765 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=sismember user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+id=16859 addr=21.214.97.212:48848 laddr=21.130.247.89:6379 fd=40 name= age=5852 idle=5852 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=auth user=default redir=-1 resp=2 lib-name= lib-ver=
+id=16839 addr=21.214.97.212:40224 laddr=21.130.247.89:6379 fd=21 name= age=5870 idle=5870 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=auth user=default redir=-1 resp=2 lib-name= lib-ver=
+id=16868 addr=21.214.97.212:48930 laddr=21.130.247.89:6379 fd=49 name= age=5849 idle=2554 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=info user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+id=16890 addr=21.214.97.212:58782 laddr=21.130.247.89:6379 fd=68 name= age=5812 idle=5812 flags=P db=0 sub=1 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1984 events=r cmd=subscribe user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+id=16876 addr=21.214.97.212:33586 laddr=21.130.247.89:6379 fd=56 name= age=5832 idle=0 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=20474 argv-mem=0 multi-mem=0 rbs=1024 rbp=17 obl=0 oll=0 omem=0 tot-mem=22400 events=r cmd=scan user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea
+id=16832 addr=21.214.97.212:40138 laddr=21.130.247.89:6379 fd=14 name= age=5871 idle=5871 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=auth user=default redir=-1 resp=2 lib-name= lib-ver=
+id=16877 addr=21.214.97.212:33592 laddr=21.130.247.89:6379 fd=57 name= age=5829 idle=5829 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=auth user=default redir=-1 resp=2 lib-name= lib-ver=
+id=16878 addr=21.214.97.212:33604 laddr=21.130.247.89:6379 fd=58 name= age=5829 idle=5829 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=auth user=default redir=-1 resp=2 lib-name= lib-ver=
+id=16879 addr=21.214.97.212:33606 laddr=21.130.247.89:6379 fd=59 name= age=5829 idle=5829 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=auth user=default redir=-1 resp=2 lib-name= lib-ver=
+id=16833 addr=21.214.97.212:40154 laddr=21.130.247.89:6379 fd=15 name= age=5871 idle=5871 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=auth user=default redir=-1 resp=2 lib-name= lib-ver=
+id=16844 addr=21.214.97.212:33918 laddr=21.130.247.89:6379 fd=26 name= age=5866 idle=2554 flags=N db=0 sub=0 psub=0 ssub=0 multi=-1 watch=0 qbuf=0 qbuf-free=0 argv-mem=0 multi-mem=0 rbs=1024 rbp=0 obl=0 oll=0 omem=0 tot-mem=1928 events=r cmd=info user=default redir=-1 resp=3 lib-name=Lettuce lib-ver=6.3.2.RELEASE/8941aea

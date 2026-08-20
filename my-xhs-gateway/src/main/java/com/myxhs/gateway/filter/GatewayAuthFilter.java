@@ -64,6 +64,9 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
     /** 注入到下游的用户 ID Header */
     private static final String USER_ID_HEADER = "X-User-Id";
 
+    /** 注入到下游的用户角色 Header（Gateway 集成 2026-08-17：从 JWT role claim 读取） */
+    private static final String USER_ROLE_HEADER = "X-User-Role";
+
     /** 链路追踪 TraceId Header */
     private static final String TRACE_ID_HEADER = "X-Trace-Id";
 
@@ -122,13 +125,19 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
 
         // 6. 鉴权通过，注入 X-User-Id 和 X-Trace-Id Header
         // C-07: 使用 set() 覆盖而非 header() 追加，防止客户端伪造 X-User-Id
+        // Gateway 集成（2026-08-17）：X-User-Role 从 JWT role claim 注入（set 覆盖防伪造），
+        // role 由 my-xhs-user 登录时写入（t_user.role 真源）
         final String uid = claims.getSubject();
-        log.info("[Gateway] 鉴权通过, userId={}, path={}, method={}, traceId={}", uid, path, method, traceId);
+        final String role = claims.get("role", String.class);
+        log.info("[Gateway] 鉴权通过, userId={}, role={}, path={}, method={}, traceId={}", uid, role, path, method, traceId);
 
         final String finalTraceId = traceId;
         ServerHttpRequest mutatedRequest = exchange.getRequest().mutate()
                 .headers(h -> {
                     h.set(USER_ID_HEADER, uid);
+                    if (role != null && !role.isBlank()) {
+                        h.set(USER_ROLE_HEADER, role);
+                    }
                     h.set(TRACE_ID_HEADER, finalTraceId);
                 })
                 .build();

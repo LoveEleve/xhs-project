@@ -1,0 +1,14 @@
+0c6f97359d5ee1fe908d0031a22d49e6733431e5f8bd138ec61e278ebc181c44 : 4.0K : /data/docker/lib/volumes/0c6f97359d5ee1fe908d0031a22d49e6733431e5f8bd138ec61e278ebc181c44/_data
+eb7c4a094cc8c2150b9899abe6103e25ea9125ba25106e55bd62bbb68fd06198 : 64K : /data/docker/lib/volumes/eb7c4a094cc8c2150b9899abe6103e25ea9125ba25106e55bd62bbb68fd06198/_data
+my-xhs-deploy-zip_canal-data : 7.6M : /data/docker/lib/volumes/my-xhs-deploy-zip_canal-data/_data
+my-xhs-deploy-zip_es-data : 2.1G : /data/docker/lib/volumes/my-xhs-deploy-zip_es-data/_data
+my-xhs-deploy-zip_es-sw-data : 1.7G : /data/docker/lib/volumes/my-xhs-deploy-zip_es-sw-data/_data
+my-xhs-deploy-zip_grafana-data : 1.1M : /data/docker/lib/volumes/my-xhs-deploy-zip_grafana-data/_data
+my-xhs-deploy-zip_mq-broker-logs : 4.0K : /data/docker/lib/volumes/my-xhs-deploy-zip_mq-broker-logs/_data
+my-xhs-deploy-zip_mq-broker-store : 1.8M : /data/docker/lib/volumes/my-xhs-deploy-zip_mq-broker-store/_data
+my-xhs-deploy-zip_mysql-data : 986M : /data/docker/lib/volumes/my-xhs-deploy-zip_mysql-data/_data
+my-xhs-deploy-zip_mysql-slave-data : 836M : /data/docker/lib/volumes/my-xhs-deploy-zip_mysql-slave-data/_data
+my-xhs-deploy-zip_prometheus-data : 142M : /data/docker/lib/volumes/my-xhs-deploy-zip_prometheus-data/_data
+my-xhs-deploy-zip_redis-master-data : 37M : /data/docker/lib/volumes/my-xhs-deploy-zip_redis-master-data/_data
+my-xhs-deploy-zip_redis-slave-data : 37M : /data/docker/lib/volumes/my-xhs-deploy-zip_redis-slave-data/_data
+my-xhs-deploy-zip_vm-data : 76K : /data/docker/lib/volumes/my-xhs-deploy-zip_vm-data/_data

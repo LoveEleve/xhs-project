@@ -1,0 +1,765 @@
+version: '3.8'
+
+# ========================================================================
+# MyXHS 精简版 Docker Compose（单机部署 — 22容器）
+#
+# ============================= 架构概览 ================================
+#
+#   ┌──────────────────┐  ┌──────────────────┐
+#   │ MySQL Master :3306│  │ MySQL Slave  :3307│
+#   │ (GTID主从复制)     │→→│ (只读)            │
+#   └────────┬─────────┘  └──────────────────┘
+#            │
+#   ┌────────▼─────────┐  ┌──────────────────┐
+#   │ Redis Master :6379│  │ Redis Sentinel   │
+#   │ Redis Slave  :6380│  │ :26379           │
+#   └────────┬─────────┘  └──────────────────┘
+#            │
+#   ┌────────▼─────────┐  ┌──────────────────────┐
+#   │ Canal            │  │ Nacos        :18848  │
+#   │ binlog→RocketMQ  │  │ XXL-Job      :18080  │
+#   └────────┬─────────┘  │ Sentinel Dash:8858   │
+#            │            └──────────────────────┘
+#            │
+#   ┌────────▼──────────────────────┐
+#   │ RocketMQ 单 NameServer :9876  │
+#   │ Master-Broker        :11911   │
+#   │ Dashboard             :18081  │
+#   └───────────────────────────────┘
+#
+#   ┌──────────────────────────┐
+#   │ Elasticsearch × 2        │
+#   │ 业务ES :19200 (IK分词)    │
+#   │ SW-ES  :19201 (链路存储)  │
+#   └──────┬───────────────────┘
+#          │
+#          ▼
+#   ┌──────────────────────────────────────────────┐
+#   │        可观测性三件套                         │
+#   │  SkyWalking OAP :11800(gRPC) :12800(HTTP)    │
+#   │  SkyWalking UI  :8080                       │
+#   │  Prometheus     :19090                      │
+#   │  VictoriaMetrics:8428 (Prometheus兼容)       │
+#   │  Grafana        :13000                      │
+#   └──────────────────────────────────────────────┘
+#
+#   ┌──────────────────────────────────────────────┐
+#   │           日志管道                            │
+#   │  Filebeat / 微服务(TCP)→ Logstash → ES :19200 │
+#   │  Logstash :15044(tcp) :15045(beats)           │
+#   │  Kibana :15601                                │
+#   └──────────────────────────────────────────────┘
+#
+# ============================= 端口速查 ================================
+#
+#   MySQL:     3306(统一)
+#   Redis:     6379(Master) 6380(Slave) 26379(Sentinel)
+#   RocketMQ:  9876(ns)  11911(broker)  18081(dashboard)
+#   ES:        19200(业务) 19201(SkyWalking)
+#   Nacos:     18848     Sentinel: 8858     XXL-Job: 18080
+#   SkyWalking:11800(gRPC) 12800(OAP-HTTP) 8080(UI)
+#   Prometheus:19090     Grafana: 13000    VictoriaMetrics: 8428
+#   Logstash:  15044/15045(tcp+beats)  Kibana: 15601  Seata: 27091(单独)
+#
+# ============================= 账号密码 ================================
+#
+#   MySQL root:     Xhs@2026#MySQL
+#   Redis:          Xhs@2026#Redis
+#   ES elastic:     Xhs@2026#Elastic   (业务, IK分词器, 端口19200)
+#   ES elastic:     Xhs@2026#ElasticSW (SkyWalking存储, 端口19201)
+#   Kibana:         elastic / Xhs@2026#Elastic  (kibana_system: Xhs@2026#KibanaSystem)
+#   Grafana admin:  Xhs@2026#Admin
+#   Nacos:          nacos / nacos
+#   Sentinel:       sentinel / sentinel
+#   XXL-Job admin:  admin / 123456  (accessToken: my-xhs-xxl-job-token-2026)
+#
+# ============================= 资源预估 ================================
+#
+#   精简后 22 个容器(不含Seata), 实际内存 ~12GB
+#   满载(含16个微服务): ~14-16GB
+#
+# ============================= 精简变更 ================================
+#
+#   2026-08-08: MySQL 4主4从→1(3306) | Redis 3+Sentinel 3→1(6379)
+#              RocketMQ 双NS+主从→单NS+单Broker(9876/11911)
+#              应用代码零改动 — 仅改 yml 配置文件
+#
+# ============================= 部署注意事项 ================================
+#
+#   1. NACOS_SERVER_IP 部署时需改为宿主机实际 IP（当前: 21.130.247.89）
+#   2. Redis Sentinel sentinel.conf 需将 monitor IP 改为宿主机 IP
+#      （127.0.0.1 → 21.130.247.89），否则远程 Gateway 连不上 Redis
+#   3. JDK 依赖: /opt/kona-jdk17 (324MB) 和 /opt/kona-jdk8 (223MB)
+#   4. Canal 自定义镜像: docker save my-xhs-canal-server:v1.1.7-squashed
+#   5. MySQL 主从重建时 Slave 不应跑 init-all.sql，应从 Master dump 同步
+#   6. Nacos 需挂载 mysql-connector.jar 到 /home/nacos/plugins/mysql/
+#   7. Filebeat 挂载 /logs:/logs，需确保宿主机 /logs 目录存在
+#   8. Canal healthcheck 已改为进程检测（pgrep CanalLauncher），不再依赖端口
+#   9. Redis 从机默认广播 127.0.0.1 给 Sentinel，远程客户端连不上。
+#      需在 redis-slave 启动参数加 --replica-announce-ip <宿主机IP>
+#      和 --replica-announce-port 6380。Master 同理。已修复。
+#      改完后若 Sentinel 仍显示旧 127.0.0.1 条目，执行：
+#        docker exec my-xhs-redis-sentinel redis-cli -p 26379 SENTINEL RESET mymaster
+#      （Sentinel 会缓存旧 replica 信息，RESET 强制刷新）
+#
+# ========================================================================
+
+services:
+  # ==========================================
+  # MySQL — 统一实例（所有库建在同一 MySQL，端口 3306）
+  # ==========================================
+
+  mysql:
+    image: mysql:8.0
+    container_name: my-xhs-mysql
+    network_mode: host
+    environment:
+      MYSQL_ROOT_PASSWORD: Xhs@2026#MySQL
+      TZ: Asia/Shanghai
+    command: >
+      --port=3306
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+      --max-connections=500
+      --innodb-buffer-pool-size=1024M
+      --innodb-log-file-size=256M
+      --innodb-flush-log-at-trx-commit=2
+      --sync-binlog=0
+      --slow-query-log=1
+      --long-query-time=0.5
+      --server-id=1
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --binlog-row-image=FULL
+      --mysqlx=0
+    deploy:
+      resources:
+        limits: { cpus: '2', memory: 1536m }
+        reservations: { cpus: '0.5', memory: 1024m }
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "3306", "-u", "root", "-pXhs@2026#MySQL"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./sql/init-all.sql:/docker-entrypoint-initdb.d/01-init.sql
+    restart: unless-stopped
+
+  # ==========================================
+  # MySQL 从库 — GTID 主从复制（读写分离 + 多活演示）
+  #   端口 3307，从 3306 Master 同步
+  # ==========================================
+
+  mysql-slave:
+    image: mysql:8.0
+    container_name: my-xhs-mysql-slave
+    network_mode: host
+    environment:
+      MYSQL_ROOT_PASSWORD: Xhs@2026#MySQL
+      TZ: Asia/Shanghai
+    command: >
+      --port=3307
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+      --max-connections=300
+      --innodb-buffer-pool-size=512M
+      --innodb-log-file-size=128M
+      --read-only=1
+      --innodb-flush-log-at-trx-commit=2
+      --sync-binlog=0
+      --slow-query-log=1
+      --long-query-time=1
+      --server-id=2
+      --log-bin=mysql-bin
+      --binlog-format=ROW
+      --gtid-mode=ON
+      --enforce-gtid-consistency=ON
+      --binlog-row-image=FULL
+      --mysqlx=0
+    deploy:
+      resources:
+        limits: { cpus: '0.5', memory: 768m }
+        reservations: { cpus: '0.25', memory: 512m }
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-P", "3307", "-u", "root", "-pXhs@2026#MySQL"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    volumes:
+      - mysql-slave-data:/var/lib/mysql
+      - ./sql/init-all.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./sql/init-replication.sql:/docker-entrypoint-initdb.d/02-init-replication.sql
+    depends_on:
+      - mysql
+    restart: unless-stopped
+
+  # ==========================================
+  # Redis 主从 + Sentinel — 高可用多活演示
+  #   Master: 6379 | Slave: 6380 | Sentinel: 26379
+  #   代码 RedisConfig 检测 sentinel.nodes → 自动走 Sentinel 模式
+  # ==========================================
+
+  redis:
+    image: redis:7-alpine
+    container_name: my-xhs-redis
+    network_mode: host
+    command: >
+      redis-server
+      --port 6379 --bind 0.0.0.0 --requirepass Xhs@2026#Redis
+      --masterauth Xhs@2026#Redis
+      --replica-announce-ip 21.130.247.89
+      --replica-announce-port 6379
+      --appendonly yes --appendfsync everysec
+      --maxmemory 256mb --maxmemory-policy allkeys-lru
+      --save 900 1 --save 300 10
+    deploy:
+      resources:
+        limits: { cpus: '0.5', memory: 384m }
+        reservations: { cpus: '0.25', memory: 192m }
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6379", "-a", "Xhs@2026#Redis", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - redis-master-data:/data
+    restart: unless-stopped
+
+  redis-slave:
+    image: redis:7-alpine
+    container_name: my-xhs-redis-slave
+    network_mode: host
+    command: >
+      redis-server
+      --port 6380 --bind 0.0.0.0 --requirepass Xhs@2026#Redis
+      --masterauth Xhs@2026#Redis
+      --replicaof 127.0.0.1 6379
+      --replica-announce-ip 21.130.247.89
+      --replica-announce-port 6380
+      --appendonly yes --appendfsync everysec
+      --maxmemory 256mb --maxmemory-policy allkeys-lru
+      --save 900 1 --save 300 10
+    deploy:
+      resources:
+        limits: { cpus: '0.25', memory: 256m }
+        reservations: { cpus: '0.1', memory: 128m }
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6380", "-a", "Xhs@2026#Redis", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    volumes:
+      - redis-slave-data:/data
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis-sentinel:
+    image: redis:7-alpine
+    container_name: my-xhs-redis-sentinel
+    network_mode: host
+    command: redis-sentinel /etc/redis/sentinel.conf
+    deploy:
+      resources:
+        limits: { cpus: '0.1', memory: 64m }
+        reservations: { cpus: '0.05', memory: 32m }
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -p 26379 ping | grep -q PONG || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    volumes:
+      - ./config/redis/sentinel.conf:/etc/redis/sentinel.conf
+    depends_on:
+      - redis
+      - redis-slave
+    restart: unless-stopped
+
+  # ==========================================
+  # RocketMQ — 单 NameServer + 单 Broker
+  #   NameServer: 9876
+  #   Broker:     11911
+  # ==========================================
+
+  rocketmq-namesrv:
+    image: apache/rocketmq:5.1.4
+    container_name: my-xhs-mq-namesrv
+    network_mode: host
+    command: sh mqnamesrv
+    environment:
+      JAVA_OPT_EXT: "-server -Xms128m -Xmx256m -Xmn64m"
+      JAVA_HOME: /opt/kona-jdk17
+    volumes:
+      - /opt/kona-jdk17:/opt/kona-jdk17:ro
+    deploy:
+      resources:
+        limits: { cpus: '0.25', memory: 640m }
+        reservations: { cpus: '0.1', memory: 192m }
+    restart: unless-stopped
+
+  rocketmq-broker:
+    image: apache/rocketmq:5.1.4
+    container_name: my-xhs-mq-broker
+    network_mode: host
+    user: root
+    command: sh mqbroker -c /home/rocketmq/rocketmq-5.1.4/conf/broker.conf
+    environment:
+      JAVA_OPT_EXT: "-server -Xms256m -Xmx512m -Xmn128m"
+      JAVA_HOME: /opt/kona-jdk17
+    deploy:
+      resources:
+        limits: { cpus: '0.5', memory: 768m }
+        reservations: { cpus: '0.25', memory: 640m }
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f mqbroker || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    volumes:
+      - ./config/rocketmq/broker.conf:/home/rocketmq/rocketmq-5.1.4/conf/broker.conf
+      - /opt/kona-jdk17:/opt/kona-jdk17:ro
+      - mq-broker-logs:/home/rocketmq/logs
+      - mq-broker-store:/home/rocketmq/store
+    depends_on:
+      - rocketmq-namesrv
+    restart: unless-stopped
+
+  rocketmq-dashboard:
+    image: apacherocketmq/rocketmq-dashboard:latest
+    container_name: my-xhs-rocketmq-dashboard
+    network_mode: host
+    environment:
+      SERVER_PORT: "18081"
+      rocketmq.config.namesrvAddr: "127.0.0.1:9876"
+    deploy:
+      resources:
+        limits: { cpus: '0.25', memory: 640m }
+        reservations: { cpus: '0.1', memory: 192m }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://127.0.0.1:18081 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      - rocketmq-namesrv
+    restart: unless-stopped
+
+  # ==========================================
+  # Elasticsearch × 2
+  #   19200 — 业务搜索（IK 分词器）
+  #   19201 — SkyWalking 链路追踪存储
+  # ==========================================
+
+  elasticsearch:
+    image: elasticsearch:8.19.19
+    container_name: my-xhs-elasticsearch
+    network_mode: host
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=true
+      - xpack.security.http.ssl.enabled=false
+      - ELASTIC_PASSWORD=Xhs@2026#Elastic
+      - http.port=19200
+      - transport.port=19300
+      - ES_JAVA_OPTS=-Xms256m -Xmx512m
+      - cluster.name=my-xhs-es
+      - node.name=es-node-1
+    command: >
+      bash -c "
+        if [ ! -d /usr/share/elasticsearch/plugins/analysis-ik ]; then
+          echo '=== Installing IK Analyzer ===' &&
+          elasticsearch-plugin install --batch https://get.infini.cloud/elasticsearch/analysis-ik/8.19.19
+        fi &&
+        /usr/local/bin/docker-entrypoint.sh eswrapper
+      "
+    deploy:
+      resources:
+        limits: { cpus: '0.5', memory: 2048m }
+        reservations: { cpus: '0.25', memory: 1024m }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -u elastic:Xhs@2026#Elastic http://127.0.0.1:19200/_cluster/health?local=true | grep -q 'green\\|yellow'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    restart: unless-stopped
+
+  elasticsearch-skywalking:
+    image: elasticsearch:8.12.2
+    container_name: my-xhs-es-skywalking
+    network_mode: host
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=true
+      - xpack.security.http.ssl.enabled=false
+      - ELASTIC_PASSWORD=Xhs@2026#ElasticSW
+      - http.port=19201
+      - transport.port=19301
+      - ES_JAVA_OPTS=-Xms256m -Xmx768m
+      - cluster.name=my-xhs-sw-es
+      - node.name=sw-es-node-1
+      - path.repo=/usr/share/elasticsearch/backup
+    deploy:
+      resources:
+        limits: { cpus: '1', memory: 1536m }
+        reservations: { cpus: '0.5', memory: 768m }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -u elastic:Xhs@2026#ElasticSW http://127.0.0.1:19201/_cluster/health?local=true | grep -q 'green\\|yellow'"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    volumes:
+      - es-sw-data:/usr/share/elasticsearch/data
+    restart: unless-stopped
+
+  # ==========================================
+  # Canal — MySQL Binlog → RocketMQ → ES/Redis
+  #   Canal 3 个 instance 监同一 MySQL 的不同库
+  # ==========================================
+
+  canal:
+    image: my-xhs-canal-server:v1.1.7-squashed
+    container_name: my-xhs-canal
+    network_mode: host
+    entrypoint: ["/alidata/bin/main.sh"]
+    command: ["/home/admin/app.sh"]
+    environment:
+      JAVA_HOME: /opt/kona-jdk8
+      JAVA_OPTS: "-Xms256m -Xmx512m -Xmn128m -XX:SurvivorRatio=2 -XX:MaxTenuringThreshold=15 -XX:+DisableExplicitGC"
+      PATH: /opt/kona-jdk8/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    deploy:
+      resources:
+        limits: { cpus: '0.5', memory: 1024m }
+        reservations: { cpus: '0.1', memory: 256m }
+    volumes:
+      - ./config/canal/conf/canal.properties:/home/admin/canal-server/conf/canal.properties
+      - ./config/canal/conf/note_instance/instance.properties:/home/admin/canal-server/conf/note_instance/instance.properties
+      - ./config/canal/conf/product_instance/instance.properties:/home/admin/canal-server/conf/product_instance/instance.properties
+      - ./config/canal/conf/inventory_instance/instance.properties:/home/admin/canal-server/conf/inventory_instance/instance.properties
+      - /opt/kona-jdk8:/opt/kona-jdk8:ro
+      - canal-data:/home/admin/canal-server/logs
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f CanalLauncher || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      - mysql
+      - rocketmq-broker
+    restart: unless-stopped
+
+  # ==========================================
+  # Nacos — 注册中心 + 配置中心
+  # ==========================================
+
+  nacos:
+    image: nacos/nacos-server:v2.3.2
+    container_name: my-xhs-nacos
+    network_mode: host
+    environment:
+      MODE: standalone
+      NACOS_APPLICATION_PORT: 18848
+      NACOS_SERVER_IP: 21.130.247.89  # TODO: 迁移时需改为新宿主机实际 IP
+      SPRING_DATASOURCE_PLATFORM: mysql
+      MYSQL_SERVICE_HOST: 127.0.0.1
+      MYSQL_SERVICE_PORT: 3306
+      MYSQL_SERVICE_DB_NAME: nacos_config
+      MYSQL_SERVICE_USER: root
+      MYSQL_SERVICE_PASSWORD: Xhs@2026#MySQL
+      JAVA_HOME: /opt/kona-jdk17
+    volumes:
+      - /opt/kona-jdk17:/opt/kona-jdk17:ro
+      - ./config/mysql-connector.jar:/home/nacos/plugins/mysql/mysql-connector.jar
+    deploy:
+      resources:
+        limits: { cpus: '1', memory: 1536m }
+        reservations: { cpus: '0.5', memory: 512m }
+    depends_on:
+      - mysql
+    restart: unless-stopped
+
+  # ==========================================
+  # Sentinel Dashboard — 流控降级面板
+  # ==========================================
+
+  sentinel-dashboard:
+    image: bladex/sentinel-dashboard:1.8.8
+    container_name: my-xhs-sentinel-dashboard
+    network_mode: host
+    environment:
+      SERVER_PORT: 8858
+      JAVA_HOME: /opt/kona-jdk17
+    volumes:
+      - /opt/kona-jdk17:/opt/kona-jdk17:ro
+    deploy:
+      resources:
+        limits: { cpus: '0.25', memory: 256m }
+        reservations: { cpus: '0.1', memory: 128m }
+    restart: unless-stopped
+
+  # ==========================================
+  # XXL-Job Admin — 分布式任务调度中心
+  # ==========================================
+
+  xxl-job-admin:
+    image: xuxueli/xxl-job-admin:2.4.2
+    container_name: my-xhs-xxl-job-admin
+    network_mode: host
+    environment:
+      PARAMS: >-
+        --spring.datasource.url=jdbc:mysql://127.0.0.1:3306/xxl_job?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai
+        --spring.datasource.username=root
+        --spring.datasource.password=Xhs@2026#MySQL
+        --server.port=18080
+        --xxl.job.accessToken=my-xhs-xxl-job-token-2026
+        --xxl.job.i18n=zh_CN
+      JAVA_HOME: /opt/kona-jdk17
+    volumes:
+      - /opt/kona-jdk17:/opt/kona-jdk17:ro
+    deploy:
+      resources:
+        limits: { cpus: '0.5', memory: 1024m }
+        reservations: { cpus: '0.25', memory: 512m }
+    depends_on:
+      - mysql
+    restart: unless-stopped
+
+  # ==========================================
+  # SkyWalking OAP + UI — 全链路追踪
+  # ==========================================
+
+  skywalking-oap:
+    image: apache/skywalking-oap-server:9.7.0
+    container_name: my-xhs-skywalking-oap
+    network_mode: host
+    environment:
+      SW_STORAGE: elasticsearch
+      SW_STORAGE_ES_CLUSTER_NODES: 127.0.0.1:19201
+      SW_ES_USER: "elastic"
+      SW_ES_PASSWORD: "Xhs@2026#ElasticSW"
+      SW_HEALTH_CHECKER: default
+      SW_TELEMETRY: prometheus
+      SW_TELEMETRY_PROMETHEUS_HOST: 127.0.0.1
+      SW_TELEMETRY_PROMETHEUS_PORT: 1234
+      JAVA_OPTS: "-Xms512m -Xmx1024m"
+      JAVA_HOME: /opt/kona-jdk17
+    volumes:
+      - /opt/kona-jdk17:/opt/kona-jdk17:ro
+      - ./config/skywalking:/skywalking/config:ro
+    deploy:
+      resources:
+        limits: { cpus: '1', memory: 1536m }
+        reservations: { cpus: '0.5', memory: 768m }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://127.0.0.1:12800/healthCheck || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    depends_on:
+      - elasticsearch-skywalking
+    restart: unless-stopped
+
+  skywalking-ui:
+    image: apache/skywalking-ui:9.7.0
+    container_name: my-xhs-skywalking-ui
+    network_mode: host
+    environment:
+      SW_OAP_ADDRESS: http://127.0.0.1:12800
+      SERVER_PORT: 8080
+    deploy:
+      resources:
+        limits: { cpus: '0.25', memory: 640m }
+        reservations: { cpus: '0.1', memory: 192m }
+    depends_on:
+      - skywalking-oap
+    restart: unless-stopped
+
+  # ==========================================
+  # VictoriaMetrics — 时序数据库（Prometheus 兼容）
+  # ==========================================
+
+  victoria-metrics:
+    image: victoriametrics/victoria-metrics:v1.93.12
+    container_name: my-xhs-victoria-metrics
+    network_mode: host
+    command: >
+      -storageDataPath=/victoria-metrics-data
+      -retentionPeriod=30d
+      -httpListenAddr=:8428
+    deploy:
+      resources:
+        limits: { cpus: '0.25', memory: 640m }
+        reservations: { cpus: '0.1', memory: 192m }
+    volumes:
+      - vm-data:/victoria-metrics-data
+    restart: unless-stopped
+
+  # ==========================================
+  # Prometheus — 指标采集
+  # ==========================================
+
+  prometheus:
+    image: prom/prometheus:v2.48.1
+    container_name: my-xhs-prometheus
+    network_mode: host
+    command: >
+      --config.file=/etc/prometheus/prometheus.yml
+      --web.listen-address=:19090
+      --storage.tsdb.path=/prometheus
+      --storage.tsdb.retention.time=15d
+    deploy:
+      resources:
+        limits: { cpus: '0.25', memory: 640m }
+        reservations: { cpus: '0.1', memory: 192m }
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./config/prometheus/alert_rules:/etc/prometheus/alert_rules
+      - prometheus-data:/prometheus
+    restart: unless-stopped
+
+  # ==========================================
+  # Grafana — 可视化面板
+  # ==========================================
+
+  grafana:
+    image: grafana/grafana:10.2.3
+    container_name: my-xhs-grafana
+    network_mode: host
+    environment:
+      GF_SERVER_HTTP_PORT: 13000
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: Xhs@2026#Admin
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    deploy:
+      resources:
+        limits: { cpus: '0.25', memory: 640m }
+        reservations: { cpus: '0.1', memory: 192m }
+    volumes:
+      - ./config/grafana/provisioning/datasources/prometheus.yml:/etc/grafana/provisioning/datasources/prometheus.yml
+      - ./config/grafana/provisioning/dashboards/dashboard-provider.yml:/etc/grafana/provisioning/dashboards/dashboard-provider.yml
+      - ./config/grafana/provisioning/dashboards/json:/etc/grafana/provisioning/dashboards/json
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # ==========================================
+  # Logstash — 日志管道
+  #   输入: TCP(微服务直连, :15044) + Beats(Filebeat采集, :15045)
+  #   输出: Elasticsearch :19200
+  # ==========================================
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.19.19
+    container_name: my-xhs-logstash
+    network_mode: host
+    environment:
+      LS_JAVA_OPTS: "-Xms256m -Xmx512m"
+      XPACK_MONITORING_ENABLED: "false"
+    command: >
+      logstash
+      -e '
+        input {
+          tcp { port => 15044 codec => json_lines }
+          beats { port => 15045 }
+        }
+        output {
+          elasticsearch {
+            hosts => ["127.0.0.1:19200"]
+            user => "elastic"
+            password => "Xhs@2026#Elastic"
+            index => "myxhs-logs-%{+YYYY.MM.dd}"
+          }
+        }
+      '
+    deploy:
+      resources:
+        limits: { cpus: '0.5', memory: 768m }
+        reservations: { cpus: '0.25', memory: 640m }
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f logstash || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+
+  # ==========================================
+  # Filebeat — 日志采集 → Logstash :15045
+  # ==========================================
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.19.19
+    container_name: my-xhs-filebeat
+    network_mode: host
+    user: root
+    command: >
+      filebeat -e
+      -E output.elasticsearch.enabled=false
+      -E output.logstash.hosts=["127.0.0.1:15045"]
+      -E filebeat.inputs=[{"type":"log","enabled":true,"paths":["/logs/*.json"],"json.keys_under_root":true,"json.add_error_key":true}]
+    deploy:
+      resources:
+        limits: { cpus: '0.1', memory: 192m }
+        reservations: { cpus: '0.05', memory: 96m }
+    volumes:
+      - /logs:/logs:ro  # 微服务 logback JSON_FILE 写 /logs/*.json
+    depends_on:
+      - logstash
+    restart: unless-stopped
+
+  # ==========================================
+  # Kibana — 日志可视化
+  # ==========================================
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.19.19
+    container_name: my-xhs-kibana
+    network_mode: host
+    environment:
+      SERVER_PORT: 15601
+      ELASTICSEARCH_HOSTS: http://127.0.0.1:19200
+      ELASTICSEARCH_USERNAME: kibana_system
+      ELASTICSEARCH_PASSWORD: Xhs@2026#KibanaSystem
+    deploy:
+      resources:
+        limits: { cpus: '0.25', memory: 1536m }
+        reservations: { cpus: '0.1', memory: 1024m }
+    depends_on:
+      - elasticsearch
+    restart: unless-stopped
+
+# ==========================================
+# Volumes
+# ==========================================
+
+volumes:
+  mysql-data:
+  mysql-slave-data:
+  redis-master-data:
+  redis-slave-data:
+  mq-broker-logs:
+  mq-broker-store:
+  es-data:
+  es-sw-data:
+  canal-data:
+  vm-data:
+  prometheus-data:
+  grafana-data:

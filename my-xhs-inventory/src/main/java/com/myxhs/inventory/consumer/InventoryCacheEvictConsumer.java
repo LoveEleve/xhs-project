@@ -77,7 +77,7 @@ public class InventoryCacheEvictConsumer implements RocketMQListener<MessageExt>
     /** Redis Key 前缀（与 InventoryService 保持一致，使用 {skuId} hash tag） */
     private static final String BUCKET_KEY_PREFIX = "inventory:{%d}:bucket:";
     private static final String TOTAL_KEY_PREFIX = "inventory:{%d}:total";
-    private static final String BUCKET_COUNT_KEY_PREFIX = "inventory:bucket:count:";
+    private static final String BUCKET_COUNT_KEY_PREFIX = "inventory:bucket:count:{%d}";
     /** Canal 版本号 Key 前缀（用于防乱序） */
     private static final String CANAL_VERSION_PREFIX = "inventory:canal:version:";
     /** Canal 版本号 Key 的过期时间（7天，防止无限增长） */
@@ -171,7 +171,11 @@ public class InventoryCacheEvictConsumer implements RocketMQListener<MessageExt>
             }
 
             switch (type) {
-                case "INSERT" -> evictCache(skuId, canalVersion, type);
+                // T-078（2026-08-14）：INSERT 不再删除缓存——init/reinit 是唯一 INSERT 来源，
+                // 且写入时 Redis 已同步（与 UPDATE 回声同理）；canal 延迟消费（可达 1-2min）会
+                // 在任意时刻删除运行中的库存 key → preDeduct/refund-restore 失效（INCR 空 key 从 0）。
+                // 管理员 SQL 直改场景由 /api/inventory/reinit 显式重建。
+                case "INSERT" -> log.debug("[库存缓存失效] 跳过INSERT(init已同步Redis): skuId={}", skuId);
                 case "UPDATE" -> {
                     // 【L2 回声保护】本模块是 L1(Redis) 权威架构：
                     // preDeduct/release 先写 Redis（权威），L2 Consumer 再异步写 MySQL。
@@ -286,7 +290,7 @@ public class InventoryCacheEvictConsumer implements RocketMQListener<MessageExt>
         }
 
         // 2. 删除分桶数量 Key
-        String bucketCountKey = BUCKET_COUNT_KEY_PREFIX + skuId;
+        String bucketCountKey = String.format(BUCKET_COUNT_KEY_PREFIX, skuId);
         Boolean bucketCountDeleted = stringRedisTemplate.delete(bucketCountKey);
         if (Boolean.TRUE.equals(bucketCountDeleted)) {
             deletedCount++;

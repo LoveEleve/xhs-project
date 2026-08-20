@@ -1,0 +1,1 @@
+cat: can't open '/etc/os-release': No such file or directory

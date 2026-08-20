@@ -9,8 +9,6 @@ import com.xxl.job.core.handler.annotation.XxlJob;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-
-import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -20,8 +18,8 @@ import java.util.List;
  * 导致通过订单号查询无法路由到分片库。
  * </p>
  * <p>
- * 策略：每 5 分钟扫描最近 1 小时内创建的订单，
- * 检查映射表中是否存在对应记录，不存在则补录。
+ * 策略：每 5 分钟按 ID 游标扫描所有订单，
+ * 检查映射表中是否存在对应记录，不存在则补录，彻底消除时间窗口导致的永久遗漏。
  * </p>
  * <p>
  * XXL-Job 调度保证：Admin 只调度一个 Executor 实例执行，无需 Redisson 分布式锁。
@@ -54,12 +52,11 @@ public class OrderMappingRepairJob {
     }
 
     private int doRepair() {
-        LocalDateTime since = LocalDateTime.now().minusHours(1);
         long lastId = 0L;
         int repaired = 0;
 
         while (true) {
-            List<Order> orders = orderMapper.selectRecentOrders(since, lastId, BATCH_SIZE);
+            List<Order> orders = orderMapper.selectOrdersForMappingRepair(lastId, BATCH_SIZE);
             if (orders.isEmpty()) {
                 break;
             }
@@ -74,7 +71,8 @@ public class OrderMappingRepairJob {
                         mapping.setOrderId(order.getId());
                         orderNoMappingRepository.insert(mapping);
                         repaired++;
-                        log.info("[映射补录] 补录成功: orderNo={}, userId={}", order.getOrderNo(), order.getUserId());
+                        log.info("[映射补录] 补录成功: orderNo={}, userId={}, orderId={}",
+                                order.getOrderNo(), order.getUserId(), order.getId());
                     }
                 } catch (Exception e) {
                     log.debug("[映射补录] 补录异常(可能已存在): orderNo={}", order.getOrderNo());

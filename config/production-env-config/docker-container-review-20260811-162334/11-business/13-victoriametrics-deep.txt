@@ -1,0 +1,4 @@
+########## flags
+-httpListenAddr=":8428"
+-retentionPeriod="30d"
+-storageDataPath="/victoria-metrics-data"

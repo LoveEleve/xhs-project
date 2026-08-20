@@ -1,0 +1,24 @@
+container               priv ro  capadd              secopt      user        restart       mem      cpu   net     pid     logdrv      health
+--------------------------------------------------------------------------------------------------------------------------------------------
+my-xhs-canal            -    -   -                   -           -           unless-stopped1024m    0.50  host            journald    healthy
+my-xhs-mysql-slave      -    -   -                   -           -           unless-stopped768m     0.50  host            journald    healthy
+my-xhs-nacos            -    -   -                   -           -           unless-stopped1536m    1.00  host            journald    -
+my-xhs-filebeat         -    -   -                   -           root        unless-stopped192m     0.10  host            journald    -
+my-xhs-skywalking-ui    -    -   -                   -           -           unless-stopped640m     0.25  host            journald    -
+my-xhs-redis-sentinel   -    -   -                   -           -           unless-stopped64m      0.10  host            journald    healthy
+my-xhs-kibana           -    -   -                   -           1000        unless-stopped1536m    0.25  host            journald    -
+my-xhs-logstash         -    -   -                   -           1000        unless-stopped768m     0.50  host            journald    healthy
+my-xhs-skywalking-oap   -    -   -                   -           -           unless-stopped1536m    1.00  host            journald    healthy
+my-xhs-xxl-job-admin    -    -   -                   -           -           unless-stopped1024m    0.50  host            journald    -
+my-xhs-rocketmq-dashboard-    -   -                   -           -           unless-stopped640m     0.25  host            journald    healthy
+my-xhs-grafana          -    -   -                   -           472         unless-stopped640m     0.25  host            journald    -
+my-xhs-mq-broker        -    -   -                   -           root        unless-stopped768m     0.50  host            journald    healthy
+my-xhs-redis-slave      -    -   -                   -           -           unless-stopped256m     0.25  host            journald    healthy
+my-xhs-mq-namesrv       -    -   -                   -           rocketmq    unless-stopped640m     0.25  host            journald    -
+my-xhs-es-skywalking    -    -   -                   -           1000:0      unless-stopped1536m    1.00  host            journald    healthy
+my-xhs-mysql            -    -   -                   -           -           unless-stopped1536m    2.00  host            journald    healthy
+my-xhs-prometheus       -    -   -                   -           nobody      unless-stopped640m     0.25  host            journald    -
+my-xhs-redis            -    -   -                   -           -           unless-stopped384m     0.50  host            journald    healthy
+my-xhs-elasticsearch    -    -   -                   -           1000:0      unless-stopped2048m    0.50  host            journald    healthy
+my-xhs-sentinel-dashboard-    -   -                   -           -           unless-stopped256m     0.25  host            journald    -
+my-xhs-victoria-metrics -    -   -                   -           -           unless-stopped640m     0.25  host            journald    -

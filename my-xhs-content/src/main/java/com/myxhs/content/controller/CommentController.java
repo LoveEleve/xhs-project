@@ -3,6 +3,7 @@ package com.myxhs.content.controller;
 import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.PageResult;
 import com.myxhs.common.response.R;
+import com.myxhs.common.response.ResultCode;
 import com.myxhs.content.dto.request.CommentCreateRequest;
 import com.myxhs.content.dto.response.CommentVO;
 import com.myxhs.content.service.CommentService;
@@ -115,5 +116,30 @@ public class CommentController {
             @RequestParam(defaultValue = "1") int pageNum,
             @RequestParam(defaultValue = "10") int pageSize) {
         return R.ok(commentService.getCommentPage(noteId, pageNum, pageSize));
+    }
+
+    /**
+     * O-Like-3/4 修复（2026-08-13）：内部端点——评论信息（存在性 + 作者 + 所属笔记）
+     * 供 analytics 点赞校验与评论点赞通知使用（X-Internal-Call 保护）
+     */
+    @GetMapping("/internal/info/{commentId}")
+    public R<Map<String, Object>> internalCommentInfo(
+            @PathVariable("commentId") Long commentId,
+            @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
+        if (!isInternalCall(internalCall)) {
+            return R.fail(401, "内部调用令牌无效");
+        }
+        com.myxhs.content.entity.Comment c = commentService.getById(commentId);
+        if (c == null) {
+            return R.fail(ResultCode.COMMENT_NOT_FOUND, "评论不存在");
+        }
+        return R.ok(Map.of("commentId", c.getId(), "userId", c.getUserId(), "noteId", c.getNoteId()));
+    }
+
+    @org.springframework.beans.factory.annotation.Value("${myxhs.internal.token:}")
+    private String internalToken;
+
+    private boolean isInternalCall(String headerValue) {
+        return internalToken != null && !internalToken.isEmpty() && internalToken.equals(headerValue);
     }
 }

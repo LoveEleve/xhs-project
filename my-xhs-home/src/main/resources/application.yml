@@ -2,6 +2,8 @@ server:
   port: 19015
   shutdown: graceful
   tomcat:
+    mbeanregistry:
+      enabled: true  # B3（2026-08-13）：暴露 tomcat.threads 指标
     threads:
       max: 200
       min-spare: 20
@@ -101,6 +103,14 @@ spring:
           enabled: true
           max-connections: 200
           max-connections-per-route: 50
+      client:
+        config:
+          default:
+            request-interceptors:
+              - com.myxhs.feign.config.FeignInternalCallInterceptor
+            connect-timeout: 3000
+            read-timeout: 3000
+            logger-level: BASIC
   lifecycle:
     timeout-per-shutdown-phase: 30s
 
@@ -112,12 +122,6 @@ rocketmq:
 
 # Feign 客户端配置
 feign:
-  client:
-    config:
-      default:
-        connect-timeout: 3000
-        read-timeout: 3000
-        logger-level: BASIC
   # 启用 Sentinel 作为 Feign 熔断器，FallbackFactory 才能生效
   sentinel:
     enabled: true
@@ -142,10 +146,21 @@ home:
 
 # Actuator 健康检查 + 指标暴露
 management:
+  metrics:
+    distribution:
+      percentiles-histogram:
+        # 2026-08-13：Hikari Timer 默认无 bucket（仅 count/sum/max）——开启后才有 _bucket，histogram_quantile 可用
+        hikaricp.connections.acquire: true
+        hikaricp.connections.usage: true
+        hikaricp.connections.creation: true
+        # 业务延迟 Timer（2026-08-13：默认无 bucket——开 percentileHistogram 后 histogram_quantile 可用，biz 看板配套）
+        feed.push.latency: true
+        orders.create.latency: true
+        inventory.prededuct.latency: true
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus,metrics,loggers
+        include: health,info,prometheus,metrics
   endpoint:
     health:
       show-details: always

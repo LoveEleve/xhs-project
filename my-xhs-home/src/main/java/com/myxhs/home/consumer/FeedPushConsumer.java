@@ -82,6 +82,15 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
             Long localMsgId = event.get("localMsgId") != null
                     ? ((Number) event.get("localMsgId")).longValue() : null;
 
+            // T-126（2026-08-16）：已删标记检查——NOTE_DELETE 与 FEED_TOPIC 消息乱序/重复投递时，
+            // 笔记已删除但推送消息晚到（MQ 重试/补偿重投）会把已删笔记重新写入 outbox/收件箱；
+            // NoteDeleteConsumer 清理时设置 5min 标记（myxhs:note:deleted:{noteId}），此处拦截跳过
+            if (Boolean.TRUE.equals(stringRedisTemplate.hasKey("myxhs:note:deleted:" + noteId))) {
+                log.warn("[Feed推送] 笔记已删除，跳过推送: noteId={}, authorId={}", noteId, authorId);
+                businessMetrics.recordMqConsume("FEED_TOPIC", "feed-push-consumer-group", true);
+                return;
+            }
+
             // 判断是否大V
             boolean isBigV = checkBigV(authorId);
 
@@ -178,6 +187,12 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
                             byte[] inboxKey = (RedisKeyConstants.FEED_INBOX + followerId).getBytes();
                             connection.zSetCommands().zAdd(inboxKey, publishTime, noteIdBytes);
                             connection.keyCommands().expire(inboxKey, expireSeconds);
+                            // T-087：同步写推荐关注召回源（recommend:following:latest:{followerId}）
+                            // FollowingRecallStrategy 读取该 ZSet 召回"关注的人的最新内容"——
+                            // 原实现无任何写入方导致 FOLLOWING 召回恒空
+                            byte[] followingKey = (RedisKeyConstants.RECOMMEND_FOLLOWING_LATEST + followerId).getBytes();
+                            connection.zSetCommands().zAdd(followingKey, publishTime, noteIdBytes);
+                            connection.keyCommands().expire(followingKey, expireSeconds);
                         }
                         return null;
                     }

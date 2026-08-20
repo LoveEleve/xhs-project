@@ -1,0 +1,18 @@
+Tue Aug 11 08:37:47 AM UTC 2026
+---
+time(seconds)        unlimited
+file(blocks)         unlimited
+data(kbytes)         unlimited
+stack(kbytes)        8192
+coredump(blocks)     unlimited
+memory(kbytes)       unlimited
+locked memory(kbytes) 8192
+process              unlimited
+nofiles              1048576
+vmemory(kbytes)      unlimited
+locks                unlimited
+rtprio               0
+---
+0::/
+25000 100000
+671088640

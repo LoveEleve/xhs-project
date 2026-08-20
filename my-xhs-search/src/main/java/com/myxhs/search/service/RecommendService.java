@@ -206,7 +206,8 @@ public class RecommendService {
                         request.getBehaviorType(),
                         request.getDuration());
             } catch (Exception ex) {
-                log.warn("[推荐] 行为上报降级失败: userId={}", userId, ex);
+                log.error("[推荐] 行为上报降级失败: userId={}", userId, ex);
+                throw new IllegalStateException("行为上报失败，请稍后重试", ex);
             }
         }
     }
@@ -434,7 +435,7 @@ public class RecommendService {
                 .filter(item -> !isAlreadySeen(seenKey, item.getNoteId()))
                 .collect(Collectors.toList());
 
-        // 2. 品类打散（同品类不超过 2 个连续）
+        // 2. 品类打散（同品类不超过 2 个连续——T-082：原实现 >=2 跳过导致第 2 条同品类即被误伤）
         List<RecallItem> result = new ArrayList<>();
         String lastCategory = null;
         int consecutiveCount = 0;
@@ -443,8 +444,8 @@ public class RecommendService {
             String category = item.getCategory() != null ? item.getCategory() : "unknown";
             if (category.equals(lastCategory)) {
                 consecutiveCount++;
-                if (consecutiveCount >= 2) {
-                    continue; // 同品类连续超过 2 个，跳过
+                if (consecutiveCount > 2) {
+                    continue; // 同品类连续超过 2 个，跳过（第 3 个起）
                 }
             } else {
                 consecutiveCount = 1;

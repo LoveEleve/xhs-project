@@ -1,0 +1,3 @@
+########## health
+OK########## index 摘要(行数)
+{"status":"success","data":{"totalSeries":0,"totalLabelValuePairs":0,"seriesCountByMetricName":[],"seriesCountByLabelName":[],"seriesCountByFocusLabelValue":[],"seriesCountByLabelValuePair":[],"labelValueCountByLabelName":[]}}

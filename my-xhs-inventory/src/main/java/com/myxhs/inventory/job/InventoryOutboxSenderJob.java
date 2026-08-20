@@ -51,6 +51,7 @@ public class InventoryOutboxSenderJob {
             LocalDateTime cutoff = LocalDateTime.now().minusSeconds(3);
             List<Map<String, Object>> events = inventoryMapper.selectPendingOutbox(cutoff, BATCH_SIZE);
             for (Map<String, Object> row : events) {
+                Long eventId = ((Number) row.get("id")).longValue();
                 Long orderId = ((Number) row.get("order_id")).longValue();
                 Long skuId = ((Number) row.get("sku_id")).longValue();
                 String action = (String) row.get("action");
@@ -64,6 +65,7 @@ public class InventoryOutboxSenderJob {
                 // 不能直接序列化 DB 行 Map（snake_case 导致 Consumer 字段全 null → NPE → DLQ）
                 com.myxhs.inventory.dto.event.InventoryDeductEvent event =
                         com.myxhs.inventory.dto.event.InventoryDeductEvent.builder()
+                                .outboxId(eventId)
                                 .orderId(orderId)
                                 .skuId(skuId)
                                 .quantity(quantity)
@@ -79,8 +81,8 @@ public class InventoryOutboxSenderJob {
                             3000);
                     // 只有真正发送成功才标记，防止发送失败却标记导致事件丢失
                     if (sendResult.getSendStatus() == org.apache.rocketmq.client.producer.SendStatus.SEND_OK) {
-                        inventoryMapper.markOutboxSent(orderId, skuId);
-                        log.debug("[Outbox] 补发成功: orderId={}, skuId={}, action={}", orderId, skuId, action);
+                        inventoryMapper.markOutboxSent(eventId);
+                        log.debug("[Outbox] 补发成功: eventId={}, orderId={}, skuId={}, action={}", eventId, orderId, skuId, action);
                     } else {
                         log.warn("[Outbox] 补发状态异常(不标记, 下轮重试): orderId={}, skuId={}, action={}, status={}",
                                 orderId, skuId, action, sendResult.getSendStatus());

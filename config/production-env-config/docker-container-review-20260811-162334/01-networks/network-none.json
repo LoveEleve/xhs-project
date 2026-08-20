@@ -1,0 +1,26 @@
+[
+    {
+        "Name": "none",
+        "Id": "a489b3a8478dbea84ba9b6918ffea19efc6128eac96f50767b7462ca44e5d389",
+        "Created": "2026-07-09T20:14:03.701025591+08:00",
+        "Scope": "local",
+        "Driver": "null",
+        "EnableIPv4": true,
+        "EnableIPv6": false,
+        "IPAM": {
+            "Driver": "default",
+            "Options": null,
+            "Config": null
+        },
+        "Internal": false,
+        "Attachable": false,
+        "Ingress": false,
+        "ConfigFrom": {
+            "Network": ""
+        },
+        "ConfigOnly": false,
+        "Containers": {},
+        "Options": {},
+        "Labels": {}
+    }
+]

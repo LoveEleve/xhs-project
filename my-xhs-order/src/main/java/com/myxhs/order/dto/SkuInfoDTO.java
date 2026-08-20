@@ -18,4 +18,7 @@ public class SkuInfoDTO {
 
     /** SKU 主图（继承自所属 SPU 第一张图，来自 product 服务） */
     private String image;
+
+    /** 所属 SPU 状态（T-047：1=上架；order 下单层双状态校验用） */
+    private Integer spuStatus;
 }

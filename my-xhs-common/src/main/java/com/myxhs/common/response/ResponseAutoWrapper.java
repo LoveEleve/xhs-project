@@ -97,6 +97,13 @@ public class ResponseAutoWrapper implements ResponseBodyAdvice<Object> {
         if (String.class.isAssignableFrom(returnType.getParameterType())) {
             return false;
         }
+        // 排除 SSE 长连接（SseEmitter）与流式响应：不是普通响应体，
+        // 包装为 R<> 会导致 content negotiation 失败（406 No acceptable representation）
+        Class<?> pt = returnType.getParameterType();
+        if (org.springframework.web.servlet.mvc.method.annotation.SseEmitter.class.isAssignableFrom(pt)
+                || org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody.class.isAssignableFrom(pt)) {
+            return false;
+        }
         return true;
     }
 

@@ -36,4 +36,7 @@ public class SkuVO {
 
     /** 状态：0-下架 1-上架 */
     private Integer status;
+
+    /** 所属 SPU 状态：0-下架 1-上架（T-047：cart 判断 SPU 维度有效性） */
+    private Integer spuStatus;
 }

@@ -48,8 +48,18 @@ public class NoteDeleteConsumer implements RocketMQListener<MessageExt> {
             // 清理作者发件箱: 防止新关注者通过 outbox 拉取已删笔记
             String outboxKey = RedisKeyConstants.FEED_OUTBOX + authorId;
             Long removed = stringRedisTemplate.opsForZSet().remove(outboxKey, String.valueOf(noteId));
-            log.info("[NoteDelete] 清理完成: authorId={}, noteId={}, outboxRemoved={}",
-                    authorId, noteId, removed);
+            // T-127（2026-08-16）：同步清理推荐关注召回源 following:latest——
+            // 修复前 NOTE_DELETE 只清 outbox，FOLLOWING 召回（recommend:following:latest:{followerId}）
+            // 残留已删笔记（推模式按粉丝维度写入，作者侧无法直接定位）→ 推荐中出现已删 noteId。
+            // following:latest 按 followerId 分 key，删除笔记（低频操作）时 SCAN 全量清除该 noteId。
+            int followingCleaned = removeFromFollowingLatest(noteId);
+            // T-126（2026-08-16）：设置短 TTL 已删标记，防 FEED_TOPIC 推送消息晚到/重投把已删笔记写回 outbox——
+            // 修复前：NOTE_DELETE 清 outbox 后，重复投递的推送消息（MQ 重试/补偿重投）再次 ZADD 已删笔记
+            // → 大V outbox 残留已删笔记（实测 15:55/15:56 两次消费同 noteId 重新入 outbox）
+            stringRedisTemplate.opsForValue().set(
+                    "myxhs:note:deleted:" + noteId, "1", java.time.Duration.ofMinutes(5));
+            log.info("[NoteDelete] 清理完成: authorId={}, noteId={}, outboxRemoved={}, followingCleaned={}",
+                    authorId, noteId, removed, followingCleaned);
 
         } catch (Exception e) {
             log.error("[NoteDelete] 消费失败: msgId={}", msg.getMsgId(), e);
@@ -57,6 +67,34 @@ public class NoteDeleteConsumer implements RocketMQListener<MessageExt> {
         } finally {
             MqTraceHelper.clearTraceId();
         }
+    }
+
+    /**
+     * T-127（2026-08-16）：SCAN 全量清理 following:latest 中的已删笔记
+     * <p>
+     * following:latest:{followerId} 按粉丝维度分 key（FeedPushConsumer 推模式写入），
+     * 删除事件只有 authorId 无法直接定位——笔记删除为低频操作，SCAN 全量清除可接受
+     * （与 FeedCleanupJob 的 SCAN 风格一致）。
+     * </p>
+     */
+    private int removeFromFollowingLatest(Long noteId) {
+        int cleaned = 0;
+        try (var cursor = stringRedisTemplate.scan(
+                org.springframework.data.redis.core.ScanOptions.scanOptions()
+                        .match(RedisKeyConstants.RECOMMEND_FOLLOWING_LATEST + "*")
+                        .count(500).build())) {
+            while (cursor.hasNext()) {
+                String key = cursor.next();
+                Long r = stringRedisTemplate.opsForZSet().remove(key, String.valueOf(noteId));
+                if (r != null && r > 0) {
+                    cleaned++;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[NoteDelete] following:latest 清理异常(部分残留靠 TTL 回收): noteId={}, err={}",
+                    noteId, e.getMessage());
+        }
+        return cleaned;
     }
 
     /**

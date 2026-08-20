@@ -1,0 +1,73 @@
+[
+    {
+        "Id": "sha256:6cd09145362dfe6831b14545de3d5fd6cc75c37cfd6ef8561429c1fc73518b39",
+        "RepoTags": [
+            "mysql:8.0"
+        ],
+        "RepoDigests": [
+            "mysql@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b"
+        ],
+        "Parent": "",
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2026-05-04T23:01:20.676190479Z",
+        "DockerVersion": "",
+        "Author": "",
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 799032353,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/data/docker/lib/overlay2/009aa6e9a0a8ce4f73a3f4e58f5cd549e2d19c204ff21a0c81e6611b95ea2baf/diff:/data/docker/lib/overlay2/4e86c36f14ee431ff31411927827e4d41b2b737ce09948279f4fa58a0fb84ced/diff:/data/docker/lib/overlay2/5e19acc375221e9e3ed95f6844f2d9f63f73df201a9b078181e163fcddbe0b63/diff:/data/docker/lib/overlay2/faecb18edd1ad371ff7bc06db89058a529d12e4dc2691ff22a77b646051523ad/diff:/data/docker/lib/overlay2/cadd92b83b915451888e6ab16ab45eea588b4c8aa5dd0367a68d0dbf4a15d051/diff:/data/docker/lib/overlay2/22c811669adb1759fb26c701c39aaae3e04814d549e50506287626d70444fb9f/diff:/data/docker/lib/overlay2/4ec84523e421aa78c37614a8d8032bca08afae84b9c96574e067da0f0842bb13/diff:/data/docker/lib/overlay2/3aa8ace193ea9e6479bdf41b7f849e225cd27adac4cd89a25a9046411859f759/diff:/data/docker/lib/overlay2/14cc50d5693259b7ece44f023fb8b3abe864280156754b2690e5b9bc88f0112f/diff:/data/docker/lib/overlay2/16301de058c9b639e0c2f611aa1600943fb0fc4ab41d040bf49003f775771f6c/diff",
+                "MergedDir": "/data/docker/lib/overlay2/a1ba76abed846e1d48cfc69db511fd1770d1375b65ed97927714985d2a4cfc3f/merged",
+                "UpperDir": "/data/docker/lib/overlay2/a1ba76abed846e1d48cfc69db511fd1770d1375b65ed97927714985d2a4cfc3f/diff",
+                "WorkDir": "/data/docker/lib/overlay2/a1ba76abed846e1d48cfc69db511fd1770d1375b65ed97927714985d2a4cfc3f/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:d43f07c40901aa317d5983f2084bdfedcfdafb83efc894804d2ddf5b0dc70dd0",
+                "sha256:afe04ba8686ce64bfea34ddc7141624b2283e652a46bfef54e58877ac6cb4554",
+                "sha256:4a5079cdf3cbf6e76ff9c4bb289a811e22088d276d99cba23fd808b23d09d0e5",
+                "sha256:ac8332d12fa091d775ced250af571b8a335d09c84253fd5027b21dbca54a467b",
+                "sha256:b7ee228f4507526e6dac1e2b34ebc0a803d38735f9f0e8154934c2c9cc275919",
+                "sha256:1700d9acc2ce175bac397265a07b34cb231897f2a907255ef3decfb58092511c",
+                "sha256:e6e1a47306adeeff2686d1c5e3a677e8432495b3de5a8dc7a732d29fadea6059",
+                "sha256:16d50f7c95c0f19a1b00722decd4bd42dbd3462066a7ac666903ba642164a821",
+                "sha256:1bc63e2ed476381a326f74411ed09fcce6b9ec053e7906d95d7cb53d6fd4c794",
+                "sha256:04024da0550125ac09240a62a6ee005a8e27b418dae88a85001bddde6526003b",
+                "sha256:cdb99ca7755b4e597db7d8153ec9324a8c6db3cf3972b51f9e05964590919bd4"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        },
+        "Config": {
+            "Cmd": [
+                "mysqld"
+            ],
+            "Entrypoint": [
+                "docker-entrypoint.sh"
+            ],
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "GOSU_VERSION=1.19",
+                "MYSQL_MAJOR=8.0",
+                "MYSQL_VERSION=8.0.46-1.el9",
+                "MYSQL_SHELL_VERSION=8.0.46-1.el9"
+            ],
+            "ExposedPorts": {
+                "3306/tcp": {},
+                "33060/tcp": {}
+            },
+            "Labels": null,
+            "OnBuild": null,
+            "User": "",
+            "Volumes": {
+                "/var/lib/mysql": {}
+            },
+            "WorkingDir": "/"
+        }
+    }
+]

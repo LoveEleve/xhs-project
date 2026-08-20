@@ -62,9 +62,14 @@ public class CounterController {
 
     /**
      * 手动触发对账修复（管理接口，需 X-Admin-Call 校验）
+     * <p>
+     * T-095：限流改 perUser=true——原全局限流（所有用户共享 2 次/分钟）
+     * 且 AOP 限流先于方法内 isAdminCall（未鉴权请求可消耗额度，轻微 DoS 面）。
+     * perUser 后各用户独立窗口；鉴权顺序问题由 gateway 管理端点模式兜底。
+     * </p>
      */
     @PostMapping("/reconcile")
-    @RateLimit(windowSeconds = 60, maxRequests = 2, prefix = "myxhs:counter:reconcile",
+    @RateLimit(windowSeconds = 60, maxRequests = 2, perUser = true, prefix = "myxhs:counter:reconcile",
             message = "对账修复请求过于频繁，每分钟最多 2 次")
     public R<Integer> reconcile(
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {

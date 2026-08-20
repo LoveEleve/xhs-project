@@ -1,0 +1,334 @@
+[
+    {
+        "Id": "967f40d3edf27562e7f357d59724188bd4efab1b89427082a58455b987acf9e4",
+        "Created": "2026-08-10T09:21:41.266854849Z",
+        "Path": "/alidata/bin/main.sh",
+        "Args": [
+            "/home/admin/app.sh"
+        ],
+        "State": {
+            "Status": "running",
+            "Running": true,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 3069505,
+            "ExitCode": 0,
+            "Error": "",
+            "StartedAt": "2026-08-10T09:21:45.40781393Z",
+            "FinishedAt": "0001-01-01T00:00:00Z",
+            "Health": {
+                "Status": "healthy",
+                "FailingStreak": 0,
+                "Log": [
+                    {
+                        "Start": "2026-08-11T16:21:38.412839266+08:00",
+                        "End": "2026-08-11T16:21:38.45556549+08:00",
+                        "ExitCode": 0,
+                        "Output": "20995\n"
+                    },
+                    {
+                        "Start": "2026-08-11T16:22:08.456896683+08:00",
+                        "End": "2026-08-11T16:22:08.502374379+08:00",
+                        "ExitCode": 0,
+                        "Output": "21002\n"
+                    },
+                    {
+                        "Start": "2026-08-11T16:22:38.502838489+08:00",
+                        "End": "2026-08-11T16:22:38.541342394+08:00",
+                        "ExitCode": 0,
+                        "Output": "21009\n"
+                    },
+                    {
+                        "Start": "2026-08-11T16:23:08.542147695+08:00",
+                        "End": "2026-08-11T16:23:08.584725363+08:00",
+                        "ExitCode": 0,
+                        "Output": "21016\n"
+                    },
+                    {
+                        "Start": "2026-08-11T16:23:38.586064743+08:00",
+                        "End": "2026-08-11T16:23:38.628515583+08:00",
+                        "ExitCode": 0,
+                        "Output": "21023\n"
+                    }
+                ]
+            }
+        },
+        "Image": "sha256:217f9b00db173dcb3f9d44d774f538ca4f0bf143999745254fee4a7a9c7155a5",
+        "ResolvConfPath": "/data/docker/lib/containers/967f40d3edf27562e7f357d59724188bd4efab1b89427082a58455b987acf9e4/resolv.conf",
+        "HostnamePath": "/data/docker/lib/containers/967f40d3edf27562e7f357d59724188bd4efab1b89427082a58455b987acf9e4/hostname",
+        "HostsPath": "/data/docker/lib/containers/967f40d3edf27562e7f357d59724188bd4efab1b89427082a58455b987acf9e4/hosts",
+        "LogPath": "",
+        "Name": "/my-xhs-canal",
+        "RestartCount": 0,
+        "Driver": "overlay2",
+        "Platform": "linux",
+        "MountLabel": "",
+        "ProcessLabel": "",
+        "AppArmorProfile": "",
+        "ExecIDs": null,
+        "HostConfig": {
+            "Binds": [
+                "/opt/kona-jdk8:/opt/kona-jdk8:ro",
+                "/data/workspace/my-xhs-deploy-zip/config/canal/conf/canal.properties:/home/admin/canal-server/conf/canal.properties:rw",
+                "/data/workspace/my-xhs-deploy-zip/config/canal/conf/note_instance/instance.properties:/home/admin/canal-server/conf/note_instance/instance.properties:rw",
+                "/data/workspace/my-xhs-deploy-zip/config/canal/conf/product_instance/instance.properties:/home/admin/canal-server/conf/product_instance/instance.properties:rw",
+                "/data/workspace/my-xhs-deploy-zip/config/canal/conf/inventory_instance/instance.properties:/home/admin/canal-server/conf/inventory_instance/instance.properties:rw"
+            ],
+            "ContainerIDFile": "",
+            "LogConfig": {
+                "Type": "journald",
+                "Config": {}
+            },
+            "NetworkMode": "host",
+            "PortBindings": {},
+            "RestartPolicy": {
+                "Name": "unless-stopped",
+                "MaximumRetryCount": 0
+            },
+            "AutoRemove": false,
+            "VolumeDriver": "",
+            "VolumesFrom": null,
+            "ConsoleSize": [
+                0,
+                0
+            ],
+            "CapAdd": null,
+            "CapDrop": null,
+            "CgroupnsMode": "private",
+            "Dns": null,
+            "DnsOptions": null,
+            "DnsSearch": null,
+            "ExtraHosts": [],
+            "GroupAdd": null,
+            "IpcMode": "private",
+            "Cgroup": "",
+            "Links": null,
+            "OomScoreAdj": 0,
+            "PidMode": "",
+            "Privileged": false,
+            "PublishAllPorts": false,
+            "ReadonlyRootfs": false,
+            "SecurityOpt": null,
+            "UTSMode": "",
+            "UsernsMode": "",
+            "ShmSize": 67108864,
+            "Runtime": "runc",
+            "Isolation": "",
+            "CpuShares": 0,
+            "Memory": 1073741824,
+            "NanoCpus": 500000000,
+            "CgroupParent": "",
+            "BlkioWeight": 0,
+            "BlkioWeightDevice": null,
+            "BlkioDeviceReadBps": null,
+            "BlkioDeviceWriteBps": null,
+            "BlkioDeviceReadIOps": null,
+            "BlkioDeviceWriteIOps": null,
+            "CpuPeriod": 0,
+            "CpuQuota": 0,
+            "CpuRealtimePeriod": 0,
+            "CpuRealtimeRuntime": 0,
+            "CpusetCpus": "",
+            "CpusetMems": "",
+            "Devices": null,
+            "DeviceCgroupRules": null,
+            "DeviceRequests": null,
+            "MemoryReservation": 268435456,
+            "MemorySwap": 2147483648,
+            "MemorySwappiness": null,
+            "OomKillDisable": null,
+            "PidsLimit": null,
+            "Ulimits": [
+                {
+                    "Name": "nofile",
+                    "Hard": 1048576,
+                    "Soft": 1048576
+                }
+            ],
+            "CpuCount": 0,
+            "CpuPercent": 0,
+            "IOMaximumIOps": 0,
+            "IOMaximumBandwidth": 0,
+            "Mounts": [
+                {
+                    "Type": "volume",
+                    "Source": "my-xhs-deploy-zip_canal-data",
+                    "Target": "/home/admin/canal-server/logs",
+                    "VolumeOptions": {}
+                }
+            ],
+            "MaskedPaths": [
+                "/proc/asound",
+                "/proc/acpi",
+                "/proc/interrupts",
+                "/proc/kcore",
+                "/proc/keys",
+                "/proc/latency_stats",
+                "/proc/timer_list",
+                "/proc/timer_stats",
+                "/proc/sched_debug",
+                "/proc/scsi",
+                "/sys/firmware",
+                "/sys/devices/virtual/powercap"
+            ],
+            "ReadonlyPaths": [
+                "/proc/bus",
+                "/proc/fs",
+                "/proc/irq",
+                "/proc/sys",
+                "/proc/sysrq-trigger"
+            ]
+        },
+        "GraphDriver": {
+            "Data": {
+                "ID": "967f40d3edf27562e7f357d59724188bd4efab1b89427082a58455b987acf9e4",
+                "LowerDir": "/data/docker/lib/overlay2/d3c03052e10328bf54746f6de81cd7c39b6b1b887c24be9582bd052e32406249-init/diff:/data/docker/lib/overlay2/dc45608d64f76608bb261eab5301142ebf39151a1700ed88bda377d3d2b59769/diff",
+                "MergedDir": "/data/docker/lib/overlay2/d3c03052e10328bf54746f6de81cd7c39b6b1b887c24be9582bd052e32406249/merged",
+                "UpperDir": "/data/docker/lib/overlay2/d3c03052e10328bf54746f6de81cd7c39b6b1b887c24be9582bd052e32406249/diff",
+                "WorkDir": "/data/docker/lib/overlay2/d3c03052e10328bf54746f6de81cd7c39b6b1b887c24be9582bd052e32406249/work"
+            },
+            "Name": "overlay2"
+        },
+        "Mounts": [
+            {
+                "Type": "bind",
+                "Source": "/opt/kona-jdk8",
+                "Destination": "/opt/kona-jdk8",
+                "Mode": "ro",
+                "RW": false,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/data/workspace/my-xhs-deploy-zip/config/canal/conf/canal.properties",
+                "Destination": "/home/admin/canal-server/conf/canal.properties",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/data/workspace/my-xhs-deploy-zip/config/canal/conf/note_instance/instance.properties",
+                "Destination": "/home/admin/canal-server/conf/note_instance/instance.properties",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/data/workspace/my-xhs-deploy-zip/config/canal/conf/product_instance/instance.properties",
+                "Destination": "/home/admin/canal-server/conf/product_instance/instance.properties",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/data/workspace/my-xhs-deploy-zip/config/canal/conf/inventory_instance/instance.properties",
+                "Destination": "/home/admin/canal-server/conf/inventory_instance/instance.properties",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "volume",
+                "Name": "my-xhs-deploy-zip_canal-data",
+                "Source": "/data/docker/lib/volumes/my-xhs-deploy-zip_canal-data/_data",
+                "Destination": "/home/admin/canal-server/logs",
+                "Driver": "local",
+                "Mode": "z",
+                "RW": true,
+                "Propagation": ""
+            }
+        ],
+        "Config": {
+            "Hostname": "VM-247-89-tencentos",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": true,
+            "AttachStderr": true,
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/opt/kona-jdk8/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "JAVA_HOME=/opt/kona-jdk8",
+                "JAVA_OPTS=-Xms256m -Xmx512m -Xmn128m -XX:SurvivorRatio=2 -XX:MaxTenuringThreshold=15 -XX:+DisableExplicitGC"
+            ],
+            "Cmd": [
+                "/home/admin/app.sh"
+            ],
+            "Healthcheck": {
+                "Test": [
+                    "CMD-SHELL",
+                    "pgrep -f CanalLauncher || exit 1"
+                ],
+                "Interval": 30000000000,
+                "Timeout": 10000000000,
+                "StartPeriod": 60000000000,
+                "Retries": 3
+            },
+            "Image": "my-xhs-canal-server:v1.1.7-squashed",
+            "Volumes": null,
+            "WorkingDir": "",
+            "Entrypoint": [
+                "/alidata/bin/main.sh"
+            ],
+            "OnBuild": null,
+            "Labels": {
+                "com.docker.compose.config-hash": "af00956fb6934fd8d4a87c119d025097ba5ddad8f5dbd022804b5f88992cdcf1",
+                "com.docker.compose.container-number": "1",
+                "com.docker.compose.depends_on": "mysql:service_started:false,rocketmq-broker:service_started:false",
+                "com.docker.compose.image": "sha256:217f9b00db173dcb3f9d44d774f538ca4f0bf143999745254fee4a7a9c7155a5",
+                "com.docker.compose.oneoff": "False",
+                "com.docker.compose.project": "my-xhs-deploy-zip",
+                "com.docker.compose.project.config_files": "/data/workspace/my-xhs-deploy-zip/docker-compose.yml",
+                "com.docker.compose.project.working_dir": "/data/workspace/my-xhs-deploy-zip",
+                "com.docker.compose.replace": "9129420ca21666d8ae2349e14b885c7221ab6a6d59e04e01ffacb7b08f504d3a",
+                "com.docker.compose.service": "canal",
+                "com.docker.compose.version": "2.29.2"
+            }
+        },
+        "NetworkSettings": {
+            "Bridge": "",
+            "SandboxID": "6dc7ed49d3de608dc1750d410a17781be8bd9066c5084780a0b7249edcb7cdd7",
+            "SandboxKey": "/var/run/docker/netns/default",
+            "Ports": {},
+            "HairpinMode": false,
+            "LinkLocalIPv6Address": "",
+            "LinkLocalIPv6PrefixLen": 0,
+            "SecondaryIPAddresses": null,
+            "SecondaryIPv6Addresses": null,
+            "EndpointID": "",
+            "Gateway": "",
+            "GlobalIPv6Address": "",
+            "GlobalIPv6PrefixLen": 0,
+            "IPAddress": "",
+            "IPPrefixLen": 0,
+            "IPv6Gateway": "",
+            "MacAddress": "",
+            "Networks": {
+                "host": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": null,
+                    "MacAddress": "",
+                    "DriverOpts": null,
+                    "GwPriority": 0,
+                    "NetworkID": "69303899f57d4447764f56f161dceb184df134844eb038322985183a4f6b4dff",
+                    "EndpointID": "909197a5e791ff3cd9c5e2b2c01c432aacdab619395c06fbfed628884888ead8",
+                    "Gateway": "",
+                    "IPAddress": "",
+                    "IPPrefixLen": 0,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "DNSNames": null
+                }
+            }
+        }
+    }
+]

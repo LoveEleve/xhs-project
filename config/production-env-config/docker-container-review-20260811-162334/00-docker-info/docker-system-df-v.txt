@@ -1,0 +1,106 @@
+Images space usage:
+
+REPOSITORY                                 TAG               IMAGE ID       CREATED         SIZE      SHARED SIZE   UNIQUE SIZE   CONTAINERS
+elasticsearch                              8.19.19           41ac10aab11f   2 weeks ago     1.41GB    78.14MB       1.331GB       1
+docker.elastic.co/kibana/kibana            8.19.19           3be65208f86b   3 weeks ago     1.35GB    78.14MB       1.268GB       1
+docker.elastic.co/beats/filebeat           8.19.19           d4c99df6b952   3 weeks ago     429MB     78.14MB       350.6MB       1
+docker.elastic.co/logstash/logstash        8.19.19           ecf5072185bc   3 weeks ago     911MB     0B            911.5MB       1
+my-xhs-canal-server                        v1.1.7-squashed   217f9b00db17   4 weeks ago     395MB     0B            395.3MB       1
+alpine                                     latest            d529dd0c6e55   8 weeks ago     8.41MB    0B            8.411MB       0
+redis                                      7-alpine          487efc061638   3 months ago    39.1MB    0B            39.08MB       3
+mysql                                      8.0               6cd09145362d   3 months ago    799MB     0B            799MB         2
+apacherocketmq/rocketmq-dashboard          latest            e1b7c1d119bc   11 months ago   588MB     0B            588.3MB       1
+mirrors.tencent.com/codevpro/codev-agent   2.2.0             f128f59ba0c5   14 months ago   65.8MB    0B            65.84MB       0
+seataio/seata-server                       latest            dfebf1597170   20 months ago   633MB     526MB         107.1MB       0
+xuxueli/xxl-job-admin                      2.4.2             776d09cf1493   21 months ago   235MB     0B            235.5MB       1
+bladex/sentinel-dashboard                  1.8.8             7f0a223b7b70   21 months ago   339MB     7.372MB       332.1MB       1
+apache/seata-server                        2.1.0             19faeb07d59d   2 years ago     692MB     526MB         166.4MB       0
+nacos/nacos-server                         v2.3.2            d3063c1db2bb   2 years ago     820MB     203.9MB       615.9MB       1
+docker.elastic.co/kibana/kibana            8.13.1            f58842903125   2 years ago     1.06GB    72.8MB        990.5MB       0
+elasticsearch                              8.12.2            d9d852841f33   2 years ago     1.36GB    72.8MB        1.287GB       1
+docker.elastic.co/logstash/logstash        8.12.2            341c9b96c97b   2 years ago     769MB     0B            769.5MB       0
+victoriametrics/victoria-metrics           v1.93.12          cc5ebf92b4ab   2 years ago     29.7MB    7.372MB       22.37MB       1
+grafana/grafana                            10.2.3            8387f19108f9   2 years ago     399MB     0B            399MB         1
+prom/prometheus                            v2.48.1           ea7f826b1553   2 years ago     247MB     0B            247.2MB       1
+apache/skywalking-ui                       9.7.0             65149c5f4b09   2 years ago     434MB     254.6MB       179.5MB       1
+apache/skywalking-oap-server               9.7.0             ce5e1a86944c   2 years ago     568MB     254.6MB       313.4MB       1
+seataio/seata-server                       2.0.0             b5a0ca751582   2 years ago     695MB     526MB         169.1MB       0
+apache/rocketmq                            5.1.4             f14b643f5d86   2 years ago     748MB     203.9MB       544.3MB       2
+
+Containers space usage:
+
+CONTAINER ID   IMAGE                                         COMMAND                  LOCAL VOLUMES   SIZE      CREATED        STATUS                  NAMES
+967f40d3edf2   my-xhs-canal-server:v1.1.7-squashed           "/alidata/bin/main.s…"   1               337kB     23 hours ago   Up 23 hours (healthy)   my-xhs-canal
+bd848006fd9a   mysql:8.0                                     "docker-entrypoint.s…"   1               4B        2 days ago     Up 2 days (healthy)     my-xhs-mysql-slave
+659c6bfd4c91   nacos/nacos-server:v2.3.2                     "bin/docker-startup.…"   0               75.4MB    2 days ago     Up 2 days               my-xhs-nacos
+685a5b04f28b   docker.elastic.co/beats/filebeat:8.19.19      "/usr/bin/tini -- /u…"   0               109B      2 days ago     Up 2 days               my-xhs-filebeat
+322f22bf645c   apache/skywalking-ui:9.7.0                    "bash docker-entrypo…"   0               32.8kB    2 days ago     Up 2 days               my-xhs-skywalking-ui
+c87d1f400a4f   redis:7-alpine                                "docker-entrypoint.s…"   1               0B        2 days ago     Up 2 days (healthy)     my-xhs-redis-sentinel
+15ae772066b3   docker.elastic.co/kibana/kibana:8.19.19       "/bin/tini -- /usr/l…"   0               36B       2 days ago     Up 2 days               my-xhs-kibana
+348f9e5ea94b   docker.elastic.co/logstash/logstash:8.19.19   "/usr/local/bin/dock…"   0               32.9kB    2 days ago     Up 2 days (healthy)     my-xhs-logstash
+6c18b7b150cf   apache/skywalking-oap-server:9.7.0            "bash docker-entrypo…"   0               32.8kB    2 days ago     Up 2 days (healthy)     my-xhs-skywalking-oap
+b54763dada5d   xuxueli/xxl-job-admin:2.4.2                   "sh -c 'java -jar $J…"   0               68.8kB    2 days ago     Up 2 days               my-xhs-xxl-job-admin
+1e81e90ef3d1   apacherocketmq/rocketmq-dashboard:latest      "sh -c 'java $JAVA_O…"   1               47.6kB    2 days ago     Up 2 days (healthy)     my-xhs-rocketmq-dashboard
+0cc2dddd85f6   grafana/grafana:10.2.3                        "/run.sh"                1               0B        2 days ago     Up 2 days               my-xhs-grafana
+18328386099a   apache/rocketmq:5.1.4                         "./docker-entrypoint…"   2               1.93GB    2 days ago     Up 2 days (healthy)     my-xhs-mq-broker
+9b7b0969c249   redis:7-alpine                                "docker-entrypoint.s…"   1               0B        2 days ago     Up 2 days (healthy)     my-xhs-redis-slave
+1a522be0e421   apache/rocketmq:5.1.4                         "./docker-entrypoint…"   0               92.9MB    2 days ago     Up 2 days               my-xhs-mq-namesrv
+dbb2a5a05910   elasticsearch:8.12.2                          "/bin/tini -- /usr/l…"   1               23.7MB    2 days ago     Up 2 days (healthy)     my-xhs-es-skywalking
+a5a853631adb   mysql:8.0                                     "docker-entrypoint.s…"   1               4B        2 days ago     Up 2 days (healthy)     my-xhs-mysql
+e9105a884f35   prom/prometheus:v2.48.1                       "/bin/prometheus --c…"   1               0B        2 days ago     Up 2 days               my-xhs-prometheus
+607fcd6be717   redis:7-alpine                                "docker-entrypoint.s…"   1               0B        2 days ago     Up 2 days (healthy)     my-xhs-redis
+37f930ef81f0   elasticsearch:8.19.19                         "/bin/tini -- /usr/l…"   1               26.3MB    2 days ago     Up 2 days (healthy)     my-xhs-elasticsearch
+c156ec1fe997   bladex/sentinel-dashboard:1.8.8               "java -Djava.securit…"   0               42.9MB    2 days ago     Up 2 days               my-xhs-sentinel-dashboard
+21c8021a9a87   victoriametrics/victoria-metrics:v1.93.12     "/victoria-metrics-p…"   1               0B        2 days ago     Up 2 days               my-xhs-victoria-metrics
+
+Local Volumes space usage:
+
+VOLUME NAME                                                        LINKS     SIZE
+a5edc92836b55c9cccf59c856eef6150974ebab7df22467e047ef611f2546db8   0         0B
+my-xhs-deploy-zip_redis-master-data                                1         37.43MB
+0c6f97359d5ee1fe908d0031a22d49e6733431e5f8bd138ec61e278ebc181c44   1         0B
+my-xhs_redis-cache-data                                            0         5.525kB
+my-xhs_redis-data                                                  0         7.498MB
+my-xhs_mysql-inventory-slave-data                                  0         230.1MB
+mq-master-store                                                    0         0B
+my-xhs_mq-slave-logs                                               0         0B
+my-xhs-deploy-zip_es-data                                          1         2.15GB
+my-xhs_mysql-content-slave-data                                    0         232.7MB
+23caecf4beff040fa25b3f52efde3d84c9f73af96ed718ca301c84621f37ca12   0         0B
+my-xhs_mq-master-logs                                              0         0B
+my-xhs_mq-master-store                                             0         2.744GB
+my-xhs-deploy-zip_mq-broker-store                                  1         2.888GB
+my-xhs-deploy-zip_mysql-slave-data                                 1         870.4MB
+my-xhs-deploy-zip_es-sw-data                                       1         1.765GB
+my-xhs-deploy-zip_prometheus-data                                  1         187.9MB
+my-xhs_mysql-order-data                                            0         388.2MB
+my-xhs_es-data                                                     0         6.932GB
+my-xhs_vm-data                                                     0         19.67kB
+6dac04a75fb6b5a43e5aba19cd29e5f7d9c81b46775a1472141186c866809121   0         0B
+eb7c4a094cc8c2150b9899abe6103e25ea9125ba25106e55bd62bbb68fd06198   1         32.77kB
+my-xhs_mysql-user-data                                             0         741.5MB
+my-xhs_prometheus-data                                             0         570.4MB
+my-xhs_canal-data                                                  0         3.474MB
+my-xhs-deploy-zip_redis-slave-data                                 1         37.43MB
+mysql-user-data                                                    0         210.3MB
+28e2ac7723b305a1613690e1a9a2facb771fee47d7229fc564b4a794c5faebba   0         0B
+my-xhs_es-sw-data                                                  0         4.807GB
+46dccce308162cdd536334c3019e4da3016c9f341df357360c4602a53abbd057   0         32.77kB
+my-xhs-deploy-zip_canal-data                                       1         7.156MB
+my-xhs-deploy-zip_grafana-data                                     1         1.047MB
+my-xhs_mysql-content-data                                          0         376.8MB
+my-xhs_mysql-order-slave-data                                      0         244.4MB
+mq-master-logs                                                     0         0B
+my-xhs_mq-slave-store                                              0         6.542GB
+my-xhs_grafana-data                                                0         1.227MB
+my-xhs-deploy-zip_mq-broker-logs                                   1         0B
+my-xhs-deploy-zip_vm-data                                          1         14B
+my-xhs_mysql-user-slave-data                                       0         833.1MB
+my-xhs_mysql-inventory-data                                        0         374.6MB
+my-xhs_redis-business-data                                         0         1.059kB
+7e907ed912c705a534d9c5a1981bf1680fbdb8ec7f6d42f7dafbce9a3327cf19   0         32.77kB
+my-xhs-deploy-zip_mysql-data                                       1         1.03GB
+
+Build cache usage: 0B
+
+CACHE ID   CACHE TYPE   SIZE      CREATED   LAST USED   USAGE     SHARED

@@ -23,12 +23,34 @@ public interface CommentMapper extends BaseMapper<Comment> {
      * </p>
      */
     @Select("<script>" +
-            "SELECT parent_id, COUNT(*) AS cnt FROM t_comment " +
+            "SELECT parent_id AS pid, COUNT(*) AS cnt FROM t_comment " +
             "WHERE parent_id IN " +
             "<foreach collection='parentIds' item='id' open='(' close=')' separator=','>" +
             "#{id}" +
             "</foreach>" +
             " AND deleted = 0 GROUP BY parent_id" +
             "</script>")
-    Map<Long, Long> batchCountByParentIds(@Param("parentIds") List<Long> parentIds);
+    List<Map<String, Object>> batchCountByParentIds(@Param("parentIds") List<Long> parentIds);
+
+    /**
+     * O-Comment-4 修复（2026-08-13）：每根评论取前 N 条子评论（窗口函数按 parent 分区）
+     * <p>
+     * 旧实现：全局 LIMIT rootIds.size()*maxChildPerParent + ORDER BY id——
+     * 当本页根评论的子评论总数超过该上限时，后序根评论的子评论被整体截断（children 空/childCount=0）。
+     * 新实现：ROW_NUMBER() OVER (PARTITION BY parent_id ORDER BY id) 每根独立取前 maxChildPerParent 条，无全局截断。
+     * </p>
+     */
+    @Select("<script>" +
+            "SELECT id, note_id, user_id, parent_id, reply_to_id, content, like_count, deleted, created_at, updated_at FROM (" +
+            "  SELECT id, note_id, user_id, parent_id, reply_to_id, content, like_count, deleted, created_at, updated_at, " +
+            "         ROW_NUMBER() OVER (PARTITION BY parent_id ORDER BY id) AS rn " +
+            "  FROM t_comment " +
+            "  WHERE parent_id IN " +
+            "  <foreach collection='parentIds' item='id' open='(' close=')' separator=','>#{id}</foreach> " +
+            "  AND deleted = 0" +
+            ") sub WHERE rn &lt;= #{maxPerParent} " +
+            "ORDER BY id" +
+            "</script>")
+    List<Comment> selectTopChildrenByParentIds(@Param("parentIds") List<Long> parentIds,
+                                               @Param("maxPerParent") int maxPerParent);
 }

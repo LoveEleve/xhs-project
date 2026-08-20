@@ -160,7 +160,9 @@ public class LocalMessageRetryJob {
             log.info("[本地消息] 指数退避重试: msgId={}, retry={}/{}, nextRetry={}s",
                 msg.getId(), retryCount, MAX_RETRIES, delaySeconds);
         }
-        localMessageMapper.updateById(msg);
+        // T-072：按 id 广播更新（原 updateById 全字段含分片键 user_id → ShardingSphere 拒绝）
+        localMessageMapper.updateRetryStatus(msg.getId(), msg.getStatus(),
+                msg.getRetryCount(), msg.getNextRetryTime());
     }
 
     /**
@@ -231,20 +233,17 @@ public class LocalMessageRetryJob {
                                 .build());
 
                 if (result.getSendStatus() == SendStatus.SEND_OK) {
-                    msg.setStatus(1); // 标记成功
-                    localMessageMapper.updateById(msg);
+                    localMessageMapper.markSuccess(msg.getId()); // T-072：按 id 广播更新
                     success++;
                     log.info("[死信扫描] 重新投递成功: msgId={}, transactionId={}", msg.getId(), msg.getTransactionId());
                 } else {
                     // 记录死信重试次数（负值表示死信重试）
-                    msg.setRetryCount(-(deadRetryCount + 1));
-                    localMessageMapper.updateById(msg);
+                    localMessageMapper.updateDeadRetry(msg.getId(), -(deadRetryCount + 1)); // T-072
                     stillFailed++;
                     log.warn("[死信扫描] 重新投递失败(MQ): msgId={}, transactionId={}", msg.getId(), msg.getTransactionId());
                 }
             } catch (Exception e) {
-                msg.setRetryCount(-(deadRetryCount + 1));
-                localMessageMapper.updateById(msg);
+                localMessageMapper.updateDeadRetry(msg.getId(), -(deadRetryCount + 1)); // T-072
                 stillFailed++;
                 log.error("[死信扫描] 重新投递异常: msgId={}, transactionId={}", msg.getId(), msg.getTransactionId(), e);
             }

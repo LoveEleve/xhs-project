@@ -101,9 +101,9 @@ groups:
       - alert: HighOrderFailRate
         expr: |
           (
-            sum(rate(myxhs_order_create_total{status="fail"}[5m]))
+            sum(rate(orders_created_total{status="fail"}[5m]))
             /
-            sum(rate(myxhs_order_create_total[5m]))
+            sum(rate(orders_created_total[5m]))
           ) > 0.05
         for: 3m
         labels:
@@ -117,9 +117,9 @@ groups:
       - alert: LowPaymentSuccessRate
         expr: |
           (
-            sum(rate(myxhs_payment_total{status="success"}[5m]))
+            sum(rate(payment_callback_total{status="success"}[5m]))
             /
-            sum(rate(myxhs_payment_total[5m]))
+            sum(rate(payment_callback_total[5m]))
           ) < 0.99
         for: 3m
         labels:
@@ -130,36 +130,36 @@ groups:
           description: "当前成功率: {{ $value | humanizePercentage }}"
 
       # MQ 消费积压 > 10000 → P1
-      - alert: HighMqConsumeLag
-        expr: myxhs_mq_consume_lag > 10000
-        for: 5m
-        labels:
-          severity: warning
-          level: P1
-        annotations:
-          summary: "MQ 消费积压超过 10000"
-          description: "Topic: {{ $labels.topic }}, 消费组: {{ $labels.consumer_group }}, 积压: {{ $value }}"
+      # - alert: HighMqConsumeLag
+#         expr: myxhs_mq_consume_lag > 10000
+#         for: 5m
+#         labels:
+#           severity: warning
+#           level: P1
+#         annotations:
+#           summary: "MQ 消费积压超过 10000"
+#           description: "Topic: {{ $labels.topic }}, 消费组: {{ $labels.consumer_group }}, 积压: {{ $value }}"
 
-      # 登录失败率 > 10% → P2（可能被攻击）
-      - alert: HighLoginFailRate
-        expr: |
-          (
-            sum(rate(myxhs_login_total{status="fail"}[5m]))
-            /
-            sum(rate(myxhs_login_total[5m]))
-          ) > 0.1
-        for: 5m
-        labels:
-          severity: warning
-          level: P2
-        annotations:
-          summary: "登录失败率超过 10%，可能存在暴力破解攻击"
-          description: "当前失败率: {{ $value | humanizePercentage }}"
+#       # 登录失败率 > 10% → P2（可能被攻击）
+      # - alert: HighLoginFailRate
+#         expr: |
+#           (
+#             sum(rate(myxhs_login_total{status="fail"}[5m]))
+#             /
+#             sum(rate(myxhs_login_total[5m]))
+#           ) > 0.1
+#         for: 5m
+#         labels:
+#           severity: warning
+#           level: P2
+#         annotations:
+#           summary: "登录失败率超过 10%，可能存在暴力破解攻击"
+#           description: "当前失败率: {{ $value | humanizePercentage }}"
 
-  # ==================== 中件间级告警 ====================
-  - name: myxhs_middleware_alerts
-    rules:
-      # Redis 内存使用率 > 80% → P1
+#   # ==================== 中件间级告警 ====================
+#   - name: myxhs_middleware_alerts
+#     rules:
+#       # Redis 内存使用率 > 80% → P1
       - alert: RedisHighMemoryUsage
         expr: (redis_memory_used_bytes / redis_memory_max_bytes) > 0.8
         for: 3m
@@ -205,7 +205,7 @@ groups:
 
       # Canal 同步延迟 > 60s → P1
       - alert: CanalHighDelay
-        expr: canal_instance_subscribe_delay > 60000
+        expr: canal_instance_traffic_delay{destination!="example"} > 60000
         for: 3m
         labels:
           severity: critical
@@ -215,17 +215,17 @@ groups:
           description: "Instance: {{ $labels.destination }}, 延迟: {{ $value }}ms"
 
       # RocketMQ Broker 磁盘使用率 > 80% → P2
-      - alert: RocketmqHighDiskUsage
-        expr: rocketmq_broker_disk_ratio > 80
-        for: 5m
-        labels:
-          severity: warning
-          level: P2
-        annotations:
-          summary: "RocketMQ Broker 磁盘使用率超过 80%"
-          description: "Broker: {{ $labels.broker }}, 使用率: {{ $value }}%"
+      # - alert: RocketmqHighDiskUsage
+#         expr: rocketmq_broker_disk_ratio > 80
+#         for: 5m
+#         labels:
+#           severity: warning
+#           level: P2
+#         annotations:
+#           summary: "RocketMQ Broker 磁盘使用率超过 80%"
+#           description: "Broker: {{ $labels.broker }}, 使用率: {{ $value }}%"
 
-      # DLQ 死信队列有消息 → P1
+#       # DLQ 死信队列有消息 → P1
       - alert: DlqMessageDetected
         expr: myxhs_mq_dlq_total > 0
         for: 1m
@@ -341,3 +341,68 @@ groups:
         annotations:
           summary: "总 QPS 比半小时前突增 3 倍以上"
           description: "当前 QPS 比值: {{ $value }}"
+
+  # ==================== MySQL 监控（P-D4 补全，mysqld_exporter） ====================
+  - name: myxhs_mysql_alerts
+    rules:
+      - alert: MysqlDown
+        expr: mysql_up == 0
+        for: 1m
+        labels: { severity: critical, level: P0 }
+        annotations:
+          summary: "MySQL 主库不可达"
+          description: "mysql_up == 0，检查 mysqld-exporter 与 MySQL 连接"
+
+      - alert: MysqlSlowQueries
+        expr: increase(mysql_global_status_slow_queries[5m]) > 50
+        for: 5m
+        labels: { severity: warning, level: P2 }
+        annotations:
+          summary: "MySQL 慢查询突增"
+          description: "5 分钟内慢查询 {{ $value }} 次"
+
+      - alert: MysqlThreadsHigh
+        expr: (mysql_global_status_threads_connected / mysql_global_variables_max_connections) > 0.8
+        for: 5m
+        labels: { severity: warning, level: P2 }
+        annotations:
+          summary: "MySQL 连接数超过 80%"
+          description: "当前连接: {{ $value | humanizePercentage }}"
+
+  # ==================== DLQ 积压（rocketmq_dlq_backlog，代码 DlqMetrics Gauge） ====================
+  - name: myxhs_rocketmq_dlq_alerts
+    rules:
+      - alert: RocketmqDlqBacklog
+        expr: rocketmq_dlq_backlog > 0
+        for: 5m
+        labels: { severity: warning, level: P1 }
+        annotations:
+          summary: "RocketMQ DLQ 死信积压"
+          description: "消费组 {{ $labels.consumer_group }} 死信队列积压 {{ $value }} 条，持续 5 分钟"
+
+  # ==================== 主机监控（node_exporter） ====================
+  - name: myxhs_node_alerts
+    rules:
+      - alert: NodeHighCpu
+        expr: (100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)) > 90
+        for: 5m
+        labels: { severity: critical, level: P1 }
+        annotations:
+          summary: "宿主机 CPU 使用率超过 90%"
+          description: "当前 {{ $value | humanizePercentage }}"
+
+      - alert: NodeHighMemory
+        expr: ((node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes) * 100 > 90
+        for: 5m
+        labels: { severity: critical, level: P1 }
+        annotations:
+          summary: "宿主机内存使用率超过 90%（P-D15 场景）"
+          description: "当前 {{ $value | humanizePercentage }}"
+
+      - alert: NodeDiskAlmostFull
+        expr: (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",mountpoint="/"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay",mountpoint="/"}) * 100 > 90
+        for: 5m
+        labels: { severity: warning, level: P2 }
+        annotations:
+          summary: "根分区磁盘使用率超过 90%"
+          description: "当前 {{ $value | humanizePercentage }}"

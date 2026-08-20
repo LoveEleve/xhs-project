@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Spin, Alert, Empty, Tabs, message } from 'antd';
 import { getFeed, getNoteDetail } from '../../api/home';
 import { getRecommendFeed } from '../../api/recommend';
@@ -8,6 +9,7 @@ import type { NoteCardVO } from '../../types';
 import NoteCard from '../../components/NoteCard';
 
 export default function FeedPage() {
+  const navigate = useNavigate();
   const [tab, setTab] = useState<string>('all');
   const [notes, setNotes] = useState<NoteCardVO[]>([]);
   const [loading, setLoading] = useState(true);
@@ -123,6 +125,7 @@ export default function FeedPage() {
 
   const handleNoteClick = (note: NoteCardVO) => {
     reportBehavior({ targetId: note.noteId, targetType: 1, action: 'click' }).catch(() => {});
+    navigate(`/note/${note.noteId}`);
   };
 
   const tabItems = [
@@ -137,7 +140,7 @@ export default function FeedPage() {
       {loading ? (
         <div style={{ textAlign: 'center', padding: 60 }}><Spin size="large" /></div>
       ) : error ? (
-        <Alert type="error" title={error} showIcon style={{ marginBottom: 16 }} />
+        <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />
       ) : notes.length === 0 ? (
         <Empty description={
           tab === 'follow' ? '还没有关注任何人，去看看推荐吧' : '暂无笔记'

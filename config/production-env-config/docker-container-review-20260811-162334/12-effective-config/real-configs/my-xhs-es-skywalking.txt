@@ -1,0 +1,30 @@
+############ my-xhs-es-skywalking 真实生效配置(进程实际使用的)
+#### ENTRYPOINT
+[
+    "/bin/tini",
+    "--",
+    "/usr/local/bin/docker-entrypoint.sh"
+]
+#### CMD(命令行参数=多数服务真实配置)
+[
+    "eswrapper"
+]
+#### ENV(环境变量)
+path.repo=/usr/share/elasticsearch/backup
+xpack.security.http.ssl.enabled=false
+xpack.security.enabled=true
+ELASTIC_PASSWORD=Xhs@2026#ElasticSW
+http.port=19201
+discovery.type=single-node
+cluster.name=my-xhs-sw-es
+node.name=sw-es-node-1
+transport.port=19301
+ES_JAVA_OPTS=-Xms256m -Xmx768m
+PATH=/usr/share/elasticsearch/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ELASTIC_CONTAINER=true
+
+#### 资源限制
+MemLimit=1610612736 CPULimit=1000000000 Restart=unless-stopped
+#### 挂载的配置文件
+/data/docker/lib/volumes/my-xhs-deploy-zip_es-sw-data/_data -> /usr/share/elasticsearch/data
+

@@ -6,7 +6,7 @@ import { getUserPublicInfo } from '../../api/auth';
 import type { UserPublicInfoResponse } from '../../types';
 
 interface BlockItem {
-  userId: number;
+  userId: string;
   user?: UserPublicInfoResponse;
 }
 
@@ -20,7 +20,8 @@ export default function BlockPage() {
       const resp = await getBlockList();
       const ids = (resp.data.data || []) as Array<number | string>;
       const enriched = await Promise.all(ids.map(async (raw) => {
-        const userId = Number(raw);
+        // 雪花 ID 超 JS 安全整数，保持字符串防精度丢失
+        const userId = String(raw);
         try {
           const u = (await getUserPublicInfo(userId)).data.data;
           return { userId, user: u };
@@ -36,7 +37,7 @@ export default function BlockPage() {
 
   useEffect(() => { load(); }, []);
 
-  const handleUnblock = (userId: number) => {
+  const handleUnblock = (userId: string) => {
     unblockUser(userId)
       .then(() => { message.success('已解除拉黑'); load(); })
       .catch((e: any) => message.error(e.response?.data?.message || '操作失败'));

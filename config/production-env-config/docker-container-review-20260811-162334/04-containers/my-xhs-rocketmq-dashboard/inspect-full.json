@@ -1,0 +1,309 @@
+[
+    {
+        "Id": "1e81e90ef3d115afc9e70953b5f3d6b1569dddefa8184c703606ef8a3533fb4a",
+        "Created": "2026-08-08T14:01:41.368121324Z",
+        "Path": "sh",
+        "Args": [
+            "-c",
+            "java $JAVA_OPTS -jar /rocketmq-dashboard.jar"
+        ],
+        "State": {
+            "Status": "running",
+            "Running": true,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 3322959,
+            "ExitCode": 0,
+            "Error": "",
+            "StartedAt": "2026-08-08T14:01:41.67391468Z",
+            "FinishedAt": "0001-01-01T00:00:00Z",
+            "Health": {
+                "Status": "healthy",
+                "FailingStreak": 0,
+                "Log": [
+                    {
+                        "Start": "2026-08-11T16:21:43.296125624+08:00",
+                        "End": "2026-08-11T16:21:43.347651945+08:00",
+                        "ExitCode": 0,
+                        "Output": "<!doctype html><html lang=\"en\"><head><meta charset=\"UTF-8\"/><link rel=\"shortcut icon\" href=\"./favicon.ico\" type=\"image/x-icon\"/><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"/><meta name=\"description\" content=\"\"/><meta name=\"keywords\" content=\"\"/><meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"/><title>RocketMQ Dashboard</title><script defer=\"defer\" src=\"/static/js/main.819f57ca.js\"></script><link href=\"/static/css/main.3851d270.css\" rel=\"stylesheet\"></head><body><noscript>You need to enable JavaScript to run this app.</noscript><div id=\"root\"></div></body></html>"
+                    },
+                    {
+                        "Start": "2026-08-11T16:22:13.348041322+08:00",
+                        "End": "2026-08-11T16:22:13.387632449+08:00",
+                        "ExitCode": 0,
+                        "Output": "<!doctype html><html lang=\"en\"><head><meta charset=\"UTF-8\"/><link rel=\"shortcut icon\" href=\"./favicon.ico\" type=\"image/x-icon\"/><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"/><meta name=\"description\" content=\"\"/><meta name=\"keywords\" content=\"\"/><meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"/><title>RocketMQ Dashboard</title><script defer=\"defer\" src=\"/static/js/main.819f57ca.js\"></script><link href=\"/static/css/main.3851d270.css\" rel=\"stylesheet\"></head><body><noscript>You need to enable JavaScript to run this app.</noscript><div id=\"root\"></div></body></html>"
+                    },
+                    {
+                        "Start": "2026-08-11T16:22:43.388881628+08:00",
+                        "End": "2026-08-11T16:22:43.4325245+08:00",
+                        "ExitCode": 0,
+                        "Output": "<!doctype html><html lang=\"en\"><head><meta charset=\"UTF-8\"/><link rel=\"shortcut icon\" href=\"./favicon.ico\" type=\"image/x-icon\"/><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"/><meta name=\"description\" content=\"\"/><meta name=\"keywords\" content=\"\"/><meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"/><title>RocketMQ Dashboard</title><script defer=\"defer\" src=\"/static/js/main.819f57ca.js\"></script><link href=\"/static/css/main.3851d270.css\" rel=\"stylesheet\"></head><body><noscript>You need to enable JavaScript to run this app.</noscript><div id=\"root\"></div></body></html>"
+                    },
+                    {
+                        "Start": "2026-08-11T16:23:13.433657691+08:00",
+                        "End": "2026-08-11T16:23:13.477923456+08:00",
+                        "ExitCode": 0,
+                        "Output": "<!doctype html><html lang=\"en\"><head><meta charset=\"UTF-8\"/><link rel=\"shortcut icon\" href=\"./favicon.ico\" type=\"image/x-icon\"/><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"/><meta name=\"description\" content=\"\"/><meta name=\"keywords\" content=\"\"/><meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"/><title>RocketMQ Dashboard</title><script defer=\"defer\" src=\"/static/js/main.819f57ca.js\"></script><link href=\"/static/css/main.3851d270.css\" rel=\"stylesheet\"></head><body><noscript>You need to enable JavaScript to run this app.</noscript><div id=\"root\"></div></body></html>"
+                    },
+                    {
+                        "Start": "2026-08-11T16:23:43.478558041+08:00",
+                        "End": "2026-08-11T16:23:43.522690938+08:00",
+                        "ExitCode": 0,
+                        "Output": "<!doctype html><html lang=\"en\"><head><meta charset=\"UTF-8\"/><link rel=\"shortcut icon\" href=\"./favicon.ico\" type=\"image/x-icon\"/><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"/><meta name=\"description\" content=\"\"/><meta name=\"keywords\" content=\"\"/><meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"/><title>RocketMQ Dashboard</title><script defer=\"defer\" src=\"/static/js/main.819f57ca.js\"></script><link href=\"/static/css/main.3851d270.css\" rel=\"stylesheet\"></head><body><noscript>You need to enable JavaScript to run this app.</noscript><div id=\"root\"></div></body></html>"
+                    }
+                ]
+            }
+        },
+        "Image": "sha256:e1b7c1d119bc38a1b5623b4e0ad13e19bb8ab84355142d3c172f18d4d37e6dc5",
+        "ResolvConfPath": "/data/docker/lib/containers/1e81e90ef3d115afc9e70953b5f3d6b1569dddefa8184c703606ef8a3533fb4a/resolv.conf",
+        "HostnamePath": "/data/docker/lib/containers/1e81e90ef3d115afc9e70953b5f3d6b1569dddefa8184c703606ef8a3533fb4a/hostname",
+        "HostsPath": "/data/docker/lib/containers/1e81e90ef3d115afc9e70953b5f3d6b1569dddefa8184c703606ef8a3533fb4a/hosts",
+        "LogPath": "",
+        "Name": "/my-xhs-rocketmq-dashboard",
+        "RestartCount": 0,
+        "Driver": "overlay2",
+        "Platform": "linux",
+        "MountLabel": "",
+        "ProcessLabel": "",
+        "AppArmorProfile": "",
+        "ExecIDs": null,
+        "HostConfig": {
+            "Binds": null,
+            "ContainerIDFile": "",
+            "LogConfig": {
+                "Type": "journald",
+                "Config": {}
+            },
+            "NetworkMode": "host",
+            "PortBindings": {},
+            "RestartPolicy": {
+                "Name": "unless-stopped",
+                "MaximumRetryCount": 0
+            },
+            "AutoRemove": false,
+            "VolumeDriver": "",
+            "VolumesFrom": null,
+            "ConsoleSize": [
+                0,
+                0
+            ],
+            "CapAdd": null,
+            "CapDrop": null,
+            "CgroupnsMode": "private",
+            "Dns": null,
+            "DnsOptions": null,
+            "DnsSearch": null,
+            "ExtraHosts": [],
+            "GroupAdd": null,
+            "IpcMode": "private",
+            "Cgroup": "",
+            "Links": null,
+            "OomScoreAdj": 0,
+            "PidMode": "",
+            "Privileged": false,
+            "PublishAllPorts": false,
+            "ReadonlyRootfs": false,
+            "SecurityOpt": null,
+            "UTSMode": "",
+            "UsernsMode": "",
+            "ShmSize": 67108864,
+            "Runtime": "runc",
+            "Isolation": "",
+            "CpuShares": 0,
+            "Memory": 671088640,
+            "NanoCpus": 250000000,
+            "CgroupParent": "",
+            "BlkioWeight": 0,
+            "BlkioWeightDevice": null,
+            "BlkioDeviceReadBps": null,
+            "BlkioDeviceWriteBps": null,
+            "BlkioDeviceReadIOps": null,
+            "BlkioDeviceWriteIOps": null,
+            "CpuPeriod": 0,
+            "CpuQuota": 0,
+            "CpuRealtimePeriod": 0,
+            "CpuRealtimeRuntime": 0,
+            "CpusetCpus": "",
+            "CpusetMems": "",
+            "Devices": null,
+            "DeviceCgroupRules": null,
+            "DeviceRequests": null,
+            "MemoryReservation": 201326592,
+            "MemorySwap": 1342177280,
+            "MemorySwappiness": null,
+            "OomKillDisable": null,
+            "PidsLimit": null,
+            "Ulimits": [
+                {
+                    "Name": "nofile",
+                    "Hard": 1048576,
+                    "Soft": 1048576
+                }
+            ],
+            "CpuCount": 0,
+            "CpuPercent": 0,
+            "IOMaximumIOps": 0,
+            "IOMaximumBandwidth": 0,
+            "MaskedPaths": [
+                "/proc/asound",
+                "/proc/acpi",
+                "/proc/interrupts",
+                "/proc/kcore",
+                "/proc/keys",
+                "/proc/latency_stats",
+                "/proc/timer_list",
+                "/proc/timer_stats",
+                "/proc/sched_debug",
+                "/proc/scsi",
+                "/sys/firmware",
+                "/sys/devices/virtual/powercap"
+            ],
+            "ReadonlyPaths": [
+                "/proc/bus",
+                "/proc/fs",
+                "/proc/irq",
+                "/proc/sys",
+                "/proc/sysrq-trigger"
+            ]
+        },
+        "GraphDriver": {
+            "Data": {
+                "ID": "1e81e90ef3d115afc9e70953b5f3d6b1569dddefa8184c703606ef8a3533fb4a",
+                "LowerDir": "/data/docker/lib/overlay2/fd629ad68a498dce30b186d79c4b743de7a318db695bbe55ee95ba28c5e94540-init/diff:/data/docker/lib/overlay2/676a7a6a8a43c1b82c1fdf2bc51cd7e0c2747990bc80e413bc9dabab79ae4936/diff:/data/docker/lib/overlay2/8ab27be6fa7b951e524e2c359920b1033f847db27c8458293e02130fc216ff87/diff:/data/docker/lib/overlay2/c993faf306bfecdd15aee5dafd0efeb9666705576dd15cc65d2454d49200972c/diff:/data/docker/lib/overlay2/48cb714e48119507ea9dec894ec1b7fec7e3c70493d846b790bfe5fe7808bd40/diff:/data/docker/lib/overlay2/8de94a9aa74bb7d756e159907ff2b3784ab0175df629172b6b5ffe4af273ef40/diff:/data/docker/lib/overlay2/2480bcdd3c0f46bb8745763fbe36f7e5ff98391367da8cf04c2cac4bcf879ca0/diff:/data/docker/lib/overlay2/dffccebb3615b690e3a4965e018a607c88c91404a9432c26719b53a09335ba5d/diff",
+                "MergedDir": "/data/docker/lib/overlay2/fd629ad68a498dce30b186d79c4b743de7a318db695bbe55ee95ba28c5e94540/merged",
+                "UpperDir": "/data/docker/lib/overlay2/fd629ad68a498dce30b186d79c4b743de7a318db695bbe55ee95ba28c5e94540/diff",
+                "WorkDir": "/data/docker/lib/overlay2/fd629ad68a498dce30b186d79c4b743de7a318db695bbe55ee95ba28c5e94540/work"
+            },
+            "Name": "overlay2"
+        },
+        "Mounts": [
+            {
+                "Type": "volume",
+                "Name": "eb7c4a094cc8c2150b9899abe6103e25ea9125ba25106e55bd62bbb68fd06198",
+                "Source": "/data/docker/lib/volumes/eb7c4a094cc8c2150b9899abe6103e25ea9125ba25106e55bd62bbb68fd06198/_data",
+                "Destination": "/tmp",
+                "Driver": "local",
+                "Mode": "",
+                "RW": true,
+                "Propagation": ""
+            }
+        ],
+        "Config": {
+            "Hostname": "VM-247-89-tencentos",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": true,
+            "AttachStderr": true,
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "rocketmq.config.namesrvAddr=127.0.0.1:9876",
+                "SERVER_PORT=18081",
+                "PATH=/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "container=oci",
+                "JAVA_HOME=/opt/java/openjdk",
+                "LANG=en_US.UTF-8",
+                "LANGUAGE=en_US:en",
+                "LC_ALL=en_US.UTF-8",
+                "JAVA_VERSION=jdk-17.0.16+8",
+                "JAVA_OPTS="
+            ],
+            "Cmd": null,
+            "Healthcheck": {
+                "Test": [
+                    "CMD-SHELL",
+                    "curl -s http://127.0.0.1:18081 || exit 1"
+                ],
+                "Interval": 30000000000,
+                "Timeout": 10000000000,
+                "StartPeriod": 30000000000,
+                "Retries": 3
+            },
+            "Image": "apacherocketmq/rocketmq-dashboard:latest",
+            "Volumes": {
+                "/tmp": {}
+            },
+            "WorkingDir": "/",
+            "Entrypoint": [
+                "sh",
+                "-c",
+                "java $JAVA_OPTS -jar /rocketmq-dashboard.jar"
+            ],
+            "OnBuild": null,
+            "Labels": {
+                "architecture": "x86_64",
+                "build-date": "2025-08-20T13:12:41",
+                "com.docker.compose.config-hash": "85dcda2b42326964ca46fafb24d974c95c418e94cd723de1640a3884f4f440f2",
+                "com.docker.compose.container-number": "1",
+                "com.docker.compose.depends_on": "rocketmq-namesrv:service_started:false",
+                "com.docker.compose.image": "sha256:e1b7c1d119bc38a1b5623b4e0ad13e19bb8ab84355142d3c172f18d4d37e6dc5",
+                "com.docker.compose.oneoff": "False",
+                "com.docker.compose.project": "my-xhs-deploy-zip",
+                "com.docker.compose.project.config_files": "/data/workspace/my-xhs-deploy-zip/docker-compose.yml",
+                "com.docker.compose.project.working_dir": "/data/workspace/my-xhs-deploy-zip",
+                "com.docker.compose.service": "rocketmq-dashboard",
+                "com.docker.compose.version": "2.29.2",
+                "com.redhat.component": "ubi9-minimal-container",
+                "com.redhat.license_terms": "https://www.redhat.com/en/about/red-hat-end-user-license-agreements#UBI",
+                "description": "The Universal Base Image Minimal is a stripped down image that uses microdnf as a package manager. This base image is freely redistributable, but Red Hat only supports Red Hat technologies through subscriptions for Red Hat products. This image is maintained by Red Hat and updated regularly.",
+                "distribution-scope": "public",
+                "io.buildah.version": "1.40.1",
+                "io.k8s.description": "The Universal Base Image Minimal is a stripped down image that uses microdnf as a package manager. This base image is freely redistributable, but Red Hat only supports Red Hat technologies through subscriptions for Red Hat products. This image is maintained by Red Hat and updated regularly.",
+                "io.k8s.display-name": "Red Hat Universal Base Image 9 Minimal",
+                "io.openshift.expose-services": "",
+                "io.openshift.tags": "minimal rhel9",
+                "maintainer": "Red Hat, Inc.",
+                "name": "ubi9-minimal",
+                "release": "1755695350",
+                "summary": "Provides the latest release of the minimal Red Hat Universal Base Image 9.",
+                "url": "https://catalog.redhat.com/en/search?searchType=containers",
+                "vcs-ref": "f4b088292653bbf5ca8188a5e59ffd06a8671d4b",
+                "vcs-type": "git",
+                "vendor": "Red Hat, Inc.",
+                "version": "9.6"
+            }
+        },
+        "NetworkSettings": {
+            "Bridge": "",
+            "SandboxID": "4adae9e747a3eab523da520c6e00238f24eecd19979d2c3de72cbe62db5b0abb",
+            "SandboxKey": "/var/run/docker/netns/default",
+            "Ports": {},
+            "HairpinMode": false,
+            "LinkLocalIPv6Address": "",
+            "LinkLocalIPv6PrefixLen": 0,
+            "SecondaryIPAddresses": null,
+            "SecondaryIPv6Addresses": null,
+            "EndpointID": "",
+            "Gateway": "",
+            "GlobalIPv6Address": "",
+            "GlobalIPv6PrefixLen": 0,
+            "IPAddress": "",
+            "IPPrefixLen": 0,
+            "IPv6Gateway": "",
+            "MacAddress": "",
+            "Networks": {
+                "host": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": null,
+                    "MacAddress": "",
+                    "DriverOpts": null,
+                    "GwPriority": 0,
+                    "NetworkID": "69303899f57d4447764f56f161dceb184df134844eb038322985183a4f6b4dff",
+                    "EndpointID": "7de0e555fce7d3663312548f3c90ddecb1b3773d79fe4122a93fc0480d0a69bd",
+                    "Gateway": "",
+                    "IPAddress": "",
+                    "IPPrefixLen": 0,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "DNSNames": null
+                }
+            }
+        }
+    }
+]

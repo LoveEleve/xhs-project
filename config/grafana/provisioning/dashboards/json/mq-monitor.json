@@ -1,0 +1,384 @@
+{
+ "uid": "myxhs-mq",
+ "title": "RocketMQ 监控",
+ "schemaVersion": 38,
+ "panels": [
+  {
+   "type": "timeseries",
+   "title": "DLQ 死信积压",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 0
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "rocketmq_dlq_backlog",
+     "legendFormat": "consumer_group"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line"
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "MQ 消费速率",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 0
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(mq_consume_total[5m])) by (topic)",
+     "legendFormat": "topic"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "drawStyle": "line"
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "DLQ 消息累计",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "myxhs_mq_dlq_total",
+     "legendFormat": "consumerGroup"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line"
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "消费成功/失败",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(mq_consume_total[5m])) by (result)",
+     "legendFormat": "result"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "drawStyle": "line"
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Broker 运行时长 (h)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "rocketmq_broker_uptime_hours",
+     "legendFormat": "{{broker}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "h",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 16
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Broker 磁盘占用率",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "rocketmq_broker_disk_ratio * 100",
+     "legendFormat": "{{broker}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 16
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Broker 写入 TPS",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "rocketmq_broker_intps",
+     "legendFormat": "{{broker}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 24
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Broker 读取 TPS",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "rocketmq_broker_outtps",
+     "legendFormat": "{{broker}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 24
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "消费积压 Top10",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "topk(10, rocketmq_consumer_lag)",
+     "legendFormat": "{{group}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 32
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "消费 TPS",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(rocketmq_consumer_tps) by (group)",
+     "legendFormat": "{{group}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 32
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Topic 总数",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "rocketmq_topics_count",
+     "legendFormat": ""
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 40
+   }
+  }
+ ],
+ "templating": {
+  "list": []
+ },
+ "time": {
+  "from": "now-1h",
+  "to": "now"
+ }
+}

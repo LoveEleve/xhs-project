@@ -7,7 +7,7 @@ RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC
 PASS=0; FAIL=0; SKIP=0
 
 TRACE_ID="chain-$(date +%s)-$(shuf -i 1000-9999 -n 1)"
-REDIS_HOST="21.130.247.89"; REDIS_PORT=16379; REDIS_PASS="Xhs@2026#Redis"
+REDIS_HOST="21.130.247.89"; REDIS_PORT=6379; REDIS_PASS="Xhs@2026#Redis"
 TEST_USER="chaintest"; TEST_PASS="Chain@2026"
 
 echo -e "${CYAN}╔══════════════════════════════════════════════╗${NC}"

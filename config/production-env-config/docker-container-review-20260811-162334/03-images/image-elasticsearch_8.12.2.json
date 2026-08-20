@@ -1,0 +1,91 @@
+[
+    {
+        "Id": "sha256:d9d852841f3391ec7ad2a94048e65f7557aa60ab0fa6028b2e690949ad57a0e0",
+        "RepoTags": [
+            "elasticsearch:8.12.2"
+        ],
+        "RepoDigests": [
+            "elasticsearch@sha256:1d183abc10a89d49a9a7c8c9aeebc32bbd9de91782b4b3d39a1318469f5ad8c3"
+        ],
+        "Parent": "",
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2024-02-22T12:50:52Z",
+        "DockerVersion": "",
+        "Author": "",
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 1359659252,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/data/docker/lib/overlay2/d08e9d4a60e8e0160b90b13883d4ec9c80494213c09cefb3e11de73566aa5a8e/diff:/data/docker/lib/overlay2/66e4e205ee605eed0602016189d4abae4a8ee98d1084287b4e47fbd505854f70/diff:/data/docker/lib/overlay2/ccf2c0be75262808afeddf1cc9b0f006be53f19d0e4b9ac8724ec62778ba6fae/diff:/data/docker/lib/overlay2/3fcd944aabcbc3ad0a58d004fd9e6b6cb6659289bb5c6f95862328c6a333398d/diff:/data/docker/lib/overlay2/61bdcb14eceef345b69ff8f594b17f1ff10dab2145c566d45dbc9bf74c863402/diff:/data/docker/lib/overlay2/feaee74bd25a6a9fd4112537224c38837a3f36cce1940ad5ea755c77231aeac5/diff:/data/docker/lib/overlay2/41e557386a9787a4368943faa39531e35cac2438a5e3259500d8f8a56021cb02/diff:/data/docker/lib/overlay2/b8e8e23acd3af3e5989cf45d80285e98951984edb6d74545b0898e10513a26e8/diff:/data/docker/lib/overlay2/0404631926bdfd3f1435eff09f8422763877852aeb5a3f9e09ed1bd26f8c66e7/diff",
+                "MergedDir": "/data/docker/lib/overlay2/37168d0602852c7dcb0a12755e91cddb284e6b4eb926b2e6e9d5261654c2038e/merged",
+                "UpperDir": "/data/docker/lib/overlay2/37168d0602852c7dcb0a12755e91cddb284e6b4eb926b2e6e9d5261654c2038e/diff",
+                "WorkDir": "/data/docker/lib/overlay2/37168d0602852c7dcb0a12755e91cddb284e6b4eb926b2e6e9d5261654c2038e/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:5faf9c0a9efe4675ecd21a4ec417d51077d5e75da9e673161a94e7d6cd43f92c",
+                "sha256:38c7b83a5f23b82a9b5ebef9462beac1938c20cf57d47f3349d99ea042d93770",
+                "sha256:2dd5331e80481f0a78500ae6245ef3bcc168c125eda643633b4e63c92901f2cb",
+                "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
+                "sha256:74ba73ba7e0cc8f9712bf552268b298bc3ea396685046253e0eb3c6636671031",
+                "sha256:b96e03dba4c3fde3971efa1dd5100d036bf4647fa5096fe5e84f4f68d6e62a64",
+                "sha256:f95a3aa390f5a7805f1217c3c61f34c137e0644cb8f328f296653d9e5d54ae89",
+                "sha256:26c66b700eaeb83c57efd243739320ae405149688b0fccb1e943b664c76cd3fa",
+                "sha256:a68e4b13c331ec6526f6bf8d19b2377e0d33884cd7f2a5a7c46a13332ff2c6f9",
+                "sha256:7c5e7f847e26fa1cbe0736c050e3299afb2fa28577de854933c338a11e3517a5"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        },
+        "Config": {
+            "ArgsEscaped": true,
+            "Cmd": [
+                "eswrapper"
+            ],
+            "Entrypoint": [
+                "/bin/tini",
+                "--",
+                "/usr/local/bin/docker-entrypoint.sh"
+            ],
+            "Env": [
+                "PATH=/usr/share/elasticsearch/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "ELASTIC_CONTAINER=true"
+            ],
+            "ExposedPorts": {
+                "9200/tcp": {},
+                "9300/tcp": {}
+            },
+            "Labels": {
+                "org.label-schema.build-date": "2024-02-19T10:04:32.774273190Z",
+                "org.label-schema.license": "Elastic-License-2.0",
+                "org.label-schema.name": "Elasticsearch",
+                "org.label-schema.schema-version": "1.0",
+                "org.label-schema.url": "https://www.elastic.co/products/elasticsearch",
+                "org.label-schema.usage": "https://www.elastic.co/guide/en/elasticsearch/reference/index.html",
+                "org.label-schema.vcs-ref": "48a287ab9497e852de30327444b0809e55d46466",
+                "org.label-schema.vcs-url": "https://github.com/elastic/elasticsearch",
+                "org.label-schema.vendor": "Elastic",
+                "org.label-schema.version": "8.12.2",
+                "org.opencontainers.image.created": "2024-02-19T10:04:32.774273190Z",
+                "org.opencontainers.image.documentation": "https://www.elastic.co/guide/en/elasticsearch/reference/index.html",
+                "org.opencontainers.image.licenses": "Elastic-License-2.0",
+                "org.opencontainers.image.ref.name": "ubuntu",
+                "org.opencontainers.image.revision": "48a287ab9497e852de30327444b0809e55d46466",
+                "org.opencontainers.image.source": "https://github.com/elastic/elasticsearch",
+                "org.opencontainers.image.title": "Elasticsearch",
+                "org.opencontainers.image.url": "https://www.elastic.co/products/elasticsearch",
+                "org.opencontainers.image.vendor": "Elastic",
+                "org.opencontainers.image.version": "8.12.2"
+            },
+            "OnBuild": null,
+            "User": "1000:0",
+            "Volumes": null,
+            "WorkingDir": "/usr/share/elasticsearch"
+        }
+    }
+]

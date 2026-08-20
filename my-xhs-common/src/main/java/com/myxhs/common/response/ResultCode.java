@@ -55,6 +55,7 @@ public enum ResultCode {
 
     // ==================== 用户模块 10001~19999 ====================
     USER_NOT_FOUND(10001, "用户不存在"),
+    BLOCKED(10010, "已被对方拉黑，无法关注"),
     USERNAME_EXISTS(10002, "用户名已存在"),
     PHONE_EXISTS(10003, "手机号已注册"),
     EMAIL_EXISTS(10004, "邮箱已注册"),

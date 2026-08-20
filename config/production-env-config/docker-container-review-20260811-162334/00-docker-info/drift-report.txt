@@ -1,0 +1,26 @@
+container                 status  image                                         差异明细
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+my-xhs-canal              DIFF    my-xhs-canal-server:v1.1.7-squashed           cmd: compose独有[["/home/admin/app.sh"]] | 实际独有[/home/admin/app.sh]
+my-xhs-mysql-slave        OK      mysql:8.0                                     
+my-xhs-nacos              OK      nacos/nacos-server:v2.3.2                     
+my-xhs-filebeat           OK      docker.elastic.co/beats/filebeat:8.19.19      
+my-xhs-skywalking-ui      OK      apache/skywalking-ui:9.7.0                    
+my-xhs-redis-sentinel     OK      redis:7-alpine                                
+my-xhs-kibana             OK      docker.elastic.co/kibana/kibana:8.19.19       
+my-xhs-logstash           OK      docker.elastic.co/logstash/logstash:8.19.19   
+my-xhs-skywalking-oap     OK      apache/skywalking-oap-server:9.7.0            
+my-xhs-xxl-job-admin      OK      xuxueli/xxl-job-admin:2.4.2                   
+my-xhs-rocketmq-dashboard OK      apacherocketmq/rocketmq-dashboard:latest      
+my-xhs-grafana            OK      grafana/grafana:10.2.3                        
+my-xhs-mq-broker          OK      apache/rocketmq:5.1.4                         
+my-xhs-redis-slave        OK      redis:7-alpine                                
+my-xhs-mq-namesrv         OK      apache/rocketmq:5.1.4                         
+my-xhs-es-skywalking      OK      elasticsearch:8.12.2                          
+my-xhs-mysql              OK      mysql:8.0                                     
+my-xhs-prometheus         OK      prom/prometheus:v2.48.1                       
+my-xhs-redis              OK      redis:7-alpine                                
+my-xhs-elasticsearch      OK      elasticsearch:8.19.19                         
+my-xhs-sentinel-dashboard OK      bladex/sentinel-dashboard:1.8.8               
+my-xhs-victoria-metrics   OK      victoriametrics/victoria-metrics:v1.93.12     
+
+注: cmd 按参数 token 集合对比; compose 折叠块与运行时 shell 转义导致的引号差异属正常

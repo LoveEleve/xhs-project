@@ -43,6 +43,8 @@ class FollowServiceTest {
     private IdGeneratorUtil idGeneratorUtil;
     @Mock
     private ZSetOperations<String, String> zSetOperations;
+    @Mock
+    private com.myxhs.analytics.feign.UserFeignClient userFeignClient;
 
     private FollowService followService;
 
@@ -54,8 +56,10 @@ class FollowServiceTest {
         followService = new FollowService(
                 stringRedisTemplate, followSelfScript, followTargetScript,
                 unfollowSelfScript, unfollowTargetScript,
-                followMapper, idGeneratorUtil,
-                mock(org.apache.rocketmq.spring.core.RocketMQTemplate.class));
+                 followMapper, idGeneratorUtil,
+                 mock(org.apache.rocketmq.spring.core.RocketMQTemplate.class), userFeignClient);
+        when(userFeignClient.userExists(TARGET_USER_ID))
+                .thenReturn(com.myxhs.common.response.R.ok(true));
     }
 
     @Test

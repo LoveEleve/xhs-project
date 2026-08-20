@@ -1,0 +1,71 @@
+[
+    {
+        "Id": "sha256:8387f19108f986254ecb7eeb1124445a9aeda16602114d98348ed5cd49151a7a",
+        "RepoTags": [
+            "grafana/grafana:10.2.3"
+        ],
+        "RepoDigests": [
+            "grafana/grafana@sha256:6b5b37eb35bbf30e7f64bd7f0fd41c0a5b7637f65d3bf93223b04a192b8bf3e2"
+        ],
+        "Parent": "",
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2023-12-18T15:50:46.254085507Z",
+        "DockerVersion": "",
+        "Author": "",
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 398981453,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/data/docker/lib/overlay2/0bafdacb2458d793ed626668cfecbd2af1b644528557b7ea94d4c61b8343bc4c/diff:/data/docker/lib/overlay2/54b6acbf0e171343556e46c3610cf0acb0f69e0bf8ec7bc4dafdd06967d76b35/diff:/data/docker/lib/overlay2/a81dbe3ae45420c0fde8811d3ccd5fefe3426f8514f0ef4f60f35eacd04f4e00/diff:/data/docker/lib/overlay2/ac57bfffac628677f4d6fc9e6c3c1846bfcb4b02eff3e69031759980b34ffd86/diff:/data/docker/lib/overlay2/c33da3ec441a2fc54316d585f966aace4085c22779e0d29987234c03e860c8f5/diff:/data/docker/lib/overlay2/3d71376f2d03aec66f2225e85b2d4c05178b8c0b57fe13f6a0f5db6719414584/diff:/data/docker/lib/overlay2/4ec156f2cf4fd3bcc464d101af734c725cbb957900ebe9e9fb4a0f49dfd35257/diff:/data/docker/lib/overlay2/5a96f5030941acf512a97e4646d056f13e449a7dca204d844a75c7950859de47/diff:/data/docker/lib/overlay2/720584362c3dc4f775938ded3d77dba9f4ac50eac0aa738391996974c9feaa11/diff",
+                "MergedDir": "/data/docker/lib/overlay2/231b544b450463cd4002f439e4b7cabf755ebef67674b8d27a8de4146e947aa7/merged",
+                "UpperDir": "/data/docker/lib/overlay2/231b544b450463cd4002f439e4b7cabf755ebef67674b8d27a8de4146e947aa7/diff",
+                "WorkDir": "/data/docker/lib/overlay2/231b544b450463cd4002f439e4b7cabf755ebef67674b8d27a8de4146e947aa7/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:cc2447e1835a40530975ab80bb1f872fbab0f2a0faecf2ab16fbbb89b3589438",
+                "sha256:ced241d82adeb0cf99e6e51c34a6cc337963f47eb47089dbce4bf04694a78ffa",
+                "sha256:fd66335cb92855d8c5f3fc2e647fc6f2282c58c6fa1637684ef429cc9ffd73d0",
+                "sha256:2154ff73ccaac7c346f565b98977b271c64fe0380ebacb14700aa3dc1a31064d",
+                "sha256:16ff5165fba1109320c6354fdafbd2f12a3ccf72c1b3f93868bfc059887633cb",
+                "sha256:386dfee050a394b74bf7e5c198407917288ea367801dba15de413c294b0f691e",
+                "sha256:d34774d8b3a412192f015a199cc8eb9adc9161d079cde4bfde1ca899358ebe2e",
+                "sha256:f95f04f5f46b952f75efe15d812c1844b69e8f2d20109a16e5cb68b3f46fed40",
+                "sha256:47878dc35b9c5129e939679615c2af7e2ac9d360a4a00d5aa2ccef2871d0f4d4",
+                "sha256:944eb5b7922f096f7b173f0d5825e85d7683df0981904172720c1587e5a0580f"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        },
+        "Config": {
+            "Cmd": null,
+            "Entrypoint": [
+                "/run.sh"
+            ],
+            "Env": [
+                "PATH=/usr/share/grafana/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "GF_PATHS_CONFIG=/etc/grafana/grafana.ini",
+                "GF_PATHS_DATA=/var/lib/grafana",
+                "GF_PATHS_HOME=/usr/share/grafana",
+                "GF_PATHS_LOGS=/var/log/grafana",
+                "GF_PATHS_PLUGINS=/var/lib/grafana/plugins",
+                "GF_PATHS_PROVISIONING=/etc/grafana/provisioning"
+            ],
+            "ExposedPorts": {
+                "3000/tcp": {}
+            },
+            "Labels": {
+                "maintainer": "Grafana Labs \u003chello@grafana.com\u003e"
+            },
+            "OnBuild": null,
+            "User": "472",
+            "Volumes": null,
+            "WorkingDir": "/usr/share/grafana"
+        }
+    }
+]

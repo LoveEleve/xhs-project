@@ -1,0 +1,22 @@
+############ my-xhs-kibana 真实生效配置(进程实际使用的)
+#### ENTRYPOINT
+[
+    "/bin/tini",
+    "--"
+]
+#### CMD(命令行参数=多数服务真实配置)
+[
+    "/usr/local/bin/kibana-docker"
+]
+#### ENV(环境变量)
+ELASTICSEARCH_HOSTS=http://127.0.0.1:19200
+ELASTICSEARCH_USERNAME=kibana_system
+ELASTICSEARCH_PASSWORD=Xhs@2026#KibanaSystem
+SERVER_PORT=15601
+PATH=/usr/share/kibana/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ELASTIC_CONTAINER=true
+
+#### 资源限制
+MemLimit=1610612736 CPULimit=250000000 Restart=unless-stopped
+#### 挂载的配置文件
+

@@ -1,0 +1,84 @@
+# Prometheus 配置文件
+# 采集 my-xhs 所有微服务的 /actuator/prometheus 端点
+
+global:
+  scrape_interval: 5s        # 采集间隔（高频采集，利于实时告警）
+  evaluation_interval: 15s   # 告警规则评估间隔
+  scrape_timeout: 4s         # 采集超时（必须 < scrape_interval）
+
+# 告警规则文件
+rule_files:
+  - "alert_rules/*.yml"
+
+# 采集目标
+scrape_configs:
+  # ==================== my-xhs 微服务（非标准端口） ====================
+  - job_name: 'my-xhs-services'
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 10s
+    static_configs:
+      # 网关服务
+      - targets: ['21.214.97.212:19000']
+        labels:
+          service: 'my-xhs-gateway'
+      # 用户服务
+      - targets: ['21.214.97.212:19001']
+        labels:
+          service: 'my-xhs-user'
+      # 内容服务
+      - targets: ['21.214.97.212:19002']
+        labels:
+          service: 'my-xhs-content'
+      # 互动分析服务
+      - targets: ['21.214.97.212:19003']
+        labels:
+          service: 'my-xhs-analytics'
+      # 计数服务
+      - targets: ['21.214.97.212:19004']
+        labels:
+          service: 'my-xhs-counter'
+      # 商品服务
+      - targets: ['21.214.97.212:19006']
+        labels:
+          service: 'my-xhs-product'
+      # 购物车服务
+      - targets: ['21.214.97.212:19008']
+        labels:
+          service: 'my-xhs-cart'
+      # 库存服务
+      - targets: ['21.214.97.212:19009']
+        labels:
+          service: 'my-xhs-inventory'
+      # 优惠券服务
+      - targets: ['21.214.97.212:19010']
+        labels:
+          service: 'my-xhs-coupon'
+      # 订单服务
+      - targets: ['21.214.97.212:19011']
+        labels:
+          service: 'my-xhs-order'
+      # 支付服务
+      - targets: ['21.214.97.212:19012']
+        labels:
+          service: 'my-xhs-payment'
+      # 通知服务
+      - targets: ['21.214.97.212:19013']
+        labels:
+          service: 'my-xhs-notification'
+      # IM 服务
+      - targets: ['21.214.97.212:19014']
+        labels:
+          service: 'my-xhs-im'
+      # 首页聚合服务
+      - targets: ['21.214.97.212:19015']
+        labels:
+          service: 'my-xhs-home'
+      # 搜索服务
+      - targets: ['21.214.97.212:19016']
+        labels:
+          service: 'my-xhs-search'
+
+  # ==================== Prometheus 自身 ====================
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['21.130.247.89:19090']

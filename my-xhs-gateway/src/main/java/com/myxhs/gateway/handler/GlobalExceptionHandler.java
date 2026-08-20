@@ -123,6 +123,11 @@ public class GlobalExceptionHandler implements ErrorWebExceptionHandler {
         if (ex instanceof org.springframework.cloud.gateway.support.NotFoundException) {
             return HttpStatus.NOT_FOUND;
         }
+        // T-059（2026-08-14）：未知路径/静态资源未命中（WebFlux 版 NoResourceFoundException）
+        // 未映射时落默认 500 → 扫描/探测流量污染 5xx 指标；应返回 404
+        if (ex instanceof org.springframework.web.reactive.resource.NoResourceFoundException) {
+            return HttpStatus.NOT_FOUND;
+        }
         // 默认 500
         return HttpStatus.INTERNAL_SERVER_ERROR;
     }

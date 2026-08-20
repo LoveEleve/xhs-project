@@ -104,7 +104,7 @@ export default function CartPage() {
           type="info"
           showIcon
           style={{ marginBottom: 16 }}
-          message={`${cart.availableCouponCount} 张优惠券可用，去结算时可使用`}
+          title={`${cart.availableCouponCount} 张优惠券可用，去结算时可使用`}
         />
       )}
 

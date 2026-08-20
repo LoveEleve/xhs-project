@@ -81,6 +81,14 @@ spring:
       httpclient:
         connect-timeout: 2000       # 全局默认连接超时 2s
         response-timeout: 10s       # 全局默认响应超时 10s
+        # T-020: 显式连接池（fixed 池 + 空闲/生命周期限制，避免陈旧连接复用导致的 PrematureClose）
+        pool:
+          type: fixed
+          max-connections: 500
+          max-idle-time: 30000
+          # T-048 修复：max-life-time 必须 < 下游服务 keep-alive-timeout(60s)，
+          # 否则 gateway 复用"已过保活期被对端关闭"的连接发送 body → PrematureClose(500)
+          max-life-time: 45000
       routes:
         # ============================================================
         # 注意：metadata 中的超时/限流值为架构文档中的设计规范，
@@ -230,6 +238,20 @@ spring:
             response-timeout: 3000
             connect-timeout: 1000
             rate-limit-qps: 100
+
+        # AI 诊断台（Gateway 集成 2026-08-17，与 vite dev 代理语义一致）
+        # 前端 baseURL=/ai-api（src/api/ai.ts），RewritePath 去掉 /ai-api 前缀 → 后端 /api/** 路径
+        # SSE（/api/runs/{id}/stream）31min 超时对齐 AI 后端 SSE_TIMEOUT_MS=31min
+        - id: ai-app-service
+          uri: lb://my-xhs-ai-app
+          predicates:
+            - Path=/ai-api/**
+          filters:
+            - RewritePath=/ai-api/(?<seg>.*), /$\{seg}
+          metadata:
+            response-timeout: 1860000   # 31min（SSE 长连接，对齐 AI 后端 SSE_TIMEOUT_MS）
+            connect-timeout: 3000
+            rate-limit-qps: 100
   data:
     redis:
       # Redis 密码 — Nacos shared-configs(my-xhs-common.yaml) 优先，本地为 fallback
@@ -277,6 +299,7 @@ gateway:
       - /api/user/*/info
       # ===== 笔记公开接口（笔记详情、用户笔记列表） =====
       - /api/note/detail/**
+      - /api/note/batch-detail
       - /api/note/user/**
       # ===== 评论公开接口（评论列表、子评论列表、评论计数） =====
       - /api/comment/list/**
@@ -285,6 +308,7 @@ gateway:
       - /api/comment/page/**
       # ===== 社交公开接口（关注列表、粉丝列表） =====
       - /api/social/following/**
+      - /api/social/internal/repair-counter/**  # T-022: 管理端点进 JWT 白名单（X-Admin-Call 保护）
       - /api/social/follower/**
       # ===== 点赞公开接口（点赞计数） =====
       - /api/social/like/count
@@ -318,7 +342,11 @@ gateway:
       - /api/user/*/info
       - /api/user/me
       - /api/user/me/password
+      # T-022: 地址读操作免签（与 /me 一致）；写操作(POST/PUT/DELETE)仍需签名
+      - /api/user/address/list
+      - /api/user/address/default
       - /api/note/detail/**
+      - /api/note/batch-detail
       - /api/note/user/**
       - /api/comment/list/**
       - /api/comment/children/**
@@ -358,6 +386,7 @@ gateway:
       - /api/coupon/template/**
       - /api/product/spu
       - /api/product/spu/**
+      - /api/user/internal/**  # T-122: 用户管理端点（删除用户，X-Admin-Call 保护）
       - /api/product/sku
       - /api/inventory/init
       - /api/inventory/reinit
@@ -368,13 +397,21 @@ gateway:
       - /api/recommend/compute
       - /api/social/internal/repair-counter/**
       # ===== 用户写接口（block/address 等）不再豁免，必须 HMAC 签名 =====
+      # ===== AI 诊断台（Gateway 集成 2026-08-17：登录态由 JWT 保证，前端免 HMAC 签名） =====
+      - /ai-api/**
 
 # Actuator 健康检查 + 指标暴露
 management:
+  metrics:
+    distribution:
+      percentiles-histogram:
+        # 2026-08-13：gateway 无 common 的 myxhs_http 指标——开 Boot 自带 http.server.requests 的 bucket
+        # （api/tomcat 看板延迟面板正则同时覆盖 myxhs_http 与 http_server_requests）
+        "[http.server.requests]": true
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus,metrics,loggers
+        include: health,info,prometheus,metrics
   endpoint:
     health:
       show-details: always

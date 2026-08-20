@@ -70,6 +70,7 @@ public class SpuService {
     private final RedisOperator redisOperator;
     private final RedissonClient redissonClient;
     private final IdGeneratorUtil idGeneratorUtil;
+    private final com.myxhs.product.mapper.ProductBehaviorMapper productBehaviorMapper;
 
     /** 【修复m12】自定义有界线程池，替代 ForkJoinPool.commonPool()，避免阻塞公共线程池 */
     /** 【O2修复】MdcAwareExecutorService 包装，异步任务（缓存刷新/延迟双删/布隆加载）日志携带 traceId */
@@ -80,6 +81,16 @@ public class SpuService {
                             new java.util.concurrent.LinkedBlockingQueue<>(100),
                             r -> { Thread t = new Thread(r, "spu-async"); t.setDaemon(true); return t; },
                             new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy()
+                    ));
+
+    /** 商品浏览事件落库线程池（可观测性）：DiscardPolicy——事件可容忍丢失，绝不影响详情响应 */
+    private static final java.util.concurrent.ExecutorService SPU_VIEW_EXECUTOR =
+            new com.myxhs.common.trace.MdcAwareExecutorService(
+                    new java.util.concurrent.ThreadPoolExecutor(
+                            1, 2, 60, java.util.concurrent.TimeUnit.SECONDS,
+                            new java.util.concurrent.LinkedBlockingQueue<>(500),
+                            r -> { Thread t = new Thread(r, "spu-view"); t.setDaemon(true); return t; },
+                            new java.util.concurrent.ThreadPoolExecutor.DiscardPolicy()
                     ));
 
     /**
@@ -522,6 +533,39 @@ public class SpuService {
             if (loadLocked && loadLock.isHeldByCurrentThread()) {
                 loadLock.unlock();
             }
+        }
+    }
+
+    /**
+     * 记录商品浏览事件（append-only 可观测性，异步落库）
+     * <p>
+     * 仅在单条详情入口调用（批量路径不埋点）；独立线程池 + DiscardPolicy——
+     * 事件可容忍丢失，绝不影响详情响应延迟。
+     * </p>
+     *
+     * @param spuId  被浏览 SPU
+     * @param userId 浏览用户（未登录=0）
+     * @param skuId  详情页首 SKU（可为空）
+     */
+    public void recordSpuViewAsync(Long spuId, Long userId, Long skuId) {
+        try {
+            SPU_VIEW_EXECUTOR.submit(() -> {
+                try {
+                    com.myxhs.product.entity.ProductBehavior b = new com.myxhs.product.entity.ProductBehavior();
+                    b.setId(idGeneratorUtil.nextId());
+                    b.setUserId(userId != null ? userId : 0L);
+                    b.setSpuId(spuId);
+                    b.setSkuId(skuId);
+                    b.setBehaviorType(1);
+                    b.setEventTime(java.time.LocalDateTime.now());
+                    productBehaviorMapper.insert(b);
+                } catch (Exception e) {
+                    log.warn("[商品浏览] 事件落库失败(可容忍): spuId={}", spuId, e);
+                }
+            });
+        } catch (Exception e) {
+            // 队列满/提交异常：丢弃（DiscardPolicy 已兜底，此处仅防御）
+            log.warn("[商品浏览] 事件提交失败(可容忍): spuId={}", spuId);
         }
     }
 

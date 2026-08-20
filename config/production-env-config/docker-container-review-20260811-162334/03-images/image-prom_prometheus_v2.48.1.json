@@ -1,0 +1,75 @@
+[
+    {
+        "Id": "sha256:ea7f826b15534016a9b8da3bda24ccebe3ff5066e0c351674533ddbd26fe521b",
+        "RepoTags": [
+            "prom/prometheus:v2.48.1"
+        ],
+        "RepoDigests": [
+            "prom/prometheus@sha256:a67e5e402ff5410b86ec48b39eab1a3c4df2a7e78a71bf025ec5e32e09090ad4"
+        ],
+        "Parent": "",
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2023-12-09T00:12:53.331531813Z",
+        "DockerVersion": "",
+        "Author": "The Prometheus Authors \u003cprometheus-developers@googlegroups.com\u003e",
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 247182560,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/data/docker/lib/overlay2/0eff4759e07f19ada260d5166fceb5da8ea194999dda580bfadbec2ec90fa4e2/diff:/data/docker/lib/overlay2/2c8af7c24cde3095e06d39c2561c38abc2009ded07d01d9b9cb8f7207d812b6e/diff:/data/docker/lib/overlay2/f4102ef111a86fdb4e51c63ccbba0c8d009d160694e5c8b1a47879ff25bf44c3/diff:/data/docker/lib/overlay2/15cb627d04b79c6667eb9fbd009fe4dea404e8b3846c80339afb9684131f8bce/diff:/data/docker/lib/overlay2/892cdb3fb9b4ef5984531f3bb479bfe3cbf775a6b8b94f18a456de4d94471411/diff:/data/docker/lib/overlay2/08bc8403b47944a5010cc3d972a21edac812257e497b25dabd587e348c6c8057/diff:/data/docker/lib/overlay2/5109909392d76170c3afc012c993fe545d865b73b98e7cd5908ba324340dfdc1/diff:/data/docker/lib/overlay2/09f1222ab9e9760391abd787475317895f34342b72e3486f8f405d99a9364336/diff:/data/docker/lib/overlay2/6b8acc823378dff957adfe96e50bc825d2329bdb4d00fceab40d2643ed0df023/diff:/data/docker/lib/overlay2/0e022aefb008263ff5f76de8f0b4d16b00b828fd3b276a838020a00a0a207462/diff:/data/docker/lib/overlay2/23fdd62720b188d0f56db478a61f0900a6968b6cca3d761342c803921570897f/diff",
+                "MergedDir": "/data/docker/lib/overlay2/f3b7f2d23a62ed010e6d66a0e3175c6a8754c3b2ba4f6491093d49415993dd5e/merged",
+                "UpperDir": "/data/docker/lib/overlay2/f3b7f2d23a62ed010e6d66a0e3175c6a8754c3b2ba4f6491093d49415993dd5e/diff",
+                "WorkDir": "/data/docker/lib/overlay2/f3b7f2d23a62ed010e6d66a0e3175c6a8754c3b2ba4f6491093d49415993dd5e/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:faf755cf727c09151beb5c1af936cb7ca576c2a6d3b3dfcaaf31a60363922632",
+                "sha256:bd055bd657c680112edc5df600a3ca8d057040ca9ae7d89945da8736e0b05d94",
+                "sha256:81148f40a391073b3428ed96c86445207ec060fe6d1d5105b1bc073dfbe0acd7",
+                "sha256:d89c9497969e117cec8d299841da5af43287a30c325c118610248ef8304ae589",
+                "sha256:197c9c8019d9153bf8b75f82746a1ad4534b7091429dfe6d30323130908d5841",
+                "sha256:b97b5901d29d79107c411285b51a73b60ec156d97786e8156ed243f8f8215157",
+                "sha256:54a70507f7a99c4bd22c96ec648c44249d1925b4ac0ad875088e181c53431329",
+                "sha256:e1a6707608a65b1a1634c452bdef7f560b89feb1a9cd2db8f97be71240098cda",
+                "sha256:82bd183ae48524bfec26c3c18085839070e2f538a5eb9c05741dbd0866d14350",
+                "sha256:d7bd1586a0ec89f6fcbfd1a35cee4f4342c9eeab401eef6ae2f0af2d04a448c3",
+                "sha256:57dd14309673cbff0a848d68f2c8d47ae6823ab75f16241612ff487f9a5c8d80",
+                "sha256:ee9d36018e0dbb75281eaa51240138a28a4c3998a7959482f274eb8bb2dc99a2"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        },
+        "Config": {
+            "ArgsEscaped": true,
+            "Cmd": [
+                "--config.file=/etc/prometheus/prometheus.yml",
+                "--storage.tsdb.path=/prometheus",
+                "--web.console.libraries=/usr/share/prometheus/console_libraries",
+                "--web.console.templates=/usr/share/prometheus/consoles"
+            ],
+            "Entrypoint": [
+                "/bin/prometheus"
+            ],
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            ],
+            "ExposedPorts": {
+                "9090/tcp": {}
+            },
+            "Labels": {
+                "maintainer": "The Prometheus Authors \u003cprometheus-developers@googlegroups.com\u003e"
+            },
+            "OnBuild": null,
+            "User": "nobody",
+            "Volumes": {
+                "/prometheus": {}
+            },
+            "WorkingDir": "/prometheus"
+        }
+    }
+]

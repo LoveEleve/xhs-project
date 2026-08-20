@@ -1,0 +1,122 @@
+########## consumerProgress
+#Group                                                            #Count  #Version                 #Type  #Model          #TPS     #Diff Total
+DLQ_MONITOR_notification-event-consumer-group                     13      V5_1_4                   PULL                   0        0
+inventory-cache-evict-consumer-group                              1       V5_1_4                   PUSH   CLUSTERING      0        0
+counter-consumer-group                                            1       V5_1_4                   PUSH   CLUSTERING      0        0
+favorite-unlike-consumer-group                                    1       V5_1_4                   PUSH   CLUSTERING      0        0
+inventory-deduct-consumer-group                                   1       V5_1_4                   PUSH   CLUSTERING      0        0
+note-delete-consumer-group                                        1       V5_1_4                   PUSH   CLUSTERING      0        0
+inventory-order-transaction-consumer-group                        1       V5_1_4                   PUSH   CLUSTERING      0        0
+like-unlike-consumer-group                                        1       V5_1_4                   PUSH   CLUSTERING      0        0
+coupon-claim-consumer-group                                       1       V5_1_4                   PUSH   CLUSTERING      0        0
+order-close-consumer-group                                        1       V5_1_4                   PUSH   CLUSTERING      0        0
+payment-pay-result-consumer-group                                 1       V5_1_4                   PUSH   CLUSTERING      0        0
+recommend-behavior-consumer-group                                 1       V5_1_4                   PUSH   CLUSTERING      0        0
+notification-event-consumer-group                                 1       V5_1_4                   PUSH   CLUSTERING      0        0
+cart-sync-consumer-group                                          1       V5_1_4                   PUSH   CLUSTERING      0        0
+note-index-sync-consumer-group                                    1       V5_1_4                   PUSH   CLUSTERING      0        0
+product-index-sync-consumer-group                                 1       V5_1_4                   PUSH   CLUSTERING      0        0
+order-compensation-consumer-group                                 1       V5_1_4                   PUSH   CLUSTERING      0        0
+feed-push-consumer-group                                          1       V5_1_4                   PUSH   CLUSTERING      0        0
+########## topicStatus
+#Broker Name                      #QID  #Min Offset           #Max Offset             #Last Updated
+broker-a                          0     0                     0                       
+broker-a                          1     0                     2                       2026-08-11 01:29:09,309
+broker-a                          2     0                     1                       2026-08-11 01:40:40,773
+broker-a                          3     0                     1                       2026-08-10 13:10:01,266
+#Broker Name                      #QID  #Min Offset           #Max Offset             #Last Updated
+broker-a                          0     0                     1                       2026-08-11 04:11:31,365
+broker-a                          1     0                     1                       2026-08-11 04:52:52,292
+broker-a                          2     0                     1                       2026-08-10 14:27:08,261
+broker-a                          3     0                     1                       2026-08-11 04:52:52,244
+########## statsAll(部分)
+#Topic                                                            #Consumer Group                                                  #Accumulation      #InTPS     #OutTPS   #InMsg24Hour  #OutMsg24Hour
+RMQ_SYS_TRANS_HALF_TOPIC                                          CID_RMQ_SYS_TRANS                                                           0        0.00        0.00             13              2
+NOTIFICATION_TOPIC                                                notification-event-consumer-group                                           0        0.00        0.00              4              4
+BenchmarkTest                                                                                                                                 0        0.00                          0    NO_CONSUMER
+TBW102                                                                                                                                        0        0.00                          0    NO_CONSUMER
+rmq_sys_REVIVE_LOG_DefaultCluster                                                                                                             0        0.00                          0    NO_CONSUMER
+SELF_TEST_TOPIC                                                                                                                               0        0.00                          0    NO_CONSUMER
+COUPON_CLAIM_TOPIC                                                coupon-claim-consumer-group                                                 0        0.00        0.00              4              4
+SCHEDULE_TOPIC_XXXX                                                                                                                           0        0.00                         22    NO_CONSUMER
+NOTE_INDEX_TOPIC                                                  note-index-sync-consumer-group                                              0        0.00        0.00             11             11
+DefaultCluster_REPLY_TOPIC                                                                                                                    0        0.00                          0    NO_CONSUMER
+CART_TOPIC                                                        cart-sync-consumer-group                                                    0        0.00        0.00             25             25
+ORDER_TRANSACTION_TOPIC                                           inventory-order-transaction-consumer-group                                  0        0.00        0.00              0             13
+RMQ_SYS_TRANS_OP_HALF_TOPIC                                       CID_RMQ_SYS_TRANS                                                           0        0.00        0.00             12             12
+ORDER_CLOSE_TOPIC                                                 order-close-consumer-group                                                  0        0.00        0.00             13             13
+PAY_RESULT_TOPIC                                                  payment-pay-result-consumer-group                                           0        0.00        0.00              3              3
+broker-a                                                                                                                                      0        0.00                          0    NO_CONSUMER
+OFFSET_MOVED_EVENT                                                                                                                            0        0.00                          0    NO_CONSUMER
+FEED_TOPIC                                                        feed-push-consumer-group                                                    0        0.00        0.00              7              7
+INVENTORY_CACHE_TOPIC                                             inventory-cache-evict-consumer-group                                        0        0.00        0.00             26             26
+DefaultCluster                                                                                                                                0        0.00                          0    NO_CONSUMER
+INVENTORY_TOPIC                                                   inventory-deduct-consumer-group                                             0        0.00        0.00             26             26
+SOCIAL_TOPIC                                                      note-delete-consumer-group                                                  0        0.00        0.00             39              1
+SOCIAL_TOPIC                                                      counter-consumer-group                                                      0        0.00        0.00             39             38
+SOCIAL_TOPIC                                                      like-unlike-consumer-group                                                  0        0.00        0.00             39              6
+SOCIAL_TOPIC                                                      favorite-unlike-consumer-group                                              0        0.00        0.00             39              4
+RECOMMEND_BEHAVIOR_TOPIC                                          recommend-behavior-consumer-group                                           0        0.00        0.00              1              1
+rmq_sys_SYNC_BROKER_MEMBER_broker-a                                                                                                           0        0.00                          0    NO_CONSUMER
+PRODUCT_INDEX_TOPIC                                               product-index-sync-consumer-group                                           0        0.00        0.00              6              6
+########## consumerProgress
+#Group                                                            #Count  #Version                 #Type  #Model          #TPS     #Diff Total
+DLQ_MONITOR_notification-event-consumer-group                     13      V5_1_4                   PULL                   0        0
+inventory-cache-evict-consumer-group                              1       V5_1_4                   PUSH   CLUSTERING      0        0
+counter-consumer-group                                            1       V5_1_4                   PUSH   CLUSTERING      0        0
+favorite-unlike-consumer-group                                    1       V5_1_4                   PUSH   CLUSTERING      0        0
+inventory-deduct-consumer-group                                   1       V5_1_4                   PUSH   CLUSTERING      0        0
+note-delete-consumer-group                                        1       V5_1_4                   PUSH   CLUSTERING      0        0
+inventory-order-transaction-consumer-group                        1       V5_1_4                   PUSH   CLUSTERING      0        0
+like-unlike-consumer-group                                        1       V5_1_4                   PUSH   CLUSTERING      0        0
+coupon-claim-consumer-group                                       1       V5_1_4                   PUSH   CLUSTERING      0        0
+order-close-consumer-group                                        1       V5_1_4                   PUSH   CLUSTERING      0        0
+payment-pay-result-consumer-group                                 1       V5_1_4                   PUSH   CLUSTERING      0        0
+recommend-behavior-consumer-group                                 1       V5_1_4                   PUSH   CLUSTERING      0        0
+notification-event-consumer-group                                 1       V5_1_4                   PUSH   CLUSTERING      0        0
+cart-sync-consumer-group                                          1       V5_1_4                   PUSH   CLUSTERING      0        0
+note-index-sync-consumer-group                                    1       V5_1_4                   PUSH   CLUSTERING      0        0
+product-index-sync-consumer-group                                 1       V5_1_4                   PUSH   CLUSTERING      0        0
+order-compensation-consumer-group                                 1       V5_1_4                   PUSH   CLUSTERING      0        0
+feed-push-consumer-group                                          1       V5_1_4                   PUSH   CLUSTERING      0        0
+########## topicStatus
+#Broker Name                      #QID  #Min Offset           #Max Offset             #Last Updated
+broker-a                          0     0                     0                       
+broker-a                          1     0                     2                       2026-08-11 01:29:09,309
+broker-a                          2     0                     1                       2026-08-11 01:40:40,773
+broker-a                          3     0                     1                       2026-08-10 13:10:01,266
+#Broker Name                      #QID  #Min Offset           #Max Offset             #Last Updated
+broker-a                          0     0                     1                       2026-08-11 04:11:31,365
+broker-a                          1     0                     1                       2026-08-11 04:52:52,292
+broker-a                          2     0                     1                       2026-08-10 14:27:08,261
+broker-a                          3     0                     1                       2026-08-11 04:52:52,244
+########## statsAll(部分)
+#Topic                                                            #Consumer Group                                                  #Accumulation      #InTPS     #OutTPS   #InMsg24Hour  #OutMsg24Hour
+RMQ_SYS_TRANS_HALF_TOPIC                                          CID_RMQ_SYS_TRANS                                                           0        0.00        0.00             13              2
+NOTIFICATION_TOPIC                                                notification-event-consumer-group                                           0        0.00        0.00              4              4
+BenchmarkTest                                                                                                                                 0        0.00                          0    NO_CONSUMER
+TBW102                                                                                                                                        0        0.00                          0    NO_CONSUMER
+rmq_sys_REVIVE_LOG_DefaultCluster                                                                                                             0        0.00                          0    NO_CONSUMER
+SELF_TEST_TOPIC                                                                                                                               0        0.00                          0    NO_CONSUMER
+COUPON_CLAIM_TOPIC                                                coupon-claim-consumer-group                                                 0        0.00        0.00              4              4
+SCHEDULE_TOPIC_XXXX                                                                                                                           0        0.00                         22    NO_CONSUMER
+NOTE_INDEX_TOPIC                                                  note-index-sync-consumer-group                                              0        0.00        0.00             11             11
+DefaultCluster_REPLY_TOPIC                                                                                                                    0        0.00                          0    NO_CONSUMER
+CART_TOPIC                                                        cart-sync-consumer-group                                                    0        0.00        0.00             25             25
+ORDER_TRANSACTION_TOPIC                                           inventory-order-transaction-consumer-group                                  0        0.00        0.00              0             13
+RMQ_SYS_TRANS_OP_HALF_TOPIC                                       CID_RMQ_SYS_TRANS                                                           0        0.00        0.00             12             12
+ORDER_CLOSE_TOPIC                                                 order-close-consumer-group                                                  0        0.00        0.00             13             13
+PAY_RESULT_TOPIC                                                  payment-pay-result-consumer-group                                           0        0.00        0.00              3              3
+broker-a                                                                                                                                      0        0.00                          0    NO_CONSUMER
+OFFSET_MOVED_EVENT                                                                                                                            0        0.00                          0    NO_CONSUMER
+FEED_TOPIC                                                        feed-push-consumer-group                                                    0        0.00        0.00              7              7
+INVENTORY_CACHE_TOPIC                                             inventory-cache-evict-consumer-group                                        0        0.00        0.00             26             26
+DefaultCluster                                                                                                                                0        0.00                          0    NO_CONSUMER
+INVENTORY_TOPIC                                                   inventory-deduct-consumer-group                                             0        0.00        0.00             26             26
+SOCIAL_TOPIC                                                      note-delete-consumer-group                                                  0        0.00        0.00             39              1
+SOCIAL_TOPIC                                                      counter-consumer-group                                                      0        0.00        0.00             39             38
+SOCIAL_TOPIC                                                      like-unlike-consumer-group                                                  0        0.00        0.00             39              6
+SOCIAL_TOPIC                                                      favorite-unlike-consumer-group                                              0        0.00        0.00             39              4
+RECOMMEND_BEHAVIOR_TOPIC                                          recommend-behavior-consumer-group                                           0        0.00        0.00              1              1
+rmq_sys_SYNC_BROKER_MEMBER_broker-a                                                                                                           0        0.00                          0    NO_CONSUMER
+PRODUCT_INDEX_TOPIC                                               product-index-sync-consumer-group                                           0        0.00        0.00              6              6

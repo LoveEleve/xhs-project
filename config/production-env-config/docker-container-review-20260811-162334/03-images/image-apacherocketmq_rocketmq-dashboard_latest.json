@@ -1,0 +1,89 @@
+[
+    {
+        "Id": "sha256:e1b7c1d119bc38a1b5623b4e0ad13e19bb8ab84355142d3c172f18d4d37e6dc5",
+        "RepoTags": [
+            "apacherocketmq/rocketmq-dashboard:latest"
+        ],
+        "RepoDigests": [
+            "apacherocketmq/rocketmq-dashboard@sha256:ce78506bd6fe01095bf1b37c954625e363ba5afae5d1539b77f395785d445e33"
+        ],
+        "Parent": "",
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2025-08-28T09:06:32.957425783Z",
+        "DockerVersion": "",
+        "Author": "",
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 588321888,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/data/docker/lib/overlay2/8ab27be6fa7b951e524e2c359920b1033f847db27c8458293e02130fc216ff87/diff:/data/docker/lib/overlay2/c993faf306bfecdd15aee5dafd0efeb9666705576dd15cc65d2454d49200972c/diff:/data/docker/lib/overlay2/48cb714e48119507ea9dec894ec1b7fec7e3c70493d846b790bfe5fe7808bd40/diff:/data/docker/lib/overlay2/8de94a9aa74bb7d756e159907ff2b3784ab0175df629172b6b5ffe4af273ef40/diff:/data/docker/lib/overlay2/2480bcdd3c0f46bb8745763fbe36f7e5ff98391367da8cf04c2cac4bcf879ca0/diff:/data/docker/lib/overlay2/dffccebb3615b690e3a4965e018a607c88c91404a9432c26719b53a09335ba5d/diff",
+                "MergedDir": "/data/docker/lib/overlay2/676a7a6a8a43c1b82c1fdf2bc51cd7e0c2747990bc80e413bc9dabab79ae4936/merged",
+                "UpperDir": "/data/docker/lib/overlay2/676a7a6a8a43c1b82c1fdf2bc51cd7e0c2747990bc80e413bc9dabab79ae4936/diff",
+                "WorkDir": "/data/docker/lib/overlay2/676a7a6a8a43c1b82c1fdf2bc51cd7e0c2747990bc80e413bc9dabab79ae4936/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:778d8c610941586099cac6c507cad2d1156b71b2bb54c42cebedf8808c68edb9",
+                "sha256:3d4e92ee269b5cbe1d49c809d8077528ae4097dbfa7ece84e1ca3a07cca2fbf2",
+                "sha256:536c56d16225b955e64450fd45f6936f9333715232d5f37284d93f27de9b828c",
+                "sha256:4d31acc31503cea75106f2720ca88d229e9cbd058d3067f24e6bbf1ab92a8a67",
+                "sha256:c2d66abe22b3476241846d41eb003df25fcbe86b0deba046a0aaa00f31cf0bac",
+                "sha256:b3bafea9b4868cbc7d8d6db81e4009d3f31942981853d6497b574557d76abf42",
+                "sha256:16511ef778f31ee1ccded1ebc049e9aa591d23eba33cc6225af4d603401e2aac"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        },
+        "Config": {
+            "Cmd": null,
+            "Entrypoint": [
+                "sh",
+                "-c",
+                "java $JAVA_OPTS -jar /rocketmq-dashboard.jar"
+            ],
+            "Env": [
+                "PATH=/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "container=oci",
+                "JAVA_HOME=/opt/java/openjdk",
+                "LANG=en_US.UTF-8",
+                "LANGUAGE=en_US:en",
+                "LC_ALL=en_US.UTF-8",
+                "JAVA_VERSION=jdk-17.0.16+8",
+                "JAVA_OPTS="
+            ],
+            "Labels": {
+                "architecture": "x86_64",
+                "build-date": "2025-08-20T13:12:41",
+                "com.redhat.component": "ubi9-minimal-container",
+                "com.redhat.license_terms": "https://www.redhat.com/en/about/red-hat-end-user-license-agreements#UBI",
+                "description": "The Universal Base Image Minimal is a stripped down image that uses microdnf as a package manager. This base image is freely redistributable, but Red Hat only supports Red Hat technologies through subscriptions for Red Hat products. This image is maintained by Red Hat and updated regularly.",
+                "distribution-scope": "public",
+                "io.buildah.version": "1.40.1",
+                "io.k8s.description": "The Universal Base Image Minimal is a stripped down image that uses microdnf as a package manager. This base image is freely redistributable, but Red Hat only supports Red Hat technologies through subscriptions for Red Hat products. This image is maintained by Red Hat and updated regularly.",
+                "io.k8s.display-name": "Red Hat Universal Base Image 9 Minimal",
+                "io.openshift.expose-services": "",
+                "io.openshift.tags": "minimal rhel9",
+                "maintainer": "Red Hat, Inc.",
+                "name": "ubi9-minimal",
+                "release": "1755695350",
+                "summary": "Provides the latest release of the minimal Red Hat Universal Base Image 9.",
+                "url": "https://catalog.redhat.com/en/search?searchType=containers",
+                "vcs-ref": "f4b088292653bbf5ca8188a5e59ffd06a8671d4b",
+                "vcs-type": "git",
+                "vendor": "Red Hat, Inc.",
+                "version": "9.6"
+            },
+            "OnBuild": null,
+            "User": "",
+            "Volumes": {
+                "/tmp": {}
+            },
+            "WorkingDir": "/"
+        }
+    }
+]

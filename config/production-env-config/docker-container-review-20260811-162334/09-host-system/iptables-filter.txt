@@ -1,0 +1,174 @@
+Chain INPUT (policy ACCEPT)
+target     prot opt source               destination         
+MYXHS      0    --  0.0.0.0/0            0.0.0.0/0           
+
+Chain FORWARD (policy DROP)
+target     prot opt source               destination         
+DOCKER-USER  0    --  0.0.0.0/0            0.0.0.0/0           
+DOCKER-FORWARD  0    --  0.0.0.0/0            0.0.0.0/0           
+
+Chain OUTPUT (policy ACCEPT)
+target     prot opt source               destination         
+
+Chain DOCKER (1 references)
+target     prot opt source               destination         
+DROP       0    --  0.0.0.0/0            0.0.0.0/0           
+
+Chain DOCKER-BRIDGE (1 references)
+target     prot opt source               destination         
+DOCKER     0    --  0.0.0.0/0            0.0.0.0/0           
+
+Chain DOCKER-CT (1 references)
+target     prot opt source               destination         
+ACCEPT     0    --  0.0.0.0/0            0.0.0.0/0            ctstate RELATED,ESTABLISHED
+
+Chain DOCKER-FORWARD (1 references)
+target     prot opt source               destination         
+DOCKER-CT  0    --  0.0.0.0/0            0.0.0.0/0           
+DOCKER-ISOLATION-STAGE-1  0    --  0.0.0.0/0            0.0.0.0/0           
+DOCKER-BRIDGE  0    --  0.0.0.0/0            0.0.0.0/0           
+ACCEPT     0    --  0.0.0.0/0            0.0.0.0/0           
+
+Chain DOCKER-ISOLATION-STAGE-1 (1 references)
+target     prot opt source               destination         
+DOCKER-ISOLATION-STAGE-2  0    --  0.0.0.0/0            0.0.0.0/0           
+
+Chain DOCKER-ISOLATION-STAGE-2 (1 references)
+target     prot opt source               destination         
+DROP       0    --  0.0.0.0/0            0.0.0.0/0           
+
+Chain DOCKER-USER (1 references)
+target     prot opt source               destination         
+
+Chain MYXHS (1 references)
+target     prot opt source               destination         
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:36000
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:36000
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:27091
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:27091
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:8080
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:8080
+ACCEPT     0    --  0.0.0.0/0            0.0.0.0/0            state RELATED,ESTABLISHED
+ACCEPT     0    --  0.0.0.0/0            0.0.0.0/0           
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:13306
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:13306
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:13306 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:13307
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:13307
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:13307 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:13308
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:13308
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:13308 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:13309
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:13309
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:13309 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:13310
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:13310
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:13310 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:13311
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:13311
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:13311 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:13312
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:13312
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:13312 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:13313
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:13313
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:13313 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:16379
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:16379
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:16379 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:16380
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:16380
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:16380 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:16381
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:16381
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:16381 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:26379
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:26379
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:26379 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:26380
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:26380
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:26380 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:26381
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:26381
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:26381 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:9876
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:9876
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:9876 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:9877
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:9877
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:9877 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:10909
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:10909
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:10909 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:10911
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:10911
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:10911 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:11911
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:11911
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:11911 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:11912
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:11912
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:11912 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:11110
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:11110
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:11110 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:11111
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:11111
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:11111 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:11112
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:11112
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:11112 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:18848
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:18848
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:18848 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:19848
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:19848
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:19848 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:19849
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:19849
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:19849 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:18080
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:18080
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:18080 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:11800
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:11800
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:11800 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:12800
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:12800
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:12800 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:18081
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:18081
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:18081 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:8428
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:8428
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:8428 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:19090
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:19090
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:19090 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:13000
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:13000
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:13000 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:15044
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:15044
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:15044 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:15601
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:15601
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:15601 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:19200
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:19200
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:19200 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:19201
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:19201
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:19201 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:19300
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:19300
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:19300 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:19301
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:19301
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:19301 state NEW
+ACCEPT     6    --  127.0.0.1            0.0.0.0/0            tcp dpt:8858
+ACCEPT     6    --  21.214.97.212        0.0.0.0/0            tcp dpt:8858
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:8858 state NEW
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:8080 state NEW
+DROP       6    --  0.0.0.0/0            0.0.0.0/0            tcp dpt:27091 state NEW

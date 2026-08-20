@@ -1,0 +1,3 @@
+--- cpu model
+model name	: AMD EPYC 9K65 192-Core Processor
+32

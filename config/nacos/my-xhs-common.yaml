@@ -1,0 +1,10 @@
+# my-xhs 公共配置（从生产 Nacos my-xhs 命名空间导出，2026-08-12）
+# 部署后导入 Nacos：命名空间 my-xhs / DEFAULT_GROUP / dataId=my-xhs-common.yaml
+# 注意：仅覆盖 datasource 密码与 redis 连接；IP 与业务配置见 my-xhs-redis.yaml / 各服务本地 yml
+spring:
+  datasource:
+    password: Xhs@2026#MySQL
+  data:
+    redis:
+      password: Xhs@2026#Redis
+      port: 6379

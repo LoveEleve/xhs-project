@@ -96,13 +96,13 @@ public class OrderCompensationConsumer implements RocketMQListener<MessageExt> {
                 try {
                     userId = Long.parseLong(userIdStr);
                 } catch (NumberFormatException nfe) {
-                    log.warn("[补偿] 无效userId: userIdStr={}", userIdStr);
+                    log.warn("[补偿] 无效userId: userIdStr={}, orderId={}", userIdStr, orderId);
                 }
-            } else {
+            }
+            if (userId == null) {
                 OrderNoMapping mapping = orderNoMappingRepository.selectByOrderId(orderId);
-                if (mapping == null) {
-                    log.error("[补偿] 无法获取userId: orderId={}", orderId);
-                    return;
+                if (mapping == null || mapping.getUserId() == null) {
+                    throw new IllegalStateException("补偿消息缺少路由信息: orderId=" + orderId);
                 }
                 userId = mapping.getUserId();
             }

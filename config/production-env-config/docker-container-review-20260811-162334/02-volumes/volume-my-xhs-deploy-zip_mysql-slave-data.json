@@ -1,0 +1,15 @@
+[
+    {
+        "CreatedAt": "2026-08-09T10:59:50+08:00",
+        "Driver": "local",
+        "Labels": {
+            "com.docker.compose.project": "my-xhs-deploy-zip",
+            "com.docker.compose.version": "2.29.2",
+            "com.docker.compose.volume": "mysql-slave-data"
+        },
+        "Mountpoint": "/data/docker/lib/volumes/my-xhs-deploy-zip_mysql-slave-data/_data",
+        "Name": "my-xhs-deploy-zip_mysql-slave-data",
+        "Options": null,
+        "Scope": "local"
+    }
+]

@@ -1,0 +1,24 @@
+############ my-xhs-canal 真实生效配置(进程实际使用的)
+#### ENTRYPOINT
+[
+    "/alidata/bin/main.sh"
+]
+#### CMD(命令行参数=多数服务真实配置)
+[
+    "/home/admin/app.sh"
+]
+#### ENV(环境变量)
+PATH=/opt/kona-jdk8/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+JAVA_HOME=/opt/kona-jdk8
+JAVA_OPTS=-Xms256m -Xmx512m -Xmn128m -XX:SurvivorRatio=2 -XX:MaxTenuringThreshold=15 -XX:+DisableExplicitGC
+
+#### 资源限制
+MemLimit=1073741824 CPULimit=500000000 Restart=unless-stopped
+#### 挂载的配置文件
+/opt/kona-jdk8 -> /opt/kona-jdk8
+/data/workspace/my-xhs-deploy-zip/config/canal/conf/canal.properties -> /home/admin/canal-server/conf/canal.properties
+/data/workspace/my-xhs-deploy-zip/config/canal/conf/note_instance/instance.properties -> /home/admin/canal-server/conf/note_instance/instance.properties
+/data/workspace/my-xhs-deploy-zip/config/canal/conf/product_instance/instance.properties -> /home/admin/canal-server/conf/product_instance/instance.properties
+/data/workspace/my-xhs-deploy-zip/config/canal/conf/inventory_instance/instance.properties -> /home/admin/canal-server/conf/inventory_instance/instance.properties
+/data/docker/lib/volumes/my-xhs-deploy-zip_canal-data/_data -> /home/admin/canal-server/logs
+

@@ -1,0 +1,9 @@
+########## node info
+{"host":"VM-247-89-tencentos","version":"8.19.19","http_address":"0.0.0.0:9600","id":"1c8e4e3e-ae1f-475c-8d84-6b8fd240bafc","name":"VM-247-89-tencentos","ephemeral_id":"4d6b5e58-1839-4762-8115-4c9ae0e64907","snapshot":false,"status":"green","pipeline":{"workers":1,"batch_size":125,"batch_delay":50},"build_date":"2026-07-14T19:57:39+00:00","build_sha":"b83b440efb2c2b7922308d449cf625a138f7fe9f","build_snapshot":false}########## pipeline stats
+{
+  "path" : "/_node/stats/pipeline",
+  "status" : 404,
+  "error" : {
+    "message" : "Not Found"
+  }
+}

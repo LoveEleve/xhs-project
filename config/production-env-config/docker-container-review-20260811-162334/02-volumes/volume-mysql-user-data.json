@@ -1,0 +1,11 @@
+[
+    {
+        "CreatedAt": "2026-08-08T22:08:49+08:00",
+        "Driver": "local",
+        "Labels": null,
+        "Mountpoint": "/data/docker/lib/volumes/mysql-user-data/_data",
+        "Name": "mysql-user-data",
+        "Options": null,
+        "Scope": "local"
+    }
+]

@@ -1,0 +1,26 @@
+############ my-xhs-rocketmq-dashboard 真实生效配置(进程实际使用的)
+#### ENTRYPOINT
+[
+    "sh",
+    "-c",
+    "java $JAVA_OPTS -jar /rocketmq-dashboard.jar"
+]
+#### CMD(命令行参数=多数服务真实配置)
+null
+#### ENV(环境变量)
+rocketmq.config.namesrvAddr=127.0.0.1:9876
+SERVER_PORT=18081
+PATH=/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+container=oci
+JAVA_HOME=/opt/java/openjdk
+LANG=en_US.UTF-8
+LANGUAGE=en_US:en
+LC_ALL=en_US.UTF-8
+JAVA_VERSION=jdk-17.0.16+8
+JAVA_OPTS=
+
+#### 资源限制
+MemLimit=671088640 CPULimit=250000000 Restart=unless-stopped
+#### 挂载的配置文件
+/data/docker/lib/volumes/eb7c4a094cc8c2150b9899abe6103e25ea9125ba25106e55bd62bbb68fd06198/_data -> /tmp
+

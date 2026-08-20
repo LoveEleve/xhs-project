@@ -32,6 +32,18 @@ public interface LocalMessageMapper extends BaseMapper<LocalMessage> {
     @Update("UPDATE t_local_message SET status = 3, updated_at = NOW() WHERE id = #{id}")
     int markDead(@Param("id") Long id);
 
+    /** T-072（2026-08-14）：补发失败重试/死信状态更新——按 id 广播更新（不碰分片键 user_id，
+     *  原 updateById 全字段更新含 user_id 触发 ShardingSphere "can not update sharding value"） */
+    @Update("UPDATE t_local_message SET status = #{status}, retry_count = #{retryCount}, " +
+            "next_retry_time = #{nextRetryTime}, updated_at = NOW() WHERE id = #{id}")
+    int updateRetryStatus(@Param("id") Long id, @Param("status") int status,
+                          @Param("retryCount") int retryCount,
+                          @Param("nextRetryTime") java.time.LocalDateTime nextRetryTime);
+
+    /** T-072：死信重投失败计数（负数表示死信重试次数，status 保持 3） */
+    @Update("UPDATE t_local_message SET retry_count = #{retryCount}, updated_at = NOW() WHERE id = #{id}")
+    int updateDeadRetry(@Param("id") Long id, @Param("retryCount") int retryCount);
+
     /** 根据事务ID查询（事务消息回查使用） */
     @Select("SELECT * FROM t_local_message WHERE transaction_id = #{transactionId} LIMIT 1")
     LocalMessage selectByTransactionId(@Param("transactionId") String transactionId);

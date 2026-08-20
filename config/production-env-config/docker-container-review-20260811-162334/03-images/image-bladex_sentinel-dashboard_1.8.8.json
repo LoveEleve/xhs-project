@@ -1,0 +1,74 @@
+[
+    {
+        "Id": "sha256:7f0a223b7b70480535ffb4769b496eb4f61e2c004f67dced9ce36b809a48081b",
+        "RepoTags": [
+            "bladex/sentinel-dashboard:1.8.8"
+        ],
+        "RepoDigests": [
+            "bladex/sentinel-dashboard@sha256:3240ffbd7175db92afd3c7b661d673cc468d16bd2e8b547834030acd93e99c8b"
+        ],
+        "Parent": "",
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2024-10-20T15:12:40.273509678Z",
+        "DockerVersion": "",
+        "Author": "bladejava@qq.com",
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 339466994,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/data/docker/lib/overlay2/07638c02ee7c6e937c769094b44cd0a3edf588852cdbab202e52b8e7d8198cc6/diff:/data/docker/lib/overlay2/affdc99143905b2f68212a39bd1ce82e23337636b0878141ecbd1a7dff90f137/diff:/data/docker/lib/overlay2/c5aba1dedce02d8516d76a8b6f0191548d3f655a768834056864c5891b441c67/diff:/data/docker/lib/overlay2/b6f3da7be5fb0941d79210e0f0852978730d37f174080962ec3860bc6f617e9c/diff:/data/docker/lib/overlay2/217a4b9596d7147e99f54307b422e0a21d8fb12bd0313b6507e405988e60b2d7/diff",
+                "MergedDir": "/data/docker/lib/overlay2/c1d9499f0f0aea07317209d90d8eefb29caae086416b3ad46f86372ed27da87c/merged",
+                "UpperDir": "/data/docker/lib/overlay2/c1d9499f0f0aea07317209d90d8eefb29caae086416b3ad46f86372ed27da87c/diff",
+                "WorkDir": "/data/docker/lib/overlay2/c1d9499f0f0aea07317209d90d8eefb29caae086416b3ad46f86372ed27da87c/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:d4fc045c9e3a848011de66f34b81f052d4f2c15a17bb196d637e526349601820",
+                "sha256:dddc01ce7e4aa104a1efc1c532b9d3a158d25dacff06f544e0b4759460fa195a",
+                "sha256:3e308ba9f90081c8514f070b533b58340d339073622cc0e42cbbc37b138b0ef3",
+                "sha256:0508b7390945b841e18077b509996dcf479891a56819e85a38e98e4775b13e45",
+                "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
+                "sha256:bfe82ac1cf957b0b85586f9bb75da205bdede2aa09ddf63544a694c00a532a8f"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        },
+        "Config": {
+            "Cmd": null,
+            "Entrypoint": [
+                "java",
+                "-Djava.security.egd=file:/dev/./urandom",
+                "-Dserver.port=8858",
+                "-Dcsp.sentinel.api.port=8719",
+                "-Dcsp.sentinel.dashboard.server=localhost:8858",
+                "-Dproject.name=sentinel-dashboard",
+                "-jar",
+                "app.jar"
+            ],
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "LANG=en_US.UTF-8",
+                "LANGUAGE=en_US:en",
+                "LC_ALL=en_US.UTF-8",
+                "TZ=Etc/UTC",
+                "JAVA_HOME=/usr/lib/jvm/zulu17"
+            ],
+            "ExposedPorts": {
+                "8719/tcp": {},
+                "8858/tcp": {}
+            },
+            "Labels": {
+                "maintainer": "bladejava@qq.com"
+            },
+            "OnBuild": null,
+            "User": "",
+            "Volumes": null,
+            "WorkingDir": "/bladex/sentinel"
+        }
+    }
+]

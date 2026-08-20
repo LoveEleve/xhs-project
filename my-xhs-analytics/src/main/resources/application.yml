@@ -2,6 +2,8 @@ server:
   port: 19003
   shutdown: graceful  # 优雅停机
   tomcat:
+    mbeanregistry:
+      enabled: true  # B3（2026-08-13）：暴露 tomcat.threads 指标
     # Tomcat 线程数按服务特性差异化：网关(入口,IO密集)=300, 库存(锁竞争)=100, 支付(等回调)=100, 其他=150
     threads:
       max: 150
@@ -78,6 +80,8 @@ spring:
       client:
         config:
           default:
+            request-interceptors:
+              - com.myxhs.feign.config.FeignInternalCallInterceptor
             connect-timeout: 500
             read-timeout: 2000
             logger-level: BASIC
@@ -115,10 +119,21 @@ rocketmq:
 
 # Actuator 健康检查 + 指标暴露
 management:
+  metrics:
+    distribution:
+      percentiles-histogram:
+        # 2026-08-13：Hikari Timer 默认无 bucket（仅 count/sum/max）——开启后才有 _bucket，histogram_quantile 可用
+        hikaricp.connections.acquire: true
+        hikaricp.connections.usage: true
+        hikaricp.connections.creation: true
+        # 业务延迟 Timer（2026-08-13：默认无 bucket——开 percentileHistogram 后 histogram_quantile 可用，biz 看板配套）
+        feed.push.latency: true
+        orders.create.latency: true
+        inventory.prededuct.latency: true
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus,metrics,loggers
+        include: health,info,prometheus,metrics
   endpoint:
     health:
       show-details: always
@@ -152,7 +167,7 @@ myxhs:
   admin:
     token: ${ADMIN_TOKEN:}
   internal:
-    token: ${INTERNAL_TOKEN:my-xhs-internal-token-2026}
+    token: ${INTERNAL_TOKEN:}
 
 jwt:
   secret: "MyXhs@2026#JwtSecretKey!ForTokenSign"

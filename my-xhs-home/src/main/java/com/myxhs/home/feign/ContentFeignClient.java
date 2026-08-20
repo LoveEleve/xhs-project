@@ -5,6 +5,8 @@ import com.myxhs.home.feign.fallback.ContentFeignFallbackFactory;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
@@ -22,6 +24,12 @@ public interface ContentFeignClient {
      */
     @GetMapping("/api/note/detail/{id}")
     R<Map<String, Object>> getNoteDetail(@PathVariable("id") Long noteId);
+
+    /**
+     * P2-3: 批量获取笔记详情（Feed 场景）
+     */
+    @PostMapping("/api/note/batch-detail")
+    R<Map<String, Object>> batchGetNoteDetail(@RequestBody java.util.List<Long> noteIds);
 
     /**
      * 评论分页查询

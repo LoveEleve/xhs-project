@@ -3,6 +3,7 @@ package com.myxhs.content;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
@@ -13,6 +14,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  */
 @SpringBootApplication(scanBasePackages = {"com.myxhs.content", "com.myxhs.common"})
 @MapperScan("com.myxhs.content.mapper")
+@EnableFeignClients(basePackages = "com.myxhs.content.feign")
 @EnableScheduling
 public class ContentApplication {
     public static void main(String[] args) {

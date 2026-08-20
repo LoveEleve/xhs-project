@@ -76,6 +76,17 @@ public class PaymentService {
     private final IdGeneratorUtil idGeneratorUtil;
     private final BusinessMetrics businessMetrics;
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+    private final com.myxhs.payment.mapper.PaymentEventMapper paymentEventMapper;
+
+    /** 支付事件落库线程池（可观测性）：DiscardPolicy——事件可容忍丢失，绝不影响资金主流程 */
+    private static final java.util.concurrent.ExecutorService PAYMENT_EVENT_EXECUTOR =
+            new com.myxhs.common.trace.MdcAwareExecutorService(
+                    new java.util.concurrent.ThreadPoolExecutor(
+                            1, 2, 60, java.util.concurrent.TimeUnit.SECONDS,
+                            new java.util.concurrent.LinkedBlockingQueue<>(500),
+                            r -> { Thread t = new Thread(r, "pay-event"); t.setDaemon(true); return t; },
+                            new java.util.concurrent.ThreadPoolExecutor.DiscardPolicy()
+                    ));
 
     /** Lua 脚本：安全释放分布式锁（只释放自己持有的锁） */
     private static final String UNLOCK_SCRIPT =
@@ -206,6 +217,9 @@ public class PaymentService {
             paymentRecordId = payment.getId();
             log.info("[支付] 支付记录已创建: paymentNo={}, orderId={}, amount={}", paymentNo, orderId, amount);
 
+            // 可观测性：支付单创建事件（异步落库，失败不影响资金主流程）
+            recordPaymentEvent(paymentNo, orderId, userId, "CREATE", null, null);
+
             // 4. 设置 Redis 支付状态缓存（用于超时检测定时任务）
             stringRedisTemplate.opsForValue().set(statusKey, "0", PAYING_KEY_TTL);
 
@@ -319,13 +333,16 @@ public class PaymentService {
             return;
         }
 
-        // 更新 Redis 支付状态缓存
-        stringRedisTemplate.opsForValue().set("myxhs:payment:status:" + orderId, "1"); // 永久: 防30min过期后重复支付
+        // 更新 Redis 支付状态缓存（P2-4: 永久 key 无界 → 7 天 TTL，防重窗口内足够，订单状态由 DB 兜底）
+        stringRedisTemplate.opsForValue().set("myxhs:payment:status:" + orderId, "1", java.time.Duration.ofDays(7));
 
         // 删除幂等键（支付完成后允许该订单再次支付，如退款后重新支付）
         stringRedisTemplate.delete(PAYING_KEY_PREFIX + orderId);
 
         log.info("[支付成功] orderId={}, paymentNo={}, tradeNo={}", orderId, paymentNo, tradeNo);
+
+        // 可观测性：支付成功事件（状态已落定后记录）
+        recordPaymentEvent(paymentNo, orderId, userId, "PAY_SUCCESS", null, null);
 
         businessMetrics.recordPaymentCallback("success");
 
@@ -375,6 +392,8 @@ public class PaymentService {
             stringRedisTemplate.opsForValue().set("myxhs:payment:status:" + orderId, "2", PAYING_KEY_TTL);
             stringRedisTemplate.delete(PAYING_KEY_PREFIX + orderId);
             log.info("[支付失败] orderId={}, paymentNo={}", orderId, paymentNo);
+            // 可观测性：支付失败事件（Mock 渠道失败原因：渠道返回失败）
+            recordPaymentEvent(paymentNo, orderId, userId, "PAY_FAIL", "CHANNEL_REJECT", "支付渠道返回失败");
             businessMetrics.recordPaymentCallback("fail");
             sendPayResultMq(orderId, userId, false, null);
             // 同步通知订单服务支付失败
@@ -476,6 +495,10 @@ public class PaymentService {
             refundRecordId = refund.getId();
             log.info("[退款] 退款单已创建: refundNo={}, paymentId={}, refundAmount={}", refundNo, paymentId, refundAmount);
 
+            // 可观测性：退款事件（状态落定后记录）
+            recordPaymentEvent(payment.getPaymentNo(), payment.getOrderId(), userId, "REFUND",
+                    null, request.getReason());
+
             // 5. 通过策略模式调用对应支付渠道的退款
             PayChannelStrategy strategy = payChannelStrategyMap.get(payment.getPayType());
             if (strategy == null) {
@@ -484,9 +507,11 @@ public class PaymentService {
             String refundTradeNo = strategy.refund(paymentId, refundNo, refundAmount, request.getReason());
             log.info("[退款] 退款请求已发送: refundNo={}, refundTradeNo={}", refundNo, refundTradeNo);
 
-            // 6. Mock 模式：同步标记退款成功
+            // 6. Mock 模式：同步标记退款成功；异步渠道：注册退款回调模拟器（T-075 闭环）
             if (isMockMode(payment.getPayType())) {
                 handleRefundSuccessInternal(refundNo);
+            } else {
+                callbackSimulator.registerRefundCallback(refundNo);
             }
 
             return R.ok();
@@ -560,11 +585,21 @@ public class PaymentService {
         // 2. 查询退款单详情（获取关联的支付单信息）
         Refund refund = findByRefundNo(refundNo);
 
-        // 3. 更新支付单状态为"已退款"
-        paymentJdbcTemplate.update(
-                "UPDATE t_payment SET status = ?, updated_at = ? WHERE id = ? AND deleted = 0",
-                STATUS_REFUNDED, LocalDateTime.now(), refund.getPaymentId()
-        );
+        // 3. 更新支付单状态（T-076：仅"累计退款=支付金额"时置 3 已退款；部分退款保持 1 继续可退）
+        //    原实现无条件置 3 → 部分退款后剩余金额不可再退（30009 支付单状态不允许退款）
+        java.math.BigDecimal refundedTotal = getRefundedAmount(refund.getPaymentId());
+        java.math.BigDecimal paymentAmount = paymentJdbcTemplate.queryForObject(
+                "SELECT amount FROM t_payment WHERE id = ? AND deleted = 0",
+                java.math.BigDecimal.class, refund.getPaymentId());
+        if (paymentAmount != null && refundedTotal.compareTo(paymentAmount) >= 0) {
+            paymentJdbcTemplate.update(
+                    "UPDATE t_payment SET status = ?, updated_at = ? WHERE id = ? AND deleted = 0",
+                    STATUS_REFUNDED, LocalDateTime.now(), refund.getPaymentId()
+            );
+        } else {
+            log.info("[退款成功] 部分退款(累计{}<支付{}), 支付单保持已支付: paymentId={}",
+                    refundedTotal, paymentAmount, refund.getPaymentId());
+        }
 
         // 4. 清理 Redis
         stringRedisTemplate.delete(REFUNDING_KEY_PREFIX + refund.getPaymentId());
@@ -572,8 +607,23 @@ public class PaymentService {
 
         log.info("[退款成功] refundNo={}, paymentId={}, orderId={}", refundNo, refund.getPaymentId(), refund.getOrderId());
 
-        // 5. 发送退款成功消息到 MQ（订单服务消费后触发：恢复库存 + 退还优惠券 + 更新订单状态为"已退款"）
-        sendRefundResultMq(refund.getOrderId(), refund.getUserId(), true, refundNo);
+        // 5. T-076/T-077：仅全额退款才通知订单（REFUND_SUCCESS → 订单 5 + 释放库存）；
+        //    T-077：order 无 REFUND_RESULT_TOPIC 消费者（支付成功走 Feign 同步、退款原仅 MQ）→
+        //    全额退款补 Feign 直调 notifyRefundSuccess（与支付成功对称）；部分退款不通知订单
+        if (paymentAmount != null && refundedTotal.compareTo(paymentAmount) >= 0) {
+            sendRefundResultMq(refund.getOrderId(), refund.getUserId(), true, refundNo);
+            try {
+                R<Void> nr = orderFeignClient.notifyRefundSuccess(refund.getOrderId(), refundNo);
+                if (nr == null || !nr.isSuccess()) {
+                    log.error("[退款成功] Feign通知订单失败(MQ无消费端,订单状态可能滞留): orderId={}, resp={}",
+                            refund.getOrderId(), nr);
+                }
+            } catch (Exception e) {
+                log.error("[退款成功] Feign通知订单异常(订单状态可能滞留): orderId={}", refund.getOrderId(), e);
+            }
+        } else {
+            log.info("[退款成功] 部分退款，不通知订单状态变更: orderId={}", refund.getOrderId());
+        }
     }
 
     /**
@@ -618,23 +668,45 @@ public class PaymentService {
         }
 
         try {
-            // SCAN 扫描所有 status key，对 status=0(支付中) 的检查是否超时
-            // 修复: 原 Lua GET 将通配符 "myxhs:payment:status:*" 当字面量, 永远返回 nil
-            long timeout = System.currentTimeMillis() - PAY_TIMEOUT_MS;
-            Long result = 0L;
-            java.util.Set<String> keys = stringRedisTemplate.keys("myxhs:payment:status:*");
-            if (keys != null && !keys.isEmpty()) {
-                for (String key : keys) {
-                    Long singleResult = stringRedisTemplate.execute(paymentTimeoutScript,
-                            java.util.Collections.singletonList(key),
-                            String.valueOf(timeout), String.valueOf(System.currentTimeMillis()));
-                    if (singleResult != null) result += singleResult;
+            // T-062（2026-08-14）：原实现 SCAN 扫 status key + Lua now>timeoutTs 恒真判定——
+            // ① status key TTL=30min 到点即消失，真正超时单扫不到；
+            // ② 未超时的 status=0 单（刚创建）会被提前误标 '2'；
+            // ③ 只改 Redis，DB t_payment 永远 0（状态不一致）。
+            // 改为 DB 扫描（与 checkRefundTimeout/orderCloseJob 同模式）：
+            //   扫 status=0 AND created_at < now-30min → 乐观锁置 2 + Redis 同步 + TIMEOUT 事件
+            java.time.LocalDateTime deadline = LocalDateTime.now()
+                    .minus(PAY_TIMEOUT_MS, java.time.temporal.ChronoUnit.MILLIS);
+            int totalMarked = 0;
+            while (true) {
+                java.util.List<java.util.Map<String, Object>> rows = paymentJdbcTemplate.queryForList(
+                        "SELECT id, order_id, user_id, payment_no FROM t_payment " +
+                                "WHERE status = ? AND created_at < ? AND deleted = 0 LIMIT 100",
+                        STATUS_PENDING, deadline);
+                if (rows.isEmpty()) {
+                    break;
+                }
+                for (java.util.Map<String, Object> row : rows) {
+                    Long pid = ((Number) row.get("id")).longValue();
+                    Long orderId = ((Number) row.get("order_id")).longValue();
+                    Long uid = ((Number) row.get("user_id")).longValue();
+                    String paymentNo = (String) row.get("payment_no");
+                    int updated = paymentJdbcTemplate.update(
+                            "UPDATE t_payment SET status = ?, updated_at = ? WHERE id = ? AND status = ? AND deleted = 0",
+                            STATUS_FAIL, LocalDateTime.now(), pid, STATUS_PENDING);
+                    if (updated > 0) {
+                        stringRedisTemplate.opsForValue()
+                                .set("myxhs:payment:status:" + orderId, "2", PAYING_KEY_TTL);
+                        recordPaymentEvent(paymentNo, orderId, uid, "TIMEOUT",
+                                "PAY_TIMEOUT", "支付超时未完成");
+                        totalMarked++;
+                        log.info("[支付超时检查] 标记超时: paymentId={}, orderId={}", pid, orderId);
+                    }
+                }
+                if (rows.size() < 100) {
+                    break;
                 }
             }
-            log.info("[支付超时检查] 完成: pendingCount={}, timeoutCount={}", 
-                    keys != null ? keys.size() : 0, result);
-
-            log.debug("[支付超时检查] 扫描完成: result={}", result);
+            log.info("[支付超时检查] 完成: 标记超时 {} 单", totalMarked);
         } finally {
             // Lua 安全释放锁（只释放自己持有的锁，防止误删其他实例的锁）
             safeUnlock(lockKey, lockValue);
@@ -1050,6 +1122,45 @@ public class PaymentService {
             log.info("[退款结果MQ] 发送成功: topic={}, tag={}, orderId={}", topic, tag, orderId);
         } catch (Exception e) {
             log.error("[退款结果MQ] 发送失败: orderId={}", orderId, e);
+        }
+    }
+
+    /**
+     * 记录支付事件流水（append-only 可观测性，异步落库）
+     * <p>
+     * 仅记录已落定的状态变化；独立线程池 + DiscardPolicy + try-catch——
+     * 事件失败绝不影响资金主流程（不阻塞、不回滚、不重试）。
+     * </p>
+     *
+     * @param paymentNo 支付流水号
+     * @param orderId   订单ID
+     * @param userId    用户ID
+     * @param eventType CREATE / PAY_SUCCESS / PAY_FAIL / REFUND
+     * @param errorCode 失败原因码（成功事件为 null）
+     * @param errorMsg  失败原因/备注（成功事件为 null）
+     */
+    private void recordPaymentEvent(String paymentNo, Long orderId, Long userId,
+                                    String eventType, String errorCode, String errorMsg) {
+        try {
+            PAYMENT_EVENT_EXECUTOR.submit(() -> {
+                try {
+                    com.myxhs.payment.entity.PaymentEvent ev = new com.myxhs.payment.entity.PaymentEvent();
+                    ev.setId(idGeneratorUtil.nextId());
+                    ev.setPaymentNo(paymentNo);
+                    ev.setOrderId(orderId);
+                    ev.setUserId(userId);
+                    ev.setEventType(eventType);
+                    ev.setErrorCode(errorCode);
+                    ev.setErrorMsg(errorMsg != null && errorMsg.length() > 200 ? errorMsg.substring(0, 200) : errorMsg);
+                    ev.setEventTime(LocalDateTime.now());
+                    paymentEventMapper.insert(ev);
+                    log.info("[支付事件] 落库: paymentNo={}, eventType={}", paymentNo, eventType);
+                } catch (Exception e) {
+                    log.warn("[支付事件] 事件落库失败(可容忍): paymentNo={}, eventType={}", paymentNo, eventType, e);
+                }
+            });
+        } catch (Exception e) {
+            log.warn("[支付事件] 事件提交失败(可容忍): paymentNo={}, eventType={}", paymentNo, eventType);
         }
     }
 }

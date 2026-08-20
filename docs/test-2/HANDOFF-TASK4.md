@@ -8,11 +8,12 @@
 ## 零、当前状态速览
 
 ```
-15 微服务 UP（本机 21.214.97.212 开发容器内） | 中间件 22 容器（远程机 21.130.247.89，无 docker/ssh 权限）
+15 微服务 UP（本机 21.214.97.212 开发容器内） | 中间件 25 容器（远程机 21.130.247.89，无 docker/ssh 权限）
 应用层 P0×4+P1×5+O1+O2 已修复闭环 | 生产配置发现 34 项（P-D1~D29+P-T1~T5+P-B1~B3）未修复
 云部署包已改造（config/ 下，上传即用，含 restart:always/healthcheck/建表补全）
+【2026-08-12 补包】P-D30 部署包一致性+P-D31 Nacos配置固化+P-B4 令牌fail-closed+FIX-PLAN零代码修复全量落位（详见 review-production-config.md §十四/§十五）
 【用户最新指示】部署优先级最高：先在远程服务器试验成功 → 后上传云主机。不代为部署，由用户上传。
-Token→/tmp/test_token.txt | 凭据: Xhs@2026#* / ADMIN_TOKEN / INTERNAL_TOKEN
+Token→/tmp/test_token.txt | 凭据: Xhs@2026#* / ADMIN_TOKEN / INTERNAL_TOKEN（已随机化，见 .secrets/tokens.env）
 ```
 
 ### 环境拓扑（重要）
@@ -119,7 +120,9 @@ Token→/tmp/test_token.txt | 凭据: Xhs@2026#* / ADMIN_TOKEN / INTERNAL_TOKEN
 
 ## 四、云部署包状态（下一个 AI 注意）
 
-- **部署源已就绪**：`config/`（compose+全套配置+sql）+ `config/deploy-cloud/DEPLOY-README.md`。
+- **部署源已就绪**：`config/`（compose+全套配置+sql+nacos 固化配置）+ `config/deploy-cloud/DEPLOY-README.md`。
+- **【2026-08-12 补包】**：deploy-cloud/docker-compose.yml 已与运行版基线同步（P-D30）；FIX-PLAN 零代码修复已全量落位（P-D3/15/16/26/8/T4/时区/D13/D6/T3/D4 入 compose/prometheus，P-D14/19/20/7/22/10/2 转运维脚本）；Nacos 3 配置固化 config/nacos/（P-D31）。**待办：P-D1/P-D5 第二批未入包（需微服务联动），部署时至少改 Nacos 默认密码+收紧安全组。**
+- **微服务侧已改未重启**：P-B4（INTERNAL_TOKEN fail-closed+随机化）、P-D32（sql-show:false）——需重打包重启 12+ 服务，**重启窗口与远程部署协同，等用户指示**。
 - **云主机前置**：JDK17/8（/opt/kona-jdk17、/opt/kona-jdk8）、canal 自定义镜像 docker load、**EIP（必须，按量计费关机 IP 会变）**、docker 镜像加速、ES IK 外网、systemctl enable docker。
 - **部署后需做**：Nacos 导入 my-xhs 命名空间 3 个配置（common/gateway/redis）、Sentinel Dashboard 手动导入 config/sentinel/*.json 规则（16 服务，compose 不自动加载）、从库 SHOW REPLICA STATUS 验证。
 - 本机（开发容器）无 docker/中间件权限——**中间件侧改动只能给用户脚本，无法直接执行**。

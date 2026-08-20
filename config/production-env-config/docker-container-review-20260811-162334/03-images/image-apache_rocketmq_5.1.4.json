@@ -1,0 +1,83 @@
+[
+    {
+        "Id": "sha256:f14b643f5d86369b50362c0039938cf0346f451b559d95f4f2c530083f9e579f",
+        "RepoTags": [
+            "apache/rocketmq:5.1.4"
+        ],
+        "RepoDigests": [
+            "apache/rocketmq@sha256:e1f54ca3e936545ef43b1b22743bda97f343bd6b13714b48d8c82b6e9148ebe9"
+        ],
+        "Parent": "",
+        "Comment": "",
+        "Created": "2023-10-17T14:48:32.762063446Z",
+        "DockerVersion": "19.03.1",
+        "Author": "",
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 748200642,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/data/docker/lib/overlay2/429c8dbf81b06fba9c42aa6ad7eca00d5ab1cb5023ad3ae43cd367061b49f5a1/diff:/data/docker/lib/overlay2/d48dbaabee90bc95e22a0784102aa175fd524d232be1aa3b934644478d505c4b/diff:/data/docker/lib/overlay2/55bbbe1ba7df46ad784d123845810f7fdbd0f2670f3c32bd98df60a16a172eaf/diff:/data/docker/lib/overlay2/b856b4ecfa30e33c75eeb86ec8259ffdef275b759a455691939351db49ff511a/diff:/data/docker/lib/overlay2/0cdb7d49cfb4231508cf66662459ee73480ef69f32044021bb79349f1e27be84/diff:/data/docker/lib/overlay2/5b731089b62c041260be567d35d0ab1f1d490b243f9bd33cc99785615b23ab96/diff:/data/docker/lib/overlay2/18babfbac29a89312b88ce796c33824715b564517a76c824345f2c456a679110/diff",
+                "MergedDir": "/data/docker/lib/overlay2/cee544999c62d489018465462ac87391462d8780544204a59321fb5cb5a3ec06/merged",
+                "UpperDir": "/data/docker/lib/overlay2/cee544999c62d489018465462ac87391462d8780544204a59321fb5cb5a3ec06/diff",
+                "WorkDir": "/data/docker/lib/overlay2/cee544999c62d489018465462ac87391462d8780544204a59321fb5cb5a3ec06/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:174f5685490326fc0a1c0f5570b8663732189b327007e47ff13d2ca59673db02",
+                "sha256:9269874c166b9ce360d9aaacd2e8271f4cc06a671b4a8846adbd64a194fb9bdb",
+                "sha256:37f90f6b4939e8e5774e46d980f583d4a6340f09618962e26c937455ceb05c4f",
+                "sha256:d89454ec7c49acc4bfe3e927be09e3cbec2d3175f07650e8e5f9023cf14fe6a6",
+                "sha256:7909075787331d58546218c0d13e6adee88fec57a6ccee4f7011b031ccbbbb2f",
+                "sha256:9ebb1f770d7b2ca393b2d8a799bad22402bb65906b9b853398cbb5510e2a4981",
+                "sha256:36b919d913cc3a71ad10690a48a0c35ece57d5ed09a669b89fe1eebeb66a6087",
+                "sha256:7a4b165a4da4a6279581f7164463de1f4c2a9ddba0967d7276595a9e36c29bff"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        },
+        "Config": {
+            "Cmd": [
+                "dummy"
+            ],
+            "Entrypoint": [
+                "./docker-entrypoint.sh"
+            ],
+            "Env": [
+                "PATH=/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "JAVA_HOME=/opt/java/openjdk",
+                "LANG=en_US.UTF-8",
+                "LANGUAGE=en_US:en",
+                "LC_ALL=en_US.UTF-8",
+                "JAVA_VERSION=jdk8u372-b07",
+                "ROCKETMQ_VERSION=5.1.4",
+                "ROCKETMQ_HOME=/home/rocketmq/rocketmq-5.1.4"
+            ],
+            "ExposedPorts": {
+                "10909/tcp": {},
+                "10911/tcp": {},
+                "10912/tcp": {},
+                "9876/tcp": {}
+            },
+            "Labels": {
+                "org.label-schema.build-date": "20201113",
+                "org.label-schema.license": "GPLv2",
+                "org.label-schema.name": "CentOS Base Image",
+                "org.label-schema.schema-version": "1.0",
+                "org.label-schema.vendor": "CentOS",
+                "org.opencontainers.image.created": "2020-11-13 00:00:00+00:00",
+                "org.opencontainers.image.licenses": "GPL-2.0-only",
+                "org.opencontainers.image.title": "CentOS Base Image",
+                "org.opencontainers.image.vendor": "CentOS"
+            },
+            "OnBuild": null,
+            "User": "rocketmq",
+            "Volumes": null,
+            "WorkingDir": "/home/rocketmq/rocketmq-5.1.4/bin"
+        }
+    }
+]

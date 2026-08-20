@@ -1,59 +1,50 @@
-# my-xhs 全链路测试
+# my-xhs 文档地图（docs/test-2）
 
-> 交接文档：[HANDOFF-20260808.md](HANDOFF-20260808.md)（v7 FINAL，106/155）
-> 测试方法论：[methodology/TEST-METHODOLOGY.md](methodology/TEST-METHODOLOGY.md)（v2.0 分层验证 L1→L4）
-> 执行计划：[plans/FULL-CHAIN-RETEST-PLAN.md](plans/FULL-CHAIN-RETEST-PLAN.md)（七链逐端点 curl + 155端点覆盖映射）
-> 执行记录：[execution/](execution/)（按服务子目录，旧版归档至 `_archive/`）
-> 业务分析：[service-analysis/](service-analysis/)（16服务代码审查文档，120+文件）
-> 旧版交接：[HANDOFF-20260807-FINAL.md](HANDOFF-20260807-FINAL.md)（已被取代）
+> 2026-08-12 整理 | 本目录为项目全部工作文档。**当前唯一入口：HANDOFF-TASK4.md**。
+> 旧文档已归档至 `_archive/task2-era/`（Task2 时代交接/review/测试计划，代码已大改，仅历史参考）。
 
 ---
 
-## 新 AI 阅读顺序
+## 一、当前有效文档（按阅读顺序）
 
-```
-1. HANDOFF-20260808.md          ← 先读：基础设施 + 覆盖表 + §八 极简启动
-2. methodology/TEST-METHODOLOGY.md  ← 二读：分层验证模型(L1→L4) + 9透镜
-3. plans/FULL-CHAIN-RETEST-PLAN.md  ← 三读：逐端点 curl 命令 + 七层验证
-4. execution/README.md          ← 执行索引(进度+文件清单)
-5. execution/pitfalls.md        ← 踩坑速查(22项+17条预防)
-```
+| 顺序 | 文档 | 内容 | 状态 |
+|:--:|---|---|---|
+| 1 | **HANDOFF-TASK4.md** | 当前交接（生产配置深挖+云部署改造+全部待办）| ✅ 有效（更新至 2026-08-12）|
+| 2 | **HANDOFF-TASK3.md** | Task3 交接（代码审查+修复闭环背景）| ✅ 有效（背景参考）|
+| 3 | **review-fresh/review-consolidated.md** | 代码 fresh review 汇总（P0/P1/P2/O1/O2 + 修复进度表）| ✅ 有效 |
+| 4 | **review-fresh/review-production-config.md** | 生产配置/架构 review（P-D1~D42 + P-T1~T5 + P-B1~B4 + A1~A10 + 二十轮深挖）| ✅ 有效（最全）|
+| 5 | **review-fresh/review-<module>.md** | 15 个模块逐篇 review | ✅ 有效（15 篇）|
+| 6 | **FIX-PLAN-PRODUCTION-CONFIG.md** | 生产配置修复方案（分批次）| ✅ 有效（多数已执行，见 §十五/§二十）|
+| 7 | **DEPLOY-CLOUD-GUIDE.md** | 中间件云主机部署操作清单 | ✅ 有效（部署包配套见 `config/deploy-cloud/DEPLOY-README.md`）|
+| 8 | **TEST-REFERENCE-V2.md** | 测试参考（端点/覆盖基准）| ✅ 有效 |
+| 9 | **execution/pitfalls.md** | 踩坑记录（#1~#78，含修复验证与教训）| ✅ 有效（持续追加）|
+| 10 | **methodology/** | 测试方法论（TEST-METHODOLOGY + L2/L3 补充）| ✅ 有效 |
+| 11 | **execution/README.md** | 测试执行索引 | ✅ 有效 |
 
----
+## 二、代码理解参考（标注"可能过时"）
 
-## 快速启动
+| 目录 | 内容 | 注意 |
+|---|---|---|
+| `service-analysis/` | 16 服务代码分析（120+ 文件，01-user ~ 16-gateway）| ⚠️ 已标注（目录内 README.md）：代码经多轮修复，**仅作架构理解参考，结论以 review-fresh 为准** |
+| `business-docs/` | 业务设计文档（212 文件，按模块）| ⚠️ 已标注（目录内 README.md）：接口约定可能已变更，**以代码为准** |
+| `engineering-docs/` | 工程实践文档（9 文件）| ⚠️ 已标注（目录内 README.md）：部署/监控/安全类已过时，按文件对照最新结论 |
+| `_archive/task2-era/` | 旧交接/旧 review/旧测试计划（12 文件 + plans/）| 仅历史存档 |
 
-```bash
-# 1. 确认 16 服务
-ps aux | grep "my-xhs-" | grep java | grep -v grep | wc -l  # 应≈16
+## 三、部署/配置相关（代码库内，非 docs）
 
-# 2. XXL-Job（jobGroup=1）
-curl -c /tmp/xxl_cookie -s -X POST "http://21.130.247.89:18080/xxl-job-admin/login" \
-  -d "userName=admin&password=123456"
+| 位置 | 内容 |
+|---|---|
+| `config/deploy-cloud/DEPLOY-README.md` | **云部署说明（上传清单/前置/EIP/部署步骤/脚本清单）** |
+| `config/deploy-cloud/*.sh` `*.sql` | 部署后运维脚本（apply-ilm/mysql-backup/init-xxljob/ops-fixes/remote-upgrade）|
+| `config/nacos/` | Nacos 3 配置固化文件 |
+| `config/docker-compose.yml` | 25 容器编排（最终版）|
+| `my-xhs-deploy-package.zip` | **最终部署包（云主机部署源）** |
+| `setup-firewall.sh` | 主机防火墙脚本（已对齐当前端口）|
 
-# 3. JWT（注意：testuser密码已失效，用 mytestuser）
-curl -s http://localhost:19000/api/user/auth/captcha > /tmp/cap.json
-KEY=$(python3 -c "import json; print(json.load(open('/tmp/cap.json'))['data']['captchaKey'])")
-CODE=$(grep "$KEY" /tmp/r_user.log | tail -1 | grep -oP 'code=\K\w+')
-TOKEN=$(curl -s http://localhost:19000/api/user/auth/login \
-  -H 'Content-Type: application/json' \
-  -d "{\"username\":\"mytestuser\",\"password\":\"Test@123456\",\"captchaKey\":\"$KEY\",\"captchaCode\":\"$CODE\"}" \
-  | python3 -c "import json,sys; print(json.load(sys.stdin)['data']['accessToken'])")
-echo "$TOKEN" > /tmp/test_token.txt
-```
+## 四、当前状态速览（2026-08-12）
 
-## 基础设施速查
-
-| 工具 | 地址 | 凭据/说明 |
-|------|------|------|
-| Gateway | localhost:19000 | JWT `cat /tmp/test_token.txt` |
-| MySQL | 21.130.247.89:13306-13309 | root/Xhs@2026#MySQL（远程无CREATE权限） |
-| Redis | 21.130.247.89:**16379** | Xhs@2026#Redis（Sentinel主节点，非16381） |
-| ES | 21.130.247.89:19200 | elastic/Xhs@2026#Elastic |
-| Nacos | 21.130.247.89:18848 | nacos/nacos |
-| XXL-Job | 21.130.247.89:18080 | admin/123456（jobGroup=1） |
-| SkyWalking | 21.130.247.89:8080 | — |
-| Prometheus | 21.130.247.89:19090 | — |
-| Kibana | 21.130.247.89:15601 | elastic/Xhs@2026#Elastic |
-| Admin Token | Header: X-Admin-Call | `my-xhs-admin-token-2026` |
-| Test User | mytestuser / Test@123456 | ID: 2085927845755985922 |
+- **中间件**：试验机 25 容器部署成功（对方修复 8 处部署包 bug 已合并回本地）
+- **微服务**：15 个本机运行（新代码：P0/P1/P2 全修 + P-B4/P-D32/39/42 + loggers 关闭）
+- **代码问题**：全部清零（含 P2 批量修复，测试脚本待跑回归）
+- **待办**：① 全链路回归测试（脚本已修复就绪）② 云主机部署 ③ 微服务迁 Ubuntu VM
+- **用户明确不搞**：Nacos 鉴权/密码随机化/告警渠道/Sentinel 口令/HA 增强

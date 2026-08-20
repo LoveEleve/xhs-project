@@ -94,6 +94,14 @@ public class NoteController {
     }
 
     /**
+     * 批量获取笔记详情（P2-3: Feed 场景一次取多篇，避免逐条 HTTP）
+     */
+    @PostMapping("/batch-detail")
+    public R<Map<Long, NoteDetailVO>> batchGetNoteDetail(@RequestBody java.util.List<Long> noteIds) {
+        return R.ok(noteService.batchGetNoteDetail(noteIds));
+    }
+
+    /**
      * 获取指定用户的笔记列表（公开接口，仅已发布）
      */
     @GetMapping("/user/{userId}")

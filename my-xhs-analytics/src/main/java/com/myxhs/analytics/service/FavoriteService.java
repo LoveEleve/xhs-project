@@ -2,6 +2,8 @@ package com.myxhs.analytics.service;
 
 import com.myxhs.analytics.dto.event.FavoriteEvent;
 import com.myxhs.common.constants.RedisKeyConstants;
+import com.myxhs.common.exception.BizException;
+import com.myxhs.common.response.ResultCode;
 import com.myxhs.common.trace.MqTraceHelper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,6 +41,7 @@ public class FavoriteService {
     private final ObjectMapper objectMapper;
     private final DefaultRedisScript<Long> favoriteAtomicScript;
     private final DefaultRedisScript<Long> unfavoriteAtomicScript;
+    private final com.myxhs.analytics.feign.ContentFeignClient contentFeignClient;
 
     /** 收藏列表最大返回条数 */
     private static final int MAX_PAGE_SIZE = 50;
@@ -55,6 +58,10 @@ public class FavoriteService {
      * @param noteId 笔记ID
      */
     public void favorite(Long userId, Long noteId) {
+        // T-116 修复：校验失败抛业务码（对照 T-103 like 修复——原静默 return 200"收藏成功"但无效果，误导客户端）
+        if (!validateNote(noteId)) {
+            throw new BizException(ResultCode.NOT_FOUND, "笔记不存在或未发布");
+        }
         String key = RedisKeyConstants.FAVORITE_SET + userId;
         long currentTime = System.currentTimeMillis();
 
@@ -103,7 +110,7 @@ public class FavoriteService {
         log.info("[收藏] 取消收藏成功: userId={}, noteId={}", userId, noteId);
 
         // MQ 同步删除 + 通知计数服务（失败则回滚 Redis，用原始 score 恢复）
-        if (!sendFavoriteEvent(userId, noteId, "UNFAVORITE", 0)) {
+        if (!sendFavoriteEvent(userId, noteId, "UNFAVORITE", System.currentTimeMillis())) {
             // 回滚 ZADD 恢复（使用原始 score 而非当前时间，避免排序跳变）
             long rollbackScore = originalScore != null ? originalScore.longValue() : System.currentTimeMillis();
             stringRedisTemplate.opsForZSet().add(key, String.valueOf(noteId), rollbackScore);
@@ -172,6 +179,23 @@ public class FavoriteService {
     }
 
     // ==================== 私有方法 ====================
+
+    /**
+     * O-Like-3：收藏前笔记存在性校验（batch-detail 降级跳过）
+     */
+    private boolean validateNote(Long noteId) {
+        try {
+            com.myxhs.common.response.R<Map<String, Object>> r =
+                    contentFeignClient.batchGetNoteDetail(java.util.List.of(noteId));
+            if (r == null || !r.isSuccess() || r.getData() == null) {
+                return false;
+            }
+            return r.getData().get(String.valueOf(noteId)) instanceof Map;
+        } catch (Exception e) {
+            log.error("[收藏] 目标校验异常(拒绝写入): noteId={}", noteId, e);
+            throw new BizException(ResultCode.SERVICE_UNAVAILABLE, "内容服务暂不可用，请稍后重试");
+        }
+    }
 
     /**
      * 同步发送收藏/取消收藏事件到 MQ

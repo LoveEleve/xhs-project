@@ -87,11 +87,16 @@ export default function MyNotesPage() {
         list.map(note => {
           const meta = NOTE_STATUS_MAP[note.status] || { label: '未知', color: '#999' };
           return (
-            <Card key={note.id} style={{ marginBottom: 12 }} size="small">
+            <Card key={note.id} style={{ marginBottom: 12 }} size="small"
+              hoverable onClick={() => navigate(`/note/${note.id}`)}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                <img src={note.firstImage || note.coverUrl || ''} alt=""
-                  style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, background: '#f0f0f0' }}
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                {note.firstImage || note.coverUrl ? (
+                  <img src={note.firstImage || note.coverUrl} alt=""
+                    style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 8, background: '#f0f0f0' }}
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                ) : (
+                  <div style={{ width: 72, height: 72, borderRadius: 8, background: '#f0f0f0' }} />
+                )}
                 <div style={{ flex: 1 }}>
                   <div style={{ fontWeight: 500 }}>{note.title || '（无标题）'}</div>
                   <div style={{ color: '#999', fontSize: 12, marginTop: 4 }}>

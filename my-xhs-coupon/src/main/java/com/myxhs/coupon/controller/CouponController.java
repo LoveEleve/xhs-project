@@ -46,9 +46,14 @@ public class CouponController {
 
     /**
      * 创建优惠券模板
+     * <p>
+     * T-129（2026-08-16）：补 @Idempotent 10s——修复前同参数快速重发创建多个重复模板
+     * （G4 登记观察项，对照 product createSpu 的 10s 幂等）
+     * </p>
      */
     @PostMapping("/template")
     @RateLimit(prefix = "myxhs:coupon:createTpl", maxRequests = 5, windowSeconds = 60)
+    @com.myxhs.common.annotation.Idempotent(key = "'template:create:' + #request.name + ':' + #request.type", expireSeconds = 10)
     public R<CouponTemplateVO> createTemplate(
             @Valid @RequestBody CreateTemplateRequest request,
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {

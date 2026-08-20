@@ -2,12 +2,15 @@ package com.myxhs.coupon.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.myxhs.common.exception.BizException;
 import com.myxhs.coupon.dto.request.ClaimCouponRequest;
 import com.myxhs.coupon.dto.request.CreateTemplateRequest;
+import com.myxhs.coupon.dto.request.ReturnCouponRequest;
 import com.myxhs.coupon.dto.response.UserCouponVO;
 import com.myxhs.coupon.entity.CouponTemplate;
 import com.myxhs.coupon.entity.UserCoupon;
+import com.myxhs.coupon.mapper.CouponOutboxMapper;
 import com.myxhs.coupon.mapper.CouponTemplateMapper;
 import com.myxhs.coupon.mapper.UserCouponMapper;
 import com.myxhs.coupon.validator.CouponValidator;
@@ -66,6 +69,7 @@ class CouponServiceTest {
     private CouponValidator couponValidator;
 
     private ObjectMapper objectMapper;
+    private CouponOutboxMapper couponOutboxMapper;
     private CouponService couponService;
 
     private static final Long USER_ID = 1001L;
@@ -74,12 +78,14 @@ class CouponServiceTest {
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper();
+        objectMapper.registerModule(new JavaTimeModule());
         List<CouponValidator> validators = Collections.singletonList(couponValidator);
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        couponOutboxMapper = mock(CouponOutboxMapper.class);
         couponService = new CouponService(
                 stringRedisTemplate, rocketMQTemplate,
                 templateMapper, userCouponMapper,
-                mock(com.myxhs.coupon.mapper.CouponOutboxMapper.class),
+                couponOutboxMapper,
                 mock(com.myxhs.common.id.IdGeneratorUtil.class),
                 objectMapper,
                 claimCouponScript, returnCouponScript,
@@ -158,6 +164,38 @@ class CouponServiceTest {
         assertThatThrownBy(() -> couponService.claimCoupon(USER_ID, request))
                 .isInstanceOf(BizException.class)
                 .hasMessageContaining("已达限领上限");
+    }
+
+    @Test
+    @DisplayName("退券 - afterCommit Redis失败时发送补偿消息")
+    void returnCoupon_afterCommitRedisFailure_sendsRepairMessage() {
+        UserCoupon userCoupon = new UserCoupon();
+        userCoupon.setId(11L);
+        userCoupon.setUserId(USER_ID);
+        userCoupon.setCouponId(TEMPLATE_ID);
+        when(userCouponMapper.selectById(11L)).thenReturn(userCoupon);
+        when(userCouponMapper.returnCoupon(11L, 9001L)).thenReturn(1);
+        when(templateMapper.incrementRemainCount(TEMPLATE_ID)).thenReturn(1);
+        when(stringRedisTemplate.execute(eq(returnCouponScript), anyList())).thenThrow(new RuntimeException("redis down"));
+        SendResult sendResult = new SendResult();
+        sendResult.setSendStatus(SendStatus.SEND_OK);
+        when(rocketMQTemplate.syncSend(eq("COUPON_RETURN_REDIS_REPAIR_TOPIC"), any(Message.class), eq(3000L)))
+                .thenReturn(sendResult);
+
+        ReturnCouponRequest request = new ReturnCouponRequest();
+        request.setUserCouponId(11L);
+        request.setOrderId(9001L);
+
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            couponService.returnCoupon(USER_ID, request);
+            org.springframework.transaction.support.TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(org.springframework.transaction.support.TransactionSynchronization::afterCommit);
+        } finally {
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+        }
+
+        verify(rocketMQTemplate).syncSend(eq("COUPON_RETURN_REDIS_REPAIR_TOPIC"), any(Message.class), eq(3000L));
     }
 
     // ==================== 查询用户优惠券 ====================

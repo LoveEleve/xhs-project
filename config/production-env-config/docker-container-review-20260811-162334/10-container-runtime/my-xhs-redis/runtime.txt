@@ -1,0 +1,21 @@
+Tue Aug 11 08:37:49 UTC 2026
+---
+core file size (blocks)         (-c) unlimited
+data seg size (kb)              (-d) unlimited
+scheduling priority             (-e) 0
+file size (blocks)              (-f) unlimited
+pending signals                 (-i) 251961
+max locked memory (kb)          (-l) 8192
+max memory size (kb)            (-m) unlimited
+open files                      (-n) 1048576
+POSIX message queues (bytes)    (-q) 819200
+real-time priority              (-r) 0
+stack size (kb)                 (-s) 8192
+cpu time (seconds)              (-t) unlimited
+max user processes              (-u) unlimited
+virtual memory (kb)             (-v) unlimited
+file locks                      (-x) unlimited
+---
+0::/
+50000 100000
+402653184

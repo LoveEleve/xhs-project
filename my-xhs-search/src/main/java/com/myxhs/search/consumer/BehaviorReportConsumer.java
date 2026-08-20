@@ -50,9 +50,8 @@ public class BehaviorReportConsumer implements RocketMQListener<MessageExt> {
             Integer behaviorType = toInt(event.get("behaviorType"));
             Integer duration = toInt(event.get("duration"));
 
-            if (userId == null || noteId == null || behaviorType == null) {
-                log.warn("[推荐行为] 消息格式异常，跳过: msgId={}", msg.getMsgId());
-                return;
+            if (id == null || userId == null || noteId == null || behaviorType == null) {
+                throw new IllegalArgumentException("行为消息缺少必填字段");
             }
 
             jdbcTemplate.update(
@@ -67,8 +66,9 @@ public class BehaviorReportConsumer implements RocketMQListener<MessageExt> {
                     userId, noteId, behaviorType);
 
         } catch (Exception e) {
-            log.error("[推荐行为] 消费异常: mqMsgId={}", msg.getMsgId(), e);
-            // 不抛异常，避免无限重试。行为数据允许少量丢失。
+            log.error("[推荐行为] 消费异常，触发 RocketMQ 重试: mqMsgId={}, reconsumeTimes={}",
+                    msg.getMsgId(), msg.getReconsumeTimes(), e);
+            throw new IllegalStateException("推荐行为写库失败", e);
         } finally {
             MqTraceHelper.clearTraceId();
         }

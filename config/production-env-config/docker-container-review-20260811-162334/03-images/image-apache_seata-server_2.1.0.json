@@ -1,0 +1,85 @@
+[
+    {
+        "Id": "sha256:19faeb07d59dfae3127d51053cd32fa7a3ba1b178155adec312a5a21205be898",
+        "RepoTags": [
+            "apache/seata-server:2.1.0"
+        ],
+        "RepoDigests": [
+            "apache/seata-server@sha256:07e47ff0b27ad5904011e3a9a9e0db19ca61e072d279653c617eef3fa562aeed"
+        ],
+        "Parent": "",
+        "Comment": "extra files",
+        "Created": "2024-07-27T17:31:56.654Z",
+        "DockerVersion": "",
+        "Author": "",
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 692379608,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/data/docker/lib/overlay2/3b74e0a63db4eed45d11cafc28870b797d26d12b00d9f2f549afb91708776adf/diff:/data/docker/lib/overlay2/239b623900a1e639c842eab76cbcd02ef865532466ea968d98298815cef12b56/diff:/data/docker/lib/overlay2/d443d5f98aebd794a759d1f81ca56a50b1a557de8ae50574361f746b7641a4b2/diff:/data/docker/lib/overlay2/f8de413e7d6fa25ae24dad7ad582fe407aa5dafeff2528aa77dada13ec6c0c0e/diff:/data/docker/lib/overlay2/9123d06fa19ed6e950d61e600f27427fed1a4999bc926dd4b620d51df36304d5/diff:/data/docker/lib/overlay2/b1a6eaf4177706bed8865d1c0e2e06db254d39660a1923fb4ad80f83f4c2f1d5/diff:/data/docker/lib/overlay2/257a1e6389aefa8229c1d336c1e3ec5db758c7220b63bc37ff0ce9446cfaa8d7/diff:/data/docker/lib/overlay2/b0c7aa6a3bd15e68381af27247c38d2174ae8e6cdfad9bab515861bcf829bdde/diff:/data/docker/lib/overlay2/88f2e12eccbd7e4c154adaaf0930bb8ed9e05bac11e58d31cc118e8902b0405e/diff:/data/docker/lib/overlay2/a0aa1397d1e26760a956431fa42d5351aa5079340655363cf5011ba39579ae7f/diff:/data/docker/lib/overlay2/1256c6d9433c2375e0d69103cf97aa0b388efd1d0b238b34ec758b7fcd781530/diff:/data/docker/lib/overlay2/239d8701da9c2a7fe615300aa231b768430259758297da1a72d054ac9d96988f/diff:/data/docker/lib/overlay2/08f2c47213cf1f6ede4ecd22729b9e325b67ab5c18e53ef987adf42eb080975f/diff:/data/docker/lib/overlay2/0c32a87f1fa6c850175f414c0093aa26b89be8070ead25e799cf32e3afea3ecf/diff",
+                "MergedDir": "/data/docker/lib/overlay2/7bbe6125a1dc96bed10b0c4c20867f936372cd16dfc29b4562b16428c19d5734/merged",
+                "UpperDir": "/data/docker/lib/overlay2/7bbe6125a1dc96bed10b0c4c20867f936372cd16dfc29b4562b16428c19d5734/diff",
+                "WorkDir": "/data/docker/lib/overlay2/7bbe6125a1dc96bed10b0c4c20867f936372cd16dfc29b4562b16428c19d5734/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:9c742cd6c7a5752ee36be8ecb14be45c0885e10e6dd34f26a9ae3eb096c5d492",
+                "sha256:03127cdb479b0f1eb8a9b0df8e8d72ead24979728d3c84ff645611b9d8790f94",
+                "sha256:293d5db30c9fcf33b65fa033e427fdd118464f9ea0c2a343a478a6e89c29140e",
+                "sha256:9b55156abf262eac3e6bd3ae60e7277ab4f9c69543650d7ecefc8c26ee889873",
+                "sha256:b626401ef603dd383fc3a43cf474186827db1875591bfc84b178177ca010015b",
+                "sha256:53a0b163e9955ffb80569ef37e13fbf5d1074ddd67bc5ad09d7bd874b800396a",
+                "sha256:6b5aaff4425423d122ebe4f1514a1994ae60954fc8a2299787df0ddb1a12f6b9",
+                "sha256:3bfb484133953a75a00094a55d1ea8f171587388a6499a919e9c39a8a29b1daf",
+                "sha256:7407c9ec9a2abc69ef8424f7551894d189d401a0da4f7005b6d3440ae23c867b",
+                "sha256:edf2b129fb12eff4ec58f2ec1d3fdbf51726b9a110ac17c7d2d9dd2623835b02",
+                "sha256:739e91a21d3450b62d7042ba0077f3d1fe76b2169cccc374b731daaf274cc5da",
+                "sha256:089c7c82604beaef9f9ae08aa625c2ae275e910fb97086bc275ac25b7bd74312",
+                "sha256:04e1ba875d14c0750ca12a5160069b0eacbdbd8a5de6551afcd65a518599f874",
+                "sha256:ab0cb8645d735bfb11b8491f0f1e771c153ad907bcddc99adc494d5f3bc4d7fa",
+                "sha256:b15dc799e3f93964550dc76ad6ca3bbb735c9f6dfd8e103fa84ac8d1a1a6050d"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        },
+        "Config": {
+            "Cmd": null,
+            "Entrypoint": [
+                "/bin/bash",
+                "/seata-server-entrypoint.sh"
+            ],
+            "Env": [
+                "PATH=/usr/local/openjdk-8/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "JAVA_HOME=/usr/local/openjdk-8",
+                "JAVA_VERSION=8u342",
+                "LANG=C.UTF-8",
+                "TZ=Asia/Shanghai"
+            ],
+            "ExposedPorts": {
+                "7091/tcp": {},
+                "8091/tcp": {}
+            },
+            "Labels": {
+                "git.branch": "2.1.0",
+                "git.build.time": "2024-07-27T17:31:52+0000",
+                "git.build.version": "2.1.0",
+                "git.commit.id": "c2c6ad4815b0633cee957dc0ac36857cc3ae602b",
+                "git.commit.message.full": "optimize: fix javadoc version incompatibility issue (#6704)",
+                "git.commit.time": "2024-07-27T17:28:40+0000",
+                "git.dirty": "true",
+                "git.remote.origin.url": "https://github.com/apache/incubator-seata",
+                "mvn.build.version": "2.1.0",
+                "name": "seata-server"
+            },
+            "OnBuild": null,
+            "User": "",
+            "Volumes": null,
+            "WorkingDir": "/seata-server"
+        }
+    }
+]

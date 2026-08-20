@@ -63,7 +63,7 @@
             <groupId>com.fasterxml.jackson.dataformat</groupId>
             <artifactId>jackson-dataformat-yaml</artifactId>
         </dependency>
-        <!-- 可观测（M6-3）：actuator + Prometheus 指标（版本由 Boot BOM 管理） -->
+         <!-- 可观测（M6-3）：actuator + Prometheus 指标（版本由 Boot BOM 管理） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
@@ -73,8 +73,28 @@
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
 
-        <!-- 共享指标工具（D2：tools 模块）-->
+        <!-- D6 Langfuse trace：Micrometer OTel bridge + OTLP exporter + SDK autoconfigure -->
         <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-otel</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-exporter-otlp</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-sdk-extension-autoconfigure</artifactId>
+        </dependency>
+
+        <!-- D5 Temporal PoC：durable workflow 对照实验 -->
+        <dependency>
+            <groupId>io.temporal</groupId>
+            <artifactId>temporal-sdk</artifactId>
+            <version>1.24.1</version>
+        </dependency>
+
+        <!-- 共享指标工具（D2：tools 模块）-->        <dependency>
             <groupId>com.myxhs</groupId>
             <artifactId>my-xhs-ai-tools</artifactId>
             <version>${project.version}</version>
@@ -90,6 +110,13 @@
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- D5 Temporal PoC 测试环境 -->
+        <dependency>
+            <groupId>io.temporal</groupId>
+            <artifactId>temporal-testing</artifactId>
+            <version>1.24.1</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

@@ -1,0 +1,4 @@
+########## namespaceList
+{"code":200,"message":null,"data":[{"namespace":"","namespaceShowName":"public","namespaceDesc":null,"quota":200,"configCount":0,"type":0},{"namespace":"my-xhs","namespaceShowName":"my-xhs","namespaceDesc":"my-xhs微服务","quota":200,"configCount":3,"type":2},{"namespace":"sca-lab-dev","namespaceShowName":"sca-lab-dev","namespaceDesc":"sca-lab学习实验专用","quota":200,"configCount":7,"type":2}]}########## serviceList
+{"count":0,"doms":[]}########## configList
+{"totalCount":0,"pageNumber":1,"pagesAvailable":0,"pageItems":[]}

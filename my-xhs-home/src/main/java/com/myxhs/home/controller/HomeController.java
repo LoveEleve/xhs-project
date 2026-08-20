@@ -1,7 +1,9 @@
 package com.myxhs.home.controller;
 
 import com.myxhs.common.response.R;
+import com.myxhs.common.response.ResultCode;
 import com.myxhs.home.dto.*;
+import com.myxhs.home.exception.DownstreamUnavailableException;
 import com.myxhs.home.service.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -53,8 +55,13 @@ public class HomeController {
             @RequestHeader("X-User-Id") Long userId,
             @RequestParam(required = false) Double lastScore,
             @RequestParam(defaultValue = "20") int size) {
-        return CompletableFuture
-                .supplyAsync(() -> R.ok(feedService.getFollowFeed(userId, lastScore, size)), aggregatorPool);
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                return R.ok(feedService.getFollowFeed(userId, lastScore, size));
+            } catch (DownstreamUnavailableException e) {
+                return R.fail(ResultCode.SERVICE_UNAVAILABLE, e.getMessage());
+            }
+        }, aggregatorPool);
     }
 
     // ==================== 笔记详情聚合 ====================
@@ -71,11 +78,15 @@ public class HomeController {
             @PathVariable Long noteId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return CompletableFuture.supplyAsync(() -> {
-            NoteDetailAggVO result = noteAggService.getNoteDetail(noteId, userId);
-            if (result == null) {
-                return R.fail(404, "笔记不存在");
+            try {
+                NoteDetailAggVO result = noteAggService.getNoteDetail(noteId, userId);
+                if (result == null) {
+                    return R.fail(404, "笔记不存在");
+                }
+                return R.ok(result);
+            } catch (DownstreamUnavailableException e) {
+                return R.fail(ResultCode.SERVICE_UNAVAILABLE, e.getMessage());
             }
-            return R.ok(result);
         }, aggregatorPool);
     }
 
@@ -91,11 +102,15 @@ public class HomeController {
     @GetMapping("/product/{spuId}")
     public CompletableFuture<R<ProductDetailAggVO>> getProductDetail(@PathVariable Long spuId) {
         return CompletableFuture.supplyAsync(() -> {
-            ProductDetailAggVO result = productAggService.getProductDetail(spuId);
-            if (result == null) {
-                return R.fail(404, "商品不存在");
+            try {
+                ProductDetailAggVO result = productAggService.getProductDetail(spuId);
+                if (result == null) {
+                    return R.fail(404, "商品不存在");
+                }
+                return R.ok(result);
+            } catch (DownstreamUnavailableException e) {
+                return R.fail(ResultCode.SERVICE_UNAVAILABLE, e.getMessage());
             }
-            return R.ok(result);
         }, aggregatorPool);
     }
 
@@ -113,11 +128,15 @@ public class HomeController {
             @PathVariable Long targetUserId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         return CompletableFuture.supplyAsync(() -> {
-            UserProfileAggVO result = userProfileAggService.getUserProfile(targetUserId, userId);
-            if (result == null) {
-                return R.fail(404, "用户不存在");
+            try {
+                UserProfileAggVO result = userProfileAggService.getUserProfile(targetUserId, userId);
+                if (result == null) {
+                    return R.fail(404, "用户不存在");
+                }
+                return R.ok(result);
+            } catch (DownstreamUnavailableException e) {
+                return R.fail(ResultCode.SERVICE_UNAVAILABLE, e.getMessage());
             }
-            return R.ok(result);
         }, aggregatorPool);
     }
 
@@ -132,7 +151,12 @@ public class HomeController {
      */
     @GetMapping("/cart")
     public CompletableFuture<R<CartAggVO>> getCartAgg(@RequestHeader("X-User-Id") Long userId) {
-        return CompletableFuture
-                .supplyAsync(() -> R.ok(cartAggService.getCartAgg(userId)), aggregatorPool);
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                return R.ok(cartAggService.getCartAgg(userId));
+            } catch (DownstreamUnavailableException e) {
+                return R.fail(ResultCode.SERVICE_UNAVAILABLE, e.getMessage());
+            }
+        }, aggregatorPool);
     }
 }

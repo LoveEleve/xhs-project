@@ -1,0 +1,41 @@
+############ my-xhs-mysql 真实生效配置(进程实际使用的)
+#### ENTRYPOINT
+[
+    "docker-entrypoint.sh"
+]
+#### CMD(命令行参数=多数服务真实配置)
+[
+    "--port=3306",
+    "--character-set-server=utf8mb4",
+    "--collation-server=utf8mb4_unicode_ci",
+    "--default-authentication-plugin=mysql_native_password",
+    "--max-connections=500",
+    "--innodb-buffer-pool-size=1024M",
+    "--innodb-log-file-size=256M",
+    "--innodb-flush-log-at-trx-commit=2",
+    "--sync-binlog=0",
+    "--slow-query-log=1",
+    "--long-query-time=0.5",
+    "--server-id=1",
+    "--log-bin=mysql-bin",
+    "--binlog-format=ROW",
+    "--gtid-mode=ON",
+    "--enforce-gtid-consistency=ON",
+    "--binlog-row-image=FULL",
+    "--mysqlx=0"
+]
+#### ENV(环境变量)
+MYSQL_ROOT_PASSWORD=Xhs@2026#MySQL
+TZ=Asia/Shanghai
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+GOSU_VERSION=1.19
+MYSQL_MAJOR=8.0
+MYSQL_VERSION=8.0.46-1.el9
+MYSQL_SHELL_VERSION=8.0.46-1.el9
+
+#### 资源限制
+MemLimit=1610612736 CPULimit=2000000000 Restart=unless-stopped
+#### 挂载的配置文件
+/data/workspace/my-xhs-deploy-zip/sql/init-all.sql -> /docker-entrypoint-initdb.d/01-init.sql
+/data/docker/lib/volumes/my-xhs-deploy-zip_mysql-data/_data -> /var/lib/mysql
+

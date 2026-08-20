@@ -1,0 +1,75 @@
+[
+    {
+        "Id": "sha256:65149c5f4b0901927f49b2159ff2c0d552b60399bd602fc575cb2c9bf6815572",
+        "RepoTags": [
+            "apache/skywalking-ui:9.7.0"
+        ],
+        "RepoDigests": [
+            "apache/skywalking-ui@sha256:3c7f7225d0512fcb8ea96a0e8820e1752b99ee3a651b33fd4a69ead629de3b1d"
+        ],
+        "Parent": "",
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2023-12-01T18:41:52.986612138Z",
+        "DockerVersion": "",
+        "Author": "",
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 434160957,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/data/docker/lib/overlay2/46bae52ada153c1c134467772c173c0ab33ddd4b7a3c1e7108e8e1e3b0cafe1e/diff:/data/docker/lib/overlay2/b33dea7fd2dc3c45e03636dc7e55a17b7bdb4e8112602f2f72623d1524141f67/diff:/data/docker/lib/overlay2/f3f05f8442f3a40151ddae19167a5a3f19a3cea464cfb76428b6ffa9dea1acf4/diff:/data/docker/lib/overlay2/034c011598cb461d91288c42017718834c6370483237fc18c24363c8e32581ff/diff:/data/docker/lib/overlay2/03eb2bd4813ae9c03755a493ae5d6355d27222855fb97c78ca60a248620026a9/diff:/data/docker/lib/overlay2/1add21c5782a1d54f14c04e6eabb35779b2d8eac9ffc64e078375803eeff21a5/diff:/data/docker/lib/overlay2/e20bb665f87697394d482ad5eff2ab87126b583faf6b7a830d1b463a50dd97cb/diff:/data/docker/lib/overlay2/d21ba27e2f77bddb34038055e98d000243e8c9e7953b1a6559f702988879fe29/diff:/data/docker/lib/overlay2/52e6d8324f83cd6622ed48eb031e0ba9f7fea70a44bf1132d6d7ec3751e401d8/diff",
+                "MergedDir": "/data/docker/lib/overlay2/0f7bcf450a1d28201525e22539a7c59ef340f0cdd7159875116361b97c4ada01/merged",
+                "UpperDir": "/data/docker/lib/overlay2/0f7bcf450a1d28201525e22539a7c59ef340f0cdd7159875116361b97c4ada01/diff",
+                "WorkDir": "/data/docker/lib/overlay2/0f7bcf450a1d28201525e22539a7c59ef340f0cdd7159875116361b97c4ada01/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:256d88da41857db513b95b50ba9a9b28491b58c954e25477d5dad8abb465430b",
+                "sha256:c3c212b25e14437c57f025d1a2d6764189879056c5169862140c1f851f45c17c",
+                "sha256:7d14cac3583cedcb3e669839498658ffd509aefde611f2080c0133df8831c92d",
+                "sha256:295509da0a35d8be86da1e1d312c6efc6bc6ad22c4581eda811113fe22987495",
+                "sha256:cc4e46e8a862d1a13e5a06d19af8dc8cc7371420a51906d65a91ff5abe115525",
+                "sha256:22b4870e1f7273648568973e2322171df0cd29cf551442c70499e13131ebd2a1",
+                "sha256:87b010048dd252e2967026cea6bedd7a8a61de40eea7a33444cb18ca0e60217e",
+                "sha256:1109fd46e3085c0f8b9a1234112617f68d5f262c78dc859c3d1c554bd92c4a35",
+                "sha256:43ba28890d0dbc4dbc4b3cca86107b6245ea5df992f88da6d2463315f03afc3f",
+                "sha256:6617d23db8dc20c640e75d2a205f0f95413f0626023ecbec1458920c08947eb1"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        },
+        "Config": {
+            "Cmd": null,
+            "Entrypoint": [
+                "bash",
+                "docker-entrypoint.sh"
+            ],
+            "Env": [
+                "PATH=/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "JAVA_HOME=/opt/java/openjdk",
+                "LANG=en_US.UTF-8",
+                "LANGUAGE=en_US:en",
+                "LC_ALL=en_US.UTF-8",
+                "JAVA_VERSION=jdk-11.0.21+9",
+                "JAVA_OPTS= -Xms256M ",
+                "SW_OAP_ADDRESS=http://127.0.0.1:12800",
+                "SW_ZIPKIN_ADDRESS=http://127.0.0.1:9412"
+            ],
+            "ExposedPorts": {
+                "8080/tcp": {}
+            },
+            "Labels": {
+                "org.opencontainers.image.ref.name": "ubuntu",
+                "org.opencontainers.image.version": "22.04"
+            },
+            "OnBuild": null,
+            "User": "",
+            "Volumes": null,
+            "WorkingDir": "/skywalking"
+        }
+    }
+]

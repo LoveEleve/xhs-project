@@ -1,0 +1,32 @@
+############ my-xhs-skywalking-oap 真实生效配置(进程实际使用的)
+#### ENTRYPOINT
+[
+    "bash",
+    "docker-entrypoint.sh"
+]
+#### CMD(命令行参数=多数服务真实配置)
+null
+#### ENV(环境变量)
+SW_ES_USER=elastic
+SW_HEALTH_CHECKER=default
+SW_STORAGE_ES_CLUSTER_NODES=127.0.0.1:19201
+SW_TELEMETRY_PROMETHEUS_PORT=1234
+SW_TELEMETRY_PROMETHEUS_HOST=127.0.0.1
+SW_TELEMETRY=prometheus
+JAVA_OPTS=-Xms512m -Xmx1024m
+JAVA_HOME=/opt/kona-jdk17
+SW_ES_PASSWORD=Xhs@2026#ElasticSW
+SW_STORAGE=elasticsearch
+PATH=/skywalking/bin:/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+LANG=en_US.UTF-8
+LANGUAGE=en_US:en
+LC_ALL=en_US.UTF-8
+JAVA_VERSION=jdk-11.0.21+9
+SKYWALKING_HOME=/skywalking
+
+#### 资源限制
+MemLimit=1610612736 CPULimit=1000000000 Restart=unless-stopped
+#### 挂载的配置文件
+/data/workspace/my-xhs-deploy-zip/config/skywalking -> /skywalking/config
+/opt/kona-jdk17 -> /opt/kona-jdk17
+

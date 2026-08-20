@@ -1,0 +1,15 @@
+[
+    {
+        "CreatedAt": "2026-07-10T18:03:57+08:00",
+        "Driver": "local",
+        "Labels": {
+            "com.docker.compose.project": "my-xhs",
+            "com.docker.compose.version": "2.29.2",
+            "com.docker.compose.volume": "mysql-content-slave-data"
+        },
+        "Mountpoint": "/data/docker/lib/volumes/my-xhs_mysql-content-slave-data/_data",
+        "Name": "my-xhs_mysql-content-slave-data",
+        "Options": null,
+        "Scope": "local"
+    }
+]

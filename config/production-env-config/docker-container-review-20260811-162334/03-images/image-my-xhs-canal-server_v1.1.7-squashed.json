@@ -1,0 +1,44 @@
+[
+    {
+        "Id": "sha256:217f9b00db173dcb3f9d44d774f538ca4f0bf143999745254fee4a7a9c7155a5",
+        "RepoTags": [
+            "my-xhs-canal-server:v1.1.7-squashed"
+        ],
+        "RepoDigests": [],
+        "Parent": "",
+        "Comment": "Imported from -",
+        "Created": "2026-07-09T14:37:49.326009553Z",
+        "DockerVersion": "28.4.0",
+        "Author": "",
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 395295450,
+        "GraphDriver": {
+            "Data": {
+                "MergedDir": "/data/docker/lib/overlay2/dc45608d64f76608bb261eab5301142ebf39151a1700ed88bda377d3d2b59769/merged",
+                "UpperDir": "/data/docker/lib/overlay2/dc45608d64f76608bb261eab5301142ebf39151a1700ed88bda377d3d2b59769/diff",
+                "WorkDir": "/data/docker/lib/overlay2/dc45608d64f76608bb261eab5301142ebf39151a1700ed88bda377d3d2b59769/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:144b268fe69e8d30c4189cc17e11cf3b6a33176f023ca12b1ae6f0194f82e9ea"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "2026-07-09T22:37:49.332351687+08:00"
+        },
+        "Config": {
+            "Cmd": null,
+            "Entrypoint": null,
+            "Env": null,
+            "Labels": null,
+            "OnBuild": null,
+            "User": "",
+            "Volumes": null,
+            "WorkingDir": ""
+        }
+    }
+]

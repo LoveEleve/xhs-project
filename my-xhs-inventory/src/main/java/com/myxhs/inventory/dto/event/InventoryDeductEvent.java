@@ -21,6 +21,9 @@ import lombok.NoArgsConstructor;
 @EqualsAndHashCode(callSuper = false)
 public class InventoryDeductEvent extends AbstractDomainEvent<InventoryDeductEvent> {
 
+    /** Outbox 主键（用于精确标记发送状态） */
+    private Long outboxId;
+
     /** 订单ID */
     private Long orderId;
 

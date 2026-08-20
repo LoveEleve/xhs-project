@@ -1,0 +1,36 @@
+########## cluster health
+{
+  "cluster_name" : "my-xhs-es",
+  "status" : "yellow",
+  "timed_out" : false,
+  "number_of_nodes" : 1,
+  "number_of_data_nodes" : 1,
+  "active_primary_shards" : 14,
+  "active_shards" : 14,
+  "relocating_shards" : 0,
+  "initializing_shards" : 0,
+  "unassigned_shards" : 11,
+  "unassigned_primary_shards" : 0,
+  "delayed_unassigned_shards" : 0,
+  "number_of_pending_tasks" : 0,
+  "number_of_in_flight_fetch" : 0,
+  "task_max_waiting_in_queue_millis" : 0,
+  "active_shards_percent_as_number" : 56.00000000000001
+}
+########## indices
+health status index                 uuid                   pri rep docs.count docs.deleted store.size pri.store.size dataset.size
+yellow open   myxhs-logs-2026.08.08 _5XNlI4WQqy6pf_PZoyAuw   1   1     870563            0    640.8mb        640.8mb      640.8mb
+yellow open   myxhs-logs-2026.08.09 NHeoAX8lSYG-04MBwFHX4w   1   1    1521489            0        1gb            1gb          1gb
+yellow open   myxhs-logs-2026.08.10 3k1NkEFtRiyIlKB6c46Kqg   1   1     397916            0    285.9mb        285.9mb      285.9mb
+yellow open   myxhs-logs-2026.08.11 4WnX0vuWS_mc00LF8g2fLw   1   1      18986            0      6.9mb          6.9mb        6.9mb
+yellow open   note_index            ADpa1XxdQ0Ke0LlxiAAyzQ   3   1         50            3     72.2kb         72.2kb       72.2kb
+yellow open   product_index         qkvjZ7lTRYeu38VeCepmPw   3   1         21            0     46.7kb         46.7kb       46.7kb
+yellow open   suggest_index         hZBrsMTTR766PaLVi30KQg   1   1         43            0     12.9kb         12.9kb       12.9kb
+########## nodes
+ip            heap.percent ram.percent cpu load_1m load_5m load_15m node.role   master name
+21.130.247.89           36          96   2    1.14    0.80     0.64 cdfhilmrstw *      es-node-1
+########## cluster settings
+{
+  "persistent" : { },
+  "transient" : { }
+}

@@ -1,7 +1,10 @@
 package com.myxhs.user.controller;
 
 import com.myxhs.common.response.R;
+import com.myxhs.common.response.ResultCode;
 import com.myxhs.user.dto.request.LoginRequest;
+import com.myxhs.user.dto.request.RefreshTokenRequest;
+import com.myxhs.common.exception.BizException;
 import com.myxhs.user.dto.request.RegisterRequest;
 import com.myxhs.user.dto.response.CaptchaResponse;
 import com.myxhs.user.dto.response.TokenResponse;
@@ -56,8 +59,12 @@ public class AuthController {
      * 刷新 Token
      */
     @PostMapping("/refresh")
-    public R<TokenResponse> refreshToken(@RequestParam("refreshToken") String refreshToken) {
-        return R.ok(userService.refreshToken(refreshToken));
+    public R<TokenResponse> refreshToken(@RequestBody(required = false) RefreshTokenRequest request) {
+        // T-008: refreshToken 改 body 传递（原 query string 会进访问日志泄露凭证）
+        if (request == null || request.getRefreshToken() == null || request.getRefreshToken().isEmpty()) {
+            throw new BizException(ResultCode.TOKEN_INVALID, "refreshToken 不能为空");
+        }
+        return R.ok(userService.refreshToken(request.getRefreshToken()));
     }
 
     /**
@@ -66,7 +73,9 @@ public class AuthController {
     @PostMapping("/logout")
     public R<Void> logout(
             @RequestHeader(value = "Authorization", required = false) String authorization,
-            @RequestParam(value = "refreshToken", required = false) String refreshToken) {
+            @org.springframework.web.bind.annotation.RequestBody(required = false) RefreshTokenRequest refreshBody) {
+        // T-008 一致性: refreshToken 走 body（原 query 会进访问日志）
+        String refreshToken = refreshBody != null ? refreshBody.getRefreshToken() : null;
         String accessToken = null;
         if (authorization != null && authorization.startsWith("Bearer ")) {
             accessToken = authorization.substring(7);

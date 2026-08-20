@@ -45,7 +45,7 @@ public class AgentToolBinder {
             case AgentToolNames.MQ_DLQ_BACKLOG -> args -> obs.mqDlqBacklog(arg(args, "consumerGroup"));
             case AgentToolNames.MQ_DLQ_QUERY -> dlqRedeliver == null
                     ? args -> "ERROR: dlq 查询未装配（管理通道未配置）"
-                    : args -> dlqRedeliver.queryDlqMessages(arg(args, "consumerGroup"));
+                    : args -> dlqRedeliver.queryDlqMessages(arg(args, "consumerGroup"), arg(args, "keyword"));
             case AgentToolNames.MYSQL_REPLICA_LAG -> args -> obs.mysqlReplicationLag();
             case AgentToolNames.MYSQL_DEADLOCKS -> args -> obs.mysqlDeadlocks();
             case AgentToolNames.LOG_SEARCH -> args -> logSearch == null

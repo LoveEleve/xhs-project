@@ -89,13 +89,22 @@ public class ProductController {
     }
 
     /**
-     * SPU 详情
+     * SPU 详情（单条浏览埋点：记录商品浏览事件）
      */
     @GetMapping("/spu/{spuId}")
-    public R<SpuDetailVO> getSpuDetail(@PathVariable Long spuId) {
+    public R<SpuDetailVO> getSpuDetail(
+            @PathVariable Long spuId,
+            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         SpuDetailVO detail = spuService.getSpuDetail(spuId);
         if (detail == null) {
             return R.fail(com.myxhs.common.response.ResultCode.PRODUCT_NOT_FOUND);
+        }
+        // 可观测性：商品浏览事件（异步落库，仅单条入口；批量路径不埋点）
+        // 仅真实用户请求埋点（gateway 必注入 X-User-Id）；search/home Feign 补全调用（无头）不记录，避免服务调用噪音
+        if (userId != null) {
+            Long firstSkuId = (detail.getSkuList() != null && !detail.getSkuList().isEmpty())
+                    ? detail.getSkuList().get(0).getId() : null;
+            spuService.recordSpuViewAsync(spuId, userId, firstSkuId);
         }
         return R.ok(detail);
     }

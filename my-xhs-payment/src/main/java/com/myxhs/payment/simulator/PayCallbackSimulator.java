@@ -59,6 +59,16 @@ public class PayCallbackSimulator {
         log.info("[回调模拟] 注册待回调: paymentNo={}, payType={}", paymentNo, payType);
     }
 
+    /** T-075（2026-08-14）：异步渠道退款回调模拟注册（原仅支付有模拟器，退款永不回调 → 退款单卡"退款中"） */
+    private static final String REFUND_CALLBACK_PENDING_PREFIX = "myxhs:payment:refund-callback:pending:";
+
+    public void registerRefundCallback(String refundNo) {
+        String key = REFUND_CALLBACK_PENDING_PREFIX + refundNo;
+        redisTemplate.opsForValue().set(key, String.valueOf(System.currentTimeMillis()),
+                java.time.Duration.ofMinutes(5));
+        log.info("[回调模拟] 注册待退款回调: refundNo={}", refundNo);
+    }
+
     /**
      * 定时扫描并发送模拟回调（高频任务，保留 @Scheduled）
      * <p>
@@ -131,6 +141,41 @@ public class PayCallbackSimulator {
             } catch (Exception e) {
                 log.error("[回调模拟] 回调发送失败: key={}", key, e);
             }
+        }
+    }
+
+    /** T-075：退款回调模拟（每 5s 扫描，与支付回调同机制：90% 成功、1-3s 延迟） */
+    @Scheduled(fixedDelay = 5000)
+    public void simulateRefundCallback() {
+        try {
+            java.util.Set<String> keys = new java.util.HashSet<>();
+            var scanOptions = org.springframework.data.redis.core.ScanOptions.scanOptions()
+                    .match(REFUND_CALLBACK_PENDING_PREFIX + "*").count(100).build();
+            try (var cursor = redisTemplate.scan(scanOptions)) {
+                cursor.forEachRemaining(keys::add);
+            }
+            if (keys == null || keys.isEmpty()) {
+                return;
+            }
+            for (String key : keys) {
+                try {
+                    String refundNo = key.substring(REFUND_CALLBACK_PENDING_PREFIX.length());
+                    int delay = 1000 + ThreadLocalRandom.current().nextInt(2000);
+                    Thread.sleep(delay);
+                    redisTemplate.delete(key);
+                    boolean success = ThreadLocalRandom.current().nextDouble() < SUCCESS_RATE;
+                    log.info("[回调模拟] 发送退款回调: refundNo={}, success={}, delay={}ms", refundNo, success, delay);
+                    paymentServiceProvider.getObject().handleRefundCallback(refundNo, success);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    log.warn("[回调模拟] 退款回调被中断");
+                    break;
+                } catch (Exception e) {
+                    log.error("[回调模拟] 退款回调发送失败: key={}", key, e);
+                }
+            }
+        } catch (Exception e) {
+            log.error("[回调模拟] 退款回调扫描异常", e);
         }
     }
 }

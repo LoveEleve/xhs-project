@@ -66,6 +66,7 @@ public class NoteService {
     private final ObjectMapper objectMapper;
     private final RocketMQTemplate rocketMQTemplate;
     private final BusinessMetrics businessMetrics;
+    private final com.myxhs.content.mapper.NoteEventMapper noteEventMapper;
 
     /** 每页最大条数限制 */
     private static final int MAX_PAGE_SIZE = 50;
@@ -96,6 +97,10 @@ public class NoteService {
         // 3. 入库
         noteMapper.insert(note);
         log.info("[笔记] 发布成功: noteId={}, userId={}", note.getId(), userId);
+
+        // 3.1 可观测性：发布时点事件（同事务；失败不阻塞发布主流程）
+        recordNoteEvent(note.getId(), userId, "PUBLISH",
+                NoteStatus.PUBLISHED.getCode(), AuditStatus.APPROVED.getCode());
 
         businessMetrics.recordFeedPush("publish");
 
@@ -290,7 +295,43 @@ public class NoteService {
      * 内置防穿透（缓存空值）和防雪崩（TTL 随机偏移）。
      * </p>
      */
+
+    /**
+     * P2-3: 批量获取笔记详情（Feed 场景 20 条/页 → 1 次 HTTP 调用替代 20 次）
+     * 逐条复用 readNoteDetail（缓存/防穿透语义一致），单条失败降级跳过
+     * O1 修复（2026-08-13）：批量读不发送 VIEW 事件——列表/Feed 浏览不计单篇浏览，
+     * 避免 feed 每次刷新虚增 N 条 VIEW（getNoteDetail 单条入口才计 VIEW）
+     */
+    public Map<Long, NoteDetailVO> batchGetNoteDetail(java.util.List<Long> noteIds) {
+        Map<Long, NoteDetailVO> result = new java.util.LinkedHashMap<>();
+        if (noteIds == null || noteIds.isEmpty()) {
+            return result;
+        }
+        for (Long noteId : noteIds) {
+            try {
+                result.put(noteId, readNoteDetail(noteId));
+            } catch (Exception e) {
+                log.warn("[笔记] 批量详情单条失败跳过: noteId={}", noteId, e);
+            }
+        }
+        return result;
+    }
+
     public NoteDetailVO getNoteDetail(Long noteId) {
+        NoteDetailVO vo = readNoteDetail(noteId);
+        // 浏览计数：单条详情每次请求都发送 VIEW 事件到 counter 服务（缓存命中时也计数）
+        sendCounterEvent(noteId, null, "VIEW", 0);
+        return vo;
+    }
+
+    /**
+     * 读取笔记详情（不含浏览计数副作用）
+     * <p>
+     * 使用 Cache Aside 模式：先查缓存 → 未命中查 DB → 回填缓存。
+     * 内置防穿透（缓存空值）和防雪崩（TTL 随机偏移）。
+     * </p>
+     */
+    private NoteDetailVO readNoteDetail(Long noteId) {
         String cacheKey = RedisKeyConstants.NOTE_DETAIL + noteId;
 
         // 缓存命中标记：AtomicBoolean 用于在 lambda 中记录是否为 miss
@@ -314,9 +355,6 @@ public class NoteService {
         if (note == null) {
             throw new BizException(ResultCode.NOTE_NOT_FOUND);
         }
-
-        // 浏览计数：每次请求都发送 VIEW 事件到 counter 服务（缓存命中时也计数）
-        sendCounterEvent(noteId, null, "VIEW", 0);
 
         return toDetailVO(note);
     }
@@ -391,6 +429,10 @@ public class NoteService {
         noteMapper.update(null, wrapper);
 
         log.info("[笔记] 草稿发布成功: noteId={}, userId={}", noteId, userId);
+
+        // 可观测性：发布时点事件（同事务；失败不阻塞发布主流程）
+        recordNoteEvent(noteId, userId, "PUBLISH",
+                NoteStatus.PUBLISHED.getCode(), AuditStatus.APPROVED.getCode());
 
         // 【M2修复】草稿发布后通知 Feed 服务
         NotePublishEvent draftEvent = new NotePublishEvent();
@@ -596,6 +638,30 @@ public class NoteService {
         } catch (JsonProcessingException e) {
             log.error("[JSON] 序列化失败", e);
             throw new BizException(ResultCode.INTERNAL_ERROR, "数据序列化失败");
+        }
+    }
+
+    /**
+     * 记录笔记状态事件（append-only 可观测性）
+     * <p>
+     * 与发布业务同一事务；写入失败仅告警不阻塞发布主流程（可观测性增强不破坏核心链路）。
+     * </p>
+     */
+    private void recordNoteEvent(Long noteId, Long userId, String eventType,
+                                 Integer status, Integer auditStatus) {
+        try {
+            com.myxhs.content.entity.NoteEvent ev = new com.myxhs.content.entity.NoteEvent();
+            ev.setId(idGeneratorUtil.nextId());
+            ev.setNoteId(noteId);
+            ev.setUserId(userId);
+            ev.setEventType(eventType);
+            ev.setStatus(status);
+            ev.setAuditStatus(auditStatus);
+            ev.setEventTime(java.time.LocalDateTime.now());
+            noteEventMapper.insert(ev);
+            log.info("[笔记事件] 落库: noteId={}, eventType={}", noteId, eventType);
+        } catch (Exception e) {
+            log.error("[笔记事件] 写入失败(不阻塞发布): noteId={}, eventType={}", noteId, eventType, e);
         }
     }
 

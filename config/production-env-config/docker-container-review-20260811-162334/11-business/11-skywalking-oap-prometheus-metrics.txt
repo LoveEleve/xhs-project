@@ -1,0 +1,719 @@
+# HELP process_cpu_seconds_total Total user and system CPU time spent in seconds.
+# TYPE process_cpu_seconds_total counter
+process_cpu_seconds_total 7636.99
+# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.
+# TYPE process_start_time_seconds gauge
+process_start_time_seconds 1.786197736613E9
+# HELP process_open_fds Number of open file descriptors.
+# TYPE process_open_fds gauge
+process_open_fds 2726.0
+# HELP process_max_fds Maximum number of open file descriptors.
+# TYPE process_max_fds gauge
+process_max_fds 1048576.0
+# HELP process_virtual_memory_bytes Virtual memory size in bytes.
+# TYPE process_virtual_memory_bytes gauge
+process_virtual_memory_bytes 2.0584005632E10
+# HELP process_resident_memory_bytes Resident memory size in bytes.
+# TYPE process_resident_memory_bytes gauge
+process_resident_memory_bytes 1.274585088E9
+# HELP jvm_gc_collection_seconds Time spent in a given JVM garbage collector in seconds.
+# TYPE jvm_gc_collection_seconds summary
+jvm_gc_collection_seconds_count{gc="Copy",} 2338.0
+jvm_gc_collection_seconds_sum{gc="Copy",} 26.675
+jvm_gc_collection_seconds_count{gc="MarkSweepCompact",} 5.0
+jvm_gc_collection_seconds_sum{gc="MarkSweepCompact",} 0.89
+# HELP health_check_storage_elasticsearch storage_elasticsearch health check
+# TYPE health_check_storage_elasticsearch gauge
+health_check_storage_elasticsearch{sw_backend_instance="0.0.0.0_11800",} 0.0
+# HELP persistence_timer_bulk_prepare_latency Latency of the prepare stage in persistence timer
+# TYPE persistence_timer_bulk_prepare_latency histogram
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.005",} 2.7257955E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.01",} 2.7258059E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.025",} 2.7258658E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.05",} 2.7258673E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.075",} 2.7258684E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.1",} 2.7258684E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.25",} 2.7258684E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.5",} 2.7258684E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.75",} 2.7258684E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="1.0",} 2.7258684E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="2.5",} 2.7258684E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="5.0",} 2.7258684E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="7.5",} 2.7258684E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="10.0",} 2.7258684E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="+Inf",} 2.7258684E7
+persistence_timer_bulk_prepare_latency_count{sw_backend_instance="0.0.0.0_11800",} 2.7258684E7
+persistence_timer_bulk_prepare_latency_sum{sw_backend_instance="0.0.0.0_11800",} 92.93370279646459
+# HELP jvm_threads_current Current thread count of a JVM
+# TYPE jvm_threads_current gauge
+jvm_threads_current 667.0
+# HELP jvm_threads_daemon Daemon thread count of a JVM
+# TYPE jvm_threads_daemon gauge
+jvm_threads_daemon 23.0
+# HELP jvm_threads_peak Peak thread count of a JVM
+# TYPE jvm_threads_peak gauge
+jvm_threads_peak 667.0
+# HELP jvm_threads_started_total Started thread count of a JVM
+# TYPE jvm_threads_started_total counter
+jvm_threads_started_total 676.0
+# HELP jvm_threads_deadlocked Cycles of JVM-threads that are in deadlock waiting to acquire object monitors or ownable synchronizers
+# TYPE jvm_threads_deadlocked gauge
+jvm_threads_deadlocked 0.0
+# HELP jvm_threads_deadlocked_monitor Cycles of JVM-threads that are in deadlock waiting to acquire object monitors
+# TYPE jvm_threads_deadlocked_monitor gauge
+jvm_threads_deadlocked_monitor 0.0
+# HELP jvm_threads_state Current count of threads by state
+# TYPE jvm_threads_state gauge
+jvm_threads_state{state="TIMED_WAITING",} 18.0
+jvm_threads_state{state="BLOCKED",} 0.0
+jvm_threads_state{state="NEW",} 0.0
+jvm_threads_state{state="WAITING",} 9.0
+jvm_threads_state{state="RUNNABLE",} 640.0
+jvm_threads_state{state="TERMINATED",} 0.0
+# HELP metrics_aggregation The number of rows in aggregation
+# TYPE metrics_aggregation counter
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_server_call_sla",level="2",dimensionality="hour",} 167771.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_resp_time",level="2",dimensionality="day",} 166609.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_write_percentile",level="2",dimensionality="minute",} 24067.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_sidecar_internal_resp_latency_nanos",level="2",dimensionality="day",} 266810.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_cpm",level="2",dimensionality="minute",} 335164.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_server_cpm",level="2",dimensionality="minute",} 335326.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_server_percentile",level="2",dimensionality="minute",} 335334.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_client_sidecar_internal_resp_latency_nanos",level="1",dimensionality="minute",} 3254798.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_consume_percentile",level="2",dimensionality="day",} 83.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_sidecar_internal_req_latency_nanos",level="2",dimensionality="minute",} 335180.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_server_resp_time",level="2",dimensionality="day",} 167771.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_class_loaded_class_count",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_write_percentile",level="1",dimensionality="minute",} 34103.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_produce_sla",level="1",dimensionality="minute",} 141.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_client_side",level="2",dimensionality="minute",} 1069147.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_apdex",level="2",dimensionality="day",} 166608.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_class_total_unloaded_class_count",level="2",dimensionality="day",} 203886.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_relation_sla",level="2",dimensionality="day",} 173130.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_server_side",level="2",dimensionality="hour",} 167757.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_client_sidecar_internal_resp_latency_nanos",level="2",dimensionality="minute",} 1069207.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_server_resp_time",level="2",dimensionality="hour",} 167770.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_server_percentile",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_consume_latency",level="2",dimensionality="hour",} 112.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_client_sidecar_internal_resp_latency_nanos",level="2",dimensionality="hour",} 176193.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_sidecar_internal_req_latency_nanos",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_class_loaded_class_count",level="2",dimensionality="minute",} 3605488.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_sidecar_internal_req_latency_nanos",level="2",dimensionality="minute",} 548425.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_class_loaded_class_count",level="2",dimensionality="hour",} 203820.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_waiting_state_thread_count",level="2",dimensionality="minute",} 3605485.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_server_call_sla",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_consume_latency",level="2",dimensionality="day",} 83.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_consume_sla",level="1",dimensionality="minute",} 161.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_cpm",level="2",dimensionality="day",} 266805.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_read_sla",level="2",dimensionality="day",} 8152.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_timed_waiting_state_thread_count",level="2",dimensionality="day",} 203769.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_consume_latency",level="1",dimensionality="minute",} 161.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_produce_cpm",level="2",dimensionality="day",} 66.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_server_side",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_traffic",level="1",dimensionality="minute",} 4058924.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_old_gc_time",level="2",dimensionality="minute",} 3605489.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_heap_max",level="2",dimensionality="day",} 203777.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_server_sidecar_internal_resp_latency_nanos",level="2",dimensionality="hour",} 167784.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_relation_resp_time",level="2",dimensionality="minute",} 341149.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_resp_time",level="1",dimensionality="minute",} 585476.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_server_percentile",level="2",dimensionality="hour",} 167772.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_waiting_state_thread_count",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_cpm",level="2",dimensionality="day",} 166579.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_server_percentile",level="2",dimensionality="day",} 167772.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_server_call_sla",level="2",dimensionality="minute",} 335334.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_produce_cpm",level="2",dimensionality="minute",} 118.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_sidecar_internal_req_latency_nanos",level="2",dimensionality="hour",} 166606.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_consume_sla",level="2",dimensionality="minute",} 127.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_mq_consume_count",level="2",dimensionality="day",} 118.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_class_total_loaded_class_count",level="2",dimensionality="hour",} 203774.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_cpm",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_relation_resp_time",level="1",dimensionality="minute",} 373697.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_traffic",level="2",dimensionality="minute",} 977526.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_server_cpm",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_old_gc_time",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_resp_time",level="2",dimensionality="hour",} 266744.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_resp_time",level="2",dimensionality="minute",} 548434.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_write_cpm",level="2",dimensionality="minute",} 24066.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_sla",level="2",dimensionality="minute",} 335172.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_access_resp_time",level="2",dimensionality="day",} 30298.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_consume_sla",level="2",dimensionality="hour",} 110.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_sla",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_pool_metaspace",level="2",dimensionality="day",} 203886.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_noheap",level="2",dimensionality="day",} 203880.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_live_count",level="2",dimensionality="minute",} 3605489.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_old_gc_count",level="2",dimensionality="day",} 203788.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_cpm",level="2",dimensionality="hour",} 166611.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_blocked_state_thread_count",level="2",dimensionality="minute",} 3605488.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_relation_resp_time",level="2",dimensionality="hour",} 173173.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_class_total_loaded_class_count",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_consume_sla",level="2",dimensionality="day",} 81.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_mq_consume_latency",level="1",dimensionality="minute",} 161.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_sla",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_sidecar_internal_req_latency_nanos",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_access_sla",level="2",dimensionality="day",} 30296.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_server_cpm",level="2",dimensionality="hour",} 167771.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="database_access_resp_time",level="2",dimensionality="hour",} 11081.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_write_cpm",level="1",dimensionality="minute",} 34103.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_cpu",level="2",dimensionality="day",} 203786.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_live_count",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_server_side",level="2",dimensionality="minute",} 335362.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_blocked_state_thread_count",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_mq_consume_latency",level="2",dimensionality="hour",} 118.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_produce_sla",level="2",dimensionality="minute",} 80.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_mq_consume_latency",level="2",dimensionality="minute",} 134.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_produce_sla",level="2",dimensionality="minute",} 119.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="database_access_resp_time",level="2",dimensionality="minute",} 61832.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_client_percentile",level="1",dimensionality="minute",} 3254798.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_consume_cpm",level="2",dimensionality="minute",} 130.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_sla",level="2",dimensionality="hour",} 166580.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_server_call_sla",level="2",dimensionality="day",} 167772.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_client_call_sla",level="1",dimensionality="minute",} 3254798.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_mq_consume_latency",level="2",dimensionality="day",} 105.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_server_sidecar_internal_req_latency_nanos",level="2",dimensionality="day",} 167779.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_produce_sla",level="1",dimensionality="minute",} 141.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_produce_sla",level="2",dimensionality="hour",} 107.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_client_side",level="2",dimensionality="day",} 176131.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_client_sidecar_internal_resp_latency_nanos",level="2",dimensionality="day",} 176173.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_sla",level="2",dimensionality="minute",} 335183.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_client_percentile",level="2",dimensionality="minute",} 1069208.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="database_access_resp_time",level="1",dimensionality="minute",} 118764.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_consume_cpm",level="1",dimensionality="minute",} 161.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_write_cpm",level="2",dimensionality="hour",} 12207.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_client_call_sla",level="2",dimensionality="minute",} 1069203.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_percentile",level="2",dimensionality="minute",} 548445.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_consume_cpm",level="2",dimensionality="day",} 81.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_sidecar_internal_resp_latency_nanos",level="2",dimensionality="day",} 166615.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_client_call_sla",level="2",dimensionality="hour",} 176171.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_sidecar_internal_resp_latency_nanos",level="2",dimensionality="day",} 166611.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_client_percentile",level="2",dimensionality="hour",} 176171.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_read_resp_time",level="2",dimensionality="hour",} 8152.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_old_gc_count",level="2",dimensionality="minute",} 3605489.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_percentile",level="1",dimensionality="minute",} 585476.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="database_access_percentile",level="1",dimensionality="minute",} 118764.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_pool_metaspace",level="2",dimensionality="minute",} 3605490.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_percentile",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_server_sidecar_internal_resp_latency_nanos",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_client_call_sla",level="2",dimensionality="day",} 176181.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_runnable_state_thread_count",level="2",dimensionality="day",} 203821.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_daemon_count",level="2",dimensionality="day",} 203771.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_access_cpm",level="2",dimensionality="day",} 30303.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_percentile",level="2",dimensionality="hour",} 166584.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_client_sidecar_internal_req_latency_nanos",level="2",dimensionality="hour",} 176148.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_client_resp_time",level="2",dimensionality="hour",} 176139.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_percentile",level="2",dimensionality="minute",} 335172.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_pool_oldgen",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="database_access_percentile",level="2",dimensionality="minute",} 61850.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_access_cpm",level="2",dimensionality="hour",} 30303.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_cpu",level="2",dimensionality="minute",} 3605491.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_server_sidecar_internal_req_latency_nanos",level="2",dimensionality="day",} 167787.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_pool_metaspace",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_mq_consume_latency",level="2",dimensionality="day",} 118.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_consume_cpm",level="2",dimensionality="day",} 112.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_read_percentile",level="2",dimensionality="minute",} 18140.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_client_side",level="2",dimensionality="hour",} 176131.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_old_gc_time",level="2",dimensionality="hour",} 203828.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_read_resp_time",level="1",dimensionality="minute",} 232309.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_resp_time",level="2",dimensionality="day",} 166608.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_sla",level="1",dimensionality="minute",} 585476.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_server_sidecar_internal_req_latency_nanos",level="2",dimensionality="hour",} 167779.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_blocked_state_thread_count",level="2",dimensionality="hour",} 203886.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_client_sidecar_internal_req_latency_nanos",level="1",dimensionality="minute",} 3254798.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_young_gc_count",level="2",dimensionality="day",} 203771.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_noheap_max",level="2",dimensionality="day",} 203800.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_sla",level="2",dimensionality="hour",} 166586.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_client_cpm",level="2",dimensionality="day",} 176139.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_read_percentile",level="1",dimensionality="minute",} 232309.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_sla",level="2",dimensionality="minute",} 548442.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_client_sidecar_internal_req_latency_nanos",level="2",dimensionality="day",} 176153.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_young_gc_time",level="2",dimensionality="day",} 203788.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_consume_percentile",level="2",dimensionality="day",} 111.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_resp_time",level="2",dimensionality="minute",} 335167.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_server_resp_time",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_client_resp_time",level="2",dimensionality="minute",} 1069138.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_traffic",level="1",dimensionality="minute",} 789640.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_client_side",level="2",dimensionality="hour",} 176121.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_relation_server_side",level="2",dimensionality="day",} 173161.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_server_resp_time",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_write_percentile",level="2",dimensionality="hour",} 12204.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_client_percentile",level="2",dimensionality="day",} 176181.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_read_percentile",level="2",dimensionality="hour",} 8155.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_pool_newgen",level="2",dimensionality="day",} 203886.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_client_resp_time",level="1",dimensionality="minute",} 3254798.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_resp_time",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_server_side",level="2",dimensionality="day",} 167758.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_server_cpm",level="2",dimensionality="day",} 167770.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_read_resp_time",level="2",dimensionality="minute",} 18156.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_noheap",level="2",dimensionality="hour",} 203880.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_client_resp_time",level="1",dimensionality="minute",} 3254798.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_consume_latency",level="2",dimensionality="minute",} 128.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_cpm",level="2",dimensionality="day",} 166611.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_server_cpm",level="2",dimensionality="day",} 167771.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_sidecar_internal_req_latency_nanos",level="2",dimensionality="hour",} 266766.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_write_resp_time",level="2",dimensionality="day",} 12210.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_consume_percentile",level="2",dimensionality="minute",} 107.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_waiting_state_thread_count",level="2",dimensionality="hour",} 203774.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_server_resp_time",level="2",dimensionality="minute",} 335326.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_client_resp_time",level="2",dimensionality="minute",} 1069136.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_client_side",level="1",dimensionality="minute",} 3254798.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_relation_percentile",level="2",dimensionality="minute",} 341165.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_server_sidecar_internal_resp_latency_nanos",level="2",dimensionality="minute",} 335330.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="meter_datasource",level="2",dimensionality="hour",} 136888.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_relation_resp_time",level="2",dimensionality="day",} 173173.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="meter_datasource",level="2",dimensionality="minute",} 158348.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_pool_oldgen",level="2",dimensionality="hour",} 203809.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="meter_thread_pool",level="2",dimensionality="hour",} 140917.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_server_resp_time",level="2",dimensionality="hour",} 167771.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_pool_oldgen",level="2",dimensionality="minute",} 3605485.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_sidecar_internal_req_latency_nanos",level="1",dimensionality="minute",} 585476.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="meter_thread_pool",level="2",dimensionality="minute",} 162977.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="database_access_cpm",level="1",dimensionality="minute",} 118764.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_traffic",level="2",dimensionality="minute",} 611650.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_read_cpm",level="2",dimensionality="day",} 8151.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="meter_thread_pool",level="1",dimensionality="minute",} 162977.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_resp_time",level="2",dimensionality="hour",} 166609.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="database_access_sla",level="2",dimensionality="day",} 11088.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_relation_percentile",level="1",dimensionality="minute",} 373697.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_server_resp_time",level="2",dimensionality="minute",} 335326.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_relation_percentile",level="2",dimensionality="hour",} 173159.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="meter_datasource",level="1",dimensionality="minute",} 158348.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_server_sidecar_internal_resp_latency_nanos",level="2",dimensionality="hour",} 167786.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_pool_permgen",level="2",dimensionality="day",} 203839.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_access_percentile",level="2",dimensionality="day",} 30289.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_client_resp_time",level="2",dimensionality="hour",} 176129.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="database_access_cpm",level="2",dimensionality="hour",} 11084.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_produce_cpm",level="2",dimensionality="day",} 106.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="database_access_cpm",level="2",dimensionality="minute",} 61821.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_write_cpm",level="2",dimensionality="day",} 12207.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_consume_percentile",level="2",dimensionality="minute",} 127.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_relation_sla",level="2",dimensionality="hour",} 173130.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_consume_percentile",level="2",dimensionality="hour",} 83.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_pool_survivor",level="2",dimensionality="minute",} 3605489.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_client_percentile",level="2",dimensionality="minute",} 1069191.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_access_percentile",level="2",dimensionality="hour",} 30289.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_consume_cpm",level="2",dimensionality="hour",} 81.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_server_side",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_sidecar_internal_resp_latency_nanos",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_access_sla",level="2",dimensionality="minute",} 322043.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_server_sidecar_internal_resp_latency_nanos",level="2",dimensionality="day",} 167784.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_read_cpm",level="1",dimensionality="minute",} 232309.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_heap",level="2",dimensionality="minute",} 3605490.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_server_call_sla",level="2",dimensionality="day",} 167771.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_noheap",level="2",dimensionality="minute",} 3605489.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_pool_survivor",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_consume_percentile",level="1",dimensionality="minute",} 161.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_timed_waiting_state_thread_count",level="2",dimensionality="hour",} 203769.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_server_resp_time",level="2",dimensionality="day",} 167770.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_server_side",level="2",dimensionality="minute",} 335362.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_consume_latency",level="2",dimensionality="day",} 112.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="database_access_sla",level="2",dimensionality="hour",} 11088.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_class_total_unloaded_class_count",level="2",dimensionality="hour",} 203886.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_produce_sla",level="2",dimensionality="day",} 107.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="meter_thread_pool",level="2",dimensionality="day",} 140917.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_mq_consume_latency",level="2",dimensionality="hour",} 105.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_client_sidecar_internal_resp_latency_nanos",level="2",dimensionality="day",} 176193.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_server_sidecar_internal_req_latency_nanos",level="2",dimensionality="minute",} 335338.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_access_sla",level="2",dimensionality="hour",} 30296.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_consume_percentile",level="1",dimensionality="minute",} 161.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_server_side",level="2",dimensionality="day",} 167757.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_timed_waiting_state_thread_count",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_pool_permgen",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_sidecar_internal_resp_latency_nanos",level="1",dimensionality="minute",} 585476.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_sla",level="2",dimensionality="day",} 166580.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_server_call_sla",level="2",dimensionality="hour",} 167772.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_sidecar_internal_req_latency_nanos",level="2",dimensionality="day",} 166580.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_sidecar_internal_resp_latency_nanos",level="2",dimensionality="hour",} 166611.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_client_side",level="2",dimensionality="minute",} 1069161.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_sidecar_internal_resp_latency_nanos",level="2",dimensionality="minute",} 335177.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_server_sidecar_internal_req_latency_nanos",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_client_percentile",level="1",dimensionality="minute",} 3254798.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_pool_permgen",level="2",dimensionality="minute",} 3605490.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_noheap",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_sidecar_internal_resp_latency_nanos",level="2",dimensionality="hour",} 166615.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_sidecar_internal_resp_latency_nanos",level="2",dimensionality="hour",} 266810.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_client_call_sla",level="2",dimensionality="day",} 176171.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_access_sla",level="1",dimensionality="minute",} 3162429.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_pool_survivor",level="2",dimensionality="hour",} 203800.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_heap",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_read_cpm",level="2",dimensionality="minute",} 18168.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_pool_permgen",level="2",dimensionality="hour",} 203839.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_sidecar_internal_resp_latency_nanos",level="2",dimensionality="minute",} 548449.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_read_cpm",level="2",dimensionality="hour",} 8151.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_apdex",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_write_percentile",level="2",dimensionality="day",} 12204.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_server_percentile",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_cpu",level="2",dimensionality="hour",} 203786.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_client_side",level="1",dimensionality="minute",} 3254798.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_cpm",level="2",dimensionality="hour",} 166579.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_sla",level="2",dimensionality="hour",} 266805.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_heap_max",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_mq_consume_latency",level="1",dimensionality="minute",} 161.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_young_gc_time",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_server_percentile",level="2",dimensionality="day",} 167772.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_consume_cpm",level="2",dimensionality="minute",} 107.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_pool_metaspace",level="2",dimensionality="hour",} 203886.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_client_percentile",level="2",dimensionality="hour",} 176181.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_client_sidecar_internal_resp_latency_nanos",level="2",dimensionality="hour",} 176173.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_produce_cpm",level="2",dimensionality="hour",} 66.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_client_cpm",level="2",dimensionality="day",} 176129.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_old_gc_count",level="2",dimensionality="hour",} 203788.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_relation_cpm",level="1",dimensionality="minute",} 373697.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_apdex",level="2",dimensionality="minute",} 335167.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_read_sla",level="1",dimensionality="minute",} 232309.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_heap",level="2",dimensionality="hour",} 203833.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_sidecar_internal_resp_latency_nanos",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_relation_sla",level="2",dimensionality="minute",} 341158.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_heap_max",level="2",dimensionality="minute",} 3605489.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_access_resp_time",level="2",dimensionality="hour",} 30298.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_peak_count",level="2",dimensionality="hour",} 203788.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_client_sidecar_internal_req_latency_nanos",level="2",dimensionality="minute",} 1069094.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_consume_cpm",level="1",dimensionality="minute",} 161.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_produce_cpm",level="1",dimensionality="minute",} 141.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="database_access_resp_time",level="2",dimensionality="day",} 11081.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_server_call_sla",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_consume_latency",level="1",dimensionality="minute",} 161.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_traffic",level="2",dimensionality="minute",} 548794.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_relation_cpm",level="2",dimensionality="minute",} 341158.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_read_percentile",level="2",dimensionality="day",} 8155.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_access_cpm",level="2",dimensionality="minute",} 322179.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_relation_cpm",level="2",dimensionality="hour",} 173129.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="database_access_percentile",level="2",dimensionality="hour",} 11079.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_read_sla",level="2",dimensionality="minute",} 18167.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_young_gc_count",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_client_sidecar_internal_resp_latency_nanos",level="1",dimensionality="minute",} 3254798.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_mq_consume_count",level="1",dimensionality="minute",} 207.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_heap_max",level="2",dimensionality="hour",} 203777.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_relation_sla",level="1",dimensionality="minute",} 373697.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_sidecar_internal_req_latency_nanos",level="2",dimensionality="day",} 166606.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_peak_count",level="2",dimensionality="minute",} 3605488.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_resp_time",level="2",dimensionality="minute",} 335167.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_apdex",level="2",dimensionality="hour",} 166608.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_percentile",level="2",dimensionality="hour",} 266754.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_cpm",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_traffic",level="1",dimensionality="minute",} 612978.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_produce_cpm",level="2",dimensionality="minute",} 79.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_client_sidecar_internal_req_latency_nanos",level="2",dimensionality="hour",} 176153.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_consume_latency",level="2",dimensionality="minute",} 112.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_cpu",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_write_sla",level="2",dimensionality="day",} 12213.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_access_cpm",level="1",dimensionality="minute",} 3162429.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_consume_latency",level="2",dimensionality="hour",} 83.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_access_resp_time",level="1",dimensionality="minute",} 3162429.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_server_percentile",level="2",dimensionality="minute",} 335334.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_read_sla",level="2",dimensionality="hour",} 8152.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_peak_count",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_class_total_loaded_class_count",level="2",dimensionality="day",} 203774.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_cpm",level="2",dimensionality="minute",} 335183.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_consume_cpm",level="2",dimensionality="hour",} 112.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_live_count",level="2",dimensionality="day",} 203886.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_resp_time",level="2",dimensionality="day",} 266744.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_young_gc_time",level="2",dimensionality="minute",} 3605489.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_blocked_state_thread_count",level="2",dimensionality="day",} 203886.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_old_gc_count",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_young_gc_count",level="2",dimensionality="hour",} 203771.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_mq_consume_count",level="2",dimensionality="hour",} 118.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_sla",level="2",dimensionality="day",} 166586.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_mq_consume_count",level="2",dimensionality="minute",} 148.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_server_percentile",level="2",dimensionality="hour",} 167772.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_young_gc_time",level="2",dimensionality="hour",} 203788.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_young_gc_count",level="2",dimensionality="minute",} 3605486.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_consume_sla",level="2",dimensionality="day",} 110.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_pool_newgen",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_access_resp_time",level="2",dimensionality="minute",} 322059.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_server_cpm",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="events",level="2",dimensionality="minute",} 3000.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_daemon_count",level="2",dimensionality="hour",} 203771.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_produce_sla",level="2",dimensionality="day",} 65.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_client_resp_time",level="2",dimensionality="day",} 176139.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_consume_sla",level="1",dimensionality="minute",} 161.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_client_sidecar_internal_req_latency_nanos",level="2",dimensionality="minute",} 1069148.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_client_sidecar_internal_req_latency_nanos",level="2",dimensionality="day",} 176148.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="network_address_alias",level="1",dimensionality="minute",} 11139.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_relation_server_side",level="2",dimensionality="minute",} 341165.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_write_resp_time",level="1",dimensionality="minute",} 34103.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="tag_autocomplete",level="1",dimensionality="minute",} 912670.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_resp_time",level="2",dimensionality="hour",} 166608.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_client_sidecar_internal_resp_latency_nanos",level="2",dimensionality="minute",} 1069203.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_pool_newgen",level="2",dimensionality="minute",} 3605490.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_read_resp_time",level="2",dimensionality="day",} 8152.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_resp_time",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_server_cpm",level="2",dimensionality="minute",} 335326.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_write_sla",level="2",dimensionality="minute",} 24056.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_old_gc_time",level="2",dimensionality="day",} 203828.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_consume_sla",level="2",dimensionality="minute",} 106.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_produce_sla",level="2",dimensionality="hour",} 65.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_client_call_sla",level="2",dimensionality="hour",} 176181.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_server_sidecar_internal_req_latency_nanos",level="2",dimensionality="hour",} 167787.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_client_sidecar_internal_req_latency_nanos",level="1",dimensionality="minute",} 3254798.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_write_sla",level="1",dimensionality="minute",} 34103.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="network_address_alias",level="2",dimensionality="minute",} 1498.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_write_resp_time",level="2",dimensionality="minute",} 24053.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_relation_server_side",level="1",dimensionality="minute",} 373697.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="tag_autocomplete",level="2",dimensionality="minute",} 576772.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_write_resp_time",level="2",dimensionality="hour",} 12210.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_waiting_state_thread_count",level="2",dimensionality="day",} 203774.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_sidecar_internal_resp_latency_nanos",level="2",dimensionality="minute",} 335154.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_runnable_state_thread_count",level="2",dimensionality="hour",} 203821.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_peak_count",level="2",dimensionality="day",} 203788.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_relation_cpm",level="2",dimensionality="day",} 173129.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_write_sla",level="2",dimensionality="hour",} 12213.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_pool_newgen",level="2",dimensionality="hour",} 203886.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_sidecar_internal_req_latency_nanos",level="2",dimensionality="minute",} 335165.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_pool_oldgen",level="2",dimensionality="day",} 203809.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_percentile",level="2",dimensionality="day",} 166584.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_server_cpm",level="2",dimensionality="hour",} 167770.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_client_cpm",level="1",dimensionality="minute",} 3254798.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_server_sidecar_internal_req_latency_nanos",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_percentile",level="2",dimensionality="day",} 266754.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_client_call_sla",level="1",dimensionality="minute",} 3254798.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_server_call_sla",level="2",dimensionality="minute",} 335334.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_class_total_unloaded_class_count",level="2",dimensionality="minute",} 3605488.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="database_access_sla",level="2",dimensionality="minute",} 61822.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_relation_percentile",level="2",dimensionality="day",} 173159.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_client_cpm",level="2",dimensionality="minute",} 1069139.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_live_count",level="2",dimensionality="hour",} 203886.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_mq_consume_latency",level="2",dimensionality="minute",} 121.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_produce_cpm",level="2",dimensionality="hour",} 106.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_class_total_unloaded_class_count",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_client_percentile",level="2",dimensionality="day",} 176171.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_server_sidecar_internal_resp_latency_nanos",level="2",dimensionality="day",} 167786.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_class_total_loaded_class_count",level="2",dimensionality="minute",} 3605485.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_client_resp_time",level="2",dimensionality="day",} 176129.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_client_cpm",level="2",dimensionality="hour",} 176129.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_noheap_max",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="database_access_cpm",level="2",dimensionality="day",} 11084.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_produce_cpm",level="1",dimensionality="minute",} 141.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_sidecar_internal_req_latency_nanos",level="2",dimensionality="day",} 266766.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_heap",level="2",dimensionality="day",} 203833.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_client_cpm",level="2",dimensionality="hour",} 176139.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_access_percentile",level="2",dimensionality="minute",} 322147.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_relation_server_side",level="2",dimensionality="hour",} 173161.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_server_sidecar_internal_resp_latency_nanos",level="2",dimensionality="minute",} 335330.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_runnable_state_thread_count",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_noheap_max",level="2",dimensionality="minute",} 3605491.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_relation_client_side",level="2",dimensionality="day",} 176121.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="database_access_percentile",level="2",dimensionality="day",} 11079.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_server_sidecar_internal_req_latency_nanos",level="2",dimensionality="minute",} 335343.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_endpoint_consume_percentile",level="2",dimensionality="hour",} 111.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_class_loaded_class_count",level="2",dimensionality="day",} 203820.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="cache_access_percentile",level="1",dimensionality="minute",} 3162429.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="meter_datasource",level="2",dimensionality="day",} 136888.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_client_call_sla",level="2",dimensionality="minute",} 1069196.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_daemon_count",level="2",dimensionality="minute",} 3605486.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="database_access_sla",level="1",dimensionality="minute",} 118764.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_server_sidecar_internal_resp_latency_nanos",level="1",dimensionality="minute",} 346497.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_timed_waiting_state_thread_count",level="2",dimensionality="minute",} 3605488.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_runnable_state_thread_count",level="2",dimensionality="minute",} 3605488.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_server_side",level="2",dimensionality="hour",} 167758.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_client_cpm",level="1",dimensionality="minute",} 3254798.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_cpm",level="2",dimensionality="minute",} 548442.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_cpm",level="2",dimensionality="hour",} 266805.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="mq_service_consume_sla",level="2",dimensionality="hour",} 81.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_noheap_max",level="2",dimensionality="hour",} 203800.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_thread_daemon_count",level="1",dimensionality="minute",} 3649749.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_sidecar_internal_req_latency_nanos",level="2",dimensionality="hour",} 166580.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_sla",level="2",dimensionality="day",} 266805.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="events",level="1",dimensionality="minute",} 3000.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="service_instance_relation_client_cpm",level="2",dimensionality="minute",} 1069141.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="endpoint_cpm",level="1",dimensionality="minute",} 585476.0
+metrics_aggregation{sw_backend_instance="0.0.0.0_11800",metricName="instance_jvm_memory_pool_survivor",level="2",dimensionality="day",} 203800.0
+# HELP remote_out_count The number(client side) of inside remote inside aggregate rpc.
+# TYPE remote_out_count counter
+remote_out_count{sw_backend_instance="0.0.0.0_11800",dest="0.0.0.0_11800",self="Y",} 1.19960154E8
+# HELP meter_in_latency The process latency of meter
+# TYPE meter_in_latency histogram
+meter_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.005",} 4453130.0
+meter_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.01",} 4453132.0
+meter_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.025",} 4453137.0
+meter_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.05",} 4453137.0
+meter_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.075",} 4453137.0
+meter_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.1",} 4453137.0
+meter_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.25",} 4453137.0
+meter_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.5",} 4453137.0
+meter_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.75",} 4453137.0
+meter_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="1.0",} 4453137.0
+meter_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="2.5",} 4453137.0
+meter_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="5.0",} 4453137.0
+meter_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="7.5",} 4453137.0
+meter_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="10.0",} 4453137.0
+meter_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="+Inf",} 4453137.0
+meter_in_latency_count{sw_backend_instance="0.0.0.0_11800",protocol="grpc",} 4453137.0
+meter_in_latency_sum{sw_backend_instance="0.0.0.0_11800",protocol="grpc",} 7.662930005001767
+# HELP jvm_classes_loaded The number of classes that are currently loaded in the JVM
+# TYPE jvm_classes_loaded gauge
+jvm_classes_loaded 22212.0
+# HELP jvm_classes_loaded_total The total number of classes that have been loaded since the JVM has started execution
+# TYPE jvm_classes_loaded_total counter
+jvm_classes_loaded_total 23021.0
+# HELP jvm_classes_unloaded_total The total number of classes that have been unloaded since the JVM has started execution
+# TYPE jvm_classes_unloaded_total counter
+jvm_classes_unloaded_total 809.0
+# HELP jvm_buffer_pool_used_bytes Used bytes of a given JVM buffer pool.
+# TYPE jvm_buffer_pool_used_bytes gauge
+jvm_buffer_pool_used_bytes{pool="mapped",} 0.0
+jvm_buffer_pool_used_bytes{pool="direct",} 6.2505503E7
+# HELP jvm_buffer_pool_capacity_bytes Bytes capacity of a given JVM buffer pool.
+# TYPE jvm_buffer_pool_capacity_bytes gauge
+jvm_buffer_pool_capacity_bytes{pool="mapped",} 0.0
+jvm_buffer_pool_capacity_bytes{pool="direct",} 6.2505502E7
+# HELP jvm_buffer_pool_used_buffers Used buffers of a given JVM buffer pool.
+# TYPE jvm_buffer_pool_used_buffers gauge
+jvm_buffer_pool_used_buffers{pool="mapped",} 0.0
+jvm_buffer_pool_used_buffers{pool="direct",} 1439.0
+# HELP jvm_memory_bytes_used Used bytes of a given JVM memory area.
+# TYPE jvm_memory_bytes_used gauge
+jvm_memory_bytes_used{area="heap",} 6.6857164E8
+jvm_memory_bytes_used{area="nonheap",} 2.20159416E8
+# HELP jvm_memory_bytes_committed Committed (bytes) of a given JVM memory area.
+# TYPE jvm_memory_bytes_committed gauge
+jvm_memory_bytes_committed{area="heap",} 8.35928064E8
+jvm_memory_bytes_committed{area="nonheap",} 2.37461504E8
+# HELP jvm_memory_bytes_max Max (bytes) of a given JVM memory area.
+# TYPE jvm_memory_bytes_max gauge
+jvm_memory_bytes_max{area="heap",} 1.037959168E9
+jvm_memory_bytes_max{area="nonheap",} -1.0
+# HELP jvm_memory_bytes_init Initial bytes of a given JVM memory area.
+# TYPE jvm_memory_bytes_init gauge
+jvm_memory_bytes_init{area="heap",} 5.36870912E8
+jvm_memory_bytes_init{area="nonheap",} 7667712.0
+# HELP jvm_memory_pool_bytes_used Used bytes of a given JVM memory pool.
+# TYPE jvm_memory_pool_bytes_used gauge
+jvm_memory_pool_bytes_used{pool="CodeHeap 'non-nmethods'",} 1941888.0
+jvm_memory_pool_bytes_used{pool="Metaspace",} 1.2605156E8
+jvm_memory_pool_bytes_used{pool="Tenured Gen",} 4.68804192E8
+jvm_memory_pool_bytes_used{pool="CodeHeap 'profiled nmethods'",} 4.756992E7
+jvm_memory_pool_bytes_used{pool="Eden Space",} 1.9108188E8
+jvm_memory_pool_bytes_used{pool="Survivor Space",} 8785896.0
+jvm_memory_pool_bytes_used{pool="Compressed Class Space",} 1.5854416E7
+jvm_memory_pool_bytes_used{pool="CodeHeap 'non-profiled nmethods'",} 2.8741632E7
+# HELP jvm_memory_pool_bytes_committed Committed bytes of a given JVM memory pool.
+# TYPE jvm_memory_pool_bytes_committed gauge
+jvm_memory_pool_bytes_committed{pool="CodeHeap 'non-nmethods'",} 2555904.0
+jvm_memory_pool_bytes_committed{pool="Metaspace",} 1.35356416E8
+jvm_memory_pool_bytes_committed{pool="Tenured Gen",} 5.75619072E8
+jvm_memory_pool_bytes_committed{pool="CodeHeap 'profiled nmethods'",} 5.2297728E7
+jvm_memory_pool_bytes_committed{pool="Eden Space",} 2.31407616E8
+jvm_memory_pool_bytes_committed{pool="Survivor Space",} 2.8901376E7
+jvm_memory_pool_bytes_committed{pool="Compressed Class Space",} 1.8481152E7
+jvm_memory_pool_bytes_committed{pool="CodeHeap 'non-profiled nmethods'",} 2.8770304E7
+# HELP jvm_memory_pool_bytes_max Max bytes of a given JVM memory pool.
+# TYPE jvm_memory_pool_bytes_max gauge
+jvm_memory_pool_bytes_max{pool="CodeHeap 'non-nmethods'",} 5828608.0
+jvm_memory_pool_bytes_max{pool="Metaspace",} -1.0
+jvm_memory_pool_bytes_max{pool="Tenured Gen",} 7.15849728E8
+jvm_memory_pool_bytes_max{pool="CodeHeap 'profiled nmethods'",} 1.22912768E8
+jvm_memory_pool_bytes_max{pool="Eden Space",} 2.86326784E8
+jvm_memory_pool_bytes_max{pool="Survivor Space",} 3.5782656E7
+jvm_memory_pool_bytes_max{pool="Compressed Class Space",} 1.073741824E9
+jvm_memory_pool_bytes_max{pool="CodeHeap 'non-profiled nmethods'",} 1.22916864E8
+# HELP jvm_memory_pool_bytes_init Initial bytes of a given JVM memory pool.
+# TYPE jvm_memory_pool_bytes_init gauge
+jvm_memory_pool_bytes_init{pool="CodeHeap 'non-nmethods'",} 2555904.0
+jvm_memory_pool_bytes_init{pool="Metaspace",} 0.0
+jvm_memory_pool_bytes_init{pool="Tenured Gen",} 3.57957632E8
+jvm_memory_pool_bytes_init{pool="CodeHeap 'profiled nmethods'",} 2555904.0
+jvm_memory_pool_bytes_init{pool="Eden Space",} 1.43130624E8
+jvm_memory_pool_bytes_init{pool="Survivor Space",} 1.7891328E7
+jvm_memory_pool_bytes_init{pool="Compressed Class Space",} 0.0
+jvm_memory_pool_bytes_init{pool="CodeHeap 'non-profiled nmethods'",} 2555904.0
+# HELP persistence_timer_bulk_execute_latency Latency of the execute stage in persistence timer
+# TYPE persistence_timer_bulk_execute_latency histogram
+persistence_timer_bulk_execute_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.005",} 1.0
+persistence_timer_bulk_execute_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.01",} 229.0
+persistence_timer_bulk_execute_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.025",} 1695.0
+persistence_timer_bulk_execute_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.05",} 81598.0
+persistence_timer_bulk_execute_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.075",} 412721.0
+persistence_timer_bulk_execute_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.1",} 615027.0
+persistence_timer_bulk_execute_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.25",} 1256031.0
+persistence_timer_bulk_execute_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.5",} 1265756.0
+persistence_timer_bulk_execute_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.75",} 1265904.0
+persistence_timer_bulk_execute_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="1.0",} 1265904.0
+persistence_timer_bulk_execute_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="2.5",} 1265904.0
+persistence_timer_bulk_execute_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="5.0",} 1265904.0
+persistence_timer_bulk_execute_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="7.5",} 1265904.0
+persistence_timer_bulk_execute_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="10.0",} 1265904.0
+persistence_timer_bulk_execute_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="+Inf",} 1265904.0
+persistence_timer_bulk_execute_latency_count{sw_backend_instance="0.0.0.0_11800",} 1265904.0
+persistence_timer_bulk_execute_latency_sum{sw_backend_instance="0.0.0.0_11800",} 147362.34607970717
+# HELP cluster_size Cluster size of current oap node
+# TYPE cluster_size gauge
+cluster_size{sw_backend_instance="0.0.0.0_11800",} 1.0
+# HELP cluster_rebalanced_time oap cluster rebalanced time after scale
+# TYPE cluster_rebalanced_time gauge
+cluster_rebalanced_time{sw_backend_instance="0.0.0.0_11800",} 1.786197779719E9
+# HELP jvm_info JVM version info
+# TYPE jvm_info gauge
+jvm_info{version="11.0.21+9",vendor="Eclipse Adoptium",runtime="OpenJDK Runtime Environment",} 1.0
+# HELP jvm_memory_pool_allocated_bytes_total Total bytes allocated in a given JVM memory pool. Only updated after GC, not continuously.
+# TYPE jvm_memory_pool_allocated_bytes_total counter
+jvm_memory_pool_allocated_bytes_total{pool="Eden Space",} 4.96669407E11
+jvm_memory_pool_allocated_bytes_total{pool="CodeHeap 'profiled nmethods'",} 7.2508288E7
+jvm_memory_pool_allocated_bytes_total{pool="CodeHeap 'non-profiled nmethods'",} 3.2464384E7
+jvm_memory_pool_allocated_bytes_total{pool="Compressed Class Space",} 1.6282608E7
+jvm_memory_pool_allocated_bytes_total{pool="Metaspace",} 1.27695616E8
+jvm_memory_pool_allocated_bytes_total{pool="Tenured Gen",} 4.81517408E8
+jvm_memory_pool_allocated_bytes_total{pool="Survivor Space",} 1.603137736E9
+jvm_memory_pool_allocated_bytes_total{pool="CodeHeap 'non-nmethods'",} 1969152.0
+# HELP persistence_timer_bulk_all_latency Latency of the all stage in persistence timer
+# TYPE persistence_timer_bulk_all_latency histogram
+persistence_timer_bulk_all_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.005",} 20.0
+persistence_timer_bulk_all_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.01",} 26.0
+persistence_timer_bulk_all_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.025",} 55.0
+persistence_timer_bulk_all_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.05",} 749.0
+persistence_timer_bulk_all_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.075",} 4208.0
+persistence_timer_bulk_all_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.1",} 6775.0
+persistence_timer_bulk_all_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.25",} 9513.0
+persistence_timer_bulk_all_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.5",} 9586.0
+persistence_timer_bulk_all_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.75",} 9588.0
+persistence_timer_bulk_all_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="1.0",} 9588.0
+persistence_timer_bulk_all_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="2.5",} 9588.0
+persistence_timer_bulk_all_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="5.0",} 9588.0
+persistence_timer_bulk_all_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="7.5",} 9588.0
+persistence_timer_bulk_all_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="10.0",} 9588.0
+persistence_timer_bulk_all_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="+Inf",} 9588.0
+persistence_timer_bulk_all_latency_count{sw_backend_instance="0.0.0.0_11800",} 9588.0
+persistence_timer_bulk_all_latency_sum{sw_backend_instance="0.0.0.0_11800",} 927.6830561890014
+# HELP trace_in_latency The process latency of trace data
+# TYPE trace_in_latency histogram
+trace_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.005",} 3434961.0
+trace_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.01",} 3435006.0
+trace_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.025",} 3435191.0
+trace_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.05",} 3435192.0
+trace_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.075",} 3435192.0
+trace_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.1",} 3435192.0
+trace_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.25",} 3435203.0
+trace_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.5",} 3435203.0
+trace_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.75",} 3435203.0
+trace_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="1.0",} 3435203.0
+trace_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="2.5",} 3435203.0
+trace_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="5.0",} 3435203.0
+trace_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="7.5",} 3435203.0
+trace_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="10.0",} 3435203.0
+trace_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="+Inf",} 3435203.0
+trace_in_latency_count{sw_backend_instance="0.0.0.0_11800",protocol="grpc",} 3435203.0
+trace_in_latency_sum{sw_backend_instance="0.0.0.0_11800",protocol="grpc",} 227.50590255199705
+# HELP metrics_persistent_cache The counter of metrics status, new or cached.
+# TYPE metrics_persistent_cache counter
+metrics_persistent_cache{sw_backend_instance="0.0.0.0_11800",status="cached",} 2.118004E7
+metrics_persistent_cache{sw_backend_instance="0.0.0.0_11800",status="new",} 261818.0
+# HELP uptime oap server start up time
+# TYPE uptime gauge
+uptime{sw_backend_instance="0.0.0.0_11800",} 1.786197785704E9
+# HELP event_in_latency The process latency of event data
+# TYPE event_in_latency histogram
+event_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.005",} 193.0
+event_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.01",} 194.0
+event_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.025",} 194.0
+event_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.05",} 194.0
+event_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.075",} 194.0
+event_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.1",} 194.0
+event_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.25",} 194.0
+event_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.5",} 194.0
+event_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="0.75",} 194.0
+event_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="1.0",} 194.0
+event_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="2.5",} 194.0
+event_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="5.0",} 194.0
+event_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="7.5",} 194.0
+event_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="10.0",} 194.0
+event_in_latency_bucket{sw_backend_instance="0.0.0.0_11800",protocol="grpc",le="+Inf",} 194.0
+event_in_latency_count{sw_backend_instance="0.0.0.0_11800",protocol="grpc",} 194.0
+event_in_latency_sum{sw_backend_instance="0.0.0.0_11800",protocol="grpc",} 0.02559107300000001

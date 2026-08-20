@@ -1,0 +1,20 @@
+# filebeat 配置（2026-08-12 重构：采中间件容器日志，非微服务 JSON）
+# 背景：微服务日志走 logback TCP 15044 直推（主链路）；本 filebeat 采 docker 容器 stdout
+#       （MySQL/ES/OAP/RocketMQ 等运行日志）→ logstash beats 15045 → ES
+filebeat.inputs:
+  - type: docker
+    enabled: true
+    containers.ids: "*"
+    combine_partial: true
+    json.keys_under_root: true
+    processors:
+      - drop_event:
+          when:
+            equals:
+              container.name: my-xhs-filebeat   # 排除自采
+
+output.logstash:
+  hosts: ["127.0.0.1:15045"]
+
+logging.level: info
+logging.to_files: false

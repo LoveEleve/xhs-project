@@ -1,0 +1,246 @@
+[
+    {
+        "Id": "21c8021a9a876a52eeec201cf4e2b16a956fc17db36bfe0beda99c5d7e0670e8",
+        "Created": "2026-08-08T14:01:41.304586362Z",
+        "Path": "/victoria-metrics-prod",
+        "Args": [
+            "-storageDataPath=/victoria-metrics-data",
+            "-retentionPeriod=30d",
+            "-httpListenAddr=:8428"
+        ],
+        "State": {
+            "Status": "running",
+            "Running": true,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 3322252,
+            "ExitCode": 0,
+            "Error": "",
+            "StartedAt": "2026-08-08T14:01:41.512580565Z",
+            "FinishedAt": "0001-01-01T00:00:00Z"
+        },
+        "Image": "sha256:cc5ebf92b4abfae5ff5d9ae548d7929308e4a67a1747f8073bc8ea5bc38074b0",
+        "ResolvConfPath": "/data/docker/lib/containers/21c8021a9a876a52eeec201cf4e2b16a956fc17db36bfe0beda99c5d7e0670e8/resolv.conf",
+        "HostnamePath": "/data/docker/lib/containers/21c8021a9a876a52eeec201cf4e2b16a956fc17db36bfe0beda99c5d7e0670e8/hostname",
+        "HostsPath": "/data/docker/lib/containers/21c8021a9a876a52eeec201cf4e2b16a956fc17db36bfe0beda99c5d7e0670e8/hosts",
+        "LogPath": "",
+        "Name": "/my-xhs-victoria-metrics",
+        "RestartCount": 0,
+        "Driver": "overlay2",
+        "Platform": "linux",
+        "MountLabel": "",
+        "ProcessLabel": "",
+        "AppArmorProfile": "",
+        "ExecIDs": null,
+        "HostConfig": {
+            "Binds": null,
+            "ContainerIDFile": "",
+            "LogConfig": {
+                "Type": "journald",
+                "Config": {}
+            },
+            "NetworkMode": "host",
+            "PortBindings": {},
+            "RestartPolicy": {
+                "Name": "unless-stopped",
+                "MaximumRetryCount": 0
+            },
+            "AutoRemove": false,
+            "VolumeDriver": "",
+            "VolumesFrom": null,
+            "ConsoleSize": [
+                0,
+                0
+            ],
+            "CapAdd": null,
+            "CapDrop": null,
+            "CgroupnsMode": "private",
+            "Dns": null,
+            "DnsOptions": null,
+            "DnsSearch": null,
+            "ExtraHosts": [],
+            "GroupAdd": null,
+            "IpcMode": "private",
+            "Cgroup": "",
+            "Links": null,
+            "OomScoreAdj": 0,
+            "PidMode": "",
+            "Privileged": false,
+            "PublishAllPorts": false,
+            "ReadonlyRootfs": false,
+            "SecurityOpt": null,
+            "UTSMode": "",
+            "UsernsMode": "",
+            "ShmSize": 67108864,
+            "Runtime": "runc",
+            "Isolation": "",
+            "CpuShares": 0,
+            "Memory": 671088640,
+            "NanoCpus": 250000000,
+            "CgroupParent": "",
+            "BlkioWeight": 0,
+            "BlkioWeightDevice": null,
+            "BlkioDeviceReadBps": null,
+            "BlkioDeviceWriteBps": null,
+            "BlkioDeviceReadIOps": null,
+            "BlkioDeviceWriteIOps": null,
+            "CpuPeriod": 0,
+            "CpuQuota": 0,
+            "CpuRealtimePeriod": 0,
+            "CpuRealtimeRuntime": 0,
+            "CpusetCpus": "",
+            "CpusetMems": "",
+            "Devices": null,
+            "DeviceCgroupRules": null,
+            "DeviceRequests": null,
+            "MemoryReservation": 201326592,
+            "MemorySwap": 1342177280,
+            "MemorySwappiness": null,
+            "OomKillDisable": null,
+            "PidsLimit": null,
+            "Ulimits": [
+                {
+                    "Name": "nofile",
+                    "Hard": 1048576,
+                    "Soft": 1048576
+                }
+            ],
+            "CpuCount": 0,
+            "CpuPercent": 0,
+            "IOMaximumIOps": 0,
+            "IOMaximumBandwidth": 0,
+            "Mounts": [
+                {
+                    "Type": "volume",
+                    "Source": "my-xhs-deploy-zip_vm-data",
+                    "Target": "/victoria-metrics-data",
+                    "VolumeOptions": {}
+                }
+            ],
+            "MaskedPaths": [
+                "/proc/asound",
+                "/proc/acpi",
+                "/proc/interrupts",
+                "/proc/kcore",
+                "/proc/keys",
+                "/proc/latency_stats",
+                "/proc/timer_list",
+                "/proc/timer_stats",
+                "/proc/sched_debug",
+                "/proc/scsi",
+                "/sys/firmware",
+                "/sys/devices/virtual/powercap"
+            ],
+            "ReadonlyPaths": [
+                "/proc/bus",
+                "/proc/fs",
+                "/proc/irq",
+                "/proc/sys",
+                "/proc/sysrq-trigger"
+            ]
+        },
+        "GraphDriver": {
+            "Data": {
+                "ID": "21c8021a9a876a52eeec201cf4e2b16a956fc17db36bfe0beda99c5d7e0670e8",
+                "LowerDir": "/data/docker/lib/overlay2/2b7a5844c7b0585872e48df1cd5f20f5f687c912c05d092fa34b1264412186c8-init/diff:/data/docker/lib/overlay2/6f71bc6a76e5c1312e54c991cd573a67e15560fbc0ba3599c92ee3604184ad43/diff:/data/docker/lib/overlay2/7c5108a7f999a000efc336e7908dd5b09e2045d25520ff90869197752093ca20/diff:/data/docker/lib/overlay2/217a4b9596d7147e99f54307b422e0a21d8fb12bd0313b6507e405988e60b2d7/diff",
+                "MergedDir": "/data/docker/lib/overlay2/2b7a5844c7b0585872e48df1cd5f20f5f687c912c05d092fa34b1264412186c8/merged",
+                "UpperDir": "/data/docker/lib/overlay2/2b7a5844c7b0585872e48df1cd5f20f5f687c912c05d092fa34b1264412186c8/diff",
+                "WorkDir": "/data/docker/lib/overlay2/2b7a5844c7b0585872e48df1cd5f20f5f687c912c05d092fa34b1264412186c8/work"
+            },
+            "Name": "overlay2"
+        },
+        "Mounts": [
+            {
+                "Type": "volume",
+                "Name": "my-xhs-deploy-zip_vm-data",
+                "Source": "/data/docker/lib/volumes/my-xhs-deploy-zip_vm-data/_data",
+                "Destination": "/victoria-metrics-data",
+                "Driver": "local",
+                "Mode": "z",
+                "RW": true,
+                "Propagation": ""
+            }
+        ],
+        "Config": {
+            "Hostname": "VM-247-89-tencentos",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": true,
+            "AttachStderr": true,
+            "ExposedPorts": {
+                "8428/tcp": {}
+            },
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            ],
+            "Cmd": [
+                "-storageDataPath=/victoria-metrics-data",
+                "-retentionPeriod=30d",
+                "-httpListenAddr=:8428"
+            ],
+            "Image": "victoriametrics/victoria-metrics:v1.93.12",
+            "Volumes": null,
+            "WorkingDir": "",
+            "Entrypoint": [
+                "/victoria-metrics-prod"
+            ],
+            "OnBuild": null,
+            "Labels": {
+                "com.docker.compose.config-hash": "34008b7fa89231e630c85423feb229493865e97daabb768b46e558a4f0f87656",
+                "com.docker.compose.container-number": "1",
+                "com.docker.compose.depends_on": "",
+                "com.docker.compose.image": "sha256:cc5ebf92b4abfae5ff5d9ae548d7929308e4a67a1747f8073bc8ea5bc38074b0",
+                "com.docker.compose.oneoff": "False",
+                "com.docker.compose.project": "my-xhs-deploy-zip",
+                "com.docker.compose.project.config_files": "/data/workspace/my-xhs-deploy-zip/docker-compose.yml",
+                "com.docker.compose.project.working_dir": "/data/workspace/my-xhs-deploy-zip",
+                "com.docker.compose.service": "victoria-metrics",
+                "com.docker.compose.version": "2.29.2"
+            }
+        },
+        "NetworkSettings": {
+            "Bridge": "",
+            "SandboxID": "71896fafa7f1df275c0cf392dfa9d5762cf9658b87a668ed5d2f5c8d649383f3",
+            "SandboxKey": "/var/run/docker/netns/default",
+            "Ports": {},
+            "HairpinMode": false,
+            "LinkLocalIPv6Address": "",
+            "LinkLocalIPv6PrefixLen": 0,
+            "SecondaryIPAddresses": null,
+            "SecondaryIPv6Addresses": null,
+            "EndpointID": "",
+            "Gateway": "",
+            "GlobalIPv6Address": "",
+            "GlobalIPv6PrefixLen": 0,
+            "IPAddress": "",
+            "IPPrefixLen": 0,
+            "IPv6Gateway": "",
+            "MacAddress": "",
+            "Networks": {
+                "host": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": null,
+                    "MacAddress": "",
+                    "DriverOpts": null,
+                    "GwPriority": 0,
+                    "NetworkID": "69303899f57d4447764f56f161dceb184df134844eb038322985183a4f6b4dff",
+                    "EndpointID": "464b00ebf57ea36ab047b359520a7dc339b8ff6832c5183896d0d5046e87d0b5",
+                    "Gateway": "",
+                    "IPAddress": "",
+                    "IPPrefixLen": 0,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "DNSNames": null
+                }
+            }
+        }
+    }
+]

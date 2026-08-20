@@ -129,7 +129,7 @@ public class InventoryReconcileJob {
      */
     private void reconcileBuckets(Long skuId) {
         String countStr = stringRedisTemplate.opsForValue()
-                .get("inventory:bucket:count:" + skuId);
+                .get(String.format("inventory:bucket:count:{%d}", skuId));
         if (countStr == null) return;
         int bucketCount;
         try {

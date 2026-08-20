@@ -82,9 +82,12 @@ public class CouponClaimConsumer implements RocketMQListener<MessageExt> {
             }
 
             // 3. 扣减模板剩余数量
-            templateMapper.decrementRemainCount(event.templateId());
+            int affected = templateMapper.decrementRemainCount(event.templateId());
+            if (affected != 1) {
+                throw new IllegalStateException("优惠券库存扣减失败: templateId=" + event.templateId());
+            }
 
-            log.info("[优惠券MQ] 领券持久化成功: userId={}, templateId={}, userCouponId={}",
+            log.info("[优惠券MQ] 领券持久化成功: userId={}, templateId={}, userCouponId={}, stockUpdated={}",
                     event.userId(), event.templateId(), userCoupon.getId());
 
         } catch (Exception e) {

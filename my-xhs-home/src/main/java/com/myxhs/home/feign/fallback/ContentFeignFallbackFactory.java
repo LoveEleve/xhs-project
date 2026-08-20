@@ -1,6 +1,7 @@
 package com.myxhs.home.feign.fallback;
 
 import com.myxhs.common.response.R;
+import com.myxhs.common.response.ResultCode;
 import com.myxhs.home.feign.ContentFeignClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.openfeign.FallbackFactory;
@@ -18,7 +19,13 @@ public class ContentFeignFallbackFactory implements FallbackFactory<ContentFeign
         return new ContentFeignClient() {
             @Override
             public R<Map<String, Object>> getNoteDetail(Long noteId) {
-                return R.ok(Collections.emptyMap());
+                return R.fail(ResultCode.SERVICE_UNAVAILABLE, "内容服务不可用");
+            }
+
+            @Override
+            public R<Map<String, Object>> batchGetNoteDetail(java.util.List<Long> noteIds) {
+                log.warn("[Feign降级] 批量获取笔记详情失败: noteIds={}", noteIds);
+                return R.fail(ResultCode.SERVICE_UNAVAILABLE, "内容服务不可用");
             }
 
             @Override

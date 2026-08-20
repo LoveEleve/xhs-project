@@ -1,0 +1,32 @@
+############ my-xhs-elasticsearch 真实生效配置(进程实际使用的)
+#### ENTRYPOINT
+[
+    "/bin/tini",
+    "--",
+    "/usr/local/bin/docker-entrypoint.sh"
+]
+#### CMD(命令行参数=多数服务真实配置)
+[
+    "bash",
+    "-c",
+    "\n  if [ ! -d /usr/share/elasticsearch/plugins/analysis-ik ]; then\n    echo '=== Installing IK Analyzer ===' &&\n    elasticsearch-plugin install --batch https://get.infini.cloud/elasticsearch/analysis-ik/8.19.19\n  fi &&\n  /usr/local/bin/docker-entrypoint.sh eswrapper\n"
+]
+#### ENV(环境变量)
+cluster.name=my-xhs-es
+node.name=es-node-1
+xpack.security.http.ssl.enabled=false
+ELASTIC_PASSWORD=Xhs@2026#Elastic
+xpack.security.enabled=true
+ES_JAVA_OPTS=-Xms256m -Xmx512m
+transport.port=19300
+http.port=19200
+discovery.type=single-node
+PATH=/usr/share/elasticsearch/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ELASTIC_CONTAINER=true
+SHELL=/bin/bash
+
+#### 资源限制
+MemLimit=2147483648 CPULimit=500000000 Restart=unless-stopped
+#### 挂载的配置文件
+/data/docker/lib/volumes/my-xhs-deploy-zip_es-data/_data -> /usr/share/elasticsearch/data
+

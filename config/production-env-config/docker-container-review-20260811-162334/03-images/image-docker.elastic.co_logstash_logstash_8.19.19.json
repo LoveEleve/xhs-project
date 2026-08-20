@@ -1,0 +1,86 @@
+[
+    {
+        "Id": "sha256:ecf5072185bcf45f5f7fce80335aaf57ba3221dd812f7455b1789ec7c532ece3",
+        "RepoTags": [
+            "docker.elastic.co/logstash/logstash:8.19.19"
+        ],
+        "RepoDigests": [
+            "docker.elastic.co/logstash/logstash@sha256:1b2d518d4bd10bfad9d8e0f162cfe081dbeb7cd5af575723051b7eb40fcc423e"
+        ],
+        "Parent": "",
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2026-07-14T20:00:36.862806427Z",
+        "DockerVersion": "",
+        "Author": "",
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 911459166,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/data/docker/lib/overlay2/6a21ed64a554f4080779ec05bdef5229870cdc97c54090e06581923cb4fbbcd8/diff:/data/docker/lib/overlay2/b9f48ec53262dcd0ccbebe2cd0a1f5c257a0a673daa64e30efe1686171a9f7d3/diff:/data/docker/lib/overlay2/1d455d0804c71d3695f8f59503b574bcf95700424e0ddac944a05210e5d68342/diff:/data/docker/lib/overlay2/0092772d169a918ec7a375a81010d2427333adab336617a38e2c2997fa5e7f9b/diff:/data/docker/lib/overlay2/a0eae8f9a6e1898598c21e255986f87169ff19d77d28acdf8547e305de8f813e/diff:/data/docker/lib/overlay2/dfec22ccbe9011c1deae6a839b5e35392826770843bcb05fb4d2fd880a6fd7b6/diff:/data/docker/lib/overlay2/daf817d0d7c2cbc4bf22b3ec52711b03fcf7d2d9eaef660176af205db6c9a3d0/diff:/data/docker/lib/overlay2/84a9ebac60c529a1d835d4617f120ed02dd3bdb810beba6181f234b79c51d0f9/diff:/data/docker/lib/overlay2/f6d14673ef8c55d0d34fa782fd8f892d224df5dd4524f29f87f72237d7f74271/diff:/data/docker/lib/overlay2/1afa76796230eb718dbba64b7dee3e1db44a8a4cc3583cb347ea470100eda492/diff:/data/docker/lib/overlay2/865050c27f5927fae60a1e94431c2c46bf9c6000147a6435550585ff29022ecc/diff:/data/docker/lib/overlay2/1ab1351ec37498ab9ab0e7796220b9696411b652d0f55b5dcec7ca4a2b79056e/diff:/data/docker/lib/overlay2/249369caf934733808f18460755d29e818ed5a3af627e21b618548b964e67480/diff",
+                "MergedDir": "/data/docker/lib/overlay2/f8e50f96c03251bcb40dc8a533e5908d9a3a08292d3a6093b5b632773980778a/merged",
+                "UpperDir": "/data/docker/lib/overlay2/f8e50f96c03251bcb40dc8a533e5908d9a3a08292d3a6093b5b632773980778a/diff",
+                "WorkDir": "/data/docker/lib/overlay2/f8e50f96c03251bcb40dc8a533e5908d9a3a08292d3a6093b5b632773980778a/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:98effb2dfe85d4c431f97d90482075f19e5fc3a57c2dd423d8bdfd4813620043",
+                "sha256:4e39701e65fd7477308ecee74f0262d82ede761dd43cc078ac712ab0496e9b54",
+                "sha256:cb4099be215f1a5e0690d13bddd9865ee98d00eceebb8d24ca583844712fc5d7",
+                "sha256:82a11925f91a3b90a34fd9a704bf9e7ddf91aa19def3c4aecb7d84fab8773223",
+                "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
+                "sha256:1a4994917b61f49a2a1190cc2924988b134315b34350886e492190447013ad9c",
+                "sha256:33caaa205bd88c578d10507b4555bbcb1776089d4d0d87c890a71a2cc5dc9627",
+                "sha256:99f9a2e85c979806087eccd890b24fbe1aaa7c26de9cc42c3297c4d29ff9a657",
+                "sha256:a294b1943fd1f21e5db0f1b5fa14beac035607312ce3575c45118e6de60e0a00",
+                "sha256:d6c50dfab65080982e08a03aad309e016356fa0e478abafa567a505c4159d1fa",
+                "sha256:13c7e464bc6a744658a541f735080c68d90a478a9de1d8bac8cfa56b57969c07",
+                "sha256:2c624b2f517d0ea2fdf479b7142250849d8fe1626dbb533a47265ab2f7b6745e",
+                "sha256:0d6a26852ef37591368619cd944fac15cd9178e3adc6942dfcdf50f5fa9a1a07",
+                "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        },
+        "Config": {
+            "Cmd": null,
+            "Entrypoint": [
+                "/usr/local/bin/docker-entrypoint"
+            ],
+            "Env": [
+                "PATH=/usr/share/logstash/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "ELASTIC_CONTAINER=true",
+                "LANG=en_US.UTF-8",
+                "LC_ALL=en_US.UTF-8"
+            ],
+            "ExposedPorts": {
+                "5044/tcp": {},
+                "9600/tcp": {}
+            },
+            "Labels": {
+                "org.label-schema.build-date": "2026-07-14T19:57:39+00:00",
+                "org.label-schema.license": "Elastic License",
+                "org.label-schema.name": "logstash",
+                "org.label-schema.schema-version": "1.0",
+                "org.label-schema.url": "https://www.elastic.co/products/logstash",
+                "org.label-schema.vcs-url": "https://github.com/elastic/logstash",
+                "org.label-schema.vendor": "Elastic",
+                "org.label-schema.version": "8.19.19",
+                "org.opencontainers.image.created": "2026-07-14T19:57:39+00:00",
+                "org.opencontainers.image.description": "Logstash is a free and open server-side data processing pipeline that ingests data from a multitude of sources, transforms it, and then sends it to your favorite 'stash.'",
+                "org.opencontainers.image.licenses": "Elastic License",
+                "org.opencontainers.image.title": "logstash",
+                "org.opencontainers.image.vendor": "Elastic",
+                "org.opencontainers.image.version": "8.19.19"
+            },
+            "OnBuild": null,
+            "User": "1000",
+            "Volumes": null,
+            "WorkingDir": "/usr/share/logstash"
+        }
+    }
+]

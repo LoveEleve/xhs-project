@@ -1,0 +1,130 @@
+########## 用户与权限
+user	host	plugin	account_locked
+canal	%	mysql_native_password	N
+root	%	mysql_native_password	N
+mysql.infoschema	localhost	caching_sha2_password	Y
+mysql.session	localhost	caching_sha2_password	Y
+mysql.sys	localhost	caching_sha2_password	Y
+root	localhost	mysql_native_password	N
+Grants for canal@%
+GRANT SELECT, REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO `canal`@`%`
+########## 当前连接数
+Variable_name	Value
+Threads_connected	99
+Variable_name	Value
+Max_used_connections	107
+########## PROCESSLIST
+id	user	host	db	command	time	state	info
+2609	root	127.0.0.1:51004	NULL	Binlog Dump GTID	193749	Source has sent all binlog to replica; waiting for more updates	NULL
+8834	canal	127.0.0.1:60884	NULL	Binlog Dump	84501	Source has sent all binlog to replica; waiting for more updates	NULL
+8828	canal	127.0.0.1:60838	NULL	Binlog Dump	84503	Source has sent all binlog to replica; waiting for more updates	NULL
+5	event_scheduler	localhost	NULL	Daemon	240496	Waiting on empty queue	NULL
+22829	root	localhost	NULL	Query	0	executing	SELECT id, user, host, db, command, time, state, LEFT(info,100) AS info FROM information_schema.proc
+8831	canal	127.0.0.1:60868	NULL	Binlog Dump	84503	Source has sent all binlog to replica; waiting for more updates	NULL
+########## 各业务表行数(估算)
+TABLE_SCHEMA	TABLE_NAME	TABLE_ROWS	data_mb	idx_mb
+my_xhs_order_1	t_order_snapshot_0	174	0.2	0.0
+my_xhs_content	t_hot_search_snapshot	1002	0.1	0.0
+my_xhs_order_2	t_order_snapshot_0	80	0.1	0.0
+my_xhs_order_1	t_local_message_0	75	0.0	0.0
+my_xhs_search	t_hot_search_snapshot	287	0.0	0.0
+my_xhs_content	t_local_message	52	0.0	0.0
+my_xhs_order_0	t_order_0	0	0.0	0.0
+my_xhs_order_0	t_local_message_3	0	0.0	0.0
+my_xhs_order_0	t_local_message_2	0	0.0	0.0
+my_xhs_order_0	t_local_message_1	0	0.0	0.0
+my_xhs_inventory	t_tcc_freeze_detail	0	0.0	0.0
+my_xhs_order	t_order_no_mapping	138	0.0	0.0
+my_xhs_coupon	t_user_coupon	22	0.0	0.1
+my_xhs_coupon	t_coupon_template	17	0.0	0.0
+my_xhs_coupon	t_coupon_outbox	4	0.0	0.0
+my_xhs_cart	t_cart_item	3	0.0	0.0
+my_xhs_order_0	t_order_2	0	0.0	0.0
+my_xhs_order_0	t_order_3	0	0.0	0.0
+my_xhs_product	t_spu	21	0.0	0.0
+my_xhs_product	t_sku	21	0.0	0.0
+my_xhs_product	t_category	16	0.0	0.0
+my_xhs_counter	t_counter	102	0.0	0.0
+my_xhs_notification	t_push_template	5	0.0	0.0
+my_xhs_user	t_user	78	0.0	0.0
+my_xhs_user	t_user_address	24	0.0	0.0
+my_xhs_analytics	t_favorite	15	0.0	0.0
+my_xhs_analytics	t_follow	1	0.0	0.0
+my_xhs_analytics	t_like	44	0.0	0.0
+my_xhs_analytics	t_user_behavior	0	0.0	0.1
+my_xhs_notification	t_notification	34	0.0	0.0
+my_xhs_notification	t_push_task	0	0.0	0.0
+my_xhs_notification	t_push_task_fail	0	0.0	0.0
+my_xhs_search	t_hot_search	5	0.0	0.0
+my_xhs_im	t_chat_message	13	0.0	0.1
+my_xhs_im	t_chat_user_relation	2	0.0	0.0
+seata_lab	seata_account	2	0.0	0.0
+seata_lab	undo_log	0	0.0	0.0
+my_xhs_content	t_comment	52	0.0	0.0
+my_xhs_content	t_note	54	0.0	0.0
+my_xhs_content	t_topic	0	0.0	0.0
+########## 用户与权限
+user	host	plugin	account_locked
+canal	%	mysql_native_password	N
+root	%	mysql_native_password	N
+mysql.infoschema	localhost	caching_sha2_password	Y
+mysql.session	localhost	caching_sha2_password	Y
+mysql.sys	localhost	caching_sha2_password	Y
+root	localhost	mysql_native_password	N
+Grants for canal@%
+GRANT SELECT, REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO `canal`@`%`
+########## 当前连接数
+Variable_name	Value
+Threads_connected	99
+Variable_name	Value
+Max_used_connections	107
+########## PROCESSLIST
+id	user	host	db	command	time	state	info
+2609	root	127.0.0.1:51004	NULL	Binlog Dump GTID	193798	Source has sent all binlog to replica; waiting for more updates	NULL
+8834	canal	127.0.0.1:60884	NULL	Binlog Dump	84550	Source has sent all binlog to replica; waiting for more updates	NULL
+8828	canal	127.0.0.1:60838	NULL	Binlog Dump	84552	Source has sent all binlog to replica; waiting for more updates	NULL
+5	event_scheduler	localhost	NULL	Daemon	240545	Waiting on empty queue	NULL
+22846	root	localhost	NULL	Query	0	executing	SELECT id, user, host, db, command, time, state, LEFT(info,100) AS info FROM information_schema.proc
+8831	canal	127.0.0.1:60868	NULL	Binlog Dump	84552	Source has sent all binlog to replica; waiting for more updates	NULL
+########## 各业务表行数(估算)
+TABLE_SCHEMA	TABLE_NAME	TABLE_ROWS	data_mb	idx_mb
+my_xhs_order_1	t_order_snapshot_0	174	0.2	0.0
+my_xhs_content	t_hot_search_snapshot	1002	0.1	0.0
+my_xhs_order_2	t_order_snapshot_0	80	0.1	0.0
+my_xhs_order_1	t_local_message_0	75	0.0	0.0
+my_xhs_search	t_hot_search_snapshot	287	0.0	0.0
+my_xhs_content	t_local_message	52	0.0	0.0
+my_xhs_order_0	t_order_0	0	0.0	0.0
+my_xhs_order_0	t_local_message_3	0	0.0	0.0
+my_xhs_order_0	t_local_message_2	0	0.0	0.0
+my_xhs_order_0	t_local_message_1	0	0.0	0.0
+my_xhs_inventory	t_tcc_freeze_detail	0	0.0	0.0
+my_xhs_order	t_order_no_mapping	138	0.0	0.0
+my_xhs_coupon	t_user_coupon	22	0.0	0.1
+my_xhs_coupon	t_coupon_template	17	0.0	0.0
+my_xhs_coupon	t_coupon_outbox	4	0.0	0.0
+my_xhs_cart	t_cart_item	3	0.0	0.0
+my_xhs_order_0	t_order_2	0	0.0	0.0
+my_xhs_order_0	t_order_3	0	0.0	0.0
+my_xhs_product	t_spu	21	0.0	0.0
+my_xhs_product	t_sku	21	0.0	0.0
+my_xhs_product	t_category	16	0.0	0.0
+my_xhs_counter	t_counter	102	0.0	0.0
+my_xhs_notification	t_push_template	5	0.0	0.0
+my_xhs_user	t_user	78	0.0	0.0
+my_xhs_user	t_user_address	24	0.0	0.0
+my_xhs_analytics	t_favorite	15	0.0	0.0
+my_xhs_analytics	t_follow	1	0.0	0.0
+my_xhs_analytics	t_like	44	0.0	0.0
+my_xhs_analytics	t_user_behavior	0	0.0	0.1
+my_xhs_notification	t_notification	34	0.0	0.0
+my_xhs_notification	t_push_task	0	0.0	0.0
+my_xhs_notification	t_push_task_fail	0	0.0	0.0
+my_xhs_search	t_hot_search	5	0.0	0.0
+my_xhs_im	t_chat_message	13	0.0	0.1
+my_xhs_im	t_chat_user_relation	2	0.0	0.0
+seata_lab	seata_account	2	0.0	0.0
+seata_lab	undo_log	0	0.0	0.0
+my_xhs_content	t_comment	52	0.0	0.0
+my_xhs_content	t_note	54	0.0	0.0
+my_xhs_content	t_topic	0	0.0	0.0

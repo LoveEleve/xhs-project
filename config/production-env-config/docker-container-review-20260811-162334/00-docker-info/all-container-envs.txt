@@ -1,0 +1,214 @@
+===== 每容器完整环境变量 =====
+########## my-xhs-canal
+PATH=/opt/kona-jdk8/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+JAVA_HOME=/opt/kona-jdk8
+JAVA_OPTS=-Xms256m -Xmx512m -Xmn128m -XX:SurvivorRatio=2 -XX:MaxTenuringThreshold=15 -XX:+DisableExplicitGC
+
+########## my-xhs-mysql-slave
+TZ=Asia/Shanghai
+MYSQL_ROOT_PASSWORD=Xhs@2026#MySQL
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+GOSU_VERSION=1.19
+MYSQL_MAJOR=8.0
+MYSQL_VERSION=8.0.46-1.el9
+MYSQL_SHELL_VERSION=8.0.46-1.el9
+
+########## my-xhs-nacos
+NACOS_APPLICATION_PORT=18848
+MYSQL_SERVICE_HOST=127.0.0.1
+SPRING_DATASOURCE_PLATFORM=mysql
+JAVA_HOME=/opt/kona-jdk17
+NACOS_SERVER_IP=21.130.247.89
+MODE=standalone
+MYSQL_SERVICE_PORT=3306
+MYSQL_SERVICE_DB_NAME=nacos_config
+MYSQL_SERVICE_USER=root
+MYSQL_SERVICE_PASSWORD=Xhs@2026#MySQL
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+PREFER_HOST_MODE=ip
+BASE_DIR=/home/nacos
+CLASSPATH=.:/home/nacos/conf:
+CLUSTER_CONF=/home/nacos/conf/cluster.conf
+FUNCTION_MODE=all
+NACOS_USER=nacos
+JAVA=/usr/lib/jvm/java-1.8.0-openjdk/bin/java
+JVM_XMS=1g
+JVM_XMX=1g
+JVM_XMN=512m
+JVM_MS=128m
+JVM_MMS=320m
+NACOS_DEBUG=n
+TOMCAT_ACCESSLOG_ENABLED=false
+TIME_ZONE=Asia/Shanghai
+
+########## my-xhs-filebeat
+PATH=/usr/share/filebeat:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ELASTIC_CONTAINER=true
+GODEBUG=madvdontneed=1
+LIBBEAT_MONITORING_CGROUPS_HIERARCHY_OVERRIDE=/
+
+########## my-xhs-skywalking-ui
+SW_OAP_ADDRESS=http://127.0.0.1:12800
+SERVER_PORT=8080
+PATH=/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+JAVA_HOME=/opt/java/openjdk
+LANG=en_US.UTF-8
+LANGUAGE=en_US:en
+LC_ALL=en_US.UTF-8
+JAVA_VERSION=jdk-11.0.21+9
+JAVA_OPTS= -Xms256M 
+SW_ZIPKIN_ADDRESS=http://127.0.0.1:9412
+
+########## my-xhs-redis-sentinel
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+REDIS_VERSION=7.4.9
+
+########## my-xhs-kibana
+ELASTICSEARCH_HOSTS=http://127.0.0.1:19200
+ELASTICSEARCH_USERNAME=kibana_system
+ELASTICSEARCH_PASSWORD=Xhs@2026#KibanaSystem
+SERVER_PORT=15601
+PATH=/usr/share/kibana/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ELASTIC_CONTAINER=true
+
+########## my-xhs-logstash
+XPACK_MONITORING_ENABLED=false
+LS_JAVA_OPTS=-Xms256m -Xmx512m
+PATH=/usr/share/logstash/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ELASTIC_CONTAINER=true
+LANG=en_US.UTF-8
+LC_ALL=en_US.UTF-8
+
+########## my-xhs-skywalking-oap
+SW_ES_USER=elastic
+SW_HEALTH_CHECKER=default
+SW_STORAGE_ES_CLUSTER_NODES=127.0.0.1:19201
+SW_TELEMETRY_PROMETHEUS_PORT=1234
+SW_TELEMETRY_PROMETHEUS_HOST=127.0.0.1
+SW_TELEMETRY=prometheus
+JAVA_OPTS=-Xms512m -Xmx1024m
+JAVA_HOME=/opt/kona-jdk17
+SW_ES_PASSWORD=Xhs@2026#ElasticSW
+SW_STORAGE=elasticsearch
+PATH=/skywalking/bin:/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+LANG=en_US.UTF-8
+LANGUAGE=en_US:en
+LC_ALL=en_US.UTF-8
+JAVA_VERSION=jdk-11.0.21+9
+SKYWALKING_HOME=/skywalking
+
+########## my-xhs-xxl-job-admin
+JAVA_HOME=/opt/kona-jdk17
+PARAMS=--spring.datasource.url=jdbc:mysql://127.0.0.1:3306/xxl_job?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai --spring.datasource.username=root --spring.datasource.password=Xhs@2026#MySQL --server.port=18080 --xxl.job.accessToken=my-xhs-xxl-job-token-2026 --xxl.job.i18n=zh_CN
+PATH=/usr/local/openjdk-8/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+LANG=C.UTF-8
+JAVA_VERSION=8u342
+TZ=PRC
+
+########## my-xhs-rocketmq-dashboard
+rocketmq.config.namesrvAddr=127.0.0.1:9876
+SERVER_PORT=18081
+PATH=/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+container=oci
+JAVA_HOME=/opt/java/openjdk
+LANG=en_US.UTF-8
+LANGUAGE=en_US:en
+LC_ALL=en_US.UTF-8
+JAVA_VERSION=jdk-17.0.16+8
+JAVA_OPTS=
+
+########## my-xhs-grafana
+GF_AUTH_ANONYMOUS_ENABLED=false
+GF_SERVER_HTTP_PORT=13000
+GF_SECURITY_ADMIN_USER=admin
+GF_SECURITY_ADMIN_PASSWORD=Xhs@2026#Admin
+PATH=/usr/share/grafana/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+GF_PATHS_CONFIG=/etc/grafana/grafana.ini
+GF_PATHS_DATA=/var/lib/grafana
+GF_PATHS_HOME=/usr/share/grafana
+GF_PATHS_LOGS=/var/log/grafana
+GF_PATHS_PLUGINS=/var/lib/grafana/plugins
+GF_PATHS_PROVISIONING=/etc/grafana/provisioning
+
+########## my-xhs-mq-broker
+JAVA_HOME=/opt/kona-jdk17
+JAVA_OPT_EXT=-server -Xms256m -Xmx512m -Xmn128m
+PATH=/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+LANG=en_US.UTF-8
+LANGUAGE=en_US:en
+LC_ALL=en_US.UTF-8
+JAVA_VERSION=jdk8u372-b07
+ROCKETMQ_VERSION=5.1.4
+ROCKETMQ_HOME=/home/rocketmq/rocketmq-5.1.4
+
+########## my-xhs-redis-slave
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+REDIS_VERSION=7.4.9
+
+########## my-xhs-mq-namesrv
+JAVA_HOME=/opt/kona-jdk17
+JAVA_OPT_EXT=-server -Xms128m -Xmx256m -Xmn64m
+PATH=/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+LANG=en_US.UTF-8
+LANGUAGE=en_US:en
+LC_ALL=en_US.UTF-8
+JAVA_VERSION=jdk8u372-b07
+ROCKETMQ_VERSION=5.1.4
+ROCKETMQ_HOME=/home/rocketmq/rocketmq-5.1.4
+
+########## my-xhs-es-skywalking
+path.repo=/usr/share/elasticsearch/backup
+xpack.security.http.ssl.enabled=false
+xpack.security.enabled=true
+ELASTIC_PASSWORD=Xhs@2026#ElasticSW
+http.port=19201
+discovery.type=single-node
+cluster.name=my-xhs-sw-es
+node.name=sw-es-node-1
+transport.port=19301
+ES_JAVA_OPTS=-Xms256m -Xmx768m
+PATH=/usr/share/elasticsearch/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ELASTIC_CONTAINER=true
+
+########## my-xhs-mysql
+MYSQL_ROOT_PASSWORD=Xhs@2026#MySQL
+TZ=Asia/Shanghai
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+GOSU_VERSION=1.19
+MYSQL_MAJOR=8.0
+MYSQL_VERSION=8.0.46-1.el9
+MYSQL_SHELL_VERSION=8.0.46-1.el9
+
+########## my-xhs-prometheus
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+########## my-xhs-redis
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+REDIS_VERSION=7.4.9
+
+########## my-xhs-elasticsearch
+cluster.name=my-xhs-es
+node.name=es-node-1
+xpack.security.http.ssl.enabled=false
+ELASTIC_PASSWORD=Xhs@2026#Elastic
+xpack.security.enabled=true
+ES_JAVA_OPTS=-Xms256m -Xmx512m
+transport.port=19300
+http.port=19200
+discovery.type=single-node
+PATH=/usr/share/elasticsearch/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ELASTIC_CONTAINER=true
+SHELL=/bin/bash
+
+########## my-xhs-sentinel-dashboard
+SERVER_PORT=8858
+JAVA_HOME=/opt/kona-jdk17
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+LANG=en_US.UTF-8
+LANGUAGE=en_US:en
+LC_ALL=en_US.UTF-8
+TZ=Etc/UTC
+
+########## my-xhs-victoria-metrics
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+

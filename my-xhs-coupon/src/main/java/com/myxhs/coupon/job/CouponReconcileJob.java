@@ -72,11 +72,9 @@ public class CouponReconcileJob {
         long startTime = System.currentTimeMillis();
         int repairCount = 0;
 
-        // 只对启用的、未过期的模板进行对账
+        // 对账覆盖所有未删除模板；状态/过期仅影响能否领取，不影响历史一致性修复
         List<CouponTemplate> templates = templateMapper.selectList(
                 new LambdaQueryWrapper<CouponTemplate>()
-                        .eq(CouponTemplate::getStatus, 1)
-                        .gt(CouponTemplate::getValidEnd, LocalDateTime.now())
                         .eq(CouponTemplate::getDeleted, 0));
 
         log.info("[券对账] 待对账模板数: {}", templates.size());
@@ -106,10 +104,8 @@ public class CouponReconcileJob {
 
             // 不一致 → 以 Redis 为准修复 MySQL（Redis 是实时扣减的权威数据源）
             if (redisStock != mysqlRemain) {
-                templateMapper.update(null,
-                        new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<CouponTemplate>()
-                                .eq(CouponTemplate::getId, template.getId())
-                                .set(CouponTemplate::getRemainCount, redisStock));
+                template.setRemainCount(redisStock);
+                templateMapper.updateById(template);
                 repairCount++;
                 log.info("[券对账] 修复: templateId={}, name={}, redis: {} → mysql: {}",
                         template.getId(), template.getName(), redisStock, mysqlRemain);

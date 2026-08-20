@@ -16,6 +16,10 @@ const ID_KEYS = new Set([
   'categoryId', 'brandId', 'sellerId', 'conversationId', 'followerUserId',
   'followeeUserId', 'bizId', 'localMsgId', 'orderNo',
 ]);
+// 非 ID 但必须保持字符串的键（转为 number 会改变语义/丢失精度）
+const STRING_KEYS = new Set([
+  'phone', 'receiverPhone', 'searchAfter', 'nextCursor',
+]);
 
 function normalizeNumbers(value: unknown, key?: string): unknown {
   if (Array.isArray(value)) {
@@ -30,7 +34,7 @@ function normalizeNumbers(value: unknown, key?: string): unknown {
   }
   // 叶子：纯数字字符串且非 ID 键 → 转 number
   if (typeof value === 'string' && /^-?\d+$/.test(value)) {
-    if (key && ID_KEYS.has(key)) return value; // ID 保持字符串
+    if (key && (ID_KEYS.has(key) || STRING_KEYS.has(key))) return value; // ID/字符串字段保持字符串
     const n = Number(value);
     return Number.isSafeInteger(n) || !Number.isNaN(n) ? n : value;
   }

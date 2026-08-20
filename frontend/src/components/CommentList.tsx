@@ -64,7 +64,14 @@ export default function CommentList({ noteId, currentUserId }: CommentListProps)
       onOk: async () => {
         try {
           await deleteComment(commentId);
-          setComments(prev => prev.filter(c => c.id !== commentId));
+          // 递归过滤：顶层和子评论（children）都要移除
+          const removeComment = (list: CommentVO[]): CommentVO[] =>
+            list
+              .filter(c => c.id !== commentId)
+              .map(c => c.children?.length
+                ? { ...c, children: removeComment(c.children) }
+                : c);
+          setComments(prev => removeComment(prev));
           message.success('已删除');
         } catch { message.error('删除失败'); }
       },

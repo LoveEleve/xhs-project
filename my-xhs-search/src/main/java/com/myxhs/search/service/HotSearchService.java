@@ -305,6 +305,10 @@ public class HotSearchService {
             return;
         }
         try {
+            // T-089：先删除同一分钟快照（calculate 60s 周期内重复触发不再插重复行）
+            jdbcTemplate.update(
+                    "DELETE FROM t_hot_search_snapshot WHERE snapshot_time = ?",
+                    snapshotTime);
             String sql = "INSERT INTO t_hot_search_snapshot (id, keyword, score, rank_no, search_count, snapshot_time) " +
                     "VALUES (?, ?, ?, ?, ?, ?)";
             List<Object[]> batchArgs = new ArrayList<>();

@@ -1,0 +1,4 @@
+total 16
+drwxr-xr-x   2 root root   25 Jul  9 20:14 .
+drwxr-xr-x 101 root root 8192 Jul 13 11:20 ..
+-rw-r--r--   1 root root  381 Jul  9 20:14 daemon.json

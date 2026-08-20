@@ -1,0 +1,66 @@
+########## OAP prometheus 自指标(1234)
+# HELP process_cpu_seconds_total Total user and system CPU time spent in seconds.
+# TYPE process_cpu_seconds_total counter
+process_cpu_seconds_total 7631.06
+# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.
+# TYPE process_start_time_seconds gauge
+process_start_time_seconds 1.786197736613E9
+# HELP process_open_fds Number of open file descriptors.
+# TYPE process_open_fds gauge
+process_open_fds 2727.0
+# HELP process_max_fds Maximum number of open file descriptors.
+# TYPE process_max_fds gauge
+process_max_fds 1048576.0
+# HELP process_virtual_memory_bytes Virtual memory size in bytes.
+# TYPE process_virtual_memory_bytes gauge
+process_virtual_memory_bytes 2.0580859904E10
+# HELP process_resident_memory_bytes Resident memory size in bytes.
+# TYPE process_resident_memory_bytes gauge
+process_resident_memory_bytes 1.27123456E9
+# HELP jvm_gc_collection_seconds Time spent in a given JVM garbage collector in seconds.
+# TYPE jvm_gc_collection_seconds summary
+jvm_gc_collection_seconds_count{gc="Copy",} 2337.0
+jvm_gc_collection_seconds_sum{gc="Copy",} 26.659
+jvm_gc_collection_seconds_count{gc="MarkSweepCompact",} 5.0
+jvm_gc_collection_seconds_sum{gc="MarkSweepCompact",} 0.89
+# HELP health_check_storage_elasticsearch storage_elasticsearch health check
+# TYPE health_check_storage_elasticsearch gauge
+health_check_storage_elasticsearch{sw_backend_instance="0.0.0.0_11800",} 0.0
+# HELP persistence_timer_bulk_prepare_latency Latency of the prepare stage in persistence timer
+# TYPE persistence_timer_bulk_prepare_latency histogram
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.005",} 2.724374E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.01",} 2.7243844E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.025",} 2.7244443E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.05",} 2.7244458E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.075",} 2.7244469E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.1",} 2.7244469E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.25",} 2.7244469E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.5",} 2.7244469E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="0.75",} 2.7244469E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="1.0",} 2.7244469E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="2.5",} 2.7244469E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="5.0",} 2.7244469E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="7.5",} 2.7244469E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="10.0",} 2.7244469E7
+persistence_timer_bulk_prepare_latency_bucket{sw_backend_instance="0.0.0.0_11800",le="+Inf",} 2.7244469E7
+persistence_timer_bulk_prepare_latency_count{sw_backend_instance="0.0.0.0_11800",} 2.7244469E7
+persistence_timer_bulk_prepare_latency_sum{sw_backend_instance="0.0.0.0_11800",} 92.89165818246377
+# HELP jvm_threads_current Current thread count of a JVM
+# TYPE jvm_threads_current gauge
+jvm_threads_current 664.0
+# HELP jvm_threads_daemon Daemon thread count of a JVM
+# TYPE jvm_threads_daemon gauge
+jvm_threads_daemon 20.0
+# HELP jvm_threads_peak Peak thread count of a JVM
+# TYPE jvm_threads_peak gauge
+jvm_threads_peak 664.0
+# HELP jvm_threads_started_total Started thread count of a JVM
+# TYPE jvm_threads_started_total counter
+jvm_threads_started_total 672.0
+# HELP jvm_threads_deadlocked Cycles of JVM-threads that are in deadlock waiting to acquire object monitors or ownable synchronizers
+# TYPE jvm_threads_deadlocked gauge
+########## GraphQL 服务数查询
+{"errors":[{"message":"Validation error (FieldUndefined@[services]) : Field 'services' in type 'Query' is undefined","locations":[{"line":1,"column":9}],"extensions":{"classification":"ValidationError"}}]}{"errors":[{"message":"Validation error (FieldUndefined@[serviceList]) : Field 'serviceList' in type 'Query' is undefined","locations":[{"line":1,"column":9}],"extensions":{"classification":"ValidationError"}}]}### getAllServices:
+{"data":{"getAllServices":[{"id":"bG9jYWxob3N0Oi0x.0","name":"localhost:-1"},{"id":"MjEuMTMwLjI0Ny44OToxMzMxMA==.0","name":"21.130.247.89:13310"},{"id":"bXkteGhzLWFuYWx5dGljcw==.1","name":"my-xhs-analytics"},{"id":"bXkteGhzLXByb2R1Y3Q=.1","name":"my-xhs-product"},{"id":"MjEuMTMwLjI0Ny44OTo2Mzgw.0","name":"21.130.247.89:6380"},{"id":"bXkteGhzLWlt.1","name":"my-xhs-im"},{"id":"bXkteGhzLXBheW1lbnQ=.1","name":"my-xhs-payment"},{"id":"MjEuMTMwLjI0Ny44OToxMzMwOA==.0","name":"21.130.247.89:13308"},{"id":"UmVkaXMtbG9jYWw=.0","name":"Redis-local"},{"id":"MjEuMTMwLjI0Ny44OToxMzMwOQ==.0","name":"21.130.247.89:13309"},{"id":"bXkteGhzLW9yZGVy.1","name":"my-xhs-order"},{"id":"MjEuMTMwLjI0Ny44OToxMzMwNg==.0","name":"21.130.247.89:13306"},{"id":"MjEuMTMwLjI0Ny44OToxMzMwNw==.0","name":"21.130.247.89:13307"},{"id":"bXkteGhzLWNvdW50ZXI=.1","name":"my-xhs-counter"},{"id":"MjEuMTMwLjI0Ny44OTo5ODc2.0","name":"21.130.247.89:9876"},{"id":"MjEuMTMwLjI0Ny44OToxNjM3OQ==.0","name":"21.130.247.89:16379"},{"id":"bXkteGhzLWNvdXBvbg==.1","name":"my-xhs-coupon"},{"id":"bXkteGhzLWNvbnRlbnQ=.1","name":"my-xhs-content"},{"id":"bXkteGhzLWludmVudG9yeQ==.1","name":"my-xhs-inventory"},{"id":"MjEuMTMwLjI0Ny44OToyNjM3OQ==.0","name":"21.130.247.89:26379"},{"id":"bXkteGhzLWhvbWU=.1","name":"my-xhs-home"},{"id":"bXkteGhzLWNhcnQ=.1","name":"my-xhs-cart"},{"id":"bXkteGhzLWdhdGV3YXk=.1","name":"my-xhs-gateway"},{"id":"bXkteGhzLW5vdGlmaWNhdGlvbg==.1","name":"my-xhs-notification"},{"id":"MjEuMTMwLjI0Ny44OTozMzA3.0","name":"21.130.247.89:3307"},{"id":"bXkteGhzLXVzZXI=.1","name":"my-xhs-user"},{"id":"MjEuMTMwLjI0Ny44OTozMzA2.0","name":"21.130.247.89:3306"},{"id":"bXkteGhzLXNlYXJjaA==.1","name":"my-xhs-search"},{"id":"MjEuMTMwLjI0Ny44OToxMzMxMw==.0","name":"21.130.247.89:13313"},{"id":"MjEuMTMwLjI0Ny44OTo2Mzc5.0","name":"21.130.247.89:6379"},{"id":"MjEuMTMwLjI0Ny44OToxMzMxMQ==.0","name":"21.130.247.89:13311"}]}}
+### getServiceInstances:
+{"errors":[{"message":"Validation error (FieldUndefined@[getAllInstances]) : Field 'getAllInstances' in type 'Query' is undefined","locations":[{"line":1,"column":9}],"extensions":{"classification":"ValidationError"}}]}

@@ -44,4 +44,7 @@ public class User extends BaseEntity {
 
     /** 状态：0-禁用 1-正常 */
     private Integer status;
+
+    /** 角色：OPERATOR(运营L1)/TECH(技术L2)，默认 OPERATOR */
+    private String role;
 }

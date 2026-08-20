@@ -1,0 +1,4 @@
+vm.swappiness = 60
+vm.overcommit_memory = 0
+net.core.somaxconn = 4096
+net.ipv4.ip_local_port_range = 32768	60999

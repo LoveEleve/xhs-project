@@ -12,9 +12,11 @@
 -- ARGV[5] = timestamp (加购时间戳)
 --
 -- 返回值：
---   > 0 : 操作成功，返回当前数量
---   -1  : 购物车已满（新商品才检查）
---
+--   > 10000 : 操作成功且为新商品（实际数量 = 返回值 - 10000，调用方发 ADD 事件 checked=1）
+--   1~10000 : 操作成功且为已存在商品（返回当前数量，调用方发 UPDATE 事件 checked=null 不改勾选）
+--   -1      : 购物车已满（新商品才检查）
+-- T-107（2026-08-15）：新增 10000 标志位——修复"已存在商品加购时 ADD 事件 checked 恒传 1
+--   导致 MySQL checked 被强制改 1 而 Redis 保持原勾选态"的不一致（与 merge_item.lua 语义对齐）
 
 local itemsKey = KEYS[1]
 local checkedKey = KEYS[2]
@@ -54,6 +56,11 @@ end
 -- 6. 记录加购时间（仅新商品记录，NX 语义）
 if exists == 0 then
     redis.call('ZADD', sortKey, 'NX', timestamp, skuId)
+end
+
+-- 7. 新商品加 10000 标志（T-107），调用方据此决定 checked 事件值
+if exists == 0 then
+    return newQuantity + 10000
 end
 
 return newQuantity

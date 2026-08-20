@@ -79,7 +79,8 @@ public class NoteSearchService extends AbstractSearchService {
 
             SearchRequest.Builder searchBuilder = new SearchRequest.Builder()
                     .index(noteIndexName)
-                    .size(size);
+                    // T-085：多取 1 条判断 hasMore（原 items.size()>=size 在尾页取满时误报 true）
+                    .size(size + 1);
 
             // 构建查询
             searchBuilder.query(buildNoteQuery(request));
@@ -167,8 +168,14 @@ public class NoteSearchService extends AbstractSearchService {
     private SearchResultVO<NoteSearchVO> buildNoteResult(SearchResponse<Map> response, int size) {
         List<NoteSearchVO> items = new ArrayList<>();
         String lastSearchAfter = null;
+        boolean hasMore = false;
 
         for (Hit<Map> hit : response.hits().hits()) {
+            // T-085：多取的第 size+1 条仅用于 hasMore 判断，不返回
+            if (items.size() >= size) {
+                hasMore = true;
+                break;
+            }
             Map<String, Object> source = hit.source();
             if (source == null) continue;
 
@@ -210,7 +217,7 @@ public class NoteSearchService extends AbstractSearchService {
                 .items(items)
                 .total(total)
                 .searchAfter(lastSearchAfter)
-                .hasMore(items.size() >= size)
+                .hasMore(hasMore)
                 .took(response.took())
                 .build();
     }

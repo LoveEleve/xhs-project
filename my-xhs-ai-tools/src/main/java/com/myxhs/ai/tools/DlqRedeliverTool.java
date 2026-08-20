@@ -128,6 +128,11 @@ public class DlqRedeliverTool implements DlqRedeliverAccess {
      */
     @Override
     public String queryDlqMessages(String consumerGroup) {
+        return queryDlqMessages(consumerGroup, null);
+    }
+
+    @Override
+    public String queryDlqMessages(String consumerGroup, String keyword) {
         ObjectNode node = om.createObjectNode();
         node.put("status", "error");
         node.put("tool", "mq.dlq_query");
@@ -145,7 +150,7 @@ public class DlqRedeliverTool implements DlqRedeliverAccess {
             long now = System.currentTimeMillis();
             ObjectNode requestBody = om.createObjectNode();
             requestBody.put("topic", dlqTopic);
-            requestBody.put("begin", now - 7 * 24 * 3600_000L);
+            requestBody.put("begin", now - 24 * 3600_000L);
             requestBody.put("end", now);
             requestBody.put("pageNum", 1);
             requestBody.put("pageSize", 100);
@@ -179,9 +184,15 @@ public class DlqRedeliverTool implements DlqRedeliverAccess {
                 return node.toString();
             }
             var arr = om.createArrayNode();
+            boolean hasFilter = keyword != null && !keyword.isBlank();
             for (var msg : messages) {
                 String originId = msg.path("properties").path("ORIGIN_MESSAGE_ID").asText(null);
                 if (originId == null || originId.isBlank()) {
+                    continue;
+                }
+                // keyword 过滤：匹配 messageBody（agent 传 orderNo 等关键词缩小范围，避免全量截断）
+                String bodyStr = msg.path("messageBody").asText("");
+                if (hasFilter && !bodyStr.contains(keyword)) {
                     continue;
                 }
                 var item = om.createObjectNode();
@@ -191,6 +202,9 @@ public class DlqRedeliverTool implements DlqRedeliverAccess {
                 item.put("storeHost", msg.path("storeHost").asText(""));
                 item.put("queueId", msg.path("queueId").asText(""));
                 item.put("queueOffset", msg.path("queueOffset").asText(""));
+                // 始终返回 messageBody（agent 需要用业务字段如 orderNo 匹配目标消息）
+                String bodyPreview = bodyStr.length() > 200 ? bodyStr.substring(0, 200) + "…" : bodyStr;
+                item.put("body", bodyPreview);
                 arr.add(item);
             }
             node.put("status", "ok");

@@ -2,16 +2,20 @@ package com.myxhs.order.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.myxhs.common.exception.BizException;
 import com.myxhs.common.metrics.BusinessMetrics;
 import com.myxhs.common.response.R;
 import com.myxhs.common.response.ResultCode;
+import com.myxhs.order.dto.SkuInfoDTO;
 import com.myxhs.order.dto.request.OrderCreateRequest;
 import com.myxhs.order.dto.request.PayRequest;
 import com.myxhs.order.dto.response.OrderVO;
 import com.myxhs.order.entity.*;
 import com.myxhs.order.feign.CouponFeignClient;
 import com.myxhs.order.feign.InventoryFeignClient;
+import com.myxhs.order.feign.ProductFeignClient;
+import com.myxhs.order.feign.UserFeignClient;
 import com.myxhs.order.mapper.*;
 import com.myxhs.order.repository.OrderNoMappingRepository;
 import com.myxhs.order.repository.PaymentRepository;
@@ -79,6 +83,10 @@ class OrderServiceTest {
     @Mock
     private CouponFeignClient couponFeignClient;
     @Mock
+    private ProductFeignClient productFeignClient;
+    @Mock
+    private UserFeignClient userFeignClient;
+    @Mock
     private BusinessMetrics businessMetrics;
 
     private ObjectMapper objectMapper;
@@ -90,13 +98,14 @@ class OrderServiceTest {
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper();
+        objectMapper.registerModule(new JavaTimeModule());
         // 使用构造函数注入 mock 对象（Lombok @RequiredArgsConstructor 生成）
         orderService = new OrderService(
                 orderMapper, orderItemMapper, snapshotMapper,
                 orderNoMappingRepository, transactionService,
                 orderEventService,
                 rocketMQTemplate, stringRedisTemplate, objectMapper,
-                inventoryFeignClient, couponFeignClient,
+                inventoryFeignClient, couponFeignClient, productFeignClient, userFeignClient,
                 businessMetrics
         );
     }
@@ -157,6 +166,17 @@ class OrderServiceTest {
                 .thenReturn(1L);
         // 删除幂等键
         when(stringRedisTemplate.delete(startsWith("myxhs:order:idempotent:"))).thenReturn(true);
+
+        SkuInfoDTO sku = new SkuInfoDTO();
+        sku.setId(10001L);
+        sku.setSpuId(10001L);
+        sku.setName("Mock商品-10001");
+        sku.setPrice(new BigDecimal("99.00"));
+        sku.setSpuStatus(1);
+        when(productFeignClient.batchGetSkuDetails(anyList()))
+                .thenReturn(R.ok(Collections.singletonList(sku)));
+        when(inventoryFeignClient.queryStock(10001L))
+                .thenReturn(R.ok(Collections.singletonMap("availableStock", 2)));
 
         // 事务消息发送返回非 SEND_OK
         TransactionSendResult sendResult = new TransactionSendResult();
@@ -248,7 +268,7 @@ class OrderServiceTest {
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenReturn(Collections.emptyList());
 
-        OrderVO vo = orderService.getOrderByOrderNo(1L, "ORD20250101000000001");
+        OrderVO vo = orderService.getOrderByOrderNo(USER_ID, "ORD20250101000000001");
         assertThat(vo).isNotNull();
         assertThat(vo.getOrderId()).isEqualTo(ORDER_ID);
     }
@@ -453,19 +473,46 @@ class OrderServiceTest {
         when(snapshotMapper.insert((OrderSnapshot) any())).thenReturn(1);
         when(stringRedisTemplate.delete(startsWith("myxhs:order:info:"))).thenReturn(true);
 
-        assertThatCode(() -> orderService.onRefundSuccess(ORDER_ID))
-                .doesNotThrowAnyException();
+        assertThat(orderService.onRefundSuccess(ORDER_ID)).isTrue();
     }
 
     @Test
-    @DisplayName("退款成功 - 映射表无记录（跳过）")
+    @DisplayName("退款成功 - 映射表无记录（返回失败）")
     void onRefundSuccess_noMapping() {
         when(orderNoMappingRepository.selectByOrderId(ORDER_ID)).thenReturn(null);
 
-        assertThatCode(() -> orderService.onRefundSuccess(ORDER_ID))
-                .doesNotThrowAnyException();
-        // 不应该执行后续操作
+        assertThat(orderService.onRefundSuccess(ORDER_ID)).isFalse();
         verify(orderMapper, never()).selectOne(any(LambdaQueryWrapper.class));
+    }
+
+    @Test
+    @DisplayName("退款成功 - 订单状态不是已付款（返回失败）")
+    void onRefundSuccess_wrongStatus() {
+        OrderNoMapping mapping = new OrderNoMapping();
+        mapping.setOrderId(ORDER_ID);
+        mapping.setUserId(USER_ID);
+        when(orderNoMappingRepository.selectByOrderId(ORDER_ID)).thenReturn(mapping);
+        Order order = buildOrder();
+        order.setStatus(0);
+        when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(order);
+
+        assertThat(orderService.onRefundSuccess(ORDER_ID)).isFalse();
+        verify(orderEventService, never()).appendEvent(any(), anyString(), anyMap());
+    }
+
+    @Test
+    @DisplayName("退款成功 - 已退款状态幂等成功")
+    void onRefundSuccess_alreadyRefunded() {
+        OrderNoMapping mapping = new OrderNoMapping();
+        mapping.setOrderId(ORDER_ID);
+        mapping.setUserId(USER_ID);
+        when(orderNoMappingRepository.selectByOrderId(ORDER_ID)).thenReturn(mapping);
+        Order order = buildOrder();
+        order.setStatus(5);
+        when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(order);
+
+        assertThat(orderService.onRefundSuccess(ORDER_ID)).isTrue();
+        verify(orderEventService, never()).appendEvent(any(), anyString(), anyMap());
     }
 
     // ==================== 查询支付金额 ====================

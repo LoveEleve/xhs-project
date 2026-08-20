@@ -1,0 +1,43 @@
+############ my-xhs-redis-slave 真实生效配置(进程实际使用的)
+#### ENTRYPOINT
+[
+    "docker-entrypoint.sh"
+]
+#### CMD(命令行参数=多数服务真实配置)
+[
+    "redis-server",
+    "--port",
+    "6380",
+    "--bind",
+    "0.0.0.0",
+    "--requirepass",
+    "Xhs@2026#Redis",
+    "--masterauth",
+    "Xhs@2026#Redis",
+    "--replicaof",
+    "127.0.0.1",
+    "6379",
+    "--appendonly",
+    "yes",
+    "--appendfsync",
+    "everysec",
+    "--maxmemory",
+    "256mb",
+    "--maxmemory-policy",
+    "allkeys-lru",
+    "--save",
+    "900",
+    "1",
+    "--save",
+    "300",
+    "10"
+]
+#### ENV(环境变量)
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+REDIS_VERSION=7.4.9
+
+#### 资源限制
+MemLimit=268435456 CPULimit=250000000 Restart=unless-stopped
+#### 挂载的配置文件
+/data/docker/lib/volumes/my-xhs-deploy-zip_redis-slave-data/_data -> /data
+

@@ -1,0 +1,94 @@
+[
+    {
+        "Id": "sha256:d3063c1db2bb923c190de1f01073abb861ef697be8f48cf822f9e1255ac2a7da",
+        "RepoTags": [
+            "nacos/nacos-server:v2.3.2"
+        ],
+        "RepoDigests": [
+            "nacos/nacos-server@sha256:d70b20546fe59aeb86add0754db1dbc3a3067363e18599329c5163d0d8cd9cd8"
+        ],
+        "Parent": "",
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2024-04-03T07:40:00.593569723Z",
+        "DockerVersion": "",
+        "Author": "",
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 819876619,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/data/docker/lib/overlay2/a5aa3c0126fc3e480b564cb2aa2c9011286a096a6dee1980fa44686f3d38237a/diff:/data/docker/lib/overlay2/f592dcb78dc6447baf94dafc7010bdbb899646ce8f264644b64465d725847945/diff:/data/docker/lib/overlay2/703982f8c7604f51c17fe3f1009d1b2c914a33abaa52e1d83821c211e0e03dd9/diff:/data/docker/lib/overlay2/6b98869ba8b5ede37c986c4472a9f307f3227331dfbd3b65ec5aed4e9053b7f3/diff:/data/docker/lib/overlay2/6ab0875075b5dc0fa06110fafaf10a61f7dcdeb89490d5df98f12f3264c7f231/diff:/data/docker/lib/overlay2/61605764ecf6736188e14112221e76b7fecaa27879f387df29e9fa4771ab61f4/diff:/data/docker/lib/overlay2/18babfbac29a89312b88ce796c33824715b564517a76c824345f2c456a679110/diff",
+                "MergedDir": "/data/docker/lib/overlay2/4b4e169de286c4c1c0ca01bbb07b02e07c6991ed49bdc3b5f99635f15ba04365/merged",
+                "UpperDir": "/data/docker/lib/overlay2/4b4e169de286c4c1c0ca01bbb07b02e07c6991ed49bdc3b5f99635f15ba04365/diff",
+                "WorkDir": "/data/docker/lib/overlay2/4b4e169de286c4c1c0ca01bbb07b02e07c6991ed49bdc3b5f99635f15ba04365/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:174f5685490326fc0a1c0f5570b8663732189b327007e47ff13d2ca59673db02",
+                "sha256:a1d99b27069c39cf95bcd4e5015f3c03913fbd007d081f2ac45a8a92f90aecbe",
+                "sha256:138ffe7fd5f0fbee0613212ca10c9720047c91cad6f352fb7ca349b2d7ff22e5",
+                "sha256:9cc1a583b0767763bc574006c5da30513ca87389f0896adb70e93d2e2d66c986",
+                "sha256:78ffb3793fbe9bee4d864b638a7bac6f4f043433cc3d8aeb954a822f36d4bb03",
+                "sha256:113c6f94147211d787915f9bbc0fd3211031183d3773d7a43050ce4708251700",
+                "sha256:05a15ccad85495ac7ee1abef68b94a7f588313fce69a854e52b9c69c50a44adc",
+                "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        },
+        "Config": {
+            "Cmd": null,
+            "Entrypoint": [
+                "bin/docker-startup.sh"
+            ],
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "MODE=cluster",
+                "PREFER_HOST_MODE=ip",
+                "BASE_DIR=/home/nacos",
+                "CLASSPATH=.:/home/nacos/conf:",
+                "CLUSTER_CONF=/home/nacos/conf/cluster.conf",
+                "FUNCTION_MODE=all",
+                "JAVA_HOME=/usr/lib/jvm/java-1.8.0-openjdk",
+                "NACOS_USER=nacos",
+                "JAVA=/usr/lib/jvm/java-1.8.0-openjdk/bin/java",
+                "JVM_XMS=1g",
+                "JVM_XMX=1g",
+                "JVM_XMN=512m",
+                "JVM_MS=128m",
+                "JVM_MMS=320m",
+                "NACOS_DEBUG=n",
+                "TOMCAT_ACCESSLOG_ENABLED=false",
+                "TIME_ZONE=Asia/Shanghai"
+            ],
+            "ExposedPorts": {
+                "8848/tcp": {}
+            },
+            "Labels": {
+                "maintainer": "pader \u003chuangmnlove@163.com\u003e",
+                "org.label-schema.build-date": "20201113",
+                "org.label-schema.license": "GPLv2",
+                "org.label-schema.name": "CentOS Base Image",
+                "org.label-schema.schema-version": "1.0",
+                "org.label-schema.vendor": "CentOS",
+                "org.opencontainers.image.created": "2024-04-03T07:38:47.508Z",
+                "org.opencontainers.image.description": "This project contains a Docker image meant to facilitate the deployment of Nacos .",
+                "org.opencontainers.image.licenses": "",
+                "org.opencontainers.image.revision": "c150bce691f4996871203b5897dd357f6d8a0e24",
+                "org.opencontainers.image.source": "https://github.com/nacos-group/nacos-docker",
+                "org.opencontainers.image.title": "nacos-docker",
+                "org.opencontainers.image.url": "https://github.com/nacos-group/nacos-docker",
+                "org.opencontainers.image.vendor": "CentOS",
+                "org.opencontainers.image.version": "v2.3.2"
+            },
+            "OnBuild": null,
+            "User": "",
+            "Volumes": null,
+            "WorkingDir": "/home/nacos"
+        }
+    }
+]

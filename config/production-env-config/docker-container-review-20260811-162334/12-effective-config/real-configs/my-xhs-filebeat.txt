@@ -1,0 +1,29 @@
+############ my-xhs-filebeat 真实生效配置(进程实际使用的)
+#### ENTRYPOINT
+[
+    "/usr/bin/tini",
+    "--",
+    "/usr/local/bin/docker-entrypoint"
+]
+#### CMD(命令行参数=多数服务真实配置)
+[
+    "filebeat",
+    "-e",
+    "-E",
+    "output.elasticsearch.enabled=false",
+    "-E",
+    "output.logstash.hosts=[127.0.0.1:15045]",
+    "-E",
+    "filebeat.inputs=[{type:log,enabled:true,paths:[/logs/*.json],json.keys_under_root:true,json.add_error_key:true}]"
+]
+#### ENV(环境变量)
+PATH=/usr/share/filebeat:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ELASTIC_CONTAINER=true
+GODEBUG=madvdontneed=1
+LIBBEAT_MONITORING_CGROUPS_HIERARCHY_OVERRIDE=/
+
+#### 资源限制
+MemLimit=201326592 CPULimit=100000000 Restart=unless-stopped
+#### 挂载的配置文件
+/logs -> /logs
+

@@ -1,0 +1,36 @@
+{
+    "nodes": {
+        "8vASXZuEQZu08fIwYW36kQ": {
+            "settings": {
+                "cluster": {
+                    "name": "my-xhs-es",
+                    "election": {
+                        "strategy": "supports_voting_only"
+                    }
+                },
+                "path": {
+                    "logs": "/usr/share/elasticsearch/logs",
+                    "home": "/usr/share/elasticsearch"
+                },
+                "discovery": {
+                    "type": "single-node"
+                },
+                "http": {
+                    "type": "security4",
+                    "port": "19200",
+                    "type.default": "netty4"
+                },
+                "xpack": {
+                    "security": {
+                        "http": {
+                            "ssl": {
+                                "enabled": "false"
+                            }
+                        },
+                        "enabled": "true"
+                    }
+                }
+            }
+        }
+    }
+}

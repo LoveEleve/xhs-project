@@ -148,14 +148,33 @@ public class NoteIndexSyncConsumer implements RocketMQListener<MessageExt> {
             switch (type) {
                 case "INSERT", "UPDATE" -> {
                     currentNoteId.set(noteId);
-                    indexNoteFromCanal(noteId, row, version);
+                    // T-040：逻辑删除（UPDATE deleted=1）→ 标记删除（带版本防乱序覆盖）
+                    if (row.getIntValue("deleted", 0) == 1) {
+                        deleteNote(noteId, version);
+                    } else {
+                        indexNoteFromCanal(noteId, row, version);
+                    }
                 }
                 case "DELETE" -> {
                     currentNoteId.set(noteId);
-                    deleteNote(noteId);
+                    physicallyDeleteNote(noteId);
                 }
                 default -> log.debug("[笔记索引同步] 忽略事件类型: type={}", type);
             }
+        }
+    }
+
+    /**
+     * 读取 counter Redis 计数（T-092：key=myxhs:counter:{targetType}:{targetId}:{countType}）
+     * 读失败/不存在返回 0——不阻塞 canal 主流程
+     */
+    private long getCounterValue(int targetType, long targetId, int countType) {
+        try {
+            String v = stringRedisTemplate.opsForValue()
+                    .get("myxhs:counter:" + targetType + ":" + targetId + ":" + countType);
+            return v != null ? Long.parseLong(v) : 0L;
+        } catch (Exception e) {
+            return 0L;
         }
     }
 
@@ -177,7 +196,7 @@ public class NoteIndexSyncConsumer implements RocketMQListener<MessageExt> {
             }
             case "DELETE" -> {
                 currentNoteId.set(noteId);
-                deleteNote(noteId);
+                physicallyDeleteNote(noteId);
             }
             default -> log.warn("[笔记索引同步] 未知事件类型: type={}, noteId={}", type, noteId);
         }
@@ -197,15 +216,19 @@ public class NoteIndexSyncConsumer implements RocketMQListener<MessageExt> {
      * </p>
      */
     private void indexNoteFromCanal(Long noteId, JSONObject row, long version) throws Exception {
+        // T-040 修复（2026-08-13）：逻辑删除（UPDATE deleted=1）→ 同步 ES 删除标记。
+        // 删除笔记走 @TableLogic（UPDATE 非 DELETE），canal 事件 type=UPDATE，
+        // 原实现忽略 deleted 列 → 已删笔记在 ES 恒为 status=2，搜索结果可见（功能级 bug）。
+        if (row.getIntValue("deleted", 0) == 1) {
+            deleteNote(noteId, version);
+            return;
+        }
         Map<String, Object> doc = new HashMap<>();
         doc.put("noteId", noteId);
         doc.put("userId", row.getLong("user_id"));
         doc.put("title", row.getString("title"));
         doc.put("content", row.getString("content"));
         doc.put("coverImage", row.getString("cover_url"));
-        // 注意：t_note 表中没有 like_count/collect_count/comment_count 字段
-        // 这些计数由计数器服务维护，全量重建时从计数器服务获取
-        // Canal 增量同步时不覆盖这些字段（使用 ES partial update 或忽略）
         doc.put("status", row.getIntValue("status", 1));
         doc.put("createdAt", row.getString("created_at"));
 
@@ -261,8 +284,11 @@ public class NoteIndexSyncConsumer implements RocketMQListener<MessageExt> {
     }
 
     /**
-     * 删除笔记文档
+     * 删除笔记文档（标记删除 status=-1）
      * <p>
+     * T-091 修复：带 ExternalGte version（删除事件的 ts）——RocketMQ 多线程并行消费下
+     * 删除与旧 INSERT/UPDATE 消息可能乱序到达，无版本写入的标记会被旧消息覆盖（删除失效）。
+     * 带版本后：旧版本消息（version < 删除 ts）写入被 ES 拒绝，保证删除标记终态。
      * 注意：直接删除文档后，如果有乱序的旧 INSERT/UPDATE 消息到达，
      * 由于文档已不存在，ES 不会拒绝旧版本写入（version check 只对已存在的文档生效）。
      * </p>
@@ -272,7 +298,7 @@ public class NoteIndexSyncConsumer implements RocketMQListener<MessageExt> {
      * 真正的物理删除由全量重建任务执行（重建时不会索引 deleted=1 的记录）。
      * </p>
      */
-    private void deleteNote(Long noteId) throws Exception {
+    private void deleteNote(Long noteId, long version) throws Exception {
         // 标记删除（而非物理删除），保留 version 信息防止乱序消息重新索引
         Map<String, Object> doc = new HashMap<>();
         doc.put("noteId", noteId);
@@ -284,12 +310,38 @@ public class NoteIndexSyncConsumer implements RocketMQListener<MessageExt> {
             esClient.index(IndexRequest.of(idx -> idx
                     .index(noteIndexName)
                     .id(String.valueOf(noteId))
+                    .versionType(co.elastic.clients.elasticsearch._types.VersionType.ExternalGte)
+                    .version(version)
                     .withJson(new StringReader(jsonDoc))));
-            log.info("[笔记索引同步] 标记删除成功: noteId={}", noteId);
+            log.info("[笔记索引同步] 标记删除成功: noteId={}, version={}", noteId, version);
         } catch (co.elastic.clients.elasticsearch._types.ElasticsearchException e) {
             // 文档不存在时忽略（可能从未被索引过）
             if (e.getMessage() != null && e.getMessage().contains("not_found")) {
                 log.debug("[笔记索引同步] 文档不存在，跳过删除: noteId={}", noteId);
+            } else {
+                throw e;
+            }
+        }
+    }
+
+    /**
+     * 物理删除笔记（DB 行已 DELETE）→ ES 文档物理删除（T-118）
+     * <p>
+     * 原实现 DELETE 事件也走标记删除（status=-1），导致 DB 无记录但 ES 死文档永久残留
+     * （全量重建只 upsert 不删多余文档，无任何任务清理）→ 存储泄漏 + DB/ES 语义不一致。
+     * 物理删除事件与逻辑删除（UPDATE deleted=1 → 标记 -1）分开处理。
+     * </p>
+     */
+    private void physicallyDeleteNote(Long noteId) throws Exception {
+        try {
+            esClient.delete(del -> del
+                    .index(noteIndexName)
+                    .id(String.valueOf(noteId)));
+            log.info("[笔记索引同步] 物理删除成功: noteId={}", noteId);
+        } catch (co.elastic.clients.elasticsearch._types.ElasticsearchException e) {
+            // 文档不存在时忽略（可能从未被索引过或已删）
+            if (e.getMessage() != null && e.getMessage().contains("not_found")) {
+                log.debug("[笔记索引同步] 物理删除文档不存在，跳过: noteId={}", noteId);
             } else {
                 throw e;
             }

@@ -1,0 +1,26 @@
+service               image                                           container             net     env-keys                                                    hc
+------------------------------------------------------------------------------------------------------------------------------------------------------------------
+canal                 my-xhs-canal-server:v1.1.7-squashed             my-xhs-canal          host    JAVA_HOME,JAVA_OPTS,PATH                                    Y
+elasticsearch         elasticsearch:8.19.19                           my-xhs-elasticsearch  host                                                                Y
+elasticsearch-skywalkingelasticsearch:8.12.2                            my-xhs-es-skywalking  host                                                                Y
+filebeat              docker.elastic.co/beats/filebeat:8.19.19        my-xhs-filebeat       host                                                                
+grafana               grafana/grafana:10.2.3                          my-xhs-grafana        host    GF_AUTH_ANONYMOUS_ENABLED,GF_SECURITY_ADMIN_PASSWORD,GF_SE  
+kibana                docker.elastic.co/kibana/kibana:8.19.19         my-xhs-kibana         host    ELASTICSEARCH_HOSTS,ELASTICSEARCH_PASSWORD,ELASTICSEARCH_U  
+logstash              docker.elastic.co/logstash/logstash:8.19.19     my-xhs-logstash       host    LS_JAVA_OPTS,XPACK_MONITORING_ENABLED                       Y
+mysql                 mysql:8.0                                       my-xhs-mysql          host    MYSQL_ROOT_PASSWORD,TZ                                      Y
+mysql-slave           mysql:8.0                                       my-xhs-mysql-slave    host    MYSQL_ROOT_PASSWORD,TZ                                      Y
+nacos                 nacos/nacos-server:v2.3.2                       my-xhs-nacos          host    JAVA_HOME,MODE,MYSQL_SERVICE_DB_NAME,MYSQL_SERVICE_HOST,MY  
+prometheus            prom/prometheus:v2.48.1                         my-xhs-prometheus     host                                                                
+redis                 redis:7-alpine                                  my-xhs-redis          host                                                                Y
+redis-sentinel        redis:7-alpine                                  my-xhs-redis-sentinel host                                                                Y
+redis-slave           redis:7-alpine                                  my-xhs-redis-slave    host                                                                Y
+rocketmq-broker       apache/rocketmq:5.1.4                           my-xhs-mq-broker      host    JAVA_HOME,JAVA_OPT_EXT                                      Y
+rocketmq-dashboard    apacherocketmq/rocketmq-dashboard:latest        my-xhs-rocketmq-dashboardhost    SERVER_PORT                                                 Y
+rocketmq-namesrv      apache/rocketmq:5.1.4                           my-xhs-mq-namesrv     host    JAVA_HOME,JAVA_OPT_EXT                                      
+sentinel-dashboard    bladex/sentinel-dashboard:1.8.8                 my-xhs-sentinel-dashboardhost    JAVA_HOME,SERVER_PORT                                       
+skywalking-oap        apache/skywalking-oap-server:9.7.0              my-xhs-skywalking-oap host    JAVA_HOME,JAVA_OPTS,SW_ES_PASSWORD,SW_ES_USER,SW_HEALTH_CH  Y
+skywalking-ui         apache/skywalking-ui:9.7.0                      my-xhs-skywalking-ui  host    SERVER_PORT,SW_OAP_ADDRESS                                  
+victoria-metrics      victoriametrics/victoria-metrics:v1.93.12       my-xhs-victoria-metricshost                                                                
+xxl-job-admin         xuxueli/xxl-job-admin:2.4.2                     my-xhs-xxl-job-admin  host    JAVA_HOME,PARAMS                                            
+
+total services: 22

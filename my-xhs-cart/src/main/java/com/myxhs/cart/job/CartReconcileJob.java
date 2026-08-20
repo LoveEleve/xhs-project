@@ -94,6 +94,26 @@ public class CartReconcileJob {
                 log.debug("[购物车对账] 进度: 已对账 {} 用户", userCount);
             }
 
+            // P2-8: 纯 Redis 用户（MySQL 无记录，MQ 落库丢失）不在 MySQL 枚举源内 → 补充扫描 Redis 用户集
+            java.util.Set<String> redisUsers = new java.util.HashSet<>();
+            var scanOpts = org.springframework.data.redis.core.ScanOptions.scanOptions()
+                    .match(KEY_PREFIX + "*" + ITEMS_KEY_SUFFIX).count(500).build();
+            try (var cursor = stringRedisTemplate.scan(scanOpts)) {
+                cursor.forEachRemaining(redisUsers::add);
+            }
+            int redisOnlyCount = 0;
+            for (String key : redisUsers) {
+                String userIdStr = key.substring(KEY_PREFIX.length(), key.length() - ITEMS_KEY_SUFFIX.length());
+                try {
+                    Long userId = Long.valueOf(userIdStr);
+                    repairCount += reconcileUser(userId);
+                    redisOnlyCount++;
+                } catch (NumberFormatException ignored) {
+                    log.debug("[购物车对账] 跳过异常 key: {}", key);
+                }
+            }
+            userCount += redisOnlyCount;
+
             long elapsed = System.currentTimeMillis() - startTime;
             log.info("[购物车对账] 完成: 对账{}个用户, 修复{}条记录, 耗时{}ms",
                     userCount, repairCount, elapsed);

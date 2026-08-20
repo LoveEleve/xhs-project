@@ -85,21 +85,6 @@ ON DUPLICATE KEY UPDATE description = VALUES(description);
 CREATE DATABASE IF NOT EXISTS my_xhs_analytics DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE my_xhs_analytics;
 
-CREATE TABLE IF NOT EXISTS t_user_behavior (
-    id            BIGINT   NOT NULL COMMENT 'ID',
-    user_id       BIGINT   NOT NULL COMMENT '用户ID',
-    note_id       BIGINT   NOT NULL COMMENT '笔记ID',
-    behavior_type TINYINT  NOT NULL COMMENT '行为类型：1-浏览 2-点赞 3-收藏 4-评论 5-分享 6-搜索',
-    duration      INT      DEFAULT NULL COMMENT '停留时长（秒），仅浏览行为',
-    deleted       TINYINT  NOT NULL DEFAULT 0 COMMENT '逻辑删除',
-    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    PRIMARY KEY (id),
-    INDEX idx_user_id (user_id),
-    INDEX idx_note_id (note_id),
-    INDEX idx_behavior_type (behavior_type),
-    INDEX idx_created_at (created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户行为记录表';
 
 CREATE TABLE IF NOT EXISTS t_follow (
     id              BIGINT   NOT NULL COMMENT 'ID',
@@ -256,6 +241,23 @@ CREATE TABLE IF NOT EXISTS t_chat_user_relation (
 -- 内容服务
 CREATE DATABASE IF NOT EXISTS my_xhs_content DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE my_xhs_content;
+-- 用户行为记录表（P1 修复 2026-08-13：原建在 my_xhs_analytics，但 search 服务数据源=content 库 → 写入 1146 失败、行为链路失效）
+CREATE TABLE IF NOT EXISTS t_user_behavior (
+    id            BIGINT   NOT NULL COMMENT 'ID',
+    user_id       BIGINT   NOT NULL COMMENT '用户ID',
+    note_id       BIGINT   NOT NULL COMMENT '笔记ID',
+    behavior_type TINYINT  NOT NULL COMMENT '行为类型：1-曝光 2-点击 3-点赞 4-收藏 5-评论 6-分享 7-停留（对齐 BehaviorRequest 枚举）',
+    duration      INT      DEFAULT NULL COMMENT '停留时长（秒），仅行为类型=7 有效',
+    deleted       TINYINT  NOT NULL DEFAULT 0 COMMENT '逻辑删除',
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (id),
+    INDEX idx_user_id (user_id),
+    INDEX idx_note_id (note_id),
+    INDEX idx_behavior_type (behavior_type),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户行为记录表（search 数据源=content 库）';
+
 
 CREATE TABLE IF NOT EXISTS t_note (
     id            BIGINT       NOT NULL COMMENT 'ID',
@@ -311,7 +313,7 @@ CREATE TABLE IF NOT EXISTS t_topic (
     UNIQUE INDEX uk_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='话题表';
 
--- ⚠️ t_hot_search_snapshot — 运行时新增，原 init SQL 缺失
+-- ⚠️ t_hot_search_snapshot — 运行时新增，原 init SQL 缺失；search 模块数据源为 content 库（P-D36 已清理废弃的 my_xhs_search 库）
 CREATE TABLE IF NOT EXISTS t_hot_search_snapshot (
     id           BIGINT       NOT NULL COMMENT 'ID',
     keyword      VARCHAR(100) NOT NULL COMMENT '热搜关键词',
@@ -341,33 +343,6 @@ CREATE TABLE IF NOT EXISTS t_counter (
     INDEX idx_target (target_type, target_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='计数表';
 
--- 搜索服务
-CREATE DATABASE IF NOT EXISTS my_xhs_search DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE my_xhs_search;
-
-CREATE TABLE IF NOT EXISTS t_hot_search (
-    id           BIGINT       NOT NULL COMMENT 'ID',
-    keyword      VARCHAR(128) NOT NULL COMMENT '搜索关键词',
-    search_count BIGINT       NOT NULL DEFAULT 0 COMMENT '搜索次数',
-    status       TINYINT      NOT NULL DEFAULT 1 COMMENT '状态：0-禁用 1-正常',
-    created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    updated_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    PRIMARY KEY (id),
-    UNIQUE INDEX uk_keyword (keyword),
-    INDEX idx_search_count (search_count)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='热搜词表';
-
--- ⚠️ t_hot_search_snapshot — 运行时新增，原 init SQL 缺失（search 库有自己的快照表）
-CREATE TABLE IF NOT EXISTS t_hot_search_snapshot (
-    id           BIGINT       NOT NULL COMMENT 'ID',
-    keyword      VARCHAR(128) NOT NULL COMMENT '热搜关键词',
-    score        DOUBLE       DEFAULT 0 COMMENT '热度分数',
-    rank_no      INT          DEFAULT 0 COMMENT '排名',
-    search_count BIGINT       DEFAULT 0 COMMENT '搜索次数',
-    snapshot_time DATETIME    NOT NULL COMMENT '快照时间',
-    PRIMARY KEY (id),
-    KEY idx_snapshot_time (snapshot_time)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='热搜快照表';
 
 -- 商品服务
 CREATE DATABASE IF NOT EXISTS my_xhs_product DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;

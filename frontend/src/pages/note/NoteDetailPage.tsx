@@ -53,8 +53,8 @@ export default function NoteDetailPage() {
   }, [id]);
 
   if (loading) return <div style={{ textAlign: 'center', padding: 80 }}><Spin size="large" /></div>;
-  if (error) return <Alert type="error" title={error} style={{ margin: 24 }} />;
-  if (!note) return <Alert type="error" title="笔记不存在" style={{ margin: 24 }} />;
+  if (error) return <Alert type="error" message={error} style={{ margin: 24 }} />;
+  if (!note) return <Alert type="error" message="笔记不存在" style={{ margin: 24 }} />;
 
   const isAuthor = userId === note.authorId;
   const noteId = note.noteId;

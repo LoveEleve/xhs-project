@@ -1,0 +1,2 @@
+UID                 PID                 PPID                C                   STIME               TTY                 TIME                CMD
+nobody              3330095             3330073             0                   Aug08               ?                   00:12:26            /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --web.listen-address=:19090 --storage.tsdb.path=/prometheus --storage.tsdb.retention.time=15d

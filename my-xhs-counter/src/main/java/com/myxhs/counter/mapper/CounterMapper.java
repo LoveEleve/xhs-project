@@ -69,4 +69,12 @@ public interface CounterMapper extends BaseMapper<Counter> {
      */
     @Update("UPDATE t_counter SET count_value = #{countValue}, updated_at = NOW() WHERE id = #{id}")
     void updateCountValue(@Param("id") long id, @Param("countValue") long countValue);
+
+    /**
+     * 按业务键查询（T-113 对账 analytics 权威修正同步 DB 用）
+     */
+    @Select("SELECT * FROM t_counter WHERE target_type = #{targetType} AND target_id = #{targetId} " +
+            "AND count_type = #{countType} AND deleted = 0 LIMIT 1")
+    Counter selectByBusinessKey(@Param("targetType") int targetType, @Param("targetId") long targetId,
+                                @Param("countType") int countType);
 }

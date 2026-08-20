@@ -86,8 +86,8 @@ export default function OrderDetailPage() {
   };
 
   if (loading) return <div style={{ textAlign: 'center', padding: 80 }}><Spin size="large" /></div>;
-  if (error) return <Alert type="error" title={error} style={{ margin: 24 }} />;
-  if (!order) return <Alert type="error" title="订单不存在" style={{ margin: 24 }} />;
+  if (error) return <Alert type="error" message={error} style={{ margin: 24 }} />;
+  if (!order) return <Alert type="error" message="订单不存在" style={{ margin: 24 }} />;
 
   const statusMeta = ORDER_STATUS_MAP[order.status] || { label: '未知', color: '#999' };
 

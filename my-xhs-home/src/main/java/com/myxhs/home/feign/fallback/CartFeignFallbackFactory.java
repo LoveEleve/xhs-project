@@ -1,12 +1,11 @@
 package com.myxhs.home.feign.fallback;
 
 import com.myxhs.common.response.R;
+import com.myxhs.common.response.ResultCode;
 import com.myxhs.home.feign.CartFeignClient;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.openfeign.FallbackFactory;
 import org.springframework.stereotype.Component;
-
-import java.util.Collections;
 
 @Slf4j
 @Component
@@ -17,12 +16,12 @@ public class CartFeignFallbackFactory implements FallbackFactory<CartFeignClient
         return new CartFeignClient() {
             @Override
             public R<java.util.Map<String, Object>> getCartList(Long userId) {
-                return R.ok(Collections.emptyMap());
+                return R.fail(ResultCode.SERVICE_UNAVAILABLE, "购物车服务不可用");
             }
 
             @Override
             public R<java.util.Map<String, Integer>> getCartCount(Long userId) {
-                return R.ok(java.util.Map.of("count", 0));
+                return R.fail(ResultCode.SERVICE_UNAVAILABLE, "购物车服务不可用");
             }
         };
     }

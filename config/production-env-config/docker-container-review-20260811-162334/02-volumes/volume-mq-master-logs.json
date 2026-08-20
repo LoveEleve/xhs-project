@@ -1,0 +1,11 @@
+[
+    {
+        "CreatedAt": "2026-07-09T22:10:02+08:00",
+        "Driver": "local",
+        "Labels": null,
+        "Mountpoint": "/data/docker/lib/volumes/mq-master-logs/_data",
+        "Name": "mq-master-logs",
+        "Options": null,
+        "Scope": "local"
+    }
+]

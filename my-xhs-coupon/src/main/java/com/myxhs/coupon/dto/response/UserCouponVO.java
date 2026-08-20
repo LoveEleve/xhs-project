@@ -34,6 +34,9 @@ public class UserCouponVO {
     /** 状态：0-未使用 1-已使用 2-已过期 */
     private Integer status;
 
+    /** 有效期开始（T-121 修复：available 需过滤未生效券） */
+    private LocalDateTime validStart;
+
     /** 有效期结束 */
     private LocalDateTime validEnd;
 

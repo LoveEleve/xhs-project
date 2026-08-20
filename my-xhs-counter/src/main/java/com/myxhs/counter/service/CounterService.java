@@ -68,25 +68,32 @@ public class CounterService {
      */
     private static final org.springframework.data.redis.core.script.DefaultRedisScript<List> INCR_WITH_DEDUP_SCRIPT;
     static {
+        // O-Counter-1 修复（2026-08-13）：counterKey 续期 30 天（P2-6 遗漏 dedup 路径——
+        // 评论/收藏/分享/VIEW/关注计数 key 原为永久 TTL=-1，冷 key 永不回收）
         INCR_WITH_DEDUP_SCRIPT = new org.springframework.data.redis.core.script.DefaultRedisScript<>(
                 "if redis.call('EXISTS', KEYS[1]) == 1 then return {0, 0} end " +
                 "redis.call('SET', KEYS[1], '1', 'EX', ARGV[2]) " +
                 "local delta = tonumber(ARGV[1]) " +
                 "if delta > 0 then " +
                 "  redis.call('INCRBY', KEYS[2], delta) " +
-                "  return {1, tonumber(redis.call('GET', KEYS[2]))} " +
+                "else " +
+                "  local current = tonumber(redis.call('GET', KEYS[2]) or '0') " +
+                "  if current <= 0 then " +
+                "    return {-1, 0} " +
+                "  end " +
+                "  redis.call('INCRBY', KEYS[2], delta) " +  // delta is negative, so INCRBY works
                 "end " +
-                "local current = tonumber(redis.call('GET', KEYS[2]) or '0') " +
-                "if current <= 0 then " +
-                "  return {-1, 0} " +
-                "end " +
-                "redis.call('INCRBY', KEYS[2], delta) " +  // delta is negative, so INCRBY works
+                // O-Counter-1 修复（2026-08-13）：counterKey 续期 30 天（P2-6 遗漏 dedup 路径）
+                // 注意：EXPIRE 必须在 INCRBY 之后——key 首次创建前 EXPIRE 无效（回归发现 TTL=-1 瞬态根因）
+                "redis.call('EXPIRE', KEYS[2], ARGV[3]) " +
                 "return {1, tonumber(redis.call('GET', KEYS[2]))}",
                 List.class);
     }
 
     /** MQ 去重 TTL（2 小时，覆盖 MQ 最大重试窗口） */
     private static final long DEDUP_TTL_SECONDS = Duration.ofHours(2).toSeconds();
+    /** O-Counter-1：计数 key 续期 TTL（对齐 P2-6 的 30 天，dedup 路径补漏） */
+    private static final long COUNTER_TTL_SECONDS = Duration.ofDays(30).toSeconds();
 
     /**
      * 【修复H2】Set-based Like/Unlike 原子 Lua 脚本 — 解决 MQ 乱序计数虚增
@@ -121,6 +128,8 @@ public class CounterService {
                 "end " +
                 "local count = redis.call('SCARD', KEYS[2]) " +
                 "redis.call('SET', KEYS[3], count) " +
+                // T-035 延伸（2026-08-13）：Set-based 路径补 30 天续期（原遗漏——点赞计数 key 永久 TTL=-1）
+                "redis.call('EXPIRE', KEYS[3], ARGV[4]) " +
                 "return {1, count, changed}",  // changed = 0/1，反映 Set 的真实变更量
                 List.class);
     }
@@ -143,6 +152,8 @@ public class CounterService {
 
         // 1. Redis INCR（原子操作，实时生效）
         stringRedisTemplate.opsForValue().increment(redisKey);
+        // P2-6: 计数 key 永久无界 → 每次写入续期 30 天（活跃 key 不丢，冷 key 自动回收）
+        stringRedisTemplate.expire(redisKey, java.time.Duration.ofDays(30));
 
         // 2. 写入 Buffer（攒批后批量刷盘 DB）
         counterBuffer.add(targetType, targetId, countType, 1L);
@@ -187,39 +198,28 @@ public class CounterService {
      * @return true=执行成功, false=重复消息（已处理过）
      */
     public boolean incrementWithDedup(String msgId, int targetType, long targetId, int countType) {
-        String dedupKey = buildDedupKey(msgId);
-        String counterKey = buildRedisKey(targetType, targetId, countType);
-
-        @SuppressWarnings("unchecked")
-        List<Long> result = stringRedisTemplate.execute(
-                INCR_WITH_DEDUP_SCRIPT,
-                List.of(dedupKey, counterKey),
-                "1", String.valueOf(DEDUP_TTL_SECONDS));
-
-        if (result == null || result.isEmpty()) {
-            throw new RuntimeException("Lua 脚本返回异常: null or empty");
-        }
-
-        long status = result.get(0);
-        if (status == 0) {
-            log.info("[计数-去重] 重复消息跳过: msgId={}, targetType={}, targetId={}, countType={}",
-                    msgId, targetType, targetId, countType);
-            return false;
-        }
-        // status == 1: INCR 成功，写入 Buffer
-        counterBuffer.add(targetType, targetId, countType, 1L);
-        log.debug("[计数] 去重+1: msgId={}, targetType={}, targetId={}, countType={}",
-                msgId, targetType, targetId, countType);
-        return true;
+        return incrWithDedup(msgId, targetType, targetId, countType, 1);
     }
 
     /**
-     * 计数 -1（带 MQ 去重 + 归零保护，由 Consumer 调用）
-     *
-     * @param msgId     MQ 消息 ID（用作去重 Key）
-     * @return true=执行成功, false=重复消息或零保护触发
+     * O-Counter-2 修复（2026-08-13）：支持自定义 delta（UNCOMMENT 级联删除 count>1）
      */
+    public boolean incrementWithDedup(String msgId, int targetType, long targetId, int countType, long delta) {
+        return incrWithDedup(msgId, targetType, targetId, countType, delta);
+    }
+
     public boolean decrementWithDedup(String msgId, int targetType, long targetId, int countType) {
+        return incrWithDedup(msgId, targetType, targetId, countType, -1);
+    }
+
+    public boolean decrementWithDedup(String msgId, int targetType, long targetId, int countType, long delta) {
+        return incrWithDedup(msgId, targetType, targetId, countType, -delta);
+    }
+
+    /**
+     * O-Counter-2：带 delta 的 dedup 计数（Lua 已支持 ARGV[1] 任意 delta）
+     */
+    private boolean incrWithDedup(String msgId, int targetType, long targetId, int countType, long delta) {
         String dedupKey = buildDedupKey(msgId);
         String counterKey = buildRedisKey(targetType, targetId, countType);
 
@@ -227,7 +227,7 @@ public class CounterService {
         List<Long> result = stringRedisTemplate.execute(
                 INCR_WITH_DEDUP_SCRIPT,
                 List.of(dedupKey, counterKey),
-                "-1", String.valueOf(DEDUP_TTL_SECONDS));
+                String.valueOf(delta), String.valueOf(DEDUP_TTL_SECONDS), String.valueOf(COUNTER_TTL_SECONDS));
 
         if (result == null || result.isEmpty()) {
             throw new RuntimeException("Lua 脚本返回异常: null or empty");
@@ -244,10 +244,10 @@ public class CounterService {
                     msgId, targetType, targetId, countType);
             return false;
         }
-        // status == 1: DECR 成功，写入 Buffer
-        counterBuffer.add(targetType, targetId, countType, -1L);
-        log.debug("[计数] 去重-1: msgId={}, targetType={}, targetId={}, countType={}",
-                msgId, targetType, targetId, countType);
+        // status == 1: 变更成功，写入 Buffer
+        counterBuffer.add(targetType, targetId, countType, delta);
+        log.debug("[计数] 去重变更{}: msgId={}, targetType={}, targetId={}, countType={}",
+                delta, msgId, targetType, targetId, countType);
         return true;
     }
 
@@ -278,7 +278,7 @@ public class CounterService {
                 LIKE_SET_SCRIPT,
                 List.of(dedupKey, likeSetKey, counterKey),
                 String.valueOf(userId), isLike ? "ADD" : "REMOVE",
-                String.valueOf(DEDUP_TTL_SECONDS));
+                String.valueOf(DEDUP_TTL_SECONDS), String.valueOf(COUNTER_TTL_SECONDS));
 
         if (result == null || result.isEmpty()) {
             throw new RuntimeException("LikeSet Lua 脚本返回异常: null or empty");
@@ -325,6 +325,7 @@ public class CounterService {
         Long actualCount = stringRedisTemplate.opsForSet().size(likeSetKey);
         if (actualCount != null) {
             stringRedisTemplate.opsForValue().set(counterKey, String.valueOf(actualCount));
+            stringRedisTemplate.expire(counterKey, java.time.Duration.ofDays(30));
         }
         log.info("[计数-LikeSet] 懒迁移完成: targetType={}, targetId={}, members={}, count={}",
                 targetType, targetId, memberArray.length, actualCount);
@@ -368,6 +369,21 @@ public class CounterService {
                     Long analyticsCount = stringRedisTemplate.opsForSet().size(analyticsKey);
                     if (analyticsCount != null && analyticsCount != counterValue) {
                         stringRedisTemplate.opsForValue().set(counterKey, String.valueOf(analyticsCount));
+                        stringRedisTemplate.expire(counterKey, java.time.Duration.ofDays(30));
+                        // T-113（2026-08-15）：analytics 权威修正后同步 DB——修复前只改 Redis，
+                        // DB 残留漂移值（对账后 DB 与权威永久不一致）
+                        try {
+                            com.myxhs.counter.entity.Counter dbRow = counterMapper.selectByBusinessKey(
+                                    targetType, Long.parseLong(targetId), 1);
+                            if (dbRow != null) {
+                                counterMapper.updateCountValue(dbRow.getId(), analyticsCount);
+                                log.warn("[计数-对账] analytics权威修正同步DB: key={}, db={}→analytics={}",
+                                        counterKey, dbRow.getCountValue(), analyticsCount);
+                            }
+                        } catch (Exception e) {
+                            log.warn("[计数-对账] analytics修正同步DB失败(忽略): key={}, err={}",
+                                    counterKey, e.getMessage());
+                        }
                         log.warn("[计数-对账] analytics权威修正: key={}, counter={}→analytics={}",
                                 counterKey, counterValue, analyticsCount);
                         fixed++;
@@ -404,6 +420,7 @@ public class CounterService {
 
         // 回填 Redis
         stringRedisTemplate.opsForValue().set(redisKey, String.valueOf(count));
+        stringRedisTemplate.expire(redisKey, java.time.Duration.ofDays(30));
 
         return count;
     }
@@ -486,6 +503,7 @@ public class CounterService {
                 count = counter != null ? counter.getCountValue() : 0;
                 // 回填 Redis
                 stringRedisTemplate.opsForValue().set(redisKeys.get(i), String.valueOf(count));
+                stringRedisTemplate.expire(redisKeys.get(i), java.time.Duration.ofDays(30));
             }
 
             String countName = CountType.of(countType).getEnglishName();
@@ -542,6 +560,7 @@ public class CounterService {
                 if (redisCount != dbCount) {
                     if (redisCount == 0 && dbCount > 0) {
                         stringRedisTemplate.opsForValue().set(redisKey, String.valueOf(dbCount));
+                        stringRedisTemplate.expire(redisKey, java.time.Duration.ofDays(30));
                         log.warn("[对账修复] Redis恢复: key={}, redis=0, db={}", redisKey, dbCount);
                     } else {
                         counterMapper.updateCountValue(dbCounter.getId(), redisCount);

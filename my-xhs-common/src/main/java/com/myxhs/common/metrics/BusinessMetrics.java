@@ -111,6 +111,34 @@ public class BusinessMetrics {
 
     // ==================== 内部方法 ====================
 
+    /**
+     * P-D42 + P1 修复（2026-08-13）：启动时预注册全部指标（**带业务标签空值**）。
+     * <p>
+     * 原实现预注册无标签 counter——与业务调用的带标签 counter 同名不同标签，
+     * Prometheus 输出层（simpleclient）同名 label 集合冲突 → 带标签系列被吞 → 业务指标恒 0。
+     * 修复：预注册使用与业务调用一致的标签名（值置空串），消除冲突且保留"面板不空白"。
+     * </p>
+     */
+    @jakarta.annotation.PostConstruct
+    public void preRegister() {
+        MeterRegistry registry = meterRegistry();
+        java.util.List<io.micrometer.core.instrument.Meter> meters = java.util.List.of(
+                Counter.builder("orders.created.total").tags("status", "").description("业务指标: orders.created.total").register(registry),
+                Counter.builder("orders.paid.total").tags("channel", "", "result", "").description("业务指标: orders.paid.total").register(registry),
+                Counter.builder("orders.timeout.closed").description("业务指标: orders.timeout.closed").register(registry),
+                Counter.builder("inventory.prededuct.total").tags("result", "").description("业务指标: inventory.prededuct.total").register(registry),
+                Counter.builder("inventory.action.total").tags("action", "").description("业务指标: inventory.action.total").register(registry),
+                Counter.builder("payment.callback.total").tags("status", "").description("业务指标: payment.callback.total").register(registry),
+                Counter.builder("feed.push.total").tags("mode", "").description("业务指标: feed.push.total").register(registry),
+                Counter.builder("coupon.action.total").tags("action", "", "result", "").description("业务指标: coupon.action.total").register(registry),
+                Counter.builder("mq.consume.total").tags("topic", "", "consumerGroup", "", "result", "").description("业务指标: mq.consume.total").register(registry),
+                Counter.builder("myxhs.mq.dlq.total").tags("consumerGroup", "", "topic", "").description("业务指标: myxhs.mq.dlq.total").register(registry),
+                Timer.builder("orders.create.latency").description("业务延迟: orders.create.latency").publishPercentiles(0.5, 0.9, 0.99).register(registry),
+                Timer.builder("inventory.prededuct.latency").description("业务延迟: inventory.prededuct.latency").publishPercentiles(0.5, 0.9, 0.99).register(registry),
+                Timer.builder("feed.push.latency").description("业务延迟: feed.push.latency").publishPercentiles(0.5, 0.9, 0.99).register(registry)
+        );
+    }
+
     private MeterRegistry meterRegistry() {
         return meterRegistryProvider.getObject();
     }

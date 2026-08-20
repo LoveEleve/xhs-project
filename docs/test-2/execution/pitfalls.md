@@ -504,3 +504,174 @@ S03 API 返回 data=[]
 - **修复**：修正注释为"当天（自然日）窗口"（行为不变，实现本就是按天聚合，符合索引设计）。
 - **勘误**：原 review 记的"模板 `{title}`/`{content}` 占位符语义错乱"**不成立**——经核实 `NotificationEventDTO.targetName` 由 CommentService 设为笔记标题（`notification.put("targetName", noteTitle)`），`{title}`→targetName、`{content}`→event.content 均正确，非 bug。
 - **验证**（notification 重打包重启）：通知列表正常（200/5条）、无报错 ✅。
+
+---
+## #68 P-D30 部署包双 compose 漂移：deploy-cloud 仍是旧版（2026-08-12）
+
+- **现象**：`config/deploy-cloud/docker-compose.yml` 与 `config/docker-compose.yml`（运行版基线）内容不一致——旧版从库挂 `init-all.sql`（→ GTID 冲突 1236 复制必失败）、仅 13 healthcheck、depends_on 无 healthy 条件。remote-upgrade.sh 默认 `COMPOSE_DIR` 直接引用同目录 compose → 用户试验部署会拿到旧版。
+- **根因**：两轮改造（restart/healthcheck 增强）只改了 config/docker-compose.yml，deploy-cloud 目录未同步，DEPLOY-README 却指向 config/——"上传即用"一致性被破坏且无人校验。
+- **修复**：config/docker-compose.yml 覆盖 deploy-cloud（diff 校验为零）；remote-upgrade.sh 增加第 2 步基线 diff 强校验（不一致即退出，`BASELINE_SKIP=1` 可绕过）。
+- **教训**：任何"部署包"改动必须同步全部副本 + 脚本校验，单靠 README 指引不可靠。
+
+## #69 P-B4 INTERNAL_TOKEN 公开默认值穿透端口信任模型（2026-08-12）
+
+- **现象**：GatewayAuthTrustFilter 对 `X-Internal-Call == myxhs.internal.token` 即信任任意 X-User-Id（越权通道）；而所有服务 application.yml fallback 与 start-all.sh 均为公开已知值 `my-xhs-internal-token-2026` → 叠加 P-D28（微服务机端口裸露），攻击者直连 19001+ 可水平越权。
+- **根因**：P1-3 信任模型只做了"机制"，凭据默认值公开 = 机制空转。ADMIN_TOKEN 因 yml 默认空而 fail-closed，INTERNAL_TOKEN 却留了默认值。
+- **修复**：12 服务 yml `${INTERNAL_TOKEN:}`（fail-closed）+ FeignInternalCallInterceptor 空 token 不带头；start-all.sh 首次启动生成随机 token 持久化 `.secrets/tokens.env`（chmod 600）。
+- **教训**：内部认证 token 一律 fail-closed（默认空），随机化注入；yaml 里的 fallback 默认值即漏洞。
+
+## #70 部署包补包：FIX-PLAN 修复项须逐项核对是否已入 compose（2026-08-12）
+
+- **现象**：FIX-PLAN 第一批"零代码"修复（P-D3 noeviction/P-D16 kibana key/P-D26 relay-log/TZ/P-D4 规则名/P-D6 remote_write 等）此前**全部未同步进部署包**，只有 restart/healthcheck/建表并入——用户上传即带病部署。
+- **根因**：修复方案写在 docs（评审结论），未做"方案→部署包"落位核对；"上传即用"没有验收标准。
+- **修复**：本轮逐项补入 config/docker-compose.yml + prometheus.yml + alert_rules（P-D3/D15/D16/D26/D8/T4/TZ/D13/D6/T3/D4），运维动作转脚本（apply-ilm/mysql-backup/init-xxljob/ops-fixes），DEPLOY-README 增"部署后脚本清单"。
+- **教训**：评审出的配置修复，要么进部署包（文件级），要么进运维脚本（动作级），要么明确标注"第二批待联动"——不留"已评审未落位"的悬空项。
+
+---
+## #71 P-D36 search 模块数据源实为 content 库，my_xhs_search 是废弃库（2026-08-12）
+
+- **现象**：远程机清单称"t_hot_search_snapshot 等 5 表未入初始脚本"——核对 init-all.sql 全在（前序已补录）；但发现该表在 init-all.sql **定义两处**（content 库段 315 行 VARCHAR(100) + search 库段 361 行 VARCHAR(128)），生产两库均有表。
+- **根因**：search 模块 `application-datasource.properties` 的 master/slave jdbc-url 均为 **my_xhs_content** 库（非 my_xhs_search）——HotSearchService 实际写 content 库快照表（生产 1002 行、8/11 持续写入）；search 库 2 表（t_hot_search/t_hot_search_snapshot）无代码引用、无 canal 监听（canal 仅 inventory/note/product 3 instance）、8/7 后停写 → **死库**。
+- **教训**：① 表"存在"不等于"在用"——判定归属必须查代码数据源 + 生产写入时间 + canal 监听三方；② init-all.sql 里"运行时补录"的表定义存在重复合并痕迹（同表两处定义、结构不一致），后续补录 DDL 需先确认所属库与结构唯一。
+- **处置（已完成 2026-08-12）**：生产 DROP my_xhs_search（备份 /data/tmp/opencode/my-xhs-search-backup-20260812.sql）+ init-all.sql 删 search 段（两文件为硬链接一次生效）；t_inventory_compensation 生产结构仍旧版（P-D22 待 ALTER，DDL 同步教训仍成立）。
+
+---
+## #72 复盘：日志链路误判——只看 filebeat 挂载不看 logback appender（2026-08-12）
+
+- **现象**：曾推断"微服务与中间件分机则 filebeat 管道恒空"（P-D35），后经实证推翻。
+- **根因**：只检查了 filebeat 容器挂载（/logs:/logs:ro），未核对微服务 logback-spring.xml 的完整 appender 列表——微服务 root 实际有 5 个 appender，其中 **LOGSTASH（LogstashTcpSocketAppender → 21.130.247.89:15044）** 才是主链路（TCP 直推 logstash），filebeat 是冗余通道。
+- **实证三连**：① logback-spring.xml 读 appender 全集；② ss 查微服务进程与 15044 的 ESTABLISHED 长连接（15 服务全连）；③ ES myxhs-logs-* 最新 @timestamp 实时（13:10）。
+- **教训**：判断任何数据链路（日志/指标/trace）必须验证**生产端输出配置 + 运行期连接 + 存储端最新数据**三点，缺一即可能误判；filebeat/agent 存在≠主链路。
+
+---
+## #73 部署包 8 处 bug（对方部署实测发现，2026-08-12）
+
+- 部署方实测修复 8 处部署包缺陷，需同步回本地包：① canal depends_on.rocketmq-broker 空映射（语法错）；② prom/redis-exporter 镜像不存在（应为 oliver006/redis_exporter）；③ redis-exporter 默认端口 9121 非 9151；④ alertmanager 默认 9093 非 19093（Prometheus alerting 目标随之）；⑤ prometheus/VM healthcheck 用 curl 但镜像无 curl；⑥ es-exporter v1.7.0 已移除 --es.cluster_settings；⑦ mysqld-exporter v0.15.1 走 .my.cnf + MYSQLD_EXPORTER_PASSWORD（DATA_SOURCE_NAME 无效）；⑧ OAP telemetry 绑 127.0.0.1 → Prometheus 抓 21.130.247.89:1234 失败（应抓 127.0.0.1:1234）。
+- **已回传合并（2026-08-12）**：对方修复包无遗漏（8 处全到位 + 额外修 xxl-job/prometheus healthcheck curl→wget/TCP、SW_TELEMETRY_HOST 127.0.0.1→0.0.0.0、redis-exporter 显式 listen 9151、alertmanager 显式 listen 19093、mysqld-exporter 增 my.cnf+MYSQLD_EXPORTER_PASSWORD、deploy-cloud 移除冗余 compose 副本）；已合并本地 config/ 并重打最终 zip（my-xhs-deploy-package.zip，26 容器）。
+- **教训**：① compose 语法/镜像名/默认端口必须本地校验（yaml 解析+镜像 tag 查证），不能只"写对样子"；② 镜像内工具可用性（curl/wget）影响 healthcheck——优先用镜像自带二进制或进程探测（或显式 listen-address 固定端口）；③ exporter 版本差异大（flag/env 变化），应锁定实测过的版本。
+
+## #74 微服务重启中的进程陷阱（2026-08-12）
+
+- pgrep -f "java.*my-xhs-" 会自匹配 bash 命令行 → 杀错/超时；应 `ps -eo args | grep "my-xhs-.*SNAPSHOT.jar"` 精确匹配。
+- 环境遗留 27 个 java 进程（含重复实例 + 非本项目 dubbo 进程）——按 jar 路径白名单杀。
+- pids/ 旧 pid 文件与真实进程不符会导致 start-all.sh "已在运行"误判——杀净后重跑。
+
+---
+## #75 垃圾数据清理 + P-D22 闭环（2026-08-12）
+
+- **清理内容**（用户授权）：
+  1. 4 笔僵尸支付单（pay_type=1 卡死、订单已不存在）→ status=2（支付失败）
+  2. 8 条 ORDER_CREATED 本地消息（7/29-8/4 从未投递）→ DELETE（3 分片）
+  3. t_inventory_compensation ALTER（P-D22）：备份表 t_inventory_compensation_bak_20260812 → 加 fail_reason/retry_count、删 action、加索引 ✅ 结构已与代码一致
+  4. my_xhs_deploy_test 空库 → DROP
+  5. xxl-job 5 个低频任务（cartReconcile/feedCleanup/recommend×3）→ trigger_status=1 启用（19 启用/2 停用=演示任务+重复项）
+- **保留**：seata_lab（2 表 seata_account/undo_log——非本项目，疑其他项目库，不删）；旧 t_local_message 已不存在（P-D25 自动销号）。
+- **P-D22 验证**：ALTER 后补偿任务连续 2 个周期无 ERROR（此前每 30s 一次 Unknown column 'retry_count'）；inventory reconcile 正常（28 SKU 对账）。
+- **xxl-job 补建任务注意**：init-xxljob.sql 建的任务默认 trigger_status=0（新建即停用），且 couponExpireJob 曾落入 sample 组（INSERT 子查询时序问题）——部署后需核对任务组归属与启用状态。
+
+---
+## #76 P2 批量修复（2026-08-12 第十一轮）
+
+- 修 8 项（P2-4/6/11/15/12/7/8/3），全部编译通过，待重启验证。
+- 踩坑 3 个：① CartService 方法追加到类括号外（字符串拼接位置）→ 编译 "reached end of file"；② Spring Data Redis 3.1+ `hPut` 已改名 `hSet`（API 演进）；③ fallback 工厂批量替换时重复定义方法（先加后清）。教训：**大批量代码编辑后先 mvn package 验证再继续，String 拼接改代码易错——用精确锚点替换**。
+- P2-12 注意：伪订单 ID 算法变更只影响新订单；"预扣旧算法/确认新算法"的进行中订单（30min 窗口）需人工核对。
+- P2-3 批量接口：content 侧复用单条 getNoteDetail（缓存/防穿透语义一致），HTTP 从 N 次→1 次；home 侧整体降级为空（fallback）。
+
+---
+## #77 生产卫生 4 项收尾（2026-08-12）
+
+- **P-D11**：broker.conf `SYNC_FLUSH` + `autoCreateTopicEnable=false`（防断电丢消息/typos 静默建 topic）——已入部署包；**试验机运行中 broker 需改配置重启才生效**（云主机全新部署自动生效）。
+- **A7**：filebeat 僵尸容器已从 compose 删除（26→25 容器，日志主链路为 TCP 15044 直推，filebeat 无数据源）。
+- **A9**：broker-slave.conf 死文件已删（无容器使用，避免"有主从"误导）。
+- **P-D28**：15 服务 yml exposure 移除 `loggers`（P-D28 收尾）——重启后实测 order /actuator/loggers=404、gateway 不可写（此前 204 可远程改级别）。
+- 重新打包 15 服务 + 重启 + 重新出最终 zip（my-xhs-deploy-package.zip，25 容器）。
+
+---
+## #78 测试脚本硬编码陈旧——跑测试前必须前置核对（2026-08-12）
+
+- **现象**：full-chain-test-v3.sh 直接跑失败（Redis 连接拒绝）。核对发现 5 个测试脚本全部带陈旧硬编码：
+  - v1/v2：`21.91.124.110:16379`（旧 IP + 8/11 前旧端口，双错）
+  - smoke：`16379`（端口错）
+  - v3：`REDIS_PORT=16379`（端口错，本次踩坑点）
+  - pre-test-init：`X-Admin-Call: my-xhs-admin-token-2026`（P-B4 后旧 token 失效）
+- **根因**：测试脚本不在"配置变更全链路核对"范围内——P-D23 的端口教训、P-B4 的令牌变更都只同步了运行配置/代码，没同步测试脚本。
+- **修复**：全部脚本 IP→21.130.247.89、端口→6379、admin token→tokens.env 动态注入（`${ADMIN_TOKEN}`）。
+- **教训（固化）**：**任何配置/凭据变更（端口/IP/令牌/密码）后，跑测试前必须先 grep 测试脚本的旧值**；测试脚本应纳入配置变更核对清单。**本次按用户指示只修复不执行，测试运行待用户确认。**
+
+---
+## #79 G1 深度 REVIEW 修复 7 bug + 2 系统性缺陷（2026-08-12）
+
+- **修复**：T-005 禁用账号 refresh 续期（40107）；T-007 logout 缺 access 兜底；T-008 refresh 改 body；T-012 改密凭证失效；T-009/010/011 HMAC 签名升级（method|path|query|ts|nonce|bodyHash + BodyCacheFilter）；T-013 关注校验 target 存在（user 内部端点 + Feign）；T-016 拉黑拦截（block Set）。
+- **T-017 系统性**：FeignInternalCallInterceptor 在 14/15 服务不生效——FeignClientFactoryBean 对 request-interceptors 配置类 **new 实例化（@Value 不注入）**，且 **全局 @Component RequestInterceptor 不被 Feign 收集**（javap 实证）→ P-B4 后内部调用 X-Internal-Call 全链路缺失（此前默认 token 掩盖）。修复：字段默认值读 env + 全部服务 yml 补配置 + 显式 configuration。
+- **T-018**：block 跨服务读写序列化不一致（RedisOperator 引号 vs stringRedisTemplate）→ 统一。
+- **user 服务此前缺 myxhs.internal.token 段**（P-B4 漏改）——内部端点/拦截器 token 恒空。
+- **教训**：① 安全修复后必须验证"调用链两端"（头是否真的带上）；② Feign 拦截器配置必须显式（properties/configuration），@Component 不自动生效；③ RedisOperator 序列化带引号，跨服务直读 Redis 需统一存取方式。
+
+---
+## #80 common 变更后必须 rm -rf target 重建（2026-08-12）
+
+- **现象**：common 修改（getString 剥引号、GlobalExceptionHandler 新 handler）install 成功、m2 jar 确认更新，但**各服务打包后的 BOOT-INF/lib 里仍是旧 common**——T-021 修了两次才生效。
+- **根因**：spring-boot repackage 复用 target 里旧 BOOT-INF/lib（依赖解析缓存）；`mvn package` 不做全量重建。
+- **修复**：rm -rf 全部模块 target → 重打包 → 重启（执行规范早有此条，未遵守）。
+- **教训**：**修改 common 后，所有依赖服务必须 rm -rf target 重建**，不能只 mvn package；验证方式 = 解压 jar 的 BOOT-INF/lib 检查 class（javap）。
+
+---
+## #81 SkyWalking 采样率单位陷阱：SW_TRACE_SAMPLE_RATE 是万分比（2026-08-12）
+
+- **现象**：16:02 后全部服务 SW segment 归零——误以为上报断链（TCP 11800 通、agent 正常、OAP 健康）。
+- **根因**：P-T4 部署包配 `SW_TRACE_SAMPLE_RATE: 10`——**SkyWalking 采样率单位是万分比（10000=100%）**，10 = **0.1%**（不是 10%）→ OAP 重启后几乎不采样 → 测试量下 segment≈0。
+- **修复**：改为 1000（10%）；运行态 OAP 需改 env 重启生效（部署包已改）。
+- **教训**：① 可观测性配置改动后必须验证"存储端数据持续增长"；② 采样率/百分比类配置确认单位（万分比 vs 百分比）。
+
+---
+## #82 Java Properties 行内注释陷阱：RocketMQ 配置静默失效（2026-08-12）
+
+- **现象**：对方运行态 `getBrokerConfig` 确认 `flushDiskType = SYNC_FLUSH # 注释` **静默回退 ASYNC_FLUSH**——行内 `#` 被 Properties 解析为值的一部分，枚举解析失败回退默认。
+- **根因**：Java Properties 只认**行首 `#`/`!`** 为注释；行内 `#` 属于值。broker.conf 用了行内注释（我方原文件 + 对方修复版同样中招）。
+- **修复**：全部注释拆独立行；`grep -E "^[a-zA-Z].*#"` 校验零行内注释；zip 重打。
+- **教训**：RocketMQ/Java 系 properties 配置文件**禁止行内注释**；配置变更后运行态确认（getBrokerConfig 而非只看文件）。
+
+---
+## #83 方法论教训：静态 review"通过" ≠ 可部署（2026-08-13）
+
+- **现象**：多轮静态 review 均称"没问题"，对方试验机实测暴露 20+ 运行态问题（镜像不存在/healthcheck 工具缺失/配置解析吞值/采样率单位/看板 uid 不替换等）。
+- **根因**：无真实环境时把"静态自洽"当"可运行"结论；验证深度与结论强度不匹配。
+- **沉淀**：docs/test-3/REVIEW-METHODOLOGY.md——三层验证法（L0 静态/L1 框架语义/L2 运行态）+ 部署包可运行性清单（镜像/解析/框架/数据四类）+ 结论措辞规范（禁止"没问题"）。
+- **教训**：① review 必须先声明能力边界；② L1（官方文档/registry/源码）可避免约 60% 实测坑；③ 配置类必须查解析语义（Properties 注释、单位、reload 行为）。
+
+---
+
+## 第 11 会话新增（#84-#99，2026-08-13 G2/监控/部署）
+
+### 指标/监控类
+| # | 问题 | 根因 | 解决 |
+|:--:|------|------|------|
+| 84 | **业务指标恒 0（P1）**：Prometheus 只有预注册无标签序列，带标签业务序列被吞 | 预注册无标签 counter 与业务带标签同名 → Prometheus simpleclient 同名 label 集合冲突 → 带标签系列不输出（actuator 有数据、prometheus 无） | 预注册改为**带业务标签空值**（标签集合对齐）→ 验证 mq_consume_total{topic,consumerGroup,result} 出数 |
+| 85 | **计数 key 首次创建 TTL=-1** | Lua 里 EXPIRE 在 INCRBY **之前** → key 不存在时 EXPIRE 无效 | EXPIRE 必须放在 INCRBY/写入**之后** |
+| 95 | 看板指标名错：tomcat_threads_busy（实际 busy_threads）、max_threads（实际 config_max_threads）、jvm_buffer_pool_used_bytes（实际 jvm_buffer_memory_used_bytes）| Micrometer 命名差异 | javap/运行态 grep 实证指标名再写面板 |
+| 98 | 动态桶无固定 le 边界（le="0.5" 恒空）| publishPercentileHistogram 指数桶 | 一律 histogram_quantile 查询 |
+| 93 | micrometer 1.12.5 无 ProcessMetrics/JvmDeadlockMetrics | 版本无此 binder（Boot 3.5 也无自动配置）| enable 配置无效；自定义 MeterBinder（死锁已补）|
+| 92 | Boot metrics.enable map 键含点不生效 | 点分隔被嵌套解析（enable["jvm.threads.deadlocked"]）| 方括号包裹键名（但无 binder 时仍无效——先确认版本有无该指标）|
+| 99 | 看板审查提取"指标名"误报（rate/sum/by/id 被当指标）| 正则提取第一个 token 是函数名 | 排除函数名/操作符后提取 |
+
+### 部署/构建类
+| # | 问题 | 根因 | 解决 |
+|:--:|------|------|------|
+| 86 | **mvn install -q 吞编译错误** → 后续打包用旧 common | -q 下 BUILD FAILURE 不显示 | install 不加 -q 看 BUILD SUCCESS |
+| 87 | **外层 unzip -l 看不到 BOOT-INF/lib 嵌套 jar 内部类** | 嵌套 jar 条目不展开 | 解压 BOOT-INF/lib/my-xhs-common-*.jar 再查（#80 补充）|
+| 88 | **pgrep/pkill -f 自匹配杀自己 shell** | -f 匹配完整命令行（含自身）| 用 `[b]in/bash`/`[s]tart` 括号技巧 |
+| 89 | **curl 无 --max-time 挂起** | 端口监听但无响应 → curl 永久等待 | 一律 `--max-time 2` |
+| 90 | **start-all.sh 变量引号外 -D 静默失效** | `VAR="..." -Dxxx` 语法错误（bash 当命令执行）→ 变量空/噪音；python line[:-1] 修复会吞引号 | 引号必须闭合；修改后 bash -n + 全行引号配对校验 |
+| 91 | **start-all.sh 末尾 wait 永不返回** | gateway 前台调用后的多余 wait 无 job 可等但阻塞 | 删除末尾多余 wait |
+
+### 环境/操作类
+| # | 问题 | 根因 | 解决 |
+|:--:|------|------|------|
+| 94 | **gateway 不依赖 common**（独立实现）| 模块 pom 无 my-xhs-common | 指标无 application 标签 → 模块内 MeterRegistryCustomizer；无 myxhs_http 指标 → http.server.requests bucket + 看板正则指标 `{__name__=~"myxhs_http...|http_server_requests..."}` |
+| 96 | 限流窗口跨用例共享（业务失败请求也计数）| @RateLimit 在 AOP 层先执行 | 测试前 DEL 限流 key 隔离；压力类请求限速（200ms+）|
+| 97 | ps 进程计数含 bash 自身（"双实例"伪影）| ps -eo args 显示 bash -c 命令行 | 用 pgrep -f "[m]y-xhs-.*jar" + Nacos instance 数双重确认 |
+
+### 看板/面板审查方法（防误报）
+- 指标存在性：Prometheus `/api/v1/query?query={指标名}` 实测（非只 grep 文件）
+- application label 存在性：面板带 `application=~"$application"` 时须确认指标有该标签（gateway 曾全缺——#94）
+- 全量表达式真实执行：替换变量后 Prometheus 查询（0 语法错 + 空面板定性：无流量 vs 指标缺失）

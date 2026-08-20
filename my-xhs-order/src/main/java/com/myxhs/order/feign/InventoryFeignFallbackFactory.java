@@ -34,6 +34,11 @@ public class InventoryFeignFallbackFactory implements FallbackFactory<InventoryF
             public R<Void> confirmDeduct(Map<String, Object> request) {
                 return R.fail(503, "库存服务不可用");
             }
+
+            @Override
+            public R<Void> refundRestore(Map<String, Object> request) {
+                return R.fail(503, "库存服务不可用");
+            }
         };
     }
 }

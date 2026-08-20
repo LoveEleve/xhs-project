@@ -3,6 +3,8 @@ package com.myxhs.analytics.service;
 import com.myxhs.analytics.dto.event.LikeEvent;
 import com.myxhs.analytics.dto.request.LikeRequest;
 import com.myxhs.common.constants.RedisKeyConstants;
+import com.myxhs.common.exception.BizException;
+import com.myxhs.common.response.ResultCode;
 import com.myxhs.common.trace.MqTraceHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +45,7 @@ public class LikeService {
     private final ObjectMapper objectMapper;
     private final org.springframework.data.redis.core.script.DefaultRedisScript<Long> likeForwardAtomicScript;
     private final org.springframework.data.redis.core.script.DefaultRedisScript<Long> unlikeForwardAtomicScript;
+    private final com.myxhs.analytics.feign.ContentFeignClient contentFeignClient;
 
     /** 业务类型：笔记 */
     private static final int BIZ_TYPE_NOTE = 1;
@@ -65,6 +68,11 @@ public class LikeService {
      * @param request 点赞请求（bizType + bizId）
      */
     public void like(Long userId, LikeRequest request) {
+        // O-Like-3 修复（2026-08-13）：点赞前校验目标存在性（对照评论创建的校验语义）
+        // T-103：校验失败抛业务码（原静默 return 200 误导客户端——"点赞成功"但无效果）
+        if (!validateTarget(request.getBizType(), request.getBizId())) {
+            throw new BizException(ResultCode.NOT_FOUND, "笔记/评论不存在或未发布");
+        }
         String likeKey = buildLikeKey(request.getBizType(), request.getBizId());
         boolean isNoteType = request.getBizType() == BIZ_TYPE_NOTE;
         String userLikeKey = isNoteType ? RedisKeyConstants.LIKE_SET + "user:" + userId + ":note" : null;
@@ -91,6 +99,15 @@ public class LikeService {
         }
 
         log.info("[点赞] 点赞成功: userId={}, bizType={}, bizId={}", userId, request.getBizType(), request.getBizId());
+
+        // O-Like-1 修复：点赞笔记（bizType=1）通知笔记作者（失败不影响点赞主流程）
+        if (isNoteType) {
+            sendLikeNotification(userId, request.getBizId());
+        }
+        // O-Like-4 修复：评论点赞（bizType=2）通知评论作者
+        else {
+            sendCommentLikeNotification(userId, request.getBizId());
+        }
 
         // MQ 同步落库——失败不回滚Redis(防Broker已消费但回滚导致Redis/DB不一致)
         // 消费者双重幂等(versionCheck + SADD)兜底, MQ真正未送达时用户重试即可
@@ -269,6 +286,141 @@ public class LikeService {
         } else {
             return RedisKeyConstants.LIKE_SET + "comment:" + bizId;
         }
+    }
+
+    /**
+     * O-Like-1 修复：发送点赞通知（type=1）到 NOTIFICATION_TOPIC
+     * <p>
+     * 对齐 CommentService 通知模式：senderName 暂不填（O-Comment-2 统一观察项）。
+     * 用 batch-detail 取笔记作者/标题（无 VIEW 计数副作用）；已删/草稿笔记不通知。
+     * </p>
+     */
+    private void sendLikeNotification(Long senderId, Long noteId) {
+        try {
+            com.myxhs.common.response.R<Map<String, Object>> r = contentFeignClient.batchGetNoteDetail(java.util.List.of(noteId));
+            if (r == null || !r.isSuccess() || r.getData() == null) {
+                return;
+            }
+            Object noteObj = r.getData().get(String.valueOf(noteId));
+            if (!(noteObj instanceof Map)) {
+                return; // 笔记不存在/未发布/草稿 → 不通知
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> note = (Map<String, Object>) noteObj;
+            // R4：全局 Long→ToStringSerializer，Feign 返回的 userId 是 String（兼容 Number）
+            long authorId = toLongSafe(note.get("userId"));
+            if (authorId <= 0) {
+                return;
+            }
+            if (authorId == senderId) {
+                return; // 自赞不通知（消费端同样兜底）
+            }
+
+            Map<String, Object> notification = new HashMap<>();
+            notification.put("type", 1); // 1=点赞
+            notification.put("senderId", senderId);
+            notification.put("targetUserId", authorId);
+            notification.put("targetId", noteId);
+            notification.put("targetType", 1); // 1=笔记
+            notification.put("content", "赞了你的笔记");
+            Object titleObj = note.get("title");
+            notification.put("targetName", titleObj != null ? titleObj.toString() : "");
+            rocketMQTemplate.asyncSend("NOTIFICATION_TOPIC",
+                    MqTraceHelper.wrapWithTraceContext(
+                            org.springframework.messaging.support.MessageBuilder.withPayload(notification).build()),
+                    new org.apache.rocketmq.client.producer.SendCallback() {
+                        @Override
+                        public void onSuccess(org.apache.rocketmq.client.producer.SendResult sendResult) {
+                            log.debug("[点赞] 点赞通知已发送: noteId={}, authorId={}", noteId, authorId);
+                        }
+                        @Override
+                        public void onException(Throwable e) {
+                            log.warn("[点赞] 点赞通知发送失败(不影响点赞): noteId={}", noteId, e);
+                        }
+                    });
+        } catch (Exception e) {
+            log.warn("[点赞] 点赞通知发送异常(不影响点赞): noteId={}, err={}", noteId, e.getMessage());
+        }
+    }
+
+    /**
+     * O-Like-3：目标存在性校验
+     * bizType=1 笔记：batch-detail 降级跳过（不存在/未发布/草稿）→ 静默忽略（幂等语义，不落库不计数）
+     * bizType=2 评论：content 内部端点（存在性 + 所属笔记）
+     */
+    private boolean validateTarget(int bizType, Long bizId) {
+        try {
+            if (bizType == BIZ_TYPE_NOTE) {
+                com.myxhs.common.response.R<Map<String, Object>> r =
+                        contentFeignClient.batchGetNoteDetail(java.util.List.of(bizId));
+                if (r == null || !r.isSuccess() || r.getData() == null) {
+                    return false;
+                }
+                return r.getData().get(String.valueOf(bizId)) instanceof Map;
+            }
+            com.myxhs.common.response.R<Map<String, Object>> r = contentFeignClient.getCommentInfo(bizId);
+            return r != null && r.isSuccess() && r.getData() != null;
+        } catch (Exception e) {
+            log.error("[点赞] 目标校验异常(拒绝写入): bizType={}, bizId={}", bizType, bizId, e);
+            throw new BizException(ResultCode.SERVICE_UNAVAILABLE, "内容服务暂不可用，请稍后重试");
+        }
+    }
+
+    /**
+     * O-Like-4：评论点赞通知（type=1，通知评论作者）
+     * 目标=被赞评论的作者；targetId=评论 id；targetType=3（评论）
+     */
+    private void sendCommentLikeNotification(Long senderId, Long commentId) {
+        try {
+            com.myxhs.common.response.R<Map<String, Object>> r = contentFeignClient.getCommentInfo(commentId);
+            if (r == null || !r.isSuccess() || r.getData() == null) {
+                return;
+            }
+            Object authorObj = r.getData().get("userId");
+            long authorId = toLongSafe(authorObj);
+            if (authorId <= 0 || authorId == senderId) {
+                return; // 自赞不通知
+            }
+            Map<String, Object> notification = new HashMap<>();
+            notification.put("type", 1); // 1=点赞
+            notification.put("senderId", senderId);
+            notification.put("targetUserId", authorId);
+            notification.put("targetId", commentId);
+            notification.put("targetType", 3); // 3=评论
+            notification.put("content", "赞了你的评论");
+            rocketMQTemplate.asyncSend("NOTIFICATION_TOPIC",
+                    MqTraceHelper.wrapWithTraceContext(
+                            org.springframework.messaging.support.MessageBuilder.withPayload(notification).build()),
+                    new org.apache.rocketmq.client.producer.SendCallback() {
+                        @Override
+                        public void onSuccess(org.apache.rocketmq.client.producer.SendResult sendResult) {
+                            log.debug("[点赞] 评论点赞通知已发送: commentId={}, authorId={}", commentId, authorId);
+                        }
+                        @Override
+                        public void onException(Throwable e) {
+                            log.warn("[点赞] 评论点赞通知发送失败(不影响点赞): commentId={}", commentId, e);
+                        }
+                    });
+        } catch (Exception e) {
+            log.warn("[点赞] 评论点赞通知发送异常(不影响点赞): commentId={}, err={}", commentId, e.getMessage());
+        }
+    }
+
+    /**
+     * 数值安全转换（兼容 JSON 中 String 数字——R4 全局 Long→ToStringSerializer）
+     */
+    private long toLongSafe(Object o) {
+        if (o instanceof Number) {
+            return ((Number) o).longValue();
+        }
+        if (o instanceof String) {
+            try {
+                return Long.parseLong((String) o);
+            } catch (NumberFormatException e) {
+                return -1;
+            }
+        }
+        return -1;
     }
 
     /**

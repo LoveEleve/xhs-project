@@ -19,679 +19,177 @@
   "links": [],
   "panels": [
     {
-      "datasource": "Prometheus",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
+      "type": "timeseries",
+      "title": "Tomcat \u5de5\u4f5c\u7ebf\u7a0b(\u5fd9/\u5f53\u524d/\u4e0a\u9650) \u2014 B3 mbeanregistry",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 0
+        "y": 32
       },
-      "id": 1,
-      "options": {
-        "legend": {
-          "calcs": ["mean", "max"],
-          "displayMode": "table",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
-      },
-      "targets": [
-        {
-          "expr": "tomcat_threads_current_threads{application=~\"$application\"}",
-          "legendFormat": "{{instance}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Tomcat 当前线程数",
-      "description": "当前活跃的 Tomcat 工作线程数",
-      "type": "timeseries"
-    },
-    {
-      "datasource": "Prometheus",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 0
-      },
-      "id": 2,
-      "options": {
-        "legend": {
-          "calcs": ["mean", "max"],
-          "displayMode": "table",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
       },
       "targets": [
         {
           "expr": "tomcat_threads_busy_threads{application=~\"$application\"}",
-          "legendFormat": "{{instance}}",
-          "refId": "A"
+          "legendFormat": "busy {{instance}}"
+        },
+        {
+          "expr": "tomcat_threads_current_threads{application=~\"$application\"}",
+          "legendFormat": "current {{instance}}"
+        },
+        {
+          "expr": "tomcat_threads_config_max_threads{application=~\"$application\"}",
+          "legendFormat": "config_max {{instance}}"
         }
       ],
-      "title": "Tomcat 繁忙线程数",
-      "description": "正在处理请求的线程数（应 < max-threads）",
-      "type": "timeseries"
-    },
-    {
-      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
+          "unit": "short",
           "custom": {
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
             "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "line"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 60
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "percent"
-        },
-        "overrides": []
+            "fillOpacity": 0
+          }
+        }
       },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP QPS(by uri)",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 8
+        "y": 40
       },
-      "id": 3,
-      "options": {
-        "legend": {
-          "calcs": ["mean", "max", "lastNotNull"],
-          "displayMode": "table",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
       },
       "targets": [
         {
-          "expr": "(tomcat_threads_busy_threads{application=~\"$application\"} / tomcat_threads_config_max_threads{application=~\"$application\"}) * 100",
-          "legendFormat": "{{instance}}",
-          "refId": "A"
+          "expr": "sum(rate(http_server_requests_seconds_count{application=~\"$application\", uri!~\"/actuator.*\"}[5m])) by (uri)",
+          "legendFormat": "{{uri}}"
         }
       ],
-      "title": "Tomcat 线程使用率 (%)",
-      "description": "线程池使用率百分比，超过 80% 需要扩容",
-      "type": "timeseries"
-    },
-    {
-      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
+          "unit": "reqps",
           "custom": {
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
             "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
+            "fillOpacity": 0
+          }
+        }
       },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP 5xx \u9519\u8bef\u6570(5m)",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 8
+        "y": 40
       },
-      "id": 4,
-      "options": {
-        "legend": {
-          "calcs": ["mean", "max"],
-          "displayMode": "table",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
       },
       "targets": [
         {
-          "expr": "tomcat_connections_current_connections{application=~\"$application\"}",
-          "legendFormat": "{{instance}}",
-          "refId": "A"
+          "expr": "sum(rate(http_server_requests_seconds_count{application=~\"$application\", status=~\"5..\"}[5m]))",
+          "legendFormat": "5xx"
         }
       ],
-      "title": "Tomcat 活跃连接数",
-      "description": "当前活跃连接数",
-      "type": "timeseries"
-    },
-    {
-      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
+          "unit": "reqps",
           "custom": {
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
             "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
+            "fillOpacity": 0
+          }
+        }
       },
+      "options": {
+        "legend": {
+          "displayMode": "list"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP \u5ef6\u8fdf P95/P99",
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 16
+        "y": 48
       },
-      "id": 5,
-      "options": {
-        "legend": {
-          "calcs": ["mean", "max"],
-          "displayMode": "table",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PBFA97CFB590B2093"
       },
       "targets": [
         {
-          "expr": "hikaricp_connections_active{application=~\"$application\",pool=~\"$pool\"}",
-          "legendFormat": "{{instance}} - {{pool}}",
-          "refId": "A"
+          "expr": "histogram_quantile(0.95, sum(rate({__name__=~\"myxhs_http_request_duration_seconds_bucket|http_server_requests_seconds_bucket\"}{application=~\"$application\", uri!~\"/actuator.*\"}[5m])) by (le))",
+          "legendFormat": "P95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate({__name__=~\"myxhs_http_request_duration_seconds_bucket|http_server_requests_seconds_bucket\"}{application=~\"$application\", uri!~\"/actuator.*\"}[5m])) by (le))",
+          "legendFormat": "P99"
         }
       ],
-      "title": "HikariCP 活跃连接数",
-      "description": "正在使用的数据库连接数",
-      "type": "timeseries"
-    },
-    {
-      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
+          "unit": "s",
           "custom": {
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
             "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
+            "fillOpacity": 0
+          }
+        }
       },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 16
-      },
-      "id": 6,
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
-          "displayMode": "table",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi"
+          "displayMode": "list"
         }
-      },
-      "targets": [
-        {
-          "expr": "hikaricp_connections_idle{application=~\"$application\",pool=~\"$pool\"}",
-          "legendFormat": "{{instance}} - {{pool}}",
-          "refId": "A"
-        }
-      ],
-      "title": "HikariCP 空闲连接数",
-      "description": "空闲连接数（应 >= minimum-idle）",
-      "type": "timeseries"
-    },
-    {
-      "datasource": "Prometheus",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "line"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 1
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 24
-      },
-      "id": 7,
-      "options": {
-        "legend": {
-          "calcs": ["mean", "max"],
-          "displayMode": "table",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
-      },
-      "targets": [
-        {
-          "expr": "hikaricp_connections_pending{application=~\"$application\",pool=~\"$pool\"}",
-          "legendFormat": "{{instance}} - {{pool}}",
-          "refId": "A"
-        }
-      ],
-      "title": "HikariCP 等待连接数",
-      "description": "等待获取连接的线程数（> 0 表示连接池不足）",
-      "type": "timeseries"
-    },
-    {
-      "datasource": "Prometheus",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "line"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 0.01
-              }
-            ]
-          },
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 24
-      },
-      "id": 8,
-      "options": {
-        "legend": {
-          "calcs": ["mean", "max"],
-          "displayMode": "table",
-          "placement": "bottom"
-        },
-        "tooltip": {
-          "mode": "multi"
-        }
-      },
-      "targets": [
-        {
-          "expr": "rate(hikaricp_connections_timeout_total{application=~\"$application\",pool=~\"$pool\"}[5m])",
-          "legendFormat": "{{instance}} - {{pool}}",
-          "refId": "A"
-        }
-      ],
-      "title": "HikariCP 连接超时速率",
-      "description": "连接超时速率，> 0 需要增大 pool size 或排查慢查询",
-      "type": "timeseries"
+      }
     }
   ],
   "refresh": "10s",
   "schemaVersion": 27,
   "style": "dark",
-  "tags": ["myxhs", "tomcat", "hikaricp", "pool"],
+  "tags": [
+    "myxhs",
+    "tomcat",
+    "hikaricp",
+    "pool"
+  ],
   "templating": {
     "list": [
-      {
-        "current": {},
-        "datasource": "Prometheus",
-        "definition": "label_values(tomcat_threads_current_threads, application)",
-        "hide": 0,
-        "includeAll": false,
-        "label": "Application",
-        "multi": false,
-        "name": "application",
-        "options": [],
-        "query": {
-          "query": "label_values(tomcat_threads_current_threads, application)",
-          "refId": "Prometheus-application-Variable-Query"
-        },
-        "refresh": 1,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 0,
-        "type": "query"
-      },
       {
         "allValue": ".*",
         "current": {},
         "datasource": "Prometheus",
-        "definition": "label_values(hikaricp_connections_active, pool)",
+        "definition": "label_values(tomcat_threads_current_threads, application)",
         "hide": 0,
         "includeAll": true,
-        "label": "Connection Pool",
+        "label": "Application",
         "multi": false,
-        "name": "pool",
+        "name": "application",
         "options": [],
-        "query": {
-          "query": "label_values(hikaricp_connections_active, pool)",
-          "refId": "Prometheus-pool-Variable-Query"
-        },
+        "query": "label_values(tomcat_threads_current_threads, application)",
         "refresh": 1,
         "regex": "",
         "skipUrlSync": false,
@@ -706,7 +204,8 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "Tomcat & HikariCP 监控",
+  "title": "Tomcat \u76d1\u63a7(\u7ebf\u7a0b/HTTP)",
   "uid": "myxhs-tomcat-hikari",
-  "version": 1
+  "version": 1,
+  "description": "\u6ce8: \u5fae\u670d\u52a1 Micrometer 1.13+ \u5df2\u79fb\u9664 tomcat.threads/connections \u6307\u6807(\u4ec5\u5269 sessions), \u771f\u5b9e Tomcat \u7ebf\u7a0b\u6c60\u9700\u5fae\u670d\u52a1\u5f00\u542f server.tomcat.mbeanregistry.enabled=true(\u89c1 QUESTIONS B3); \u672c\u770b\u677f\u5f53\u524d\u4e3a HikariCP \u8fde\u63a5\u6c60\u4e13\u9879\u76d1\u63a7 + Web \u5c42\u6307\u6807\u3002"
 }

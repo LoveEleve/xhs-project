@@ -33,6 +33,8 @@ public class TokenService {
     private final JwtProperties jwtProperties;
     private final RedisOperator redisOperator;
     private final RedissonClient redissonClient;
+    /** T-005: 刷新时校验用户状态（禁用账号禁止续期） */
+    private final com.myxhs.user.mapper.UserMapper userMapper;
 
     /**
      * 生成 Token 对（Access + Refresh）
@@ -48,13 +50,30 @@ public class TokenService {
      * @return Token 对
      */
     public TokenResponse generateTokenPair(Long userId) {
+        return generateTokenPair(userId, null);
+    }
+
+    /**
+     * 生成 Token 对（带角色 claim，Gateway 集成 2026-08-17）
+     * <p>
+     * role 写入 JWT claim：gateway（WebFlux 无 DB）从 token 读取并注入 X-User-Role，
+     * 保持网关无状态。role 变更后需重新登录生效（存量 token 全过期场景无影响）。
+     * </p>
+     *
+     * @param userId 用户 ID
+     * @param role   用户角色（OPERATOR/TECH），空则不带 claim
+     * @return Token 对
+     */
+    public TokenResponse generateTokenPair(Long userId, String role) {
         String secret = jwtProperties.getSecret();
         String userIdStr = String.valueOf(userId);
 
+        java.util.Map<String, Object> extra = role == null || role.isBlank()
+                ? null : java.util.Map.of("role", role);
         String accessToken = JwtUtil.generateToken(userIdStr, "access",
-                jwtProperties.getAccessTokenExpire(), secret);
+                jwtProperties.getAccessTokenExpire(), secret, extra);
         String refreshToken = JwtUtil.generateToken(userIdStr, "refresh",
-                jwtProperties.getRefreshTokenExpire(), secret);
+                jwtProperties.getRefreshTokenExpire(), secret, extra);
 
         // 将旧 access token 加入黑名单（单设备登录：新登录踢出旧设备）
         String oldAccessToken = redisOperator.getString(RedisKeyConstants.USER_TOKEN_ACCESS + userId);
@@ -153,12 +172,20 @@ public class TokenService {
                 throw new BizException(ResultCode.TOKEN_REVOKED, "Token 已被其他设备覆盖，请重新登录");
             }
 
+            // 5.5 T-005: 校验用户状态——禁用/逻辑删除账号禁止续期（封号即失效）
+            Long uid = Long.valueOf(claims.getSubject());
+            com.myxhs.user.entity.User u = userMapper.selectById(uid);
+            if (u == null || u.getStatus() == null || u.getStatus() != 1) {
+                log.info("[Token] 刷新失败, 账号不可用(禁用/删除), userId={}", uid);
+                throw new BizException(ResultCode.ACCOUNT_DISABLED);
+            }
+
             // 6. 将旧 Refresh Token 加入黑名单（直接用已解析的 claims）
             blacklistByClaims(claims);
 
             // 7. 生成新的 Token 对
             log.info("[Token] 刷新成功, userId={}, 旧jti={}", userId, jti);
-            return generateTokenPair(Long.parseLong(userId));
+            return generateTokenPair(Long.parseLong(userId), u.getRole());
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -180,13 +207,25 @@ public class TokenService {
         }
 
         // 清除 Redis 中存储的 Token
+        // T-007: access 缺失时用 refreshToken 兜底解析 userId（否则旧 access 30min 内仍有效）
         String userId = null;
         try {
             String secret = jwtProperties.getSecret();
-            userId = JwtUtil.getUserId(accessToken, secret);
-            redisOperator.delete(RedisKeyConstants.USER_TOKEN_ACCESS + userId);
-            redisOperator.delete(RedisKeyConstants.USER_TOKEN_REFRESH + userId);
-            redisOperator.delete(RedisKeyConstants.USER_HMAC_SECRET + userId);
+            try {
+                userId = JwtUtil.getUserId(accessToken, secret);
+            } catch (Exception e) {
+                if (refreshToken != null) {
+                    Claims claims = JwtUtil.parseToken(refreshToken, secret);
+                    userId = claims.getSubject();
+                    // access 缺失：黑名单兜底由 blacklistToken 完成（refresh 已入黑名单）；
+                    // 旧 access 无法按 jti 拉黑，但可清 Redis 使单设备校验失效（刷新时被拒）
+                }
+            }
+            if (userId != null) {
+                redisOperator.delete(RedisKeyConstants.USER_TOKEN_ACCESS + userId);
+                redisOperator.delete(RedisKeyConstants.USER_TOKEN_REFRESH + userId);
+                redisOperator.delete(RedisKeyConstants.USER_HMAC_SECRET + userId);
+            }
         } catch (Exception e) {
             log.warn("[Token] 清除 Redis Token 失败", e);
         }
@@ -222,6 +261,29 @@ public class TokenService {
         redisOperator.delete(RedisKeyConstants.USER_HMAC_SECRET + userId);
 
         log.info("[Token] 已注销用户所有活跃Token, userId={}", userId);
+    }
+
+    /**
+     * T-012: 改密码后使该用户全部凭证失效（黑名单当前 access/refresh + 删 hmac secret + 清 Redis token）
+     */
+    public void invalidateUserCredentials(Long userId) {
+        try {
+            String secret = jwtProperties.getSecret();
+            Object storedAccess = redisOperator.get(RedisKeyConstants.USER_TOKEN_ACCESS + userId);
+            Object storedRefresh = redisOperator.get(RedisKeyConstants.USER_TOKEN_REFRESH + userId);
+            if (storedAccess != null) {
+                blacklistToken(String.valueOf(storedAccess));
+            }
+            if (storedRefresh != null) {
+                blacklistToken(String.valueOf(storedRefresh));
+            }
+            redisOperator.delete(RedisKeyConstants.USER_TOKEN_ACCESS + userId);
+            redisOperator.delete(RedisKeyConstants.USER_TOKEN_REFRESH + userId);
+            redisOperator.delete(RedisKeyConstants.USER_HMAC_SECRET + userId);
+            log.info("[Token] 改密后凭证已失效, userId={}", userId);
+        } catch (Exception e) {
+            log.error("[Token] 改密失效凭证异常, userId={}", userId, e);
+        }
     }
 
     /**

@@ -1,0 +1,68 @@
+Client:
+ Version:    28.4.0
+ Context:    default
+ Debug Mode: false
+ Plugins:
+  compose: Docker Compose (Docker Inc.)
+    Version:  v2.29.2
+    Path:     /usr/local/lib/docker/cli-plugins/docker-compose
+
+Server:
+ Containers: 22
+  Running: 22
+  Paused: 0
+  Stopped: 0
+ Images: 25
+ Server Version: 28.4.0
+ Storage Driver: overlay2
+  Backing Filesystem: extfs
+  Supports d_type: true
+  Using metacopy: true
+  Native Overlay Diff: false
+  userxattr: false
+ Logging Driver: journald
+ Cgroup Driver: systemd
+ Cgroup Version: 2
+ Plugins:
+  Volume: local
+  Network: bridge host ipvlan macvlan null overlay
+  Log: awslogs fluentd gcplogs gelf journald json-file local splunk syslog
+ CDI spec directories:
+  /etc/cdi
+  /var/run/cdi
+ Swarm: inactive
+ Runtimes: io.containerd.runc.v2 runc
+ Default Runtime: runc
+ Init Binary: /usr/libexec/docker/docker-init
+ containerd version: 
+ runc version: 
+ init version: 
+ Security Options:
+  seccomp
+   Profile: builtin
+  cgroupns
+ Kernel Version: 6.6.119-49.27.tl4.x86_64
+ Operating System: TencentOS Server 4.4
+ OSType: linux
+ Architecture: x86_64
+ CPUs: 32
+ Total Memory: 61.55GiB
+ Name: VM-247-89-tencentos
+ ID: e7e649be-5031-4727-a0f8-92f5114e472a
+ Docker Root Dir: /data/docker/lib/
+ Debug Mode: false
+ Experimental: false
+ Insecure Registries:
+  docker.oa.com:8080
+  hub.oa.com
+  mirrors.tencent.com
+  bk.artifactory.oa.com:8080
+  csighub.tencentyun.com
+  ::1/128
+  127.0.0.0/8
+ Registry Mirrors:
+  https://mirror.ccs.tencentyun.com/
+  https://dockerhub.woa.com/
+  https://csighub.woa.com/
+ Live Restore Enabled: true
+

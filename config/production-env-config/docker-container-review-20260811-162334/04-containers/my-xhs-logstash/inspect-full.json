@@ -1,0 +1,293 @@
+[
+    {
+        "Id": "348f9e5ea94b2f296ca32f417ed6d87fc223c8aa34d1b0ad0c557a1aa83b4e5b",
+        "Created": "2026-08-08T14:01:41.369680421Z",
+        "Path": "/usr/local/bin/docker-entrypoint",
+        "Args": [
+            "logstash",
+            "-e",
+            "\n  input {\n    tcp { port => 15044 codec => json_lines }\n    beats { port => 15045 }\n  }\n  output {\n    elasticsearch {\n      hosts => [\"127.0.0.1:19200\"]\n      user => \"elastic\"\n      password => \"Xhs@2026#Elastic\"\n      index => \"myxhs-logs-%{+YYYY.MM.dd}\"\n    }\n  }\n"
+        ],
+        "State": {
+            "Status": "running",
+            "Running": true,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 3322982,
+            "ExitCode": 0,
+            "Error": "",
+            "StartedAt": "2026-08-08T14:01:41.675378666Z",
+            "FinishedAt": "0001-01-01T00:00:00Z",
+            "Health": {
+                "Status": "healthy",
+                "FailingStreak": 0,
+                "Log": [
+                    {
+                        "Start": "2026-08-11T16:21:53.302652586+08:00",
+                        "End": "2026-08-11T16:21:53.337050172+08:00",
+                        "ExitCode": 0,
+                        "Output": "1\n57259\n"
+                    },
+                    {
+                        "Start": "2026-08-11T16:22:23.337514063+08:00",
+                        "End": "2026-08-11T16:22:23.374892349+08:00",
+                        "ExitCode": 0,
+                        "Output": "1\n57266\n"
+                    },
+                    {
+                        "Start": "2026-08-11T16:22:53.376304415+08:00",
+                        "End": "2026-08-11T16:22:53.414478471+08:00",
+                        "ExitCode": 0,
+                        "Output": "1\n57273\n"
+                    },
+                    {
+                        "Start": "2026-08-11T16:23:23.414875857+08:00",
+                        "End": "2026-08-11T16:23:23.450921695+08:00",
+                        "ExitCode": 0,
+                        "Output": "1\n57279\n"
+                    },
+                    {
+                        "Start": "2026-08-11T16:23:53.452046324+08:00",
+                        "End": "2026-08-11T16:23:53.492572796+08:00",
+                        "ExitCode": 0,
+                        "Output": "1\n57286\n"
+                    }
+                ]
+            }
+        },
+        "Image": "sha256:ecf5072185bcf45f5f7fce80335aaf57ba3221dd812f7455b1789ec7c532ece3",
+        "ResolvConfPath": "/data/docker/lib/containers/348f9e5ea94b2f296ca32f417ed6d87fc223c8aa34d1b0ad0c557a1aa83b4e5b/resolv.conf",
+        "HostnamePath": "/data/docker/lib/containers/348f9e5ea94b2f296ca32f417ed6d87fc223c8aa34d1b0ad0c557a1aa83b4e5b/hostname",
+        "HostsPath": "/data/docker/lib/containers/348f9e5ea94b2f296ca32f417ed6d87fc223c8aa34d1b0ad0c557a1aa83b4e5b/hosts",
+        "LogPath": "",
+        "Name": "/my-xhs-logstash",
+        "RestartCount": 0,
+        "Driver": "overlay2",
+        "Platform": "linux",
+        "MountLabel": "",
+        "ProcessLabel": "",
+        "AppArmorProfile": "",
+        "ExecIDs": null,
+        "HostConfig": {
+            "Binds": null,
+            "ContainerIDFile": "",
+            "LogConfig": {
+                "Type": "journald",
+                "Config": {}
+            },
+            "NetworkMode": "host",
+            "PortBindings": {},
+            "RestartPolicy": {
+                "Name": "unless-stopped",
+                "MaximumRetryCount": 0
+            },
+            "AutoRemove": false,
+            "VolumeDriver": "",
+            "VolumesFrom": null,
+            "ConsoleSize": [
+                0,
+                0
+            ],
+            "CapAdd": null,
+            "CapDrop": null,
+            "CgroupnsMode": "private",
+            "Dns": null,
+            "DnsOptions": null,
+            "DnsSearch": null,
+            "ExtraHosts": [],
+            "GroupAdd": null,
+            "IpcMode": "private",
+            "Cgroup": "",
+            "Links": null,
+            "OomScoreAdj": 0,
+            "PidMode": "",
+            "Privileged": false,
+            "PublishAllPorts": false,
+            "ReadonlyRootfs": false,
+            "SecurityOpt": null,
+            "UTSMode": "",
+            "UsernsMode": "",
+            "ShmSize": 67108864,
+            "Runtime": "runc",
+            "Isolation": "",
+            "CpuShares": 0,
+            "Memory": 805306368,
+            "NanoCpus": 500000000,
+            "CgroupParent": "",
+            "BlkioWeight": 0,
+            "BlkioWeightDevice": null,
+            "BlkioDeviceReadBps": null,
+            "BlkioDeviceWriteBps": null,
+            "BlkioDeviceReadIOps": null,
+            "BlkioDeviceWriteIOps": null,
+            "CpuPeriod": 0,
+            "CpuQuota": 0,
+            "CpuRealtimePeriod": 0,
+            "CpuRealtimeRuntime": 0,
+            "CpusetCpus": "",
+            "CpusetMems": "",
+            "Devices": null,
+            "DeviceCgroupRules": null,
+            "DeviceRequests": null,
+            "MemoryReservation": 671088640,
+            "MemorySwap": 1610612736,
+            "MemorySwappiness": null,
+            "OomKillDisable": null,
+            "PidsLimit": null,
+            "Ulimits": [
+                {
+                    "Name": "nofile",
+                    "Hard": 1048576,
+                    "Soft": 1048576
+                }
+            ],
+            "CpuCount": 0,
+            "CpuPercent": 0,
+            "IOMaximumIOps": 0,
+            "IOMaximumBandwidth": 0,
+            "MaskedPaths": [
+                "/proc/asound",
+                "/proc/acpi",
+                "/proc/interrupts",
+                "/proc/kcore",
+                "/proc/keys",
+                "/proc/latency_stats",
+                "/proc/timer_list",
+                "/proc/timer_stats",
+                "/proc/sched_debug",
+                "/proc/scsi",
+                "/sys/firmware",
+                "/sys/devices/virtual/powercap"
+            ],
+            "ReadonlyPaths": [
+                "/proc/bus",
+                "/proc/fs",
+                "/proc/irq",
+                "/proc/sys",
+                "/proc/sysrq-trigger"
+            ]
+        },
+        "GraphDriver": {
+            "Data": {
+                "ID": "348f9e5ea94b2f296ca32f417ed6d87fc223c8aa34d1b0ad0c557a1aa83b4e5b",
+                "LowerDir": "/data/docker/lib/overlay2/f10c1381527499279d4b0a2957500fe8a95e89e9f1e7328157dd74b6cd38148f-init/diff:/data/docker/lib/overlay2/f8e50f96c03251bcb40dc8a533e5908d9a3a08292d3a6093b5b632773980778a/diff:/data/docker/lib/overlay2/6a21ed64a554f4080779ec05bdef5229870cdc97c54090e06581923cb4fbbcd8/diff:/data/docker/lib/overlay2/b9f48ec53262dcd0ccbebe2cd0a1f5c257a0a673daa64e30efe1686171a9f7d3/diff:/data/docker/lib/overlay2/1d455d0804c71d3695f8f59503b574bcf95700424e0ddac944a05210e5d68342/diff:/data/docker/lib/overlay2/0092772d169a918ec7a375a81010d2427333adab336617a38e2c2997fa5e7f9b/diff:/data/docker/lib/overlay2/a0eae8f9a6e1898598c21e255986f87169ff19d77d28acdf8547e305de8f813e/diff:/data/docker/lib/overlay2/dfec22ccbe9011c1deae6a839b5e35392826770843bcb05fb4d2fd880a6fd7b6/diff:/data/docker/lib/overlay2/daf817d0d7c2cbc4bf22b3ec52711b03fcf7d2d9eaef660176af205db6c9a3d0/diff:/data/docker/lib/overlay2/84a9ebac60c529a1d835d4617f120ed02dd3bdb810beba6181f234b79c51d0f9/diff:/data/docker/lib/overlay2/f6d14673ef8c55d0d34fa782fd8f892d224df5dd4524f29f87f72237d7f74271/diff:/data/docker/lib/overlay2/1afa76796230eb718dbba64b7dee3e1db44a8a4cc3583cb347ea470100eda492/diff:/data/docker/lib/overlay2/865050c27f5927fae60a1e94431c2c46bf9c6000147a6435550585ff29022ecc/diff:/data/docker/lib/overlay2/1ab1351ec37498ab9ab0e7796220b9696411b652d0f55b5dcec7ca4a2b79056e/diff:/data/docker/lib/overlay2/249369caf934733808f18460755d29e818ed5a3af627e21b618548b964e67480/diff",
+                "MergedDir": "/data/docker/lib/overlay2/f10c1381527499279d4b0a2957500fe8a95e89e9f1e7328157dd74b6cd38148f/merged",
+                "UpperDir": "/data/docker/lib/overlay2/f10c1381527499279d4b0a2957500fe8a95e89e9f1e7328157dd74b6cd38148f/diff",
+                "WorkDir": "/data/docker/lib/overlay2/f10c1381527499279d4b0a2957500fe8a95e89e9f1e7328157dd74b6cd38148f/work"
+            },
+            "Name": "overlay2"
+        },
+        "Mounts": [],
+        "Config": {
+            "Hostname": "VM-247-89-tencentos",
+            "Domainname": "",
+            "User": "1000",
+            "AttachStdin": false,
+            "AttachStdout": true,
+            "AttachStderr": true,
+            "ExposedPorts": {
+                "5044/tcp": {},
+                "9600/tcp": {}
+            },
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "XPACK_MONITORING_ENABLED=false",
+                "LS_JAVA_OPTS=-Xms256m -Xmx512m",
+                "PATH=/usr/share/logstash/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "ELASTIC_CONTAINER=true",
+                "LANG=en_US.UTF-8",
+                "LC_ALL=en_US.UTF-8"
+            ],
+            "Cmd": [
+                "logstash",
+                "-e",
+                "\n  input {\n    tcp { port => 15044 codec => json_lines }\n    beats { port => 15045 }\n  }\n  output {\n    elasticsearch {\n      hosts => [\"127.0.0.1:19200\"]\n      user => \"elastic\"\n      password => \"Xhs@2026#Elastic\"\n      index => \"myxhs-logs-%{+YYYY.MM.dd}\"\n    }\n  }\n"
+            ],
+            "Healthcheck": {
+                "Test": [
+                    "CMD-SHELL",
+                    "pgrep -f logstash || exit 1"
+                ],
+                "Interval": 30000000000,
+                "Timeout": 10000000000,
+                "StartPeriod": 30000000000,
+                "Retries": 3
+            },
+            "Image": "docker.elastic.co/logstash/logstash:8.19.19",
+            "Volumes": null,
+            "WorkingDir": "/usr/share/logstash",
+            "Entrypoint": [
+                "/usr/local/bin/docker-entrypoint"
+            ],
+            "OnBuild": null,
+            "Labels": {
+                "com.docker.compose.config-hash": "e2ce3e39da093d7e13d16b37e8e531b4981b76851af4fb070a5ad13ae526a255",
+                "com.docker.compose.container-number": "1",
+                "com.docker.compose.depends_on": "elasticsearch:service_started:false",
+                "com.docker.compose.image": "sha256:ecf5072185bcf45f5f7fce80335aaf57ba3221dd812f7455b1789ec7c532ece3",
+                "com.docker.compose.oneoff": "False",
+                "com.docker.compose.project": "my-xhs-deploy-zip",
+                "com.docker.compose.project.config_files": "/data/workspace/my-xhs-deploy-zip/docker-compose.yml",
+                "com.docker.compose.project.working_dir": "/data/workspace/my-xhs-deploy-zip",
+                "com.docker.compose.service": "logstash",
+                "com.docker.compose.version": "2.29.2",
+                "org.label-schema.build-date": "2026-07-14T19:57:39+00:00",
+                "org.label-schema.license": "Elastic License",
+                "org.label-schema.name": "logstash",
+                "org.label-schema.schema-version": "1.0",
+                "org.label-schema.url": "https://www.elastic.co/products/logstash",
+                "org.label-schema.vcs-url": "https://github.com/elastic/logstash",
+                "org.label-schema.vendor": "Elastic",
+                "org.label-schema.version": "8.19.19",
+                "org.opencontainers.image.created": "2026-07-14T19:57:39+00:00",
+                "org.opencontainers.image.description": "Logstash is a free and open server-side data processing pipeline that ingests data from a multitude of sources, transforms it, and then sends it to your favorite 'stash.'",
+                "org.opencontainers.image.licenses": "Elastic License",
+                "org.opencontainers.image.title": "logstash",
+                "org.opencontainers.image.vendor": "Elastic",
+                "org.opencontainers.image.version": "8.19.19"
+            }
+        },
+        "NetworkSettings": {
+            "Bridge": "",
+            "SandboxID": "38b7639d1506feca24637f230bb82f672003570d484c6174e6bd699b3c09c5a7",
+            "SandboxKey": "/var/run/docker/netns/default",
+            "Ports": {},
+            "HairpinMode": false,
+            "LinkLocalIPv6Address": "",
+            "LinkLocalIPv6PrefixLen": 0,
+            "SecondaryIPAddresses": null,
+            "SecondaryIPv6Addresses": null,
+            "EndpointID": "",
+            "Gateway": "",
+            "GlobalIPv6Address": "",
+            "GlobalIPv6PrefixLen": 0,
+            "IPAddress": "",
+            "IPPrefixLen": 0,
+            "IPv6Gateway": "",
+            "MacAddress": "",
+            "Networks": {
+                "host": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": null,
+                    "MacAddress": "",
+                    "DriverOpts": null,
+                    "GwPriority": 0,
+                    "NetworkID": "69303899f57d4447764f56f161dceb184df134844eb038322985183a4f6b4dff",
+                    "EndpointID": "a698bde23936b07af6c3c9bd03503b490d2dff788d87bd661da437af878d9814",
+                    "Gateway": "",
+                    "IPAddress": "",
+                    "IPPrefixLen": 0,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "DNSNames": null
+                }
+            }
+        }
+    }
+]

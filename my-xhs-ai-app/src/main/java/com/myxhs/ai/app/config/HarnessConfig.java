@@ -31,9 +31,13 @@ public class HarnessConfig {
                                      @Value("${myxhs.ai.agent.max-invalid-answers:2}") int maxInvalidAnswers,
                                      @Value("${myxhs.ai.agent.tool-result-max-len:400}") int toolResultMaxLen,
                                       @Value("${myxhs.ai.llm.model:mimo-v2.5-pro}") String modelName,
-                                     RunStore runStore) {
-        return new AgentHarness(chatModel, metricToolAccess, obsToolAccess, logSearchAccess, dlqRedeliverAccess,
+                                     RunStore runStore,
+                                     @org.springframework.beans.factory.annotation.Autowired(required = false)
+                                     com.myxhs.ai.app.service.agent.tracing.RunMetadataStore runMetadataStore) {
+        AgentHarness harness = new AgentHarness(chatModel, metricToolAccess, obsToolAccess, logSearchAccess, dlqRedeliverAccess,
                 mapper, new AgentBudget(maxSteps, maxTokens, maxCost), pricePer1k, maxInvalidAnswers,
                 runStore, modelName, toolResultMaxLen);
+        harness.setRunMetadataStore(runMetadataStore);
+        return harness;
     }
 }

@@ -185,7 +185,7 @@ rules:
           worker-id: 1
 
 props:
-  # SQL 日志打印（开发环境开启，生产关闭）
-  sql-show: true
+  # SQL 日志打印（开发环境开启，生产关闭）【P-D32 已修复：生产勿开，防日志膨胀/性能损耗】
+  sql-show: false
   # 查询线程池大小
   max-connections-size-per-query: 2

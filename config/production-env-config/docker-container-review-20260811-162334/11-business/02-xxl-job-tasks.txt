@@ -1,0 +1,58 @@
+########## 执行器(xxl_job_group)
+id	app_name	title	address_type	address_list	update_time
+1	xxl-job-executor-sample	?????	0	NULL	2026-08-11 16:49:47
+2	my-xhs-analytics	Analytics??	0	http://21.214.97.212:9999/	2026-08-11 16:49:47
+3	my-xhs-counter	Counter??	0	http://21.214.97.212:9998/	2026-08-11 16:49:47
+4	my-xhs-inventory	????	0	http://21.214.97.212:9996/	2026-08-11 16:49:47
+5	my-xhs-notification	????	0	http://21.214.97.212:9990/	2026-08-11 16:49:47
+6	my-xhs-payment	????	0	http://21.214.97.212:9992/	2026-08-11 16:49:47
+########## 任务列表(xxl_job_info)
+id	job_group	job_desc	schedule_type	schedule_conf	glue_type	executor_handler	executor_param	executor_block_strategy	executor_fail_retry_count	author	alarm_email	trigger_status	trigger_last_time	trigger_next_time
+1	1	????1	CRON	0 0 0 * * ? *	BEAN	demoJobHandler		SERIAL_EXECUTION	0	XXL		0	0	0
+2	2	??????	CRON	0 0 * * * ?	BEAN	followCounterRepairJob		SERIAL_EXECUTION	0	test		0	0	0
+3	2	followCounterRepair	CRON	0 0 */1 * * ?	BEAN	followCounterRepairJob		SERIAL_EXECUTION	0	test		1	1786435200000	1786438800000
+4	3	Counter????	CRON	0 0 3 * * ?	BEAN	counterReconcileJob	NULL	SERIAL_EXECUTION	0	admin	NULL	1	1786388400000	1786474800000
+5	5	????	CRON	0 0/5 * * * ?	BEAN	unreadReconcileJob	NULL	SERIAL_EXECUTION	0	admin	NULL	1	1786438200000	1786438500000
+6	6	??????	CRON	0/30 * * * * ?	BEAN	paymentTimeoutCheckJob	NULL	SERIAL_EXECUTION	0	admin	NULL	1	1786438200000	1786438230000
+7	6	????????	CRON	0 0/2 * * * ?	BEAN	paymentNotifyCompensateJob	NULL	SERIAL_EXECUTION	0	admin	NULL	1	1786438200000	1786438320000
+8	6	??????	CRON	0 0/3 * * * ?	BEAN	refundNotifyCompensateJob	NULL	SERIAL_EXECUTION	0	admin	NULL	1	1786438080000	1786438260000
+9	6	??????	CRON	0 * * * * ?	BEAN	refundTimeoutCheckJob	NULL	SERIAL_EXECUTION	0	admin	NULL	1	1786438200000	1786438260000
+10	1	OrderCloseJob	CRON	0 * * * * ?	BEAN	orderCloseJob		SERIAL_EXECUTION	0	test		1	1786438200000	1786438260000
+11	1	localMessageRetryJob	CRON	0 * * * * ?	BEAN	localMessageRetryJob	NULL	SERIAL_EXECUTION	0	test	NULL	1	1786438200000	1786438260000
+12	1	deadLetterScanJob	CRON	0 * * * * ?	BEAN	deadLetterScanJob	NULL	SERIAL_EXECUTION	0	test	NULL	1	1786438200000	1786438260000
+13	1	orderMappingRepairJob	CRON	0 * * * * ?	BEAN	orderMappingRepairJob	NULL	SERIAL_EXECUTION	0	test	NULL	1	1786438200000	1786438260000
+14	1	inventoryReconcileJob	CRON	0 * * * * ?	BEAN	inventoryReconcileJob	NULL	SERIAL_EXECUTION	0	test	NULL	1	1786438200000	1786438260000
+15	1	couponReconcileJob	CRON	0 * * * * ?	BEAN	couponReconcileJob	NULL	SERIAL_EXECUTION	0	test	NULL	1	1786438200000	1786438260000
+16	1	couponExpireJob	CRON	0 * * * * ?	BEAN	couponExpireJob	NULL	SERIAL_EXECUTION	0	test	NULL	1	1786438200000	1786438260000
+########## 任务日志统计(xxl_job_log 近24h)
+total	success	fail
+94773	47198	5788
+########## 执行器(xxl_job_group)
+id	app_name	title	address_type	address_list	update_time
+1	xxl-job-executor-sample	?????	0	NULL	2026-08-11 16:50:47
+2	my-xhs-analytics	Analytics??	0	http://21.214.97.212:9999/	2026-08-11 16:50:47
+3	my-xhs-counter	Counter??	0	http://21.214.97.212:9998/	2026-08-11 16:50:47
+4	my-xhs-inventory	????	0	http://21.214.97.212:9996/	2026-08-11 16:50:47
+5	my-xhs-notification	????	0	http://21.214.97.212:9990/	2026-08-11 16:50:47
+6	my-xhs-payment	????	0	http://21.214.97.212:9992/	2026-08-11 16:50:47
+########## 任务列表(xxl_job_info)
+id	job_group	job_desc	schedule_type	schedule_conf	glue_type	executor_handler	executor_param	executor_block_strategy	executor_fail_retry_count	author	alarm_email	trigger_status	trigger_last_time	trigger_next_time
+1	1	????1	CRON	0 0 0 * * ? *	BEAN	demoJobHandler		SERIAL_EXECUTION	0	XXL		0	0	0
+2	2	??????	CRON	0 0 * * * ?	BEAN	followCounterRepairJob		SERIAL_EXECUTION	0	test		0	0	0
+3	2	followCounterRepair	CRON	0 0 */1 * * ?	BEAN	followCounterRepairJob		SERIAL_EXECUTION	0	test		1	1786435200000	1786438800000
+4	3	Counter????	CRON	0 0 3 * * ?	BEAN	counterReconcileJob	NULL	SERIAL_EXECUTION	0	admin	NULL	1	1786388400000	1786474800000
+5	5	????	CRON	0 0/5 * * * ?	BEAN	unreadReconcileJob	NULL	SERIAL_EXECUTION	0	admin	NULL	1	1786438200000	1786438500000
+6	6	??????	CRON	0/30 * * * * ?	BEAN	paymentTimeoutCheckJob	NULL	SERIAL_EXECUTION	0	admin	NULL	1	1786438260000	1786438290000
+7	6	????????	CRON	0 0/2 * * * ?	BEAN	paymentNotifyCompensateJob	NULL	SERIAL_EXECUTION	0	admin	NULL	1	1786438200000	1786438320000
+8	6	??????	CRON	0 0/3 * * * ?	BEAN	refundNotifyCompensateJob	NULL	SERIAL_EXECUTION	0	admin	NULL	1	1786438260000	1786438440000
+9	6	??????	CRON	0 * * * * ?	BEAN	refundTimeoutCheckJob	NULL	SERIAL_EXECUTION	0	admin	NULL	1	1786438260000	1786438320000
+10	1	OrderCloseJob	CRON	0 * * * * ?	BEAN	orderCloseJob		SERIAL_EXECUTION	0	test		1	1786438260000	1786438320000
+11	1	localMessageRetryJob	CRON	0 * * * * ?	BEAN	localMessageRetryJob	NULL	SERIAL_EXECUTION	0	test	NULL	1	1786438260000	1786438320000
+12	1	deadLetterScanJob	CRON	0 * * * * ?	BEAN	deadLetterScanJob	NULL	SERIAL_EXECUTION	0	test	NULL	1	1786438260000	1786438320000
+13	1	orderMappingRepairJob	CRON	0 * * * * ?	BEAN	orderMappingRepairJob	NULL	SERIAL_EXECUTION	0	test	NULL	1	1786438260000	1786438320000
+14	1	inventoryReconcileJob	CRON	0 * * * * ?	BEAN	inventoryReconcileJob	NULL	SERIAL_EXECUTION	0	test	NULL	1	1786438260000	1786438320000
+15	1	couponReconcileJob	CRON	0 * * * * ?	BEAN	couponReconcileJob	NULL	SERIAL_EXECUTION	0	test	NULL	1	1786438260000	1786438320000
+16	1	couponExpireJob	CRON	0 * * * * ?	BEAN	couponExpireJob	NULL	SERIAL_EXECUTION	0	test	NULL	1	1786438260000	1786438320000
+########## 任务日志统计(xxl_job_log 近24h)
+total	success	fail
+94784	47202	5788

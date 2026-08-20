@@ -24,8 +24,8 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await storeRegister(values.username, values.password, captchaKey, values.captchaCode, values.phone);
-      message.success('注册成功');
-      navigate('/feed');
+      message.success('注册成功，请登录');
+      navigate('/login');
     } catch (e: any) {
       message.error(e.response?.data?.message || '注册失败');
       fetchCaptcha();

@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
+import com.myxhs.search.service.ProductIndexDocumentBuilder;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -56,6 +57,7 @@ public class IncrementalIndexSyncJob {
     private final StringRedisTemplate stringRedisTemplate;
     private final ElasticsearchClient esClient;
     private final JdbcTemplate jdbcTemplate;
+    private final ProductIndexDocumentBuilder productIndexDocumentBuilder;
 
     @Value("${search.note.index-name:note_index}")
     private String noteIndexName;
@@ -227,8 +229,12 @@ public class IncrementalIndexSyncJob {
         // category_name/price/image 等需通过 product Feign 或 buildProductDocument 默认值补全
         // P1-5：search 数据源默认 schema 是 my_xhs_content（t_note 所在库），t_spu 在 my_xhs_product，
         // 必须显式加库前缀，否则商品补偿必失败（Table 'my_xhs_content.t_spu' doesn't exist）。
-        String sql = "SELECT id, name, category_id, brand_id, description, images, status, created_at, updated_at " +
-                "FROM my_xhs_product.t_spu WHERE id IN (" + placeholders + ") AND deleted = 0";
+        String sql = "SELECT s.id, s.name, s.category_id, s.brand_id, s.description, s.images, s.status, " +
+                "s.created_at, s.updated_at, c.name AS category_name, MIN(k.price) AS min_price " +
+                "FROM my_xhs_product.t_spu s " +
+                "LEFT JOIN my_xhs_product.t_category c ON c.id = s.category_id AND c.deleted = 0 " +
+                "LEFT JOIN my_xhs_product.t_sku k ON k.spu_id = s.id AND k.deleted = 0 AND k.status = 1 " +
+                "WHERE s.id IN (" + placeholders + ") AND s.deleted = 0 GROUP BY s.id";
 
         Object[] params = ids.toArray();
         return jdbcTemplate.queryForList(sql, params);
@@ -286,7 +292,7 @@ public class IncrementalIndexSyncJob {
 
             for (Map<String, Object> product : products) {
                 Long spuId = ((Number) product.get("id")).longValue();
-                Map<String, Object> doc = buildProductDocument(product);
+                Map<String, Object> doc = productIndexDocumentBuilder.build(product, Map.of());
 
                 bulkBuilder.operations(op -> op
                         .index(idx -> idx
@@ -361,39 +367,4 @@ public class IncrementalIndexSyncJob {
         return doc;
     }
 
-    /**
-     * 构建商品 ES 文档 JSON
-     * <p>
-     * 参考 IndexRebuildJob#buildProductDocument 的文档结构。
-     * </p>
-     */
-    private Map<String, Object> buildProductDocument(Map<String, Object> product) {
-        // 从 images JSON 数组提取第一张图片
-        String firstImage = "";
-        Object imagesObj = product.get("images");
-        if (imagesObj instanceof String imagesStr && !imagesStr.isEmpty()) {
-            try {
-                JSONArray arr = JSON.parseArray(imagesStr);
-                if (arr != null && !arr.isEmpty()) {
-                    firstImage = arr.getString(0);
-                }
-            } catch (Exception e) {
-                log.debug("[增量补偿] images 解析失败，使用空图片: {}", imagesStr);
-            }
-        }
-
-        Map<String, Object> doc = new HashMap<>();
-        doc.put("spuId", product.get("id"));
-        doc.put("name", product.getOrDefault("name", ""));
-        doc.put("categoryId", product.getOrDefault("category_id", 0));
-        doc.put("categoryName", "");    // t_spu 无此字段，需 product 服务补全
-        doc.put("brandId", product.getOrDefault("brand_id", 0));
-        doc.put("brandName", "");       // t_spu 无此字段
-        doc.put("price", 0);            // 价格在 t_sku 表，补偿时不补
-        doc.put("image", firstImage);
-        doc.put("sales", 0);            // 无销量统计
-        doc.put("status", product.getOrDefault("status", 1));
-        doc.put("createdAt", product.get("created_at") != null ? product.get("created_at").toString() : null);
-        return doc;
-    }
 }

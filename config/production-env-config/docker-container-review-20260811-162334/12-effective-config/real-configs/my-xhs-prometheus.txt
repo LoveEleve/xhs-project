@@ -1,0 +1,22 @@
+############ my-xhs-prometheus 真实生效配置(进程实际使用的)
+#### ENTRYPOINT
+[
+    "/bin/prometheus"
+]
+#### CMD(命令行参数=多数服务真实配置)
+[
+    "--config.file=/etc/prometheus/prometheus.yml",
+    "--web.listen-address=:19090",
+    "--storage.tsdb.path=/prometheus",
+    "--storage.tsdb.retention.time=15d"
+]
+#### ENV(环境变量)
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+#### 资源限制
+MemLimit=671088640 CPULimit=250000000 Restart=unless-stopped
+#### 挂载的配置文件
+/data/workspace/my-xhs-deploy-zip/config/prometheus/prometheus.yml -> /etc/prometheus/prometheus.yml
+/data/workspace/my-xhs-deploy-zip/config/prometheus/alert_rules -> /etc/prometheus/alert_rules
+/data/docker/lib/volumes/my-xhs-deploy-zip_prometheus-data/_data -> /prometheus
+

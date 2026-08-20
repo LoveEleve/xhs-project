@@ -67,6 +67,7 @@ public class CouponService {
     private static final String CLAIMED_KEY_TPL = "myxhs:coupon:{%d}:claimed:%d";
     private static final String TEMPLATE_KEY_PREFIX = "myxhs:coupon:template:";
     private static final String COUPON_CLAIM_TOPIC = "COUPON_CLAIM_TOPIC";
+    private static final String COUPON_RETURN_REDIS_REPAIR_TOPIC = "COUPON_RETURN_REDIS_REPAIR_TOPIC";
     private static final long TEMPLATE_CACHE_SECONDS = 1800L; // 模板缓存 30 分钟
 
     private static String stockKey(Long templateId) { return String.format(STOCK_KEY_TPL, templateId); }
@@ -126,6 +127,11 @@ public class CouponService {
      * </p>
      */
     public void updateTemplateStatus(Long templateId, Integer status) {
+        // T-121（2026-08-16）：非法状态校验（对照 product updateSpuStatus 40002）——
+        // 修复前 status=2 等非法值直接入库，无业务语义
+        if (status == null || (status != 0 && status != 1)) {
+            throw new BizException(ResultCode.PARAM_INVALID, "优惠券状态无效，仅支持 0(下线) 或 1(上线)");
+        }
         CouponTemplate template = templateMapper.selectById(templateId);
         if (template == null) {
             throw new BizException(ResultCode.COUPON_NOT_FOUND);
@@ -230,21 +236,27 @@ public class CouponService {
             case -3 -> {
                 // 券库存未初始化，尝试从 MySQL 初始化
                 initStockFromDb(template);
-                // 重试一次
+                // 重试一次（T-121：重试结果按语义分派——-2 限领应返回 30013 而非 30014 售罄）
                 result = stringRedisTemplate.execute(
                         claimCouponScript,
                         List.of(stockKey, claimedKey),
                         String.valueOf(template.getPerUserLimit())
                 );
-                if (result != null && result == 1) {
-                    String claimNo = sendClaimEventSync(userId, templateId);
-                    if (claimNo == null) {
-                        rollbackRedisStock(stockKey, claimedKey);
-                        throw new BizException(ResultCode.INTERNAL_ERROR, "领券失败，请重试");
+                if (result == null) {
+                    throw new BizException(ResultCode.INTERNAL_ERROR, "领券操作失败");
+                }
+                switch (result.intValue()) {
+                    case 1 -> {
+                        String claimNo = sendClaimEventSync(userId, templateId);
+                        if (claimNo == null) {
+                            rollbackRedisStock(stockKey, claimedKey);
+                            throw new BizException(ResultCode.INTERNAL_ERROR, "领券失败，请重试");
+                        }
+                        log.info("[优惠券] 领券成功(重试): userId={}, templateId={}", userId, templateId);
                     }
-                    log.info("[优惠券] 领券成功(重试): userId={}, templateId={}", userId, templateId);
-                } else {
-                    throw new BizException(ResultCode.COUPON_SOLD_OUT);
+                    case -1 -> throw new BizException(ResultCode.COUPON_SOLD_OUT);
+                    case -2 -> throw new BizException(ResultCode.COUPON_ALREADY_RECEIVED, "已达限领上限");
+                    default -> throw new BizException(ResultCode.INTERNAL_ERROR, "领券异常: result=" + result);
                 }
             }
             default -> throw new BizException(ResultCode.INTERNAL_ERROR, "领券异常: result=" + result);
@@ -298,6 +310,10 @@ public class CouponService {
             throw new BizException(ResultCode.COUPON_NOT_FOUND);
         }
         if (userCoupon.getStatus() != 0) {
+            // T-121（2026-08-16）：状态文案精确化——1=已使用（含并发乐观锁失败），2=已过期标记
+            if (userCoupon.getStatus() == 1) {
+                throw new BizException(ResultCode.COUPON_NOT_AVAILABLE, "优惠券已被使用");
+            }
             throw new BizException(ResultCode.COUPON_NOT_AVAILABLE, "优惠券状态异常");
         }
 
@@ -383,12 +399,17 @@ public class CouponService {
                 .registerSynchronization(new org.springframework.transaction.support.TransactionSynchronization() {
                     @Override
                     public void afterCommit() {
-                        Long result = stringRedisTemplate.execute(
-                                returnCouponScript,
-                                List.of(stockKey, claimedKey)
-                        );
-                        log.info("[优惠券] 退券Redis回退: couponId={}, userId={}, result={}", couponId, userId, result);
-                        evictTemplateCache(couponId);
+                        try {
+                            Long result = stringRedisTemplate.execute(
+                                    returnCouponScript,
+                                    List.of(stockKey, claimedKey)
+                            );
+                            log.info("[优惠券] 退券Redis回退: couponId={}, userId={}, result={}", couponId, userId, result);
+                            evictTemplateCache(couponId);
+                        } catch (Exception e) {
+                            log.error("[优惠券] 退券Redis回退失败，发送补偿消息: couponId={}, userId={}", couponId, userId, e);
+                            sendReturnCouponRedisRepairEvent(userId, couponId);
+                        }
                     }
                 });
     }
@@ -424,10 +445,13 @@ public class CouponService {
 
         List<UserCoupon> userCoupons = userCouponMapper.selectList(wrapper);
 
-        // 批量转换 + 过滤掉已过期的（实时校验，不依赖定时任务）
+        // 批量转换 + 过滤已过期/未生效（实时校验，不依赖定时任务）
+        // T-121（2026-08-16）：补 validStart 过滤——修复前"可用"列表含未来生效券
+        // （用户可见但 use 时被责任链拦截，体验不一致；与 useCoupon 语义对齐）
         LocalDateTime now = LocalDateTime.now();
         return batchToVO(userCoupons).stream()
-                .filter(vo -> vo.getValidEnd() != null && vo.getValidEnd().isAfter(now))
+                .filter(vo -> vo.getValidEnd() != null && vo.getValidEnd().isAfter(now)
+                        && (vo.getValidStart() == null || !vo.getValidStart().isAfter(now)))
                 .collect(Collectors.toList());
     }
 
@@ -561,6 +585,28 @@ public class CouponService {
         }
     }
 
+    private void sendReturnCouponRedisRepairEvent(Long userId, Long templateId) {
+        try {
+            String payload = objectMapper.writeValueAsString(new CouponReturnRedisRepairEvent(userId, templateId));
+            rocketMQTemplate.syncSend(
+                    COUPON_RETURN_REDIS_REPAIR_TOPIC,
+                    org.springframework.messaging.support.MessageBuilder.withPayload(payload).build(),
+                    3000
+            );
+            log.info("[优惠券] 退券Redis补偿消息已发送: userId={}, templateId={}", userId, templateId);
+        } catch (Exception ex) {
+            log.error("[优惠券] 退券Redis补偿消息发送失败: userId={}, templateId={}", userId, templateId, ex);
+        }
+    }
+
+    public void repairReturnCouponRedis(Long userId, Long templateId) {
+        String stockKey = stockKey(templateId);
+        String claimedKey = claimedKey(templateId, userId);
+        Long result = stringRedisTemplate.execute(returnCouponScript, List.of(stockKey, claimedKey));
+        log.info("[优惠券] 退券Redis补偿重放: templateId={}, userId={}, result={}", templateId, userId, result);
+        evictTemplateCache(templateId);
+    }
+
     /**
      * 批量转换 UserCoupon → UserCouponVO（解决 N+1 查询问题）
      * <p>
@@ -583,24 +629,27 @@ public class CouponService {
         Map<Long, CouponTemplate> templateMap = templates.stream()
                 .collect(Collectors.toMap(CouponTemplate::getId, Function.identity()));
 
-        // 3. 组装 VO
+        // 3. 组装 VO（T-121：孤儿券防御——模板已删除/不存在的券行过滤，避免列表出现 name=null 脏条目）
         return userCoupons.stream().map(uc -> {
             CouponTemplate template = templateMap.get(uc.getCouponId());
+            if (template == null) {
+                log.warn("[优惠券] 跳过孤儿券(模板不存在): userCouponId={}, couponId={}",
+                        uc.getId(), uc.getCouponId());
+                return null;
+            }
             UserCouponVO.UserCouponVOBuilder builder = UserCouponVO.builder()
                     .id(uc.getId())
                     .couponId(uc.getCouponId())
                     .status(uc.getStatus())
-                    .receivedAt(uc.getReceivedAt());
-
-            if (template != null) {
-                builder.name(template.getName())
-                        .type(template.getType())
-                        .discountValue(template.getDiscountValue())
-                        .minAmount(template.getMinAmount())
-                        .validEnd(template.getValidEnd());
-            }
+                    .receivedAt(uc.getReceivedAt())
+                    .name(template.getName())
+                    .type(template.getType())
+                    .discountValue(template.getDiscountValue())
+                    .minAmount(template.getMinAmount())
+                    .validStart(template.getValidStart())
+                    .validEnd(template.getValidEnd());
             return builder.build();
-        }).collect(Collectors.toList());
+        }).filter(java.util.Objects::nonNull).collect(Collectors.toList());
     }
 
     /**
@@ -608,4 +657,8 @@ public class CouponService {
      */
     public record CouponClaimEvent(Long userId, Long templateId, String claimNo) {
     }
+
+    public record CouponReturnRedisRepairEvent(Long userId, Long templateId) {
+    }
 }
+

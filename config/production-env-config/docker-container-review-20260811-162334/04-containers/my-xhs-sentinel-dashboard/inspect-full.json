@@ -1,0 +1,253 @@
+[
+    {
+        "Id": "c156ec1fe9970f3748156055f6b0b702e56987b2ccc64df81950306bdccd6139",
+        "Created": "2026-08-08T14:01:41.304598691Z",
+        "Path": "java",
+        "Args": [
+            "-Djava.security.egd=file:/dev/./urandom",
+            "-Dserver.port=8858",
+            "-Dcsp.sentinel.api.port=8719",
+            "-Dcsp.sentinel.dashboard.server=localhost:8858",
+            "-Dproject.name=sentinel-dashboard",
+            "-jar",
+            "app.jar"
+        ],
+        "State": {
+            "Status": "running",
+            "Running": true,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 3322372,
+            "ExitCode": 0,
+            "Error": "",
+            "StartedAt": "2026-08-08T14:01:41.537231048Z",
+            "FinishedAt": "0001-01-01T00:00:00Z"
+        },
+        "Image": "sha256:7f0a223b7b70480535ffb4769b496eb4f61e2c004f67dced9ce36b809a48081b",
+        "ResolvConfPath": "/data/docker/lib/containers/c156ec1fe9970f3748156055f6b0b702e56987b2ccc64df81950306bdccd6139/resolv.conf",
+        "HostnamePath": "/data/docker/lib/containers/c156ec1fe9970f3748156055f6b0b702e56987b2ccc64df81950306bdccd6139/hostname",
+        "HostsPath": "/data/docker/lib/containers/c156ec1fe9970f3748156055f6b0b702e56987b2ccc64df81950306bdccd6139/hosts",
+        "LogPath": "",
+        "Name": "/my-xhs-sentinel-dashboard",
+        "RestartCount": 0,
+        "Driver": "overlay2",
+        "Platform": "linux",
+        "MountLabel": "",
+        "ProcessLabel": "",
+        "AppArmorProfile": "",
+        "ExecIDs": null,
+        "HostConfig": {
+            "Binds": [
+                "/opt/kona-jdk17:/opt/kona-jdk17:ro"
+            ],
+            "ContainerIDFile": "",
+            "LogConfig": {
+                "Type": "journald",
+                "Config": {}
+            },
+            "NetworkMode": "host",
+            "PortBindings": {},
+            "RestartPolicy": {
+                "Name": "unless-stopped",
+                "MaximumRetryCount": 0
+            },
+            "AutoRemove": false,
+            "VolumeDriver": "",
+            "VolumesFrom": null,
+            "ConsoleSize": [
+                0,
+                0
+            ],
+            "CapAdd": null,
+            "CapDrop": null,
+            "CgroupnsMode": "private",
+            "Dns": null,
+            "DnsOptions": null,
+            "DnsSearch": null,
+            "ExtraHosts": [],
+            "GroupAdd": null,
+            "IpcMode": "private",
+            "Cgroup": "",
+            "Links": null,
+            "OomScoreAdj": 0,
+            "PidMode": "",
+            "Privileged": false,
+            "PublishAllPorts": false,
+            "ReadonlyRootfs": false,
+            "SecurityOpt": null,
+            "UTSMode": "",
+            "UsernsMode": "",
+            "ShmSize": 67108864,
+            "Runtime": "runc",
+            "Isolation": "",
+            "CpuShares": 0,
+            "Memory": 268435456,
+            "NanoCpus": 250000000,
+            "CgroupParent": "",
+            "BlkioWeight": 0,
+            "BlkioWeightDevice": null,
+            "BlkioDeviceReadBps": null,
+            "BlkioDeviceWriteBps": null,
+            "BlkioDeviceReadIOps": null,
+            "BlkioDeviceWriteIOps": null,
+            "CpuPeriod": 0,
+            "CpuQuota": 0,
+            "CpuRealtimePeriod": 0,
+            "CpuRealtimeRuntime": 0,
+            "CpusetCpus": "",
+            "CpusetMems": "",
+            "Devices": null,
+            "DeviceCgroupRules": null,
+            "DeviceRequests": null,
+            "MemoryReservation": 134217728,
+            "MemorySwap": 536870912,
+            "MemorySwappiness": null,
+            "OomKillDisable": null,
+            "PidsLimit": null,
+            "Ulimits": [
+                {
+                    "Name": "nofile",
+                    "Hard": 1048576,
+                    "Soft": 1048576
+                }
+            ],
+            "CpuCount": 0,
+            "CpuPercent": 0,
+            "IOMaximumIOps": 0,
+            "IOMaximumBandwidth": 0,
+            "MaskedPaths": [
+                "/proc/asound",
+                "/proc/acpi",
+                "/proc/interrupts",
+                "/proc/kcore",
+                "/proc/keys",
+                "/proc/latency_stats",
+                "/proc/timer_list",
+                "/proc/timer_stats",
+                "/proc/sched_debug",
+                "/proc/scsi",
+                "/sys/firmware",
+                "/sys/devices/virtual/powercap"
+            ],
+            "ReadonlyPaths": [
+                "/proc/bus",
+                "/proc/fs",
+                "/proc/irq",
+                "/proc/sys",
+                "/proc/sysrq-trigger"
+            ]
+        },
+        "GraphDriver": {
+            "Data": {
+                "ID": "c156ec1fe9970f3748156055f6b0b702e56987b2ccc64df81950306bdccd6139",
+                "LowerDir": "/data/docker/lib/overlay2/6e82664b53b7ff9c7de769f0035a5f91a8d533cfdf52ddcdcd414a0efbcf4bc5-init/diff:/data/docker/lib/overlay2/c1d9499f0f0aea07317209d90d8eefb29caae086416b3ad46f86372ed27da87c/diff:/data/docker/lib/overlay2/07638c02ee7c6e937c769094b44cd0a3edf588852cdbab202e52b8e7d8198cc6/diff:/data/docker/lib/overlay2/affdc99143905b2f68212a39bd1ce82e23337636b0878141ecbd1a7dff90f137/diff:/data/docker/lib/overlay2/c5aba1dedce02d8516d76a8b6f0191548d3f655a768834056864c5891b441c67/diff:/data/docker/lib/overlay2/b6f3da7be5fb0941d79210e0f0852978730d37f174080962ec3860bc6f617e9c/diff:/data/docker/lib/overlay2/217a4b9596d7147e99f54307b422e0a21d8fb12bd0313b6507e405988e60b2d7/diff",
+                "MergedDir": "/data/docker/lib/overlay2/6e82664b53b7ff9c7de769f0035a5f91a8d533cfdf52ddcdcd414a0efbcf4bc5/merged",
+                "UpperDir": "/data/docker/lib/overlay2/6e82664b53b7ff9c7de769f0035a5f91a8d533cfdf52ddcdcd414a0efbcf4bc5/diff",
+                "WorkDir": "/data/docker/lib/overlay2/6e82664b53b7ff9c7de769f0035a5f91a8d533cfdf52ddcdcd414a0efbcf4bc5/work"
+            },
+            "Name": "overlay2"
+        },
+        "Mounts": [
+            {
+                "Type": "bind",
+                "Source": "/opt/kona-jdk17",
+                "Destination": "/opt/kona-jdk17",
+                "Mode": "ro",
+                "RW": false,
+                "Propagation": "rprivate"
+            }
+        ],
+        "Config": {
+            "Hostname": "VM-247-89-tencentos",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": true,
+            "AttachStderr": true,
+            "ExposedPorts": {
+                "8719/tcp": {},
+                "8858/tcp": {}
+            },
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "SERVER_PORT=8858",
+                "JAVA_HOME=/opt/kona-jdk17",
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "LANG=en_US.UTF-8",
+                "LANGUAGE=en_US:en",
+                "LC_ALL=en_US.UTF-8",
+                "TZ=Etc/UTC"
+            ],
+            "Cmd": null,
+            "Image": "bladex/sentinel-dashboard:1.8.8",
+            "Volumes": null,
+            "WorkingDir": "/bladex/sentinel",
+            "Entrypoint": [
+                "java",
+                "-Djava.security.egd=file:/dev/./urandom",
+                "-Dserver.port=8858",
+                "-Dcsp.sentinel.api.port=8719",
+                "-Dcsp.sentinel.dashboard.server=localhost:8858",
+                "-Dproject.name=sentinel-dashboard",
+                "-jar",
+                "app.jar"
+            ],
+            "OnBuild": null,
+            "Labels": {
+                "com.docker.compose.config-hash": "9e8bb8fa5474c3ab7140b6ce4bcc064d306605d13b5090c48c329d04b6583bae",
+                "com.docker.compose.container-number": "1",
+                "com.docker.compose.depends_on": "",
+                "com.docker.compose.image": "sha256:7f0a223b7b70480535ffb4769b496eb4f61e2c004f67dced9ce36b809a48081b",
+                "com.docker.compose.oneoff": "False",
+                "com.docker.compose.project": "my-xhs-deploy-zip",
+                "com.docker.compose.project.config_files": "/data/workspace/my-xhs-deploy-zip/docker-compose.yml",
+                "com.docker.compose.project.working_dir": "/data/workspace/my-xhs-deploy-zip",
+                "com.docker.compose.service": "sentinel-dashboard",
+                "com.docker.compose.version": "2.29.2",
+                "maintainer": "bladejava@qq.com"
+            }
+        },
+        "NetworkSettings": {
+            "Bridge": "",
+            "SandboxID": "e0b958ddd56c6f34d8a925a42c538ac7ea99fc41c69f561a79d6f172ab481aa9",
+            "SandboxKey": "/var/run/docker/netns/default",
+            "Ports": {},
+            "HairpinMode": false,
+            "LinkLocalIPv6Address": "",
+            "LinkLocalIPv6PrefixLen": 0,
+            "SecondaryIPAddresses": null,
+            "SecondaryIPv6Addresses": null,
+            "EndpointID": "",
+            "Gateway": "",
+            "GlobalIPv6Address": "",
+            "GlobalIPv6PrefixLen": 0,
+            "IPAddress": "",
+            "IPPrefixLen": 0,
+            "IPv6Gateway": "",
+            "MacAddress": "",
+            "Networks": {
+                "host": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": null,
+                    "MacAddress": "",
+                    "DriverOpts": null,
+                    "GwPriority": 0,
+                    "NetworkID": "69303899f57d4447764f56f161dceb184df134844eb038322985183a4f6b4dff",
+                    "EndpointID": "1e45219308afff100a4a96578e40a2fd541367b66b9afe6a7352ade0db18ea14",
+                    "Gateway": "",
+                    "IPAddress": "",
+                    "IPPrefixLen": 0,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "DNSNames": null
+                }
+            }
+        }
+    }
+]

@@ -49,7 +49,7 @@ public class AgentHarness {
             - httpLatency(service, hours)：服务 HTTP 慢端点 top（P95 延迟秒，最近 N 小时）
             - mqConsumerLag(group)：RocketMQ 消费积压（按消费组聚合 lag；空=全部）
              - mqDlqBacklog(consumerGroup)：RocketMQ 死信积压（空=全部；**-1 为应用侧哨兵值=无 DLQ 或查询失败，非真实积压**）
-             - mqDlqQuery(consumerGroup)：查询 DLQ 消息并提取 originMsgId/retryTopic，供 dlq.redeliver 使用
+             - mqDlqQuery(consumerGroup, keyword?)：查询 DLQ 消息并提取 originMsgId/retryTopic，供 dlq.redeliver 使用；keyword 可选（如 orderNo），匹配消息体缩小范围
              - mysqlReplicationLag()：MySQL 主从复制延迟（Seconds_Behind_Master，全部从库）
             - mysqlDeadlocks()：MySQL 死锁事件（累计 total + 最新 new_events）
             - funnelConversion(window)：电商漏斗各环节量（商品浏览/加购/下单/支付，窗口内）
@@ -60,6 +60,7 @@ public class AgentHarness {
              - dlq.redeliver(msgId, consumerGroup, retryTopic)：**MQ 死信消息重投（L3 高危动作，执行需人工审批）**——
                必须先调用 mqDlqQuery；msgId 使用返回的 originMsgId（ORIGIN_MESSAGE_ID），retryTopic 使用返回的 retryTopic（RETRY_TOPIC）；
                请求后系统挂起待审批，审批通过才会真正执行；无审批绝不执行
+             注意：service.restart 和 order.refund 当前未实现，如用户请求请如实说明。
             排障提示：httpErrors 的 uri=/** 已由工具单列为 noiseScanRoutes（扫描/探测噪音），归因时排除；
             /api/coupon/*、/api/cart/* 的 [Gateway-异常] WARN 日志非 5xx
             已知服务名（L2 观测可用）：my-xhs-gateway / my-xhs-order / my-xhs-payment / my-xhs-content /
@@ -149,6 +150,8 @@ my-xhs-user / my-xhs-inventory / my-xhs-product / my-xhs-search / my-xhs-cart / 
     private final RunStore store;
     private final ObjectMapper om;
     private final String modelName;
+    /** D6 Langfuse：run 级 metadata（可选注入；测试构造兼容） */
+    private com.myxhs.ai.app.service.agent.tracing.RunMetadataStore runMetadataStore;
 
     public AgentHarness(ChatModel chatModel, MetricToolAccess metricToolAccess, ObsToolAccess obsToolAccess,
                         ObjectMapper mapper, AgentBudget defaultBudget, double pricePer1kTokens, int maxInvalidAnswers) {
@@ -202,6 +205,11 @@ my-xhs-user / my-xhs-inventory / my-xhs-product / my-xhs-search / my-xhs-cart / 
         this.om = mapper;
         this.modelName = modelName;
         this.toolResultMaxLen = Math.max(1, toolResultMaxLen);
+    }
+
+    /** D6 Langfuse：由 HarnessConfig 注入（非构造参数，避免大量测试构造改动） */
+    public void setRunMetadataStore(com.myxhs.ai.app.service.agent.tracing.RunMetadataStore runMetadataStore) {
+        this.runMetadataStore = runMetadataStore;
     }
 
     public AgentBudget defaultBudget() {
@@ -747,15 +755,34 @@ my-xhs-user / my-xhs-inventory / my-xhs-product / my-xhs-search / my-xhs-cart / 
                 .responseFormat(ResponseFormat.JSON)
                 .build();
         try {
-            return chatModel.chat(request);
+            ChatResponse resp = chatModel.chat(request);
+            recordModelTraceMetadata(runId, resp);
+            return resp;
         } catch (Exception e) {
             log.warn("[harness] run={} 模型调用失败(重试1次): {}", runId, e.getMessage());
             try {
-                return chatModel.chat(request);
+                ChatResponse resp = chatModel.chat(request);
+                recordModelTraceMetadata(runId, resp);
+                return resp;
             } catch (Exception e2) {
                 log.warn("[harness] run={} 模型调用重试仍失败: {}", runId, e2.getMessage());
                 return null;
             }
+        }
+    }
+
+    /** D6 Langfuse：记录 model/tokens/cost 到 run metadata */
+    private void recordModelTraceMetadata(String runId, ChatResponse response) {
+        if (runMetadataStore == null || response == null) {
+            return;
+        }
+        try {
+            var usage = response.tokenUsage();
+            int in = usage == null ? 0 : Math.max(0, usage.inputTokenCount());
+            int out = usage == null ? 0 : Math.max(0, usage.outputTokenCount());
+            double cost = ((in + out) / 1000.0) * pricePer1kTokens;
+            runMetadataStore.updateTokens(runId, in, out, cost);
+        } catch (Exception ignored) {
         }
     }
 

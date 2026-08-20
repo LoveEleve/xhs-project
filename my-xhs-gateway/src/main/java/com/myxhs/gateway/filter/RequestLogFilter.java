@@ -10,6 +10,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.UUID;
 
 /**
@@ -57,9 +59,11 @@ public class RequestLogFilter implements GlobalFilter, Ordered {
         // 3. 记录请求开始时间（用 nanoTime 避免时钟回拨影响）
         exchange.getAttributes().put(START_TIME_ATTR, System.nanoTime());
 
-        // 4. 注入 TraceId 到请求 Header
+        // 4. 注入 TraceId 到请求 Header + SW sw8 头（T-099：业务 traceId 作为 SW traceId，打通日志↔trace）
+        //    sw8 格式: traceId|segmentId|spanId|parentService|parentInstance|parentEndpoint|address|sample
         ServerHttpRequest mutatedRequest = request.mutate()
                 .header(TRACE_ID_HEADER, traceId)
+                .header("sw8", buildSw8Header(traceId, path))
                 .build();
 
         // 5. 入站日志
@@ -87,6 +91,29 @@ public class RequestLogFilter implements GlobalFilter, Ordered {
                     }
                 }))
                 .doFinally(signal -> MDC.remove("traceId"));  // 7. 清理 MDC
+    }
+
+    /**
+     * 构造 SkyWalking sw8 跨进程传播头（T-099）
+     * <p>
+     * 业务 traceId（32hex UUID）作为 SW traceId 传入——下游 agent 接收 sw8 后
+     * SW 的 trace_id 核心即业务 traceId，日志 traceId 与 SW trace 可关联
+     * （日志 traceId == SW trace_id 的 32hex 前缀段）。
+     * 格式：traceId|segmentId|spanId|parentService|parentInstance|parentEndpoint|address|sample
+     * </p>
+     */
+    private String buildSw8Header(String traceId, String path) {
+        try {
+            String segmentId = UUID.randomUUID().toString().replace("-", "");
+            java.util.function.Function<String, String> b64 =
+                    s -> Base64.getEncoder().encodeToString(s.getBytes(StandardCharsets.UTF_8));
+            return b64.apply(traceId) + "|" + b64.apply(segmentId) + "|0|"
+                    + b64.apply("my-xhs-gateway") + "|" + b64.apply("gateway") + "|"
+                    + b64.apply(path != null ? path : "") + "||1";
+        } catch (Exception e) {
+            log.warn("[Gateway] sw8 header 构造失败: {}", e.getMessage());
+            return null;
+        }
     }
 
     @Override

@@ -1,0 +1,41 @@
+########## cluster health
+{
+  "cluster_name" : "my-xhs-sw-es",
+  "status" : "yellow",
+  "timed_out" : false,
+  "number_of_nodes" : 1,
+  "number_of_data_nodes" : 1,
+  "active_primary_shards" : 69,
+  "active_shards" : 69,
+  "relocating_shards" : 0,
+  "initializing_shards" : 0,
+  "unassigned_shards" : 9,
+  "delayed_unassigned_shards" : 0,
+  "number_of_pending_tasks" : 0,
+  "number_of_in_flight_fetch" : 0,
+  "task_max_waiting_in_queue_millis" : 0,
+  "active_shards_percent_as_number" : 88.46153846153845
+}
+########## indices
+health status index                         uuid                   pri rep docs.count docs.deleted store.size pri.store.size dataset.size
+green  open   sw_browser_error_log-20260809 9HUHa6SOSF6Te60NwcjIZA   5   0          0            0      1.2kb          1.2kb        1.2kb
+green  open   sw_browser_error_log-20260810 uYKUa_CWS-GZoCYDnNLFAg   5   0          0            0      1.2kb          1.2kb        1.2kb
+green  open   sw_browser_error_log-20260811 _bABfPMWRRy5Kr-4m54cwQ   5   0          0            0      1.2kb          1.2kb        1.2kb
+green  open   sw_log-20260809               nh5hx6ZMRBmMzKjbaJnzug   5   0          0            0      1.2kb          1.2kb        1.2kb
+green  open   sw_log-20260810               D5SWvnedQC2RnblkMYlnkw   5   0          0            0      1.2kb          1.2kb        1.2kb
+green  open   sw_log-20260811               rGbJKR2gQ528XmhuhzsF3A   5   0          0            0      1.2kb          1.2kb        1.2kb
+yellow open   sw_management                 sJijNgZNRECStlg1ZmIgTg   1   1         95            0    364.3kb        364.3kb      364.3kb
+yellow open   sw_metrics-all-20260807       ohrg4rGmTb-0aNa2BUfXQA   1   1          8            0     22.1kb         22.1kb       22.1kb
+yellow open   sw_metrics-all-20260808       ZzjwuDqZTv-fZNd7-1LVCw   1   1     773898        13544     87.8mb         87.8mb       87.8mb
+yellow open   sw_metrics-all-20260809       pxrp2h99QGG7AFiTI__VNA   1   1    1820875        37827    207.1mb        207.1mb      207.1mb
+yellow open   sw_metrics-all-20260810       FMjd3qSURPeQdOpoov1pHA   1   1    1813291        39838    219.9mb        219.9mb      219.9mb
+yellow open   sw_metrics-all-20260811       rHAFUGEKRtap0hqUaiCang   1   1     719815        40823     90.4mb         90.4mb       90.4mb
+yellow open   sw_records-all-20260809       g3UUEbSqTzWUlmnv-gBuFQ   1   1       1724            0    248.1kb        248.1kb      248.1kb
+yellow open   sw_records-all-20260810       0OhidWLIRzasuRB93ztz_Q   1   1        934            0    161.9kb        161.9kb      161.9kb
+yellow open   sw_records-all-20260811       2FM88XWQTiaZwFTtSMcjWg   1   1        250            0     96.6kb         96.6kb       96.6kb
+green  open   sw_segment-20260809           Hk6ifNMlTB-DtZhzqmlh7w   5   0    1796186            0    707.3mb        707.3mb      707.3mb
+green  open   sw_segment-20260810           6JGXUWHZR9CObdSpa5eWSw   5   0     690042            0    305.1mb        305.1mb      305.1mb
+green  open   sw_segment-20260811           rPfkzqtnSem0c9ZStkKZxQ   5   0     143113            0     69.9mb         69.9mb       69.9mb
+green  open   sw_zipkin_span-20260809       f9xdHsklTduSm7vUwkVNtA   5   0          0            0      1.2kb          1.2kb        1.2kb
+green  open   sw_zipkin_span-20260810       22tFcqhRSdGRUqS61FsLnA   5   0          0            0      1.2kb          1.2kb        1.2kb
+green  open   sw_zipkin_span-20260811       iHvLhiKeSZKA0PakygETVw   5   0          0            0      1.2kb          1.2kb        1.2kb

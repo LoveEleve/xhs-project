@@ -7,6 +7,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.myxhs.common.trace.MqTraceHelper;
 import com.myxhs.search.feign.ProductFeignClient;
+import com.myxhs.search.service.ProductIndexDocumentBuilder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.common.message.MessageExt;
@@ -57,6 +58,7 @@ public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
     private final ElasticsearchClient esClient;
     private final StringRedisTemplate stringRedisTemplate;
     private final ProductFeignClient productFeignClient;
+    private final ProductIndexDocumentBuilder productIndexDocumentBuilder;
 
     /**
      * 追踪当前正在处理的 spuId，用于在 catch 块中记录失败的 docId 到 Redis。
@@ -104,7 +106,14 @@ public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
             }
             throw new RuntimeException("商品索引同步失败（可重试）", e);
         } catch (Exception e) {
-            log.error("[商品索引同步] 不可重试异常，跳过: msgId={}", msg.getMsgId(), e);
+            Long spuId = currentSpuId.get();
+            log.error("[商品索引同步] 商品文档构建失败，触发重试: spuId={}, msgId={}, reconsumeTimes={}",
+                    spuId, msg.getMsgId(), msg.getReconsumeTimes(), e);
+            if (spuId != null && stringRedisTemplate != null) {
+                stringRedisTemplate.opsForSet().add("myxhs:es:sync:failed:product", String.valueOf(spuId));
+                stringRedisTemplate.expire("myxhs:es:sync:failed:product", Duration.ofHours(1));
+            }
+            throw new IllegalStateException("商品索引同步失败", e);
         } finally {
             MqTraceHelper.clearTraceId();
         }
@@ -121,10 +130,12 @@ public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
         String table = canalMsg.getString("table");
         String type = canalMsg.getString("type");
         JSONArray dataArray = canalMsg.getJSONArray("data");
-        // 优先使用 es（event sequence，严格递增），降级使用 ts
-        long version = canalMsg.getLongValue("es", 0);
+        // T-088：统一版本域为毫秒时间戳(ts)（与 note 侧 P1-4 对齐）——
+        // 原实现 es（Canal 小整数）优先：补偿任务（updated_at 毫秒 ~1.7e12）写过文档后，
+        // 后续 canal es(小整数) 会被 ES ExternalGte 永久拒绝 → product_index 增量冻结。
+        long version = canalMsg.getLongValue("ts", System.currentTimeMillis());
         if (version == 0) {
-            version = canalMsg.getLongValue("ts", System.currentTimeMillis());
+            version = canalMsg.getLongValue("es", System.currentTimeMillis());
         }
 
         // 只处理 t_spu 表（SPU 维度索引）
@@ -149,11 +160,16 @@ public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
             switch (type) {
                 case "INSERT", "UPDATE" -> {
                     currentSpuId.set(spuId);
-                    indexProductFromCanal(spuId, row, version);
+                    // T-042：逻辑删除（UPDATE deleted=1）→ 标记删除（带版本防乱序覆盖，T-091 同族）
+                    if (row.getIntValue("deleted", 0) == 1) {
+                        deleteProduct(spuId, version);
+                    } else {
+                        indexProductFromCanal(spuId, row, version);
+                    }
                 }
                 case "DELETE" -> {
                     currentSpuId.set(spuId);
-                    deleteProduct(spuId);
+                    deleteProduct(spuId, version);
                 }
                 default -> log.debug("[商品索引同步] 忽略事件类型: type={}", type);
             }
@@ -178,7 +194,7 @@ public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
             }
             case "DELETE" -> {
                 currentSpuId.set(spuId);
-                deleteProduct(spuId);
+                deleteProduct(spuId, event.getLongValue("timestamp", System.currentTimeMillis()));
             }
             default -> log.warn("[商品索引同步] 未知事件类型: type={}, spuId={}", type, spuId);
         }
@@ -193,49 +209,30 @@ public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
      * </p>
      */
     private void indexProductFromCanal(Long spuId, JSONObject row, long version) throws Exception {
+        // T-042 修复（2026-08-13）：逻辑删除（deleted=1）→ 同步 ES 删除标记。
+        // 删除 SPU 走 @TableLogic（UPDATE 非 DELETE），canal 事件 type=UPDATE，
+        // 原实现忽略 deleted 列 → 已删 SPU 在 ES 恒保留（T-040 同款问题）。
+        if (row.getIntValue("deleted", 0) == 1) {
+            deleteProduct(spuId, version);
+            return;
+        }
         String name = row.getString("name");
         Long categoryId = row.getLong("category_id");
         Integer status = row.getIntValue("status", 1);
         String createdAt = row.getString("created_at");
 
-        String categoryName = null;
-        String price = null;
-        String image = null;
-
-        // 通过 Feign 获取补全字段（product 宕机时跳过，Canal 下次重试）
-        try {
-            com.myxhs.common.response.R<Map<String, Object>> r = productFeignClient.getSpuDetail(spuId);
-            if (r != null && r.isSuccess() && r.getData() != null) {
-                Map<String, Object> spu = r.getData();
-                categoryName = (String) spu.get("categoryName");
-                // 从 SKU 列表取最低售价
-                @SuppressWarnings("unchecked")
-                List<Map<String, Object>> skuList = (List<Map<String, Object>>) spu.get("skuList");
-                if (skuList != null && !skuList.isEmpty()) {
-                    price = String.valueOf(skuList.get(0).get("price"));
-                }
-                // 从图片列表取第一张
-                @SuppressWarnings("unchecked")
-                List<String> images = (List<String>) spu.get("images");
-                if (images != null && !images.isEmpty()) {
-                    image = images.get(0);
-                }
-            }
-        } catch (Exception e) {
-            log.warn("[商品索引同步] product 服务不可用，索引字段将不完整（非阻塞）: spuId={}", spuId, e);
+        com.myxhs.common.response.R<Map<String, Object>> response = productFeignClient.getSpuDetail(spuId);
+        if (response == null || !response.isSuccess() || response.getData() == null) {
+            throw new IllegalStateException("商品详情获取失败: spuId=" + spuId);
         }
-
-        Map<String, Object> doc = new HashMap<>();
-        doc.put("spuId", spuId);
-        doc.put("name", name);
-        doc.put("categoryId", categoryId);
-        doc.put("categoryName", categoryName);
-        doc.put("brandName", null);     // t_spu 无品牌表，暂无品牌名
-        doc.put("price", price);
-        doc.put("image", image);
-        doc.put("sales", 0);            // product 模块无销量统计
-        doc.put("status", status);
-        doc.put("createdAt", createdAt);
+        Map<String, Object> product = new HashMap<>();
+        product.put("id", spuId);
+        product.put("name", name);
+        product.put("category_id", categoryId);
+        product.put("brand_id", row.getLong("brand_id"));
+        product.put("status", status);
+        product.put("created_at", createdAt);
+        Map<String, Object> doc = productIndexDocumentBuilder.build(product, response.getData());
 
         String jsonDoc = JSON.toJSONString(doc);
 
@@ -258,17 +255,17 @@ public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
      * </p>
      */
     private void indexProductFromFlat(Long spuId, JSONObject event) throws Exception {
-        Map<String, Object> doc = new HashMap<>();
-        doc.put("spuId", spuId);
-        doc.put("name", event.get("name"));
-        doc.put("categoryId", event.get("categoryId"));
-        doc.put("categoryName", event.get("categoryName"));
-        doc.put("brandName", event.get("brandName"));
-        doc.put("price", event.get("price"));
-        doc.put("image", event.get("image"));
-        doc.put("sales", event.getOrDefault("sales", 0));
-        doc.put("status", event.getOrDefault("status", 1));
-        doc.put("createdAt", event.get("createdAt"));
+        Map<String, Object> product = new HashMap<>();
+        product.put("id", spuId);
+        product.put("name", event.get("name"));
+        product.put("category_id", event.get("categoryId"));
+        product.put("brand_id", event.get("brandId"));
+        product.put("status", event.getOrDefault("status", 1));
+        product.put("created_at", event.get("createdAt"));
+        product.put("images", event.get("images"));
+        product.put("category_name", event.get("categoryName"));
+        product.put("min_price", event.get("price"));
+        Map<String, Object> doc = productIndexDocumentBuilder.build(product, Map.of());
 
         String jsonDoc = JSON.toJSONString(doc);
 
@@ -289,7 +286,8 @@ public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
     /**
      * 标记删除商品文档（而非物理删除，防止乱序消息重新索引）
      */
-    private void deleteProduct(Long spuId) throws Exception {
+    private void deleteProduct(Long spuId, long version) throws Exception {
+        // T-091 同族修复：带 ExternalGte version 防止乱序旧消息覆盖删除标记
         Map<String, Object> doc = new HashMap<>();
         doc.put("spuId", spuId);
         doc.put("status", -1); // -1 表示已删除，搜索时过滤
@@ -300,6 +298,8 @@ public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
             esClient.index(IndexRequest.of(idx -> idx
                     .index(productIndexName)
                     .id(String.valueOf(spuId))
+                    .versionType(co.elastic.clients.elasticsearch._types.VersionType.ExternalGte)
+                    .version(version)
                     .withJson(new StringReader(jsonDoc))));
             log.info("[商品索引同步] 标记删除成功: spuId={}", spuId);
         } catch (co.elastic.clients.elasticsearch._types.ElasticsearchException e) {

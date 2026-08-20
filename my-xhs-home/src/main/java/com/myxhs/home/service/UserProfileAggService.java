@@ -3,6 +3,7 @@ package com.myxhs.home.service;
 import com.myxhs.common.response.R;
 import com.myxhs.home.dto.NoteCardVO;
 import com.myxhs.home.dto.UserProfileAggVO;
+import com.myxhs.home.exception.DownstreamUnavailableException;
 import com.myxhs.home.feign.AnalyticsFeignClient;
 import com.myxhs.home.feign.ContentFeignClient;
 import com.myxhs.home.feign.CounterFeignClient;
@@ -56,12 +57,17 @@ public class UserProfileAggService {
         CompletableFuture<Map<String, Object>> userFuture = CompletableFuture
                 .supplyAsync(() -> {
                     try {
-                        R<Map<String, Object>> r = userFeignClient.getUserPublicInfo(targetUserId);
-                        return (r != null && r.isSuccess() && r.getData() != null) ? r.getData() : Collections.emptyMap();
-                    } catch (Exception e) {
-                        log.warn("[用户主页] 获取用户信息失败: userId={}", targetUserId, e);
-                        return Collections.emptyMap();
-                    }
+                         R<Map<String, Object>> r = userFeignClient.getUserPublicInfo(targetUserId);
+                         if (r != null && r.getCode() == 503) {
+                             throw new DownstreamUnavailableException("用户服务不可用");
+                         }
+                         return (r != null && r.isSuccess() && r.getData() != null) ? r.getData() : Collections.emptyMap();
+                     } catch (DownstreamUnavailableException e) {
+                         throw e;
+                     } catch (Exception e) {
+                         log.warn("[用户主页] 获取用户信息失败: userId={}", targetUserId, e);
+                         return Collections.emptyMap();
+                     }
                 }, aggregatorPool);
 
         // 2. 计数（粉丝数/关注数 — 从 analytics 直接取，不绕 counter）
@@ -104,8 +110,9 @@ public class UserProfileAggService {
                             // content 返回 PageResult：字段是 records / total（修复：原误读 list 导致笔记列表为空）
                             Object records = r.getData().get("records");
                             Object total = r.getData().get("total");
-                            if (total instanceof Number) {
-                                noteCountHolder[0] = ((Number) total).longValue();
+                            if (total != null) {
+                                // T-119：R4 全局 Long→ToStringSerializer 使 total 为 String——原 instanceof Number 恒 false → noteCount 恒 0
+                                noteCountHolder[0] = toLongValue(total, 0L);
                             }
                             if (records instanceof List) {
                                 List<Map<String, Object>> noteList = (List<Map<String, Object>>) records;
@@ -173,8 +180,11 @@ public class UserProfileAggService {
         }
 
         Map<String, Object> userData = userFuture.getNow(Collections.emptyMap());
+        if (userFuture.isCompletedExceptionally()) {
+            throw new DownstreamUnavailableException("用户服务不可用");
+        }
         if (userData.isEmpty()) {
-            return null; // 用户不存在
+            return null;
         }
 
         Map<String, Long> counters = counterFuture.getNow(Collections.emptyMap());
@@ -204,10 +214,38 @@ public class UserProfileAggService {
      */
     private NoteCardVO mapToNoteCard(Map<String, Object> note) {
         return NoteCardVO.builder()
-                .noteId(note.get("id") != null ? ((Number) note.get("id")).longValue() : null)
+                .noteId(toLongValue(note.get("id")))
                 .title((String) note.get("title"))
                 .coverUrl((String) note.get("coverUrl"))
-                .noteType(note.get("noteType") != null ? ((Number) note.get("noteType")).intValue() : 0)
+                .noteType(toIntValue(note.get("noteType"), 0))
                 .build();
+    }
+
+    /**
+     * 兼容 Long→ToStringSerializer（R4）：下游 Feign 返回的 Long 字段实际为 String
+     */
+    private Long toLongValue(Object o) {
+        if (o == null) return null;
+        if (o instanceof Number) return ((Number) o).longValue();
+        try {
+            return Long.parseLong(o.toString());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private Long toLongValue(Object o, long def) {
+        Long v = toLongValue(o);
+        return v != null ? v : def;
+    }
+
+    private int toIntValue(Object o, int def) {
+        if (o == null) return def;
+        if (o instanceof Number) return ((Number) o).intValue();
+        try {
+            return Integer.parseInt(o.toString());
+        } catch (Exception e) {
+            return def;
+        }
     }
 }

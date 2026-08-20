@@ -54,6 +54,7 @@ public class CommentService {
     private final IdGeneratorUtil idGeneratorUtil;
     private final CacheHelper cacheHelper;
     private final RocketMQTemplate rocketMQTemplate;
+    private final com.myxhs.content.feign.UserFeignClient userFeignClient;
 
     /** 一级评论每页最大条数 */
     private static final int MAX_PAGE_SIZE = 20;
@@ -142,25 +143,41 @@ public class CommentService {
                 : "";
         final String noteTitle = note.getTitle();
         final Long senderId = userId;
+        // O-Comment-5 修复（2026-08-13）：回复评论（parentId>0 或 replyToId>0）通知被回复者，而非仅笔记作者
+        Long replyTargetId = null;
+        if (replyToId != null && replyToId > 0) {
+            replyTargetId = replyToId;
+        } else if (parentId > 0) {
+            replyTargetId = parentId;
+        }
+        final Long replyTargetUserId = (replyTargetId != null)
+                ? commentMapper.selectById(replyTargetId).getUserId()
+                : null;
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                cacheHelper.delayDoubleDelete(RedisKeyConstants.COMMENT_LIST + noteId);
+                // O-Comment-1（2026-08-13）：COMMENT_LIST 死缓存键——列表读路径直查 DB 从不回填，
+                // delayDoubleDelete 纯开销（P2-13 同模式），移除；COMMENT_COUNT 有读缓存保留
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.COMMENT_COUNT + noteId);
 
                 // 【修复R1】评论计数增量：发送 MQ 事件让 counter 服务更新笔记评论数
                 sendCommentCounterEvent(noteId, "COMMENT", 1);
 
+                // 通知目标：回复→被回复者；一级评论→笔记作者（O-Comment-5）
+                final Long targetUserId = replyTargetUserId != null ? replyTargetUserId : noteAuthorUserId;
                 // 【修复m17】排除自己评论自己的通知
-                if (senderId.equals(noteAuthorUserId)) {
+                if (senderId.equals(targetUserId)) {
                     return;
                 }
 
-                // 异步通知笔记作者
+                // O-Comment-2 修复：senderName 从 user 服务取昵称（失败降级"某用户"）
+                String senderName = resolveSenderName(senderId);
+                // 异步通知
                 Map<String, Object> notification = new HashMap<>();
                 notification.put("type", 2); // 2=评论
                 notification.put("senderId", senderId);
-                notification.put("targetUserId", noteAuthorUserId);
+                notification.put("senderName", senderName);
+                notification.put("targetUserId", targetUserId);
                 notification.put("targetId", noteId);
                 notification.put("targetType", 1); // 1=笔记
                 notification.put("content", contentPreview);
@@ -235,7 +252,7 @@ public class CommentService {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                cacheHelper.delayDoubleDelete(RedisKeyConstants.COMMENT_LIST + noteId);
+                // O-Comment-1：COMMENT_LIST 死缓存已移除，保留 COMMENT_COUNT
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.COMMENT_COUNT + noteId);
                 // 发送单条 UNCOMMENT 事件（带计数），避免循环发送 N 条独立 MQ
                 sendCommentCounterEvent(noteId, "UNCOMMENT", totalDeleted);
@@ -285,16 +302,10 @@ public class CommentService {
                 .map(Comment::getId)
                 .collect(Collectors.toList());
 
-        // 2.1 查询子评论（限制总量，避免热门笔记加载过多数据到内存）
-        // 每个父评论最多预加载 DEFAULT_CHILD_PREVIEW_SIZE 条，总量上限 = rootIds.size() * (DEFAULT_CHILD_PREVIEW_SIZE + 1)
-        // 多查 1 条用于判断是否有更多子评论（childCount > preview 时显示"查看更多"）
+        // O-Comment-4 修复：窗口函数每根独立取前 maxChildPerParent 条（无全局 LIMIT 截断）
+        // 旧实现 LIMIT rootIds.size()*maxChildPerParent + 全局排序，子评论总数超限时后序根的子评论被截丢
         int maxChildPerParent = DEFAULT_CHILD_PREVIEW_SIZE + 1;
-        int totalLimit = rootIds.size() * maxChildPerParent;
-        LambdaQueryWrapper<Comment> allChildWrapper = new LambdaQueryWrapper<Comment>()
-                .in(Comment::getParentId, rootIds)
-                .orderByAsc(Comment::getId)
-                .last("LIMIT " + totalLimit);
-        List<Comment> allChildren = commentMapper.selectList(allChildWrapper);
+        List<Comment> allChildren = commentMapper.selectTopChildrenByParentIds(rootIds, maxChildPerParent);
 
         // 按 parentId 分组（每组最多 maxChildPerParent 条）
         Map<Long, List<Comment>> childrenMap = allChildren.stream()
@@ -307,9 +318,19 @@ public class CommentService {
                 .collect(Collectors.toList());
 
         // 批量聚合 COUNT（一次 SQL 替换 N 次循环 COUNT）
+        // O-Comment-6 修复：原 Map<Long,Long> 返回值 key 类型不可控（MyBatis 运行时类型），
+        // get(rootId) 恒 miss → childCount 回退 children.size()（恒=4）。改 List<Map> 显式转换。
         Map<Long, Long> exactCountMap = Collections.emptyMap();
         if (!needExactCountIds.isEmpty()) {
-            exactCountMap = commentMapper.batchCountByParentIds(needExactCountIds);
+            Map<Long, Long> counts = new HashMap<>();
+            for (Map<String, Object> row : commentMapper.batchCountByParentIds(needExactCountIds)) {
+                Object pid = row.get("pid");
+                Object cnt = row.get("cnt");
+                if (pid instanceof Number && cnt instanceof Number) {
+                    counts.put(((Number) pid).longValue(), ((Number) cnt).longValue());
+                }
+            }
+            exactCountMap = counts;
         }
 
         // 4. 组装 VO
@@ -371,11 +392,11 @@ public class CommentService {
      */
     public long getCommentCount(Long noteId) {
         String cacheKey = RedisKeyConstants.COMMENT_COUNT + noteId;
-        Long count = cacheHelper.getWithCacheAside(cacheKey, () -> {
+        Object count = cacheHelper.getWithCacheAside(cacheKey, () -> {
             return commentMapper.selectCount(
                     new LambdaQueryWrapper<Comment>().eq(Comment::getNoteId, noteId));
         }, 5, TimeUnit.MINUTES);
-        return count != null ? count : 0L;
+        return count != null ? ((Number) count).longValue() : 0L;
     }
 
     // ==================== 传统分页查询（备用） ====================
@@ -402,6 +423,25 @@ public class CommentService {
     }
 
     // ==================== 私有方法 ====================
+
+    /**
+     * O-Comment-2 修复：解析发送者昵称（user 内部端点；失败/缺失降级"某用户"——与模板默认一致）
+     * R4 兼容：Feign 返回的 id 为 String；nickname 为 String
+     */
+    private String resolveSenderName(Long senderId) {
+        try {
+            com.myxhs.common.response.R<Map<String, Object>> r = userFeignClient.internalUserInfo(senderId);
+            if (r != null && r.isSuccess() && r.getData() != null) {
+                Object nickname = r.getData().get("nickname");
+                if (nickname != null && !nickname.toString().isBlank()) {
+                    return nickname.toString();
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[评论] senderName 查询失败(降级某用户): userId={}, err={}", senderId, e.getMessage());
+        }
+        return "某用户";
+    }
 
     /**
      * 【修复R1】发送评论计数事件到 MQ（SOCIAL_TOPIC:COMMENT/UNCOMMENT）
@@ -434,6 +474,13 @@ public class CommentService {
             // asyncSend 时序列化失败是代码级错误
             log.error("[评论计数] 事件序列化失败: noteId={}, action={}", noteId, action, e);
         }
+    }
+
+    /**
+     * O-Like-3/4：内部端点用——评论查询（存在性/作者/所属笔记）
+     */
+    public Comment getById(Long commentId) {
+        return commentMapper.selectById(commentId);
     }
 
     /**

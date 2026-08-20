@@ -3,6 +3,7 @@ package com.myxhs.home.service;
 import com.myxhs.common.response.R;
 import com.myxhs.home.dto.NoteCardVO;
 import com.myxhs.home.dto.ProductDetailAggVO;
+import com.myxhs.home.exception.DownstreamUnavailableException;
 import com.myxhs.home.feign.CounterFeignClient;
 import com.myxhs.home.feign.InventoryFeignClient;
 import com.myxhs.home.feign.ProductFeignClient;
@@ -61,12 +62,17 @@ public class ProductAggService {
         CompletableFuture<Map<String, Object>> spuFuture = CompletableFuture
                 .supplyAsync(() -> {
                     try {
-                        R<Map<String, Object>> r = productFeignClient.getSpuDetail(spuId);
-                        return (r != null && r.isSuccess() && r.getData() != null) ? r.getData() : Collections.emptyMap();
-                    } catch (Exception e) {
-                        log.warn("[商品详情] 获取SPU异常: spuId={}", spuId, e);
-                        return Collections.emptyMap();
-                    }
+                         R<Map<String, Object>> r = productFeignClient.getSpuDetail(spuId);
+                         if (r != null && r.getCode() == 503) {
+                             throw new DownstreamUnavailableException("商品服务不可用");
+                         }
+                         return (r != null && r.isSuccess() && r.getData() != null) ? r.getData() : Collections.emptyMap();
+                     } catch (DownstreamUnavailableException e) {
+                         throw e;
+                     } catch (Exception e) {
+                         log.warn("[商品详情] 获取SPU异常: spuId={}", spuId, e);
+                         return Collections.emptyMap();
+                     }
                 }, aggregatorPool);
 
         // 1b. 商品计数（收藏数、浏览数）
@@ -99,8 +105,11 @@ public class ProductAggService {
         }
 
         Map<String, Object> spuData = spuFuture.getNow(Collections.emptyMap());
+        if (spuFuture.isCompletedExceptionally()) {
+            throw new DownstreamUnavailableException("商品服务不可用");
+        }
         if (spuData.isEmpty()) {
-            return null; // 商品不存在
+            return null;
         }
 
         Map<String, Long> counters = counterFuture.getNow(Collections.emptyMap());
@@ -122,14 +131,41 @@ public class ProductAggService {
                 .name((String) spuData.get("name"))
                 .description((String) spuData.get("description"))
                 .images(spuData.get("images") instanceof List ? (List<String>) spuData.get("images") : Collections.emptyList())
-                .categoryId(spuData.get("categoryId") != null ? ((Number) spuData.get("categoryId")).longValue() : null)
+                .categoryId(toLongValue(spuData.get("categoryId")))
                 .categoryName((String) spuData.get("categoryName"))
-                .status(spuData.get("status") != null ? ((Number) spuData.get("status")).intValue() : null)
+                .status(toIntValue(spuData.get("status"), 0))
                 .skuList(skuWithStockList)
-                .collectCount(counters.getOrDefault("collect", 0L))
-                .viewCount(counters.getOrDefault("view", 0L))
+                .collectCount(toLongValue((Object) counters.get("collect"), 0L))
+                .viewCount(toLongValue((Object) counters.get("view"), 0L))
                 .relatedNotes(Collections.emptyList()) // 关联笔记暂不聚合，后续可接入搜索服务
                 .build();
+    }
+    /**
+     * 兼容 Long→ToStringSerializer（R4）：下游 Feign 返回的 Long 字段实际为 String
+     */
+    private Long toLongValue(Object o) {
+        if (o == null) return null;
+        if (o instanceof Number) return ((Number) o).longValue();
+        try {
+            return Long.parseLong(o.toString());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private Long toLongValue(Object o, long def) {
+        Long v = toLongValue(o);
+        return v != null ? v : def;
+    }
+
+    private int toIntValue(Object o, int def) {
+        if (o == null) return def;
+        if (o instanceof Number) return ((Number) o).intValue();
+        try {
+            return Integer.parseInt(o.toString());
+        } catch (Exception e) {
+            return def;
+        }
     }
 
     /**
@@ -147,7 +183,7 @@ public class ProductAggService {
         // 并行查询每个 SKU 的库存
         Map<Long, CompletableFuture<Map<String, Object>>> stockFutures = new LinkedHashMap<>();
         for (Map<String, Object> sku : skuListRaw) {
-            Long skuId = sku.get("id") != null ? ((Number) sku.get("id")).longValue() : null;
+            Long skuId = toLongValue(sku.get("id"));
             if (skuId == null) continue;
 
             CompletableFuture<Map<String, Object>> future = CompletableFuture
@@ -174,15 +210,14 @@ public class ProductAggService {
         // 组装 SkuWithStockVO
         List<ProductDetailAggVO.SkuWithStockVO> result = new ArrayList<>();
         for (Map<String, Object> sku : skuListRaw) {
-            Long skuId = sku.get("id") != null ? ((Number) sku.get("id")).longValue() : null;
+            Long skuId = toLongValue(sku.get("id"));
             if (skuId == null) continue;
 
             Map<String, Object> stockData = stockFutures.containsKey(skuId)
                     ? stockFutures.get(skuId).getNow(Collections.emptyMap())
                     : Collections.emptyMap();
 
-            Integer availableStock = stockData.get("availableStock") != null
-                    ? ((Number) stockData.get("availableStock")).intValue() : null;
+            Integer availableStock = toIntValue(stockData.get("availableStock"), 0);
 
             BigDecimal price = null;
             if (sku.get("price") != null) {
@@ -193,7 +228,9 @@ public class ProductAggService {
 
             result.add(ProductDetailAggVO.SkuWithStockVO.builder()
                     .skuId(skuId)
-                    .skuName((String) sku.get("skuName"))
+                    // T-112（2026-08-15）：product SkuVO 字段名是 name（非 skuName）——C-14 同类问题，
+                    // CartAggService 已修 name，此处遗漏 → skuName 恒 null
+                    .skuName((String) sku.get("name"))
                     .price(price)
                     .image((String) sku.get("image"))
                     .specValues(sku.get("specValues") instanceof Map ? (Map<String, String>) sku.get("specValues") : Collections.emptyMap())

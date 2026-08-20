@@ -44,8 +44,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   register: async (username, password, captchaKey, captchaCode, phone) => {
+    // 验证码为一次性消费（后端 GETDEL），注册已消耗验证码，不能复用同一验证码自动登录
     await registerApi({ username, password, captchaKey, captchaCode, phone });
-    await get().login(username, password, captchaKey, captchaCode);
   },
 
   logout: async () => {

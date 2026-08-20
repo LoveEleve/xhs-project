@@ -64,12 +64,7 @@ public class RecommendComputeJob {
 
     private void doComputeItemCFMatrix() {
         // 前置检查：行为数据表是否存在
-        try {
-            jdbcTemplate.queryForList("SELECT 1 FROM t_user_behavior LIMIT 1");
-        } catch (Exception e) {
-            log.info("[推荐-ItemCF] 源表 t_user_behavior 不可用，跳过计算(data sync not ready)");
-            return;
-        }
+        jdbcTemplate.queryForList("SELECT 1 FROM t_user_behavior LIMIT 1");
         long start = System.currentTimeMillis();
 
         // 1. 获取最近 7 天有正向行为的用户-物品对
@@ -185,11 +180,12 @@ public class RecommendComputeJob {
 
     private void doExtractFeatures() {
         // 前置检查：源表是否存在
+        jdbcTemplate.queryForList("SELECT 1 FROM t_note LIMIT 1");
+        // T-083：目标表 t_item_feature 缺失时直接 handleFail（原实现 INSERT 失败被 catch 后仍报"完成"——误导性成功）
         try {
-            jdbcTemplate.queryForList("SELECT 1 FROM t_note LIMIT 1");
+            jdbcTemplate.queryForList("SELECT 1 FROM t_item_feature LIMIT 1");
         } catch (Exception e) {
-            log.info("[推荐-特征] 源表 t_note 不可用，跳过提取(data sync not ready)");
-            return;
+            throw new IllegalStateException("t_item_feature 表不存在——特征提取无法执行，请先执行建表 DDL（sql/init-all.sql / t_item_feature_ddl.sql）");
         }
         long start = System.currentTimeMillis();
 
@@ -233,7 +229,7 @@ public class RecommendComputeJob {
             long cost = System.currentTimeMillis() - start;
             log.info("[推荐-特征] 特征提取完成: {} 条 (含真实标签), cost={}ms", batchArgs.size(), cost);
         } catch (Exception e) {
-            log.error("[推荐-特征] 特征提取失败", e);
+            throw new IllegalStateException("特征提取失败", e);
         }
     }
 
@@ -268,7 +264,7 @@ public class RecommendComputeJob {
             // 补充互动数据
             enrichEngagementCounts(result);
         } catch (Exception e) {
-            log.warn("[推荐-特征] 批量读取笔记特征失败，降级使用默认值", e);
+            throw new IllegalStateException("批量读取笔记特征失败", e);
         }
 
         // 填充缺失的笔记为默认值
@@ -328,26 +324,35 @@ public class RecommendComputeJob {
         try {
             String noteIdsStr = features.keySet().stream().map(String::valueOf)
                     .collect(java.util.stream.Collectors.joining(","));
-            // 从 counter 表或直接查询互动表
-            List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                    "SELECT target_id, count_type, count_value FROM t_counter " +
-                            "WHERE target_type = 1 AND target_id IN (" + noteIdsStr + ") AND deleted = 0");
 
-            for (Map<String, Object> row : rows) {
-                Long noteId = ((Number) row.get("target_id")).longValue();
-                int countType = ((Number) row.get("count_type")).intValue();
-                long countValue = ((Number) row.get("count_value")).longValue();
+            List<Map<String, Object>> comments = jdbcTemplate.queryForList(
+                    "SELECT note_id, COUNT(*) AS comment_count FROM t_comment " +
+                            "WHERE deleted = 0 AND note_id IN (" + noteIdsStr + ") GROUP BY note_id");
+            for (Map<String, Object> row : comments) {
+                Long noteId = ((Number) row.get("note_id")).longValue();
                 NoteFeatures nf = features.get(noteId);
                 if (nf != null) {
-                    switch (countType) {
-                        case 1 -> nf.likeCount = countValue;
-                        case 2 -> nf.collectionCount = countValue;
-                        case 3 -> nf.commentCount = countValue;
-                    }
+                    nf.commentCount = ((Number) row.get("comment_count")).longValue();
                 }
             }
+
+            List<Map<String, Object>> favorites = jdbcTemplate.queryForList(
+                    "SELECT note_id, COUNT(*) AS favorite_count FROM my_xhs_analytics.t_favorite " +
+                            "WHERE note_id IN (" + noteIdsStr + ") GROUP BY note_id");
+            for (Map<String, Object> row : favorites) {
+                Long noteId = ((Number) row.get("note_id")).longValue();
+                NoteFeatures nf = features.get(noteId);
+                if (nf != null) {
+                    nf.collectionCount = ((Number) row.get("favorite_count")).longValue();
+                }
+            }
+
+            for (Long noteId : features.keySet()) {
+                Long likeCount = stringRedisTemplate.opsForSet().size("myxhs:like:note:" + noteId);
+                features.get(noteId).likeCount = likeCount != null ? likeCount : 0L;
+            }
         } catch (Exception e) {
-            log.debug("[推荐-特征] 补充互动数据失败（降级跳过）", e);
+            throw new IllegalStateException("补充互动数据失败", e);
         }
     }
 
@@ -411,12 +416,7 @@ public class RecommendComputeJob {
 
     private void doRefreshHotPool() {
         // 前置检查
-        try {
-            jdbcTemplate.queryForList("SELECT 1 FROM t_user_behavior LIMIT 1");
-        } catch (Exception e) {
-            log.info("[推荐-热门] 源表 t_user_behavior 不可用，跳过更新(data sync not ready)");
-            return;
-        }
+        jdbcTemplate.queryForList("SELECT 1 FROM t_user_behavior LIMIT 1");
         long start = System.currentTimeMillis();
         // ... rest of method        long start = System.currentTimeMillis();
 
@@ -457,7 +457,7 @@ public class RecommendComputeJob {
                     hotNotes.isEmpty() ? 0 : hotNotes.get(0).get("hot_score"),
                     cost);
         } catch (Exception e) {
-            log.error("[推荐-热门] 热门池更新失败", e);
+            throw new IllegalStateException("热门池更新失败", e);
         }
     }
 }

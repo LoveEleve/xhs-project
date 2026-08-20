@@ -59,13 +59,15 @@
 - nightly 100 条首跑已归档；
 - 主要理论与面试资产已成型；
 - 当前默认模型为 `mimo-v2.5-pro`，走 `zen/go/v1` 通道。
+- Langfuse trace 已接通，可展示 Agent 的 run / generation / tool / answer 链路。
+- Temporal PoC 已跑通审批型长任务的 worker kill / restart / approve / complete 闭环。
 
 ### 3.2 不应夸大的
 
 - 100% 通过率不等于 100% 生产正确率；
 - regression 完成率不是 100%，而是 95%；
 - `PARTIAL/BUDGET_STEPS` 是复杂样本的允许观察点，不应隐藏；
-- `dlq.redeliver` 已完成真实 Dashboard 查询与正式 batch 重投请求验证；fake HTTP 测试只证明契约，真实远端返回 `CR_LATER`；深查确认现有 113 条 DLQ 样本引用的 `skuId=6/999` 均已不存在，因此尚未证明成功消费；
+- `dlq.redeliver` 已完成真实 E2E 验证（2026-08-19）：AI Agent 调用 `mqDlqQuery` → 提取 `ORIGIN_MESSAGE_ID` → HITL 审批 → `dlq.redeliver` → **`CR_SUCCESS`**（消费成功）。此前历史 DLQ 样本（`skuId=6/999`）均返回 `CR_LATER`，本次新造合法消息首次拿到 `CR_SUCCESS`；
 - 远端 CI 未真实验收，不应说 CI 已全面跑绿；
 - 当前没有 Docker 部署交付，不应扩讲部署完成。
 
@@ -79,8 +81,8 @@
 | 自动化测试 | ✅ | tools/app/mcp 测试已回归通过 |
 | 真模型验证 | ✅ | eval-gate、sampled regression、nightly 均有真实模型验证 |
 | nightly 验证 | ✅ | smoke 20 + regression 80 已完成首跑 |
-| 真实外部 E2E | ⚠️ 部分 | 远端 Dashboard/CSRF/DLQ 查询/正式 batch 重投已真实打通；现有 DLQ 样本引用已不存在的 SKU，返回 `CR_LATER`，未证明成功消费 |
-| 规划中 | ✅ | T14 对照、Langfuse/OTel、Temporal、长期 Memory、A2A |
+| 真实外部 E2E | ✅ | 2026-08-19 首次跑通：Agent → mqDlqQuery → HITL 审批 → dlq.redeliver → CR_SUCCESS（消费成功）|
+| 规划中 | ✅ | T14 对照、长期 Memory 扩展、A2A |
 
 ---
 
@@ -88,10 +90,10 @@
 
 当前真正剩下的，不是核心功能缺失，而是外部边界与平台化增强：
 
-1. `dlq.redeliver` 已真实连通 Dashboard 并完成 DLQ 查询与正式 batch 重投请求；现有 113 条 DLQ 样本均引用已不存在的 `skuId=6/999`，远端返回 `CR_LATER`，尚未证明消费者成功消费；
-2. Langfuse/OTel 级别的 LLM 可观测尚未接入；
-3. Temporal 级 Durable 平台尚未做对照 PoC；
-4. 长期 Memory、A2A、跨系统 Agent 协作都还不是当前收官前置项；
+1. `dlq.redeliver` 已真实跑通 E2E（2026-08-19）：Agent → mqDlqQuery → ORIGIN_MESSAGE_ID → HITL 审批 → dlq.redeliver → **CR_SUCCESS**；
+2. Langfuse/OTel 级别的 LLM 可观测已接通（可展示 run/generation/tool/answer trace），但仍有进一步美化空间；
+3. Temporal PoC 已完成审批型长任务的 kill/restart/approve/complete 闭环，对照实验已具备；
+4. 长期 Memory 扩展、A2A、跨系统 Agent 协作都还不是当前收官前置项；
 5. 部署/CI 仍不在本轮主线范围内。
 
 ---

@@ -6,6 +6,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.ComponentScan;
 
 @SpringBootApplication
+@org.springframework.cloud.openfeign.EnableFeignClients(basePackages = "com.myxhs.analytics.feign")
 @ComponentScan(basePackages = {"com.myxhs.analytics", "com.myxhs.common"})
 @MapperScan("com.myxhs.analytics.mapper")
 public class AnalyticsApplication {

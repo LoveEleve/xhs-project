@@ -1,0 +1,181 @@
+[
+    {
+        "Name": "host",
+        "Id": "69303899f57d4447764f56f161dceb184df134844eb038322985183a4f6b4dff",
+        "Created": "2026-07-09T20:14:03.708480531+08:00",
+        "Scope": "local",
+        "Driver": "host",
+        "EnableIPv4": true,
+        "EnableIPv6": false,
+        "IPAM": {
+            "Driver": "default",
+            "Options": null,
+            "Config": null
+        },
+        "Internal": false,
+        "Attachable": false,
+        "Ingress": false,
+        "ConfigFrom": {
+            "Network": ""
+        },
+        "ConfigOnly": false,
+        "Containers": {
+            "0cc2dddd85f6f1d5ed1d98781a098c4db3078ca608f8df0ab45f37a1fb7fefa9": {
+                "Name": "my-xhs-grafana",
+                "EndpointID": "6ba20af87ffe0c93e3a8961f379e567f5f8aa358c87cf8ea7df87a58e3a4b785",
+                "MacAddress": "",
+                "IPv4Address": "",
+                "IPv6Address": ""
+            },
+            "15ae772066b3fd47c3c399b95fc8cf4341fa4152f651a94d1a90adad810e3f47": {
+                "Name": "my-xhs-kibana",
+                "EndpointID": "3b1dfe65da14af20196b2bc4a584d18455910ebe77bc4f5ca3a47979ce36ed19",
+                "MacAddress": "",
+                "IPv4Address": "",
+                "IPv6Address": ""
+            },
+            "18328386099a2137435182070176040972718351b5ad1e2f3c8f73ecdbfd0fa7": {
+                "Name": "my-xhs-mq-broker",
+                "EndpointID": "8675fb1917db0bf7c688d5e3d66f9ac144b2e9ffd73a3d8d8757c1a678035408",
+                "MacAddress": "",
+                "IPv4Address": "",
+                "IPv6Address": ""
+            },
+            "1a522be0e4212f4880ec2280aef6d3c0219fe979a356cf42a747d5c27de4f1ef": {
+                "Name": "my-xhs-mq-namesrv",
+                "EndpointID": "ac49b456a9c8d3ae6e3b5bb5588e6abf2a10db42ccab0867b8985728b3ddcfba",
+                "MacAddress": "",
+                "IPv4Address": "",
+                "IPv6Address": ""
+            },
+            "1e81e90ef3d115afc9e70953b5f3d6b1569dddefa8184c703606ef8a3533fb4a": {
+                "Name": "my-xhs-rocketmq-dashboard",
+                "EndpointID": "7de0e555fce7d3663312548f3c90ddecb1b3773d79fe4122a93fc0480d0a69bd",
+                "MacAddress": "",
+                "IPv4Address": "",
+                "IPv6Address": ""
+            },
+            "21c8021a9a876a52eeec201cf4e2b16a956fc17db36bfe0beda99c5d7e0670e8": {
+                "Name": "my-xhs-victoria-metrics",
+                "EndpointID": "464b00ebf57ea36ab047b359520a7dc339b8ff6832c5183896d0d5046e87d0b5",
+                "MacAddress": "",
+                "IPv4Address": "",
+                "IPv6Address": ""
+            },
+            "322f22bf645c318f33b4f3b3d88f409086cd2517699133f643d6b06a1530cdc6": {
+                "Name": "my-xhs-skywalking-ui",
+                "EndpointID": "6d391dc882a075af36577903d151fcb3aed3229f3e043476d755a4276a946be2",
+                "MacAddress": "",
+                "IPv4Address": "",
+                "IPv6Address": ""
+            },
+            "348f9e5ea94b2f296ca32f417ed6d87fc223c8aa34d1b0ad0c557a1aa83b4e5b": {
+                "Name": "my-xhs-logstash",
+                "EndpointID": "a698bde23936b07af6c3c9bd03503b490d2dff788d87bd661da437af878d9814",
+                "MacAddress": "",
+                "IPv4Address": "",
+                "IPv6Address": ""
+            },
+            "37f930ef81f0b1cf1698f690b69f818b0f6a0756ada8495e6d6c466ca885c2b9": {
+                "Name": "my-xhs-elasticsearch",
+                "EndpointID": "9b28abb6c9b580d458dfa841847c514b0c64d911f7c722bdd79cc8641d6f255b",
+                "MacAddress": "",
+                "IPv4Address": "",
+                "IPv6Address": ""
+            },
+            "607fcd6be7177c493a07865ae29ccf20dac6a92b33d3382e3479040d87bdd05b": {
+                "Name": "my-xhs-redis",
+                "EndpointID": "ae0dd6a16cad87e930d22460e55bb07417e68c2abf65a88f92933c8fa0672c6c",
+                "MacAddress": "",
+                "IPv4Address": "",
+                "IPv6Address": ""
+            },
+            "659c6bfd4c917c048fbc44a3cf0cce42cec1fd3e7d5f0326ddeabf230610681f": {
+                "Name": "my-xhs-nacos",
+                "EndpointID": "d0e8e506bb406136edbb786b5961af9b6ca1219db0a65dc15beb842ab30ed0de",
+                "MacAddress": "",
+                "IPv4Address": "",
+                "IPv6Address": ""
+            },
+            "685a5b04f28b90b6fa3749e950d676e71f39e46f2d5f4dbbefd371a52ff27219": {
+                "Name": "my-xhs-filebeat",
+                "EndpointID": "3c81a8fa99dd78663ad3573b25a98843f158daceea989919154a3e0e2811ad56",
+                "MacAddress": "",
+                "IPv4Address": "",
+                "IPv6Address": ""
+            },
+            "6c18b7b150cfcabc809b9a118885d052a6120ac380a93671eae245cf2e18da5c": {
+                "Name": "my-xhs-skywalking-oap",
+                "EndpointID": "c297e465c4aa454d4a31f103968475a86cb500c12185b2edc7e65d32a408ec14",
+                "MacAddress": "",
+                "IPv4Address": "",
+                "IPv6Address": ""
+            },
+            "967f40d3edf27562e7f357d59724188bd4efab1b89427082a58455b987acf9e4": {
+                "Name": "my-xhs-canal",
+                "EndpointID": "909197a5e791ff3cd9c5e2b2c01c432aacdab619395c06fbfed628884888ead8",
+                "MacAddress": "",
+                "IPv4Address": "",
+                "IPv6Address": ""
+            },
+            "9b7b0969c2490c975be41ddbc81077d9a14bf41574e403469c2fe7037ef33832": {
+                "Name": "my-xhs-redis-slave",
+                "EndpointID": "ba24bd41848f69e6142ba1b238f04a74aedc686b7b00e5a2c47e1b8acf06f86d",
+                "MacAddress": "",
+                "IPv4Address": "",
+                "IPv6Address": ""
+            },
+            "a5a853631adbcc460e91c23e9e532aac5d25be0bfcf03d7c405c1db25649e606": {
+                "Name": "my-xhs-mysql",
+                "EndpointID": "fd91203553d4aa7942b3649fd045f2c1845e283d96f9d1f59d4a25277a2b04c7",
+                "MacAddress": "",
+                "IPv4Address": "",
+                "IPv6Address": ""
+            },
+            "b54763dada5d13925670ac6de9670bcf27ff65a75fc97b65fecea80cdd25b101": {
+                "Name": "my-xhs-xxl-job-admin",
+                "EndpointID": "8d703e1388d36424fcaa0dd51370d993dd97ade788f3abb2f6d21e6d4d031919",
+                "MacAddress": "",
+                "IPv4Address": "",
+                "IPv6Address": ""
+            },
+            "bd848006fd9acb8efbf613eac921b0214e9cf6cd6caf3e8e07aab20da9d822de": {
+                "Name": "my-xhs-mysql-slave",
+                "EndpointID": "55a746f2d31e1516a61a193b4054bbc5138757e197184e1237a038e1d8754288",
+                "MacAddress": "",
+                "IPv4Address": "",
+                "IPv6Address": ""
+            },
+            "c156ec1fe9970f3748156055f6b0b702e56987b2ccc64df81950306bdccd6139": {
+                "Name": "my-xhs-sentinel-dashboard",
+                "EndpointID": "1e45219308afff100a4a96578e40a2fd541367b66b9afe6a7352ade0db18ea14",
+                "MacAddress": "",
+                "IPv4Address": "",
+                "IPv6Address": ""
+            },
+            "c87d1f400a4fa5608781e7a1f6fa067a0cda953d70d9294b604b5637529cb2a4": {
+                "Name": "my-xhs-redis-sentinel",
+                "EndpointID": "37fed315a35651a9420a1fd22eb4aa0a4650635c40a674341b869a1ad329104d",
+                "MacAddress": "",
+                "IPv4Address": "",
+                "IPv6Address": ""
+            },
+            "dbb2a5a05910afafd1a32ffbb0a315570fe001553b0ca9b70805389b50325df0": {
+                "Name": "my-xhs-es-skywalking",
+                "EndpointID": "c2b41cc4dc31b2b8465af454485b954deab9a094bf4734333e07febc0014eccd",
+                "MacAddress": "",
+                "IPv4Address": "",
+                "IPv6Address": ""
+            },
+            "e9105a884f354257f47ccb3edb9ab8542b0b8d44e3423741d6683e4a9d4551b5": {
+                "Name": "my-xhs-prometheus",
+                "EndpointID": "d8854d7335e69f150026813419cfcf7c28dae49eee4c384993211321c3ee8ad3",
+                "MacAddress": "",
+                "IPv4Address": "",
+                "IPv6Address": ""
+            }
+        },
+        "Options": {},
+        "Labels": {}
+    }
+]

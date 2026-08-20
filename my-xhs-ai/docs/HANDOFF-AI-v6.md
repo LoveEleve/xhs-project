@@ -210,8 +210,8 @@ MiMo V2.5 Pro 下：
 - 订单查询是 16 节点分片扫描。
 - 漏斗浏览使用 `t_product_behavior`，不是 `t_counter`。
 - 内容互动部分场景存在 0 数据/采集口径限制。
-- `dlq.redeliver` 真实 RocketMQ E2E 仍受 `ORIGIN_MESSAGE_ID` 查询接口 NPE 阻塞。
-- HITL 控制流、审批、resume、审计由 fake/单测验证，但真实死信重投未完全闭环。
+- `dlq.redeliver` 真实 E2E 已跑通（2026-08-19）：Agent → mqDlqQuery → ORIGIN_MESSAGE_ID → HITL 审批 → dlq.redeliver → **CR_SUCCESS**。此前 `ORIGIN_MESSAGE_ID` 查询接口 NPE 问题已绕过（改用 `queryDlqMessageByConsumerGroup.query` + keyword 过滤）。
+- HITL 控制流、审批、resume、审计已由真实 E2E 验证（非 fake）。
 - Docker 部署不在当前任务范围。
 - 远端 CI 未真实验收，不要宣称 CI 已跑绿。
 

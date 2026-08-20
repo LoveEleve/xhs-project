@@ -117,7 +117,12 @@ public class RedisOperator {
      */
     public String getString(String key) {
         try {
-            return stringRedisTemplate.opsForValue().get(key);
+            String v = stringRedisTemplate.opsForValue().get(key);
+            // T-019: 兼容 Jackson 序列化写入的带引号值（set 走 GenericJackson2JsonRedisSerializer）
+            if (v != null && v.length() >= 2 && v.startsWith("\"") && v.endsWith("\"")) {
+                v = v.substring(1, v.length() - 1);
+            }
+            return v;
         } catch (Exception e) {
             if (isConnectionFailure(e)) {
                 throw new RedisUnavailableException("Redis getString 失败: key=" + key, e);

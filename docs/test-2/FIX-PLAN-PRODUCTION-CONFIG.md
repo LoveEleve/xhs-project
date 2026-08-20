@@ -213,7 +213,7 @@
 
 ### P-D20 修复 xxl-job 调度错配（order/coupon/cart/home/search 任务全失效）
 - **改动**：
-  1. xxl-job-admin 建执行器组：my-xhs-order(9991)/my-xhs-coupon(9993)/my-xhs-cart(9995)/my-xhs-home(9997)/my-xhs-search(9994)（端口以实际为准）。
+  1. xxl-job-admin 建执行器组：my-xhs-order(9991)/my-xhs-cart(9993)/my-xhs-coupon(9995)/my-xhs-home(9994)/my-xhs-search(9997)（端口与各服务 application.yml 实测一致）。
   2. 修正任务 job_group：orderCloseJob/localMessageRetryJob/deadLetterScanJob/orderMappingRepairJob→order 组；inventoryReconcileJob→inventory 组(4)；couponReconcileJob→coupon 组。
   3. 补建缺失任务：couponExpireJob、cartReconcileJob、feedCleanupJob、recommendFeatureJob/recommendHotPoolJob/recommendItemCFJob。
   4. 逐个手动触发验证。

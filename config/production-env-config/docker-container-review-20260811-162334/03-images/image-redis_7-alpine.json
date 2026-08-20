@@ -1,0 +1,65 @@
+[
+    {
+        "Id": "sha256:487efc0616382465781b8fdc3d6d1db449e6fd80ae23bf48432a2da6b6929908",
+        "RepoTags": [
+            "redis:7-alpine"
+        ],
+        "RepoDigests": [
+            "redis@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99"
+        ],
+        "Parent": "",
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2026-05-07T17:34:49.043581139Z",
+        "DockerVersion": "",
+        "Author": "",
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 39082723,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/data/docker/lib/overlay2/dcd1757833dd8986223b2327bd609717060a7eb7f5d3aacdd4863e079398b624/diff:/data/docker/lib/overlay2/c0abdc8593f0d14de218c58903034d7a83e2132ef3e4c6f9b9a0e966c53d287e/diff:/data/docker/lib/overlay2/f214968468d4a5e46b57b522031592b05c208d1aa39dfae24b88fe0b7c93cd33/diff:/data/docker/lib/overlay2/df0ff1c9e70f015d4dea35b80dad2080af9881b23ebe7333ae9ec90ece1ad113/diff:/data/docker/lib/overlay2/d905c69bb62bdecf11f88ea083853a5c447ba28db369d006b0b773d6006815c6/diff:/data/docker/lib/overlay2/024d53945596fe697770f8d6a1dac48e2da43f0468268d8b3b365ddf2df27dad/diff",
+                "MergedDir": "/data/docker/lib/overlay2/88dd08c4d69dc97a6a805758b969e0777438fc314c59c80fea8fc9aff015572d/merged",
+                "UpperDir": "/data/docker/lib/overlay2/88dd08c4d69dc97a6a805758b969e0777438fc314c59c80fea8fc9aff015572d/diff",
+                "WorkDir": "/data/docker/lib/overlay2/88dd08c4d69dc97a6a805758b969e0777438fc314c59c80fea8fc9aff015572d/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:7211d01aba8fa2e9eb71ad34395cd313df5fc51a6b69b92d2dfad32cc37759cb",
+                "sha256:464ae268d67e8620c883433fc41b1d0af72a42f52c866b5b907811bad2f80b5d",
+                "sha256:de586173580d4aaceb1fa1053d7774d9d5c5a5bc1b1466c86631aedb4e2fd568",
+                "sha256:badf1a5ec7982d0556cdde8b14d51959eab5b80181c20d9ce8a9c7c5f3929000",
+                "sha256:95ed7c24c8c70ba73b3e5efa6c1a3b13511829a35c60f2f3c6f11d8dd429a79c",
+                "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
+                "sha256:a947ab14a6802f87f4162b4e15da3d5ffb2603c26492108112938db3f75717fc"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        },
+        "Config": {
+            "Cmd": [
+                "redis-server"
+            ],
+            "Entrypoint": [
+                "docker-entrypoint.sh"
+            ],
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "REDIS_VERSION=7.4.9"
+            ],
+            "ExposedPorts": {
+                "6379/tcp": {}
+            },
+            "Labels": null,
+            "OnBuild": null,
+            "User": "",
+            "Volumes": {
+                "/data": {}
+            },
+            "WorkingDir": "/data"
+        }
+    }
+]

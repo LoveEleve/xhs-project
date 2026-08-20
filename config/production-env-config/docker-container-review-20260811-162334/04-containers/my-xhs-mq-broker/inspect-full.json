@@ -1,0 +1,349 @@
+[
+    {
+        "Id": "18328386099a2137435182070176040972718351b5ad1e2f3c8f73ecdbfd0fa7",
+        "Created": "2026-08-08T14:01:41.367484042Z",
+        "Path": "./docker-entrypoint.sh",
+        "Args": [
+            "sh",
+            "mqbroker",
+            "-c",
+            "/home/rocketmq/rocketmq-5.1.4/conf/broker.conf"
+        ],
+        "State": {
+            "Status": "running",
+            "Running": true,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 3322928,
+            "ExitCode": 0,
+            "Error": "",
+            "StartedAt": "2026-08-08T14:01:41.657841813Z",
+            "FinishedAt": "0001-01-01T00:00:00Z",
+            "Health": {
+                "Status": "healthy",
+                "FailingStreak": 0,
+                "Log": [
+                    {
+                        "Start": "2026-08-11T16:21:53.302919012+08:00",
+                        "End": "2026-08-11T16:21:53.338057462+08:00",
+                        "ExitCode": 0,
+                        "Output": "1\n59791\n"
+                    },
+                    {
+                        "Start": "2026-08-11T16:22:23.338480075+08:00",
+                        "End": "2026-08-11T16:22:23.375713435+08:00",
+                        "ExitCode": 0,
+                        "Output": "1\n59798\n"
+                    },
+                    {
+                        "Start": "2026-08-11T16:22:53.376287687+08:00",
+                        "End": "2026-08-11T16:22:53.415019671+08:00",
+                        "ExitCode": 0,
+                        "Output": "1\n59805\n"
+                    },
+                    {
+                        "Start": "2026-08-11T16:23:23.415409769+08:00",
+                        "End": "2026-08-11T16:23:23.451443636+08:00",
+                        "ExitCode": 0,
+                        "Output": "1\n59812\n"
+                    },
+                    {
+                        "Start": "2026-08-11T16:23:53.452076971+08:00",
+                        "End": "2026-08-11T16:23:53.493770939+08:00",
+                        "ExitCode": 0,
+                        "Output": "1\n59819\n"
+                    }
+                ]
+            }
+        },
+        "Image": "sha256:f14b643f5d86369b50362c0039938cf0346f451b559d95f4f2c530083f9e579f",
+        "ResolvConfPath": "/data/docker/lib/containers/18328386099a2137435182070176040972718351b5ad1e2f3c8f73ecdbfd0fa7/resolv.conf",
+        "HostnamePath": "/data/docker/lib/containers/18328386099a2137435182070176040972718351b5ad1e2f3c8f73ecdbfd0fa7/hostname",
+        "HostsPath": "/data/docker/lib/containers/18328386099a2137435182070176040972718351b5ad1e2f3c8f73ecdbfd0fa7/hosts",
+        "LogPath": "",
+        "Name": "/my-xhs-mq-broker",
+        "RestartCount": 0,
+        "Driver": "overlay2",
+        "Platform": "linux",
+        "MountLabel": "",
+        "ProcessLabel": "",
+        "AppArmorProfile": "",
+        "ExecIDs": null,
+        "HostConfig": {
+            "Binds": [
+                "/data/workspace/my-xhs-deploy-zip/config/rocketmq/broker.conf:/home/rocketmq/rocketmq-5.1.4/conf/broker.conf:rw",
+                "/opt/kona-jdk17:/opt/kona-jdk17:ro"
+            ],
+            "ContainerIDFile": "",
+            "LogConfig": {
+                "Type": "journald",
+                "Config": {}
+            },
+            "NetworkMode": "host",
+            "PortBindings": {},
+            "RestartPolicy": {
+                "Name": "unless-stopped",
+                "MaximumRetryCount": 0
+            },
+            "AutoRemove": false,
+            "VolumeDriver": "",
+            "VolumesFrom": null,
+            "ConsoleSize": [
+                0,
+                0
+            ],
+            "CapAdd": null,
+            "CapDrop": null,
+            "CgroupnsMode": "private",
+            "Dns": null,
+            "DnsOptions": null,
+            "DnsSearch": null,
+            "ExtraHosts": [],
+            "GroupAdd": null,
+            "IpcMode": "private",
+            "Cgroup": "",
+            "Links": null,
+            "OomScoreAdj": 0,
+            "PidMode": "",
+            "Privileged": false,
+            "PublishAllPorts": false,
+            "ReadonlyRootfs": false,
+            "SecurityOpt": null,
+            "UTSMode": "",
+            "UsernsMode": "",
+            "ShmSize": 67108864,
+            "Runtime": "runc",
+            "Isolation": "",
+            "CpuShares": 0,
+            "Memory": 805306368,
+            "NanoCpus": 500000000,
+            "CgroupParent": "",
+            "BlkioWeight": 0,
+            "BlkioWeightDevice": null,
+            "BlkioDeviceReadBps": null,
+            "BlkioDeviceWriteBps": null,
+            "BlkioDeviceReadIOps": null,
+            "BlkioDeviceWriteIOps": null,
+            "CpuPeriod": 0,
+            "CpuQuota": 0,
+            "CpuRealtimePeriod": 0,
+            "CpuRealtimeRuntime": 0,
+            "CpusetCpus": "",
+            "CpusetMems": "",
+            "Devices": null,
+            "DeviceCgroupRules": null,
+            "DeviceRequests": null,
+            "MemoryReservation": 671088640,
+            "MemorySwap": 1610612736,
+            "MemorySwappiness": null,
+            "OomKillDisable": null,
+            "PidsLimit": null,
+            "Ulimits": [
+                {
+                    "Name": "nofile",
+                    "Hard": 1048576,
+                    "Soft": 1048576
+                }
+            ],
+            "CpuCount": 0,
+            "CpuPercent": 0,
+            "IOMaximumIOps": 0,
+            "IOMaximumBandwidth": 0,
+            "Mounts": [
+                {
+                    "Type": "volume",
+                    "Source": "my-xhs-deploy-zip_mq-broker-logs",
+                    "Target": "/home/rocketmq/logs",
+                    "VolumeOptions": {}
+                },
+                {
+                    "Type": "volume",
+                    "Source": "my-xhs-deploy-zip_mq-broker-store",
+                    "Target": "/home/rocketmq/store",
+                    "VolumeOptions": {}
+                }
+            ],
+            "MaskedPaths": [
+                "/proc/asound",
+                "/proc/acpi",
+                "/proc/interrupts",
+                "/proc/kcore",
+                "/proc/keys",
+                "/proc/latency_stats",
+                "/proc/timer_list",
+                "/proc/timer_stats",
+                "/proc/sched_debug",
+                "/proc/scsi",
+                "/sys/firmware",
+                "/sys/devices/virtual/powercap"
+            ],
+            "ReadonlyPaths": [
+                "/proc/bus",
+                "/proc/fs",
+                "/proc/irq",
+                "/proc/sys",
+                "/proc/sysrq-trigger"
+            ]
+        },
+        "GraphDriver": {
+            "Data": {
+                "ID": "18328386099a2137435182070176040972718351b5ad1e2f3c8f73ecdbfd0fa7",
+                "LowerDir": "/data/docker/lib/overlay2/fcbb302dceaee94369099349a7d74ec8c205626c03e445cbc661dffeb3a964cc-init/diff:/data/docker/lib/overlay2/cee544999c62d489018465462ac87391462d8780544204a59321fb5cb5a3ec06/diff:/data/docker/lib/overlay2/429c8dbf81b06fba9c42aa6ad7eca00d5ab1cb5023ad3ae43cd367061b49f5a1/diff:/data/docker/lib/overlay2/d48dbaabee90bc95e22a0784102aa175fd524d232be1aa3b934644478d505c4b/diff:/data/docker/lib/overlay2/55bbbe1ba7df46ad784d123845810f7fdbd0f2670f3c32bd98df60a16a172eaf/diff:/data/docker/lib/overlay2/b856b4ecfa30e33c75eeb86ec8259ffdef275b759a455691939351db49ff511a/diff:/data/docker/lib/overlay2/0cdb7d49cfb4231508cf66662459ee73480ef69f32044021bb79349f1e27be84/diff:/data/docker/lib/overlay2/5b731089b62c041260be567d35d0ab1f1d490b243f9bd33cc99785615b23ab96/diff:/data/docker/lib/overlay2/18babfbac29a89312b88ce796c33824715b564517a76c824345f2c456a679110/diff",
+                "MergedDir": "/data/docker/lib/overlay2/fcbb302dceaee94369099349a7d74ec8c205626c03e445cbc661dffeb3a964cc/merged",
+                "UpperDir": "/data/docker/lib/overlay2/fcbb302dceaee94369099349a7d74ec8c205626c03e445cbc661dffeb3a964cc/diff",
+                "WorkDir": "/data/docker/lib/overlay2/fcbb302dceaee94369099349a7d74ec8c205626c03e445cbc661dffeb3a964cc/work"
+            },
+            "Name": "overlay2"
+        },
+        "Mounts": [
+            {
+                "Type": "bind",
+                "Source": "/data/workspace/my-xhs-deploy-zip/config/rocketmq/broker.conf",
+                "Destination": "/home/rocketmq/rocketmq-5.1.4/conf/broker.conf",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/opt/kona-jdk17",
+                "Destination": "/opt/kona-jdk17",
+                "Mode": "ro",
+                "RW": false,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "volume",
+                "Name": "my-xhs-deploy-zip_mq-broker-logs",
+                "Source": "/data/docker/lib/volumes/my-xhs-deploy-zip_mq-broker-logs/_data",
+                "Destination": "/home/rocketmq/logs",
+                "Driver": "local",
+                "Mode": "z",
+                "RW": true,
+                "Propagation": ""
+            },
+            {
+                "Type": "volume",
+                "Name": "my-xhs-deploy-zip_mq-broker-store",
+                "Source": "/data/docker/lib/volumes/my-xhs-deploy-zip_mq-broker-store/_data",
+                "Destination": "/home/rocketmq/store",
+                "Driver": "local",
+                "Mode": "z",
+                "RW": true,
+                "Propagation": ""
+            }
+        ],
+        "Config": {
+            "Hostname": "VM-247-89-tencentos",
+            "Domainname": "",
+            "User": "root",
+            "AttachStdin": false,
+            "AttachStdout": true,
+            "AttachStderr": true,
+            "ExposedPorts": {
+                "10909/tcp": {},
+                "10911/tcp": {},
+                "10912/tcp": {},
+                "9876/tcp": {}
+            },
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "JAVA_HOME=/opt/kona-jdk17",
+                "JAVA_OPT_EXT=-server -Xms256m -Xmx512m -Xmn128m",
+                "PATH=/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "LANG=en_US.UTF-8",
+                "LANGUAGE=en_US:en",
+                "LC_ALL=en_US.UTF-8",
+                "JAVA_VERSION=jdk8u372-b07",
+                "ROCKETMQ_VERSION=5.1.4",
+                "ROCKETMQ_HOME=/home/rocketmq/rocketmq-5.1.4"
+            ],
+            "Cmd": [
+                "sh",
+                "mqbroker",
+                "-c",
+                "/home/rocketmq/rocketmq-5.1.4/conf/broker.conf"
+            ],
+            "Healthcheck": {
+                "Test": [
+                    "CMD-SHELL",
+                    "pgrep -f mqbroker || exit 1"
+                ],
+                "Interval": 30000000000,
+                "Timeout": 10000000000,
+                "StartPeriod": 60000000000,
+                "Retries": 3
+            },
+            "Image": "apache/rocketmq:5.1.4",
+            "Volumes": null,
+            "WorkingDir": "/home/rocketmq/rocketmq-5.1.4/bin",
+            "Entrypoint": [
+                "./docker-entrypoint.sh"
+            ],
+            "OnBuild": null,
+            "Labels": {
+                "com.docker.compose.config-hash": "5815e747626687894930ae7914a0853a09133d90184a076fc8702b7ceb1f5b29",
+                "com.docker.compose.container-number": "1",
+                "com.docker.compose.depends_on": "rocketmq-namesrv:service_started:false",
+                "com.docker.compose.image": "sha256:f14b643f5d86369b50362c0039938cf0346f451b559d95f4f2c530083f9e579f",
+                "com.docker.compose.oneoff": "False",
+                "com.docker.compose.project": "my-xhs-deploy-zip",
+                "com.docker.compose.project.config_files": "/data/workspace/my-xhs-deploy-zip/docker-compose.yml",
+                "com.docker.compose.project.working_dir": "/data/workspace/my-xhs-deploy-zip",
+                "com.docker.compose.service": "rocketmq-broker",
+                "com.docker.compose.version": "2.29.2",
+                "org.label-schema.build-date": "20201113",
+                "org.label-schema.license": "GPLv2",
+                "org.label-schema.name": "CentOS Base Image",
+                "org.label-schema.schema-version": "1.0",
+                "org.label-schema.vendor": "CentOS",
+                "org.opencontainers.image.created": "2020-11-13 00:00:00+00:00",
+                "org.opencontainers.image.licenses": "GPL-2.0-only",
+                "org.opencontainers.image.title": "CentOS Base Image",
+                "org.opencontainers.image.vendor": "CentOS"
+            }
+        },
+        "NetworkSettings": {
+            "Bridge": "",
+            "SandboxID": "dd69f549c74da4b5cf4f8b068b7f8e0661568778ab8dc60b7819b342558095b1",
+            "SandboxKey": "/var/run/docker/netns/default",
+            "Ports": {},
+            "HairpinMode": false,
+            "LinkLocalIPv6Address": "",
+            "LinkLocalIPv6PrefixLen": 0,
+            "SecondaryIPAddresses": null,
+            "SecondaryIPv6Addresses": null,
+            "EndpointID": "",
+            "Gateway": "",
+            "GlobalIPv6Address": "",
+            "GlobalIPv6PrefixLen": 0,
+            "IPAddress": "",
+            "IPPrefixLen": 0,
+            "IPv6Gateway": "",
+            "MacAddress": "",
+            "Networks": {
+                "host": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": null,
+                    "MacAddress": "",
+                    "DriverOpts": null,
+                    "GwPriority": 0,
+                    "NetworkID": "69303899f57d4447764f56f161dceb184df134844eb038322985183a4f6b4dff",
+                    "EndpointID": "8675fb1917db0bf7c688d5e3d66f9ac144b2e9ffd73a3d8d8757c1a678035408",
+                    "Gateway": "",
+                    "IPAddress": "",
+                    "IPPrefixLen": 0,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "DNSNames": null
+                }
+            }
+        }
+    }
+]

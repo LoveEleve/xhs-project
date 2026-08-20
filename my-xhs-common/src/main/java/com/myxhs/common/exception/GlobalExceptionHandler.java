@@ -18,6 +18,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.stream.Collectors;
@@ -103,6 +105,17 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * T-021: 缺少必填请求头（如 X-User-Id 被 GatewayAuthTrustFilter 剥离后）→ 400 而非 500
+     */
+    @ExceptionHandler(org.springframework.web.bind.MissingRequestHeaderException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public R<Void> handleMissingRequestHeader(org.springframework.web.bind.MissingRequestHeaderException e,
+                                               HttpServletRequest request) {
+        log.warn("[缺请求头] name={}, uri={}", e.getHeaderName(), request.getRequestURI());
+        return R.fail(ResultCode.PARAM_INVALID, "缺少必要请求头: " + e.getHeaderName());
+    }
+
+    /**
      * @RequestParam / @PathVariable 参数校验失败
      */
     @ExceptionHandler(ConstraintViolationException.class)
@@ -136,6 +149,27 @@ public class GlobalExceptionHandler {
     public R<Void> handleMissingParam(MissingServletRequestParameterException e) {
         log.warn("[缺少参数] {}", e.getMessage());
         return R.fail(ResultCode.PARAM_MISSING, "缺少参数: " + e.getParameterName());
+    }
+
+    /**
+     * T-037 修复（2026-08-13）：文件上传超限（multipart 解析层，先于 service 校验）
+     * 原返回 500（无映射），统一为 40002 参数错误 + 明确文案
+     */
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public R<Void> handleMaxUploadSize(MaxUploadSizeExceededException e) {
+        log.warn("[上传超限] {}", e.getMessage());
+        return R.fail(ResultCode.PARAM_INVALID, "文件大小不能超过5MB");
+    }
+
+    /**
+     * T-037/T-041 修复（2026-08-13）：multipart 解析失败（超限/格式错误）统一 40002
+     */
+    @ExceptionHandler(org.springframework.web.multipart.MultipartException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public R<Void> handleMultipart(MultipartException e) {
+        log.warn("[multipart解析失败] {}", e.getMessage());
+        return R.fail(ResultCode.PARAM_INVALID, "上传文件解析失败或超过大小限制");
     }
 
     /**

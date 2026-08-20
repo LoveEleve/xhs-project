@@ -22,6 +22,7 @@ public final class AgentProfiles {
     private static final Set<String> OPS_TOOLS = Set.of(
             AgentToolNames.HTTP_ERRORS, AgentToolNames.HTTP_LATENCY,
             AgentToolNames.MQ_CONSUMER_LAG, AgentToolNames.MQ_DLQ_BACKLOG,
+            AgentToolNames.MQ_DLQ_QUERY,
             AgentToolNames.MYSQL_REPLICA_LAG, AgentToolNames.MYSQL_DEADLOCKS,
             AgentToolNames.LOG_SEARCH, AgentToolNames.L3_DLQ_REDELIVER);
 

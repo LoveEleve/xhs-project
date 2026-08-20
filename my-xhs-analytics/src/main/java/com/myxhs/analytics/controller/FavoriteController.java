@@ -53,6 +53,8 @@ public class FavoriteController {
     @DeleteMapping
     @RateLimit(windowSeconds = 60, maxRequests = 30, perUser = true, prefix = "social:unfavorite",
             message = "操作过于频繁，请稍后重试")
+    @Idempotent(key = "'unfavorite:' + #userId + ':' + #request.noteId",
+            expireSeconds = 5, message = "请勿重复操作")
     public R<Void> unfavorite(
             @RequestHeader("X-User-Id") Long userId,
             @Valid @RequestBody FavoriteRequest request) {

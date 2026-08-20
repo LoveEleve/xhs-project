@@ -1,0 +1,2 @@
+########## kibana status
+{"status":{"overall":{"level":"unavailable"}}}

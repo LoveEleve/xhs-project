@@ -68,7 +68,8 @@ public class ProductSearchService extends AbstractSearchService {
         try {
             SearchRequest.Builder searchBuilder = new SearchRequest.Builder()
                     .index(productIndexName)
-                    .size(size);
+                    // T-085：多取 1 条判断 hasMore
+                    .size(size + 1);
 
             // 构建查询
             searchBuilder.query(buildProductQuery(request));
@@ -174,8 +175,14 @@ public class ProductSearchService extends AbstractSearchService {
     private SearchResultVO<ProductSearchVO> buildProductResult(SearchResponse<Map> response, int size) {
         List<ProductSearchVO> items = new ArrayList<>();
         String lastSearchAfter = null;
+        boolean hasMore = false;
 
         for (Hit<Map> hit : response.hits().hits()) {
+            // T-085：多取的第 size+1 条仅用于 hasMore 判断
+            if (items.size() >= size) {
+                hasMore = true;
+                break;
+            }
             Map<String, Object> source = hit.source();
             if (source == null) continue;
 
@@ -213,7 +220,7 @@ public class ProductSearchService extends AbstractSearchService {
                 .items(items)
                 .total(total)
                 .searchAfter(lastSearchAfter)
-                .hasMore(items.size() >= size)
+                .hasMore(hasMore)
                 .took(response.took())
                 .build();
     }

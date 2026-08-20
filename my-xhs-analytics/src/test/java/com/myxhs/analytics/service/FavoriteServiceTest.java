@@ -47,6 +47,8 @@ class FavoriteServiceTest {
 
     @Mock
     private ZSetOperations<String, String> zSetOperations;
+    @Mock
+    private com.myxhs.analytics.feign.ContentFeignClient contentFeignClient;
 
     private ObjectMapper objectMapper;
     private FavoriteService favoriteService;
@@ -60,7 +62,10 @@ class FavoriteServiceTest {
         objectMapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
         favoriteService = new FavoriteService(
                 stringRedisTemplate, rocketMQTemplate, objectMapper,
-                favoriteAtomicScript, unfavoriteAtomicScript);
+                favoriteAtomicScript, unfavoriteAtomicScript, contentFeignClient);
+        when(contentFeignClient.batchGetNoteDetail(anyList()))
+                .thenReturn(com.myxhs.common.response.R.ok(
+                        java.util.Map.of(String.valueOf(NOTE_ID), java.util.Map.of())));
     }
 
     // ==================== 收藏 ====================

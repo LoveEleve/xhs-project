@@ -77,12 +77,13 @@ public class PaymentController {
             log.warn("[支付回调] 非内部调用被拒绝: payType={}", payType);
             return "fail";
         }
-        log.info("[支付回调] 收到回调: payType={}, data={}", payType, callbackData);
         // 解析回调数据（不同支付渠道格式不同）
         // Mock 实现：简化解析逻辑
         String paymentNo = extractPaymentNo(callbackData, payType);
         String tradeNo = extractTradeNo(callbackData, payType);
         boolean success = extractPayResult(callbackData, payType);
+        // P2-5: 回调体脱敏，仅记录摘要（原实现打印完整回调体，泄露支付数据）
+        log.info("[支付回调] 收到回调: payType={}, paymentNo={}, success={}, bodySize={}B", payType, paymentNo, success, callbackData.length());
 
         paymentService.handlePayCallback(paymentNo, tradeNo, success);
 
@@ -92,12 +93,21 @@ public class PaymentController {
 
     /**
      * 发起退款
+     * <p>
+     * T-061（2026-08-14）：补 X-Internal-Call 校验——原实现仅 X-User-Id，
+     * 任何已登录用户可对任意订单退款（越权）。退款为资金敏感操作，与 pay 一致要求内部调用。
+     * </p>
      */
     @PostMapping("/refund")
     @RateLimit(prefix = "myxhs:payment:refund", maxRequests = 5, windowSeconds = 60, perUser = true,
                message = "退款频率过高，请稍后再试")
     public R<Void> refund(@Valid @RequestBody RefundRequest request,
-                          @RequestHeader("X-User-Id") Long userId) {
+                          @RequestHeader("X-User-Id") Long userId,
+                          @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
+        if (!isInternalCall(internalCall)) {
+            log.warn("[退款] 非内部调用被拒绝: userId={}, paymentId={}", userId, request.getPaymentId());
+            return R.fail(403, "退款请通过订单服务发起");
+        }
         request.setUserId(userId);
         return paymentService.refund(request);
     }
@@ -113,9 +123,10 @@ public class PaymentController {
             log.warn("[退款回调] 非内部调用被拒绝: payType={}", payType);
             return "fail";
         }
-        log.info("[退款回调] 收到回调: payType={}, data={}", payType, callbackData);
         String refundNo = extractRefundNo(callbackData, payType);
         boolean success = extractRefundResult(callbackData, payType);
+        // P2-5: 回调体脱敏
+        log.info("[退款回调] 收到回调: payType={}, refundNo={}, success={}, bodySize={}B", payType, refundNo, success, callbackData.length());
 
         paymentService.handleRefundCallback(refundNo, success);
 
@@ -124,12 +135,19 @@ public class PaymentController {
 
     /**
      * 查询支付状态
+     * <p>
+     * T-061（2026-08-14）：补 X-Internal-Call 校验——原实现无鉴权，任意可查任意订单支付状态；
+     * 用户面走 /api/order/pay/status/{orderId}（有归属校验），此端点仅 order 服务 Feign 内部调用。
+     * </p>
      */
     @GetMapping("/status/{orderId}")
     public R<PaymentVO> getPaymentStatus(@PathVariable Long orderId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId) {
-        // 用户面应走 /api/order/pay/status/{orderId}（有归属校验），
-        // 此端点主要为 order 服务内部 Feign 调用
+            @RequestHeader(value = "X-User-Id", required = false) Long userId,
+            @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
+        if (!isInternalCall(internalCall)) {
+            log.warn("[支付状态] 非内部调用被拒绝: orderId={}", orderId);
+            return R.fail(403, "仅限内部服务调用");
+        }
         return paymentService.getPaymentStatus(orderId);
     }
 

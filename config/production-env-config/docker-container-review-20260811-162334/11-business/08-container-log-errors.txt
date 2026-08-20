@@ -1,0 +1,77 @@
+my-xhs-canal: error/exception/fail=2 warn=0
+0
+my-xhs-elasticsearch: error/exception/fail=1000 warn=0
+0
+my-xhs-es-skywalking: error/exception/fail=7 warn=4
+my-xhs-filebeat: error/exception/fail=0
+0 warn=0
+0
+my-xhs-grafana: error/exception/fail=0
+0 warn=0
+0
+my-xhs-kibana: error/exception/fail=3 warn=9
+my-xhs-logstash: error/exception/fail=25 warn=15
+my-xhs-mq-broker: error/exception/fail=8 warn=2
+my-xhs-mq-namesrv: error/exception/fail=0
+0 warn=2
+my-xhs-mysql: error/exception/fail=5 warn=47
+my-xhs-mysql-slave: error/exception/fail=4 warn=39
+my-xhs-nacos: error/exception/fail=43 warn=48
+my-xhs-prometheus: error/exception/fail=9 warn=1
+my-xhs-redis: error/exception/fail=0
+0 warn=0
+0
+my-xhs-redis-sentinel: error/exception/fail=6 warn=11
+my-xhs-redis-slave: error/exception/fail=0
+0 warn=0
+0
+my-xhs-rocketmq-dashboard: error/exception/fail=31 warn=28
+my-xhs-sentinel-dashboard: error/exception/fail=796 warn=0
+0
+my-xhs-skywalking-oap: error/exception/fail=10 warn=0
+0
+my-xhs-skywalking-ui: error/exception/fail=27 warn=4
+my-xhs-victoria-metrics: error/exception/fail=0
+0 warn=0
+0
+my-xhs-xxl-job-admin: error/exception/fail=168 warn=25
+########## 具体错误样例(每容器前2条)
+--- my-xhs-es-skywalking (7 条)
+2026-08-08T14:01:51.821309000Z {"@timestamp":"2026-08-08T14:01:51.821Z", "log.level": "INFO", "message":"JVM arguments [-Des.networkaddress.cache.ttl=60, -Des.networkaddress.cache.negative.ttl=10, -Djava.security.manager=allow, -XX:+AlwaysPreTouch, -Xss1m, -Djava.awt.headless=true, -Dfile.encoding=UTF-8, -Djna.nosys=true, -XX:-OmitStackTraceInFastThrow, -Dio.netty.noUnsafe=true, -Dio.netty.noKeySetOptimization=true, -Dio.netty.recycler.maxCapacityPerThread=0, -Dlog4j.shutdownHookEnabled=false, -Dlog4j2.disable.jmx=true, -Dlog4j2.formatMsgNoLookups=true, -Djava.locale.providers=SPI,COMPAT, --add-opens=java.base/java.io=org.elasticsearch.preallocate, -Des.cgroups.hierarchy.override=/, -XX:+UseG1GC, -Djava.io.tmpdir=/tmp/elasticsearch-3575793078297176006, --add-modules=jdk.incubator.vector, -XX:CompileCommand=exclude,org.apache.lucene.util.MSBRadixSorter::computeCommonPrefixLengthAndBuildHistogram, -XX:CompileCommand=exclude,org.apache.lucene.util.RadixSelector::computeCommonPrefixLengthAndBuildHistogram, -XX:+HeapDumpOnOutOfMemoryError, -XX:+ExitOnOutOfMemoryError, -XX:HeapDumpPath=data, -XX:ErrorFile=logs/hs_err_pid%p.log, -Xlog:gc*,gc+age=trace,safepoint:file=logs/gc.log:utctime,level,pid,tags:filecount=32,filesize=64m, -Xms256m, -Xmx768m, -XX:MaxDirectMemorySize=402653184, -XX:G1HeapRegionSize=4m, -XX:InitiatingHeapOccupancyPercent=30, -XX:G1ReservePercent=15, -Des.distribution.type=docker, --module-path=/usr/share/elasticsearch/lib, --add-modules=jdk.net, --add-modules=ALL-MODULE-PATH, -Djdk.module.main=org.elasticsearch.server]", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"main","log.logger":"org.elasticsearch.node.Node","elasticsearch.node.name":"sw-es-node-1","elasticsearch.cluster.name":"my-xhs-sw-es"}
+2026-08-08T14:02:31.121888000Z {"@timestamp":"2026-08-08T14:02:31.121Z", "log.level": "INFO", "message":"adding index template [sw_browser_error_log] for index patterns [sw_browser_error_log-*]", "ecs.version": "1.2.0","service.name":"ES_ECS","event.dataset":"elasticsearch.server","process.thread.name":"elasticsearch[sw-es-node-1][masterService#updateTask][T#1]","log.logger":"org.elasticsearch.cluster.metadata.MetadataIndexTemplateService","elasticsearch.cluster.uuid":"YahefFrXQYeVa7xuyEup5A","elasticsearch.node.id":"NWzQO41-T--s83rVWtFZmg","elasticsearch.node.name":"sw-es-node-1","elasticsearch.cluster.name":"my-xhs-sw-es"}
+--- my-xhs-kibana (3 条)
+2026-08-08T14:02:20.880472000Z [2026-08-08T14:02:20.880+00:00][INFO ][plugins.notifications] Email Service Error: Email connector not specified.
+2026-08-08T14:02:57.172055000Z [2026-08-08T14:02:57.171+00:00][ERROR][elasticsearch-service] Unable to retrieve version information from Elasticsearch nodes. security_exception
+--- my-xhs-logstash (25 条)
+2026-08-08T14:02:13.209429000Z [2026-08-08T14:02:13,209][INFO ][logstash.runner          ] JVM bootstrap flags: [-Xms1g, -Xmx1g, -Djava.awt.headless=true, -Dfile.encoding=UTF-8, -Djruby.compile.invokedynamic=true, -XX:+HeapDumpOnOutOfMemoryError, -Djava.security.egd=file:/dev/urandom, -Dlog4j2.isThreadContextMapInheritable=true, -Dls.cgroup.cpuacct.path.override=/, -Dls.cgroup.cpu.path.override=/, -Xms256m, -Xmx512m, -Djruby.regexp.interruptible=true, -Djdk.io.File.enableADS=true, --add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED, --add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED, --add-exports=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED, --add-exports=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED, --add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED, --add-opens=java.base/java.security=ALL-UNNAMED, --add-opens=java.base/java.io=ALL-UNNAMED, --add-opens=java.base/java.nio.channels=ALL-UNNAMED, --add-opens=java.base/sun.nio.ch=ALL-UNNAMED, --add-opens=java.management/sun.management=ALL-UNNAMED, -Dio.netty.allocator.maxOrder=11]
+2026-08-08T14:02:16.016108000Z [2026-08-08T14:02:16,015][WARN ][deprecation.logstash.codecs.jsonlines] The default value for `decode_size_limit_bytes`, currently at 512Mb, will be lowered in a future version to prevent Out of Memory errors from abnormally large messages or missing delimiters. Please set a value that reflects the largest expected message size (e.g. 20971520 for 20Mb)
+--- my-xhs-mq-broker (8 条)
+2026-08-08T14:01:43.072654000Z 14:01:42,956 |-INFO in org.apache.rocketmq.logging.ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [RocketmqStoreErrorSiftingAppender_inner]
+2026-08-08T14:01:43.072688000Z 14:01:42,956 |-INFO in org.apache.rocketmq.logging.ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [RocketmqStoreErrorSiftingAppender]
+--- my-xhs-mysql (5 条)
+2026-08-09T02:49:41.833470000Z 2026-08-09T02:49:41.833236Z 2571 [Warning] [MY-011809] [Server] Cannot replicate to server with server_uuid='aee3e7e2-9331-11f1-9365-525400d7fee1' because the present server has purged required binary logs. The connecting server needs to replicate the missing transactions from elsewhere, or be replaced by a new server created from a more recent backup. To prevent this error in the future, consider increasing the binary log expiration period on the present server. The missing transactions are '3dc456aa-7b9f-11f1-822d-525400d7fee1:1-274, 3dc78fe8-7b9f-11f1-a092-525400d7fee1:1-955, 3dc78ffe-7b9f-11f1-a2d5-525400d7fee1:1-859347'.
+2026-08-09T02:49:52.769103000Z 2026-08-09T02:49:52.768990Z 2572 [Warning] [MY-011809] [Server] Cannot replicate to server with server_uuid='aee3e7e2-9331-11f1-9365-525400d7fee1' because the present server has purged required binary logs. The connecting server needs to replicate the missing transactions from elsewhere, or be replaced by a new server created from a more recent backup. To prevent this error in the future, consider increasing the binary log expiration period on the present server. The missing transactions are '3dc456aa-7b9f-11f1-822d-525400d7fee1:1-274, 3dc78fe8-7b9f-11f1-a092-525400d7fee1:1-955, 3dc78ffe-7b9f-11f1-a2d5-525400d7fee1:1-859347'.
+--- my-xhs-mysql-slave (4 条)
+2026-08-09T03:00:01.534930000Z 2026-08-09T03:00:01.534808Z 12 [ERROR] [MY-010557] [Repl] Error reading packet from server for channel '': Cannot replicate because the source purged required binary logs. Replicate the missing transactions from elsewhere, or provision a new replica from backup. Consider increasing the source's binary log expiration period. The GTID sets and the missing purged transactions are too long to print in this message. For more information, please see the source's error log or the manual for GTID_SUBTRACT (server_errno=1236)
+2026-08-09T03:00:01.534970000Z 2026-08-09T03:00:01.534825Z 12 [ERROR] [MY-013114] [Repl] Replica I/O for channel '': Got fatal error 1236 from source when reading data from binary log: 'Cannot replicate because the source purged required binary logs. Replicate the missing transactions from elsewhere, or provision a new replica from backup. Consider increasing the source's binary log expiration period. The GTID sets and the missing purged transactions are too long to print in this message. For more information, please see the source's error log or the manual for GTID_SUBTRACT', Error_code: MY-013114
+--- my-xhs-nacos (43 条)
+2026-08-08T14:10:30.553000000Z Caused by: com.alibaba.nacos.api.exception.NacosException: Nacos Server did not start because dumpservice bean construction failure :
+2026-08-08T14:10:30.553147000Z Caused by: java.lang.IllegalStateException: No DataSource set
+--- my-xhs-prometheus (9 条)
+2026-08-08T14:01:41.722970000Z ts=2026-08-08T14:01:41.722Z caller=main.go:487 level=error msg="Error loading config (--config.file=/etc/prometheus/prometheus.yml)" file=/etc/prometheus/prometheus.yml err="parsing YAML file /etc/prometheus/prometheus.yml: global scrape timeout greater than scrape interval"
+2026-08-08T14:01:42.079967000Z ts=2026-08-08T14:01:42.079Z caller=main.go:487 level=error msg="Error loading config (--config.file=/etc/prometheus/prometheus.yml)" file=/etc/prometheus/prometheus.yml err="parsing YAML file /etc/prometheus/prometheus.yml: global scrape timeout greater than scrape interval"
+--- my-xhs-rocketmq-dashboard (31 条)
+2026-08-08T14:02:12.630668000Z [2026-08-08 14:02:12.630] INFO pool-3-thread-1 - create MQAdmin instance ClientConfig{namesrvAddr='127.0.0.1:9876', clientIP='21.130.247.89', instanceName='1786197730331', clientCallbackExecutorThreads=1, namespace='null', namespaceInitialized=false, namespaceV2='null', accessChannel=LOCAL, pollNameServerInterval=30000, heartbeatBrokerInterval=30000, persistConsumerOffsetInterval=5000, pullTimeDelayMillsWhenException=1000, unitMode=false, unitName='null', decodeReadBody=true, decodeDecompressBody=true, vipChannelEnabled=true, useHeartbeatV2=false, useTLS=false, socksProxyConfig='{}', mqClientApiTimeout=3000, detectTimeout=200, detectInterval=2000, language=JAVA, enableStreamRequestType=false, sendLatencyEnable=false, startDetectorEnable=false, enableHeartbeatChannelEventListener=true, enableTrace=false, traceTopic='null'} success.
+2026-08-09T02:00:00.229358000Z [2026-08-09 02:00:00.229] INFO QueryGroup_9 - create MQAdmin instance ClientConfig{namesrvAddr='127.0.0.1:9876', clientIP='21.130.247.89', instanceName='1786240800132', clientCallbackExecutorThreads=1, namespace='null', namespaceInitialized=false, namespaceV2='null', accessChannel=LOCAL, pollNameServerInterval=30000, heartbeatBrokerInterval=30000, persistConsumerOffsetInterval=5000, pullTimeDelayMillsWhenException=1000, unitMode=false, unitName='null', decodeReadBody=true, decodeDecompressBody=true, vipChannelEnabled=true, useHeartbeatV2=false, useTLS=false, socksProxyConfig='{}', mqClientApiTimeout=3000, detectTimeout=200, detectInterval=2000, language=JAVA, enableStreamRequestType=false, sendLatencyEnable=false, startDetectorEnable=false, enableHeartbeatChannelEventListener=true, enableTrace=false, traceTopic='null'} success.
+--- my-xhs-sentinel-dashboard (796 条)
+2026-08-10T06:56:09.260436000Z 2026-08-10 06:56:09.260 ERROR 1 --- [pool-2-thread-1] c.a.c.s.dashboard.metric.MetricFetcher   : Failed to fetch metric from <http://21.214.97.212:8721/metric?startTime=1786344961000&endTime=1786344967000&refetch=false> (ConnectionException: Connection refused)
+2026-08-10T06:56:09.260703000Z 2026-08-10 06:56:09.260 ERROR 1 --- [pool-2-thread-1] c.a.c.s.dashboard.metric.MetricFetcher   : Failed to fetch metric from <http://21.214.97.212:8725/metric?startTime=1786344961000&endTime=1786344967000&refetch=false> (ConnectionException: Connection refused)
+--- my-xhs-skywalking-oap (7 条)
+2026-08-08T14:02:58.917125000Z 2026-08-08 14:02:58,916 org.apache.skywalking.oap.server.core.storage.model.ModelInstaller 54 [main] INFO  [] - table: browser_app_error_rate does not exist
+2026-08-10T09:15:22.836326000Z io.netty.handler.codec.http2.Http2Exception: HTTP/2 client preface string missing or corrupt. Hex dump for received bytes: 0a
+--- my-xhs-skywalking-ui (22 条)
+2026-08-08T14:01:46.467665000Z 2026-08-08 14:01:46,467 main DEBUG PatternMatch$Builder(, key="ERROR", pattern="%d %c %L [%t] %-5p %x - [%swversion] %m%n")
+2026-08-08T14:01:46.471209000Z 2026-08-08 14:01:46,470 main DEBUG LevelPatternSelector$Builder(={ERROR=%d %c %L [%t] %-5p %x - [%swversion] %m%n}, defaultPattern="%d %c %L [%t] %-5p %x - %m%n", alwaysWriteExceptions="null", disableAnsi="null", noConsoleNoAnsi="null", Configuration(/skywalking/webapp/log4j2.xml))
+--- my-xhs-xxl-job-admin (166 条)
+2026-08-08T14:10:56.347143000Z Exception in thread "xxl-job, admin JobRegistryMonitorHelper-registryOrRemoveThreadPool-1397989423" org.springframework.jdbc.BadSqlGrammarException: 
+2026-08-08T14:10:56.347280000Z ### Error updating database.  Cause: java.sql.SQLSyntaxErrorException: Table 'xxl_job.xxl_job_registry' doesn't exist

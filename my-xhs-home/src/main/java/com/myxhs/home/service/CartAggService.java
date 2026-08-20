@@ -2,6 +2,7 @@ package com.myxhs.home.service;
 
 import com.myxhs.common.response.R;
 import com.myxhs.home.dto.CartAggVO;
+import com.myxhs.home.exception.DownstreamUnavailableException;
 import com.myxhs.home.feign.CartFeignClient;
 import com.myxhs.home.feign.CouponFeignClient;
 import com.myxhs.home.feign.InventoryFeignClient;
@@ -56,6 +57,9 @@ public class CartAggService {
         CompletableFuture<Map<String, Object>> cartFuture = CompletableFuture
                 .supplyAsync(() -> {
                     R<Map<String, Object>> r = cartFeignClient.getCartList(userId);
+                    if (r != null && r.getCode() == 503) {
+                        throw new DownstreamUnavailableException("购物车服务不可用");
+                    }
                     return (r != null && r.isSuccess() && r.getData() != null) ? r.getData() : Collections.emptyMap();
                 }, aggregatorPool);
 
@@ -78,6 +82,10 @@ public class CartAggService {
             log.warn("[购物车聚合] 第1层聚合超时，部分数据降级");
         } catch (Exception e) {
             log.warn("[购物车聚合] 第1层聚合异常", e);
+        }
+
+        if (cartFuture.isCompletedExceptionally()) {
+            throw new DownstreamUnavailableException("购物车服务不可用");
         }
 
         Map<String, Object> cartData = cartFuture.getNow(Collections.emptyMap());
@@ -137,7 +145,7 @@ public class CartAggService {
         // 并行查询每个 SKU 的库存
         Map<Long, CompletableFuture<Map<String, Object>>> stockFutures = new LinkedHashMap<>();
         for (Map<String, Object> item : cartItems) {
-            Long skuId = item.get("skuId") != null ? ((Number) item.get("skuId")).longValue() : null;
+            Long skuId = toLongValue(item.get("skuId"));
             if (skuId == null || stockFutures.containsKey(skuId)) continue;
 
             CompletableFuture<Map<String, Object>> future = CompletableFuture
@@ -164,23 +172,22 @@ public class CartAggService {
         // 组装 CartItemAggVO
         List<CartAggVO.CartItemAggVO> result = new ArrayList<>();
         for (Map<String, Object> item : cartItems) {
-            Long skuId = item.get("skuId") != null ? ((Number) item.get("skuId")).longValue() : null;
+            Long skuId = toLongValue(item.get("skuId"));
             if (skuId == null) continue;
 
             Map<String, Object> stockData = stockFutures.containsKey(skuId)
                     ? stockFutures.get(skuId).getNow(Collections.emptyMap())
                     : Collections.emptyMap();
 
-            Integer availableStock = stockData.get("availableStock") != null
-                    ? ((Number) stockData.get("availableStock")).intValue() : null;
+            Integer availableStock = toIntValue(stockData.get("availableStock"), 0);
 
             BigDecimal price = parseBigDecimal(item.get("price"));
-            Integer quantity = item.get("quantity") != null ? ((Number) item.get("quantity")).intValue() : 0;
+            Integer quantity = toIntValue(item.get("quantity"), 0);
             BigDecimal totalAmount = price != null ? price.multiply(BigDecimal.valueOf(quantity)) : null;
 
             result.add(CartAggVO.CartItemAggVO.builder()
                     .skuId(skuId)
-                    .spuId(item.get("spuId") != null ? ((Number) item.get("spuId")).longValue() : null)
+                    .spuId(toLongValue(item.get("spuId")))
                     .skuName((String) item.get("name"))      // C-14: CartItemVO 字段名是 name（修复前用 skuName 永远 null）
                     .skuImage((String) item.get("image"))    // C-14: CartItemVO 字段名是 image（修复前用 skuImage 永远 null）
                     .price(price)
@@ -205,6 +212,29 @@ public class CartAggService {
             return new BigDecimal(value.toString());
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    /**
+     * 兼容 Long→ToStringSerializer（R4）：下游 Feign 返回的 Long 字段实际为 String
+     */
+    private Long toLongValue(Object o) {
+        if (o == null) return null;
+        if (o instanceof Number) return ((Number) o).longValue();
+        try {
+            return Long.parseLong(o.toString());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private int toIntValue(Object o, int def) {
+        if (o == null) return def;
+        if (o instanceof Number) return ((Number) o).intValue();
+        try {
+            return Integer.parseInt(o.toString());
+        } catch (Exception e) {
+            return def;
         }
     }
 }

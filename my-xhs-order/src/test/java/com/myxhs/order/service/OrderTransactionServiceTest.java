@@ -78,7 +78,8 @@ class OrderTransactionServiceTest {
         when(localMessageMapper.insert((LocalMessage) any())).thenReturn(1);
 
         Order order = transactionService.executeLocalTransaction(
-                USER_ID, request, orderNo, totalAmount, discountAmount, payAmount, payload);
+                USER_ID, request, orderNo, totalAmount, discountAmount, payAmount,
+                payload, "{}", Collections.emptyMap());
 
         assertThat(order).isNotNull();
         assertThat(order.getUserId()).isEqualTo(USER_ID);
@@ -107,7 +108,7 @@ class OrderTransactionServiceTest {
 
         assertThatThrownBy(() -> transactionService.executeLocalTransaction(
                 USER_ID, request, orderNo, totalAmount,
-                BigDecimal.ZERO, totalAmount, payload))
+                BigDecimal.ZERO, totalAmount, payload, "{}", Collections.emptyMap()))
                 .isInstanceOf(RuntimeException.class)
                 .hasMessageContaining("数据库插入失败");
 
@@ -143,7 +144,7 @@ class OrderTransactionServiceTest {
 
         Order order = transactionService.executeLocalTransaction(
                 USER_ID, request, orderNo, totalAmount,
-                BigDecimal.ZERO, totalAmount, payload);
+                BigDecimal.ZERO, totalAmount, payload, "{}", Collections.emptyMap());
 
         assertThat(order).isNotNull();
         // 验证 2 个 SKU 明细都被插入
@@ -172,7 +173,8 @@ class OrderTransactionServiceTest {
         when(localMessageMapper.insert((LocalMessage) any())).thenReturn(1);
 
         Order order = transactionService.executeLocalTransaction(
-                USER_ID, request, orderNo, totalAmount, discountAmount, payAmount, payload);
+                USER_ID, request, orderNo, totalAmount, discountAmount, payAmount,
+                payload, "{}", Collections.emptyMap());
 
         assertThat(order).isNotNull();
         assertThat(order.getCouponId()).isEqualTo(5001L);

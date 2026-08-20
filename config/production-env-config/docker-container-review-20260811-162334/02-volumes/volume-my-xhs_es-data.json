@@ -1,0 +1,15 @@
+[
+    {
+        "CreatedAt": "2026-07-09T22:19:25+08:00",
+        "Driver": "local",
+        "Labels": {
+            "com.docker.compose.project": "my-xhs",
+            "com.docker.compose.version": "2.29.2",
+            "com.docker.compose.volume": "es-data"
+        },
+        "Mountpoint": "/data/docker/lib/volumes/my-xhs_es-data/_data",
+        "Name": "my-xhs_es-data",
+        "Options": null,
+        "Scope": "local"
+    }
+]

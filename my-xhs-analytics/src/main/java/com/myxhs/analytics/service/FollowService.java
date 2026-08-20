@@ -52,6 +52,8 @@ public class FollowService {
     private final FollowMapper followMapper;
     private final IdGeneratorUtil idGeneratorUtil;
     private final RocketMQTemplate rocketMQTemplate;
+    /** T-013: 用户存在性校验客户端 */
+    private final com.myxhs.analytics.feign.UserFeignClient userFeignClient;
 
     /** 关注列表/粉丝列表最大返回条数 */
     private static final int MAX_PAGE_SIZE = 50;
@@ -74,6 +76,16 @@ public class FollowService {
         // 1. 不能关注自己
         if (userId.equals(targetUserId)) {
             throw new BizException(ResultCode.CANNOT_FOLLOW_SELF);
+        }
+
+        // 1.5 T-013: target 用户存在性校验（防幽灵关注）
+        if (!userExists(targetUserId)) {
+            throw new BizException(ResultCode.USER_NOT_FOUND);
+        }
+
+        // 1.6 T-016: 对方已拉黑当前用户 → 拒绝关注
+        if (isBlockedBy(targetUserId, userId)) {
+            throw new BizException(ResultCode.BLOCKED);
         }
 
         // 2.【修复M6】拆分为两个 Lua 脚本，每个仅操作同一用户的 Key（Cluster 兼容）
@@ -128,6 +140,9 @@ public class FollowService {
 
         // 4. 【修复R10】发送 MQ 更新 counter 服务关注/粉丝计数
         sendFollowCounterEvent(userId, targetUserId, "FOLLOW");
+
+        // O-Like-1 修复：关注通知（type=3）通知被关注者（失败不影响关注主流程）
+        sendFollowNotification(userId, targetUserId);
     }
 
     // ==================== 取关用户 ====================
@@ -555,6 +570,40 @@ public class FollowService {
     }
 
     /**
+     * O-Like-1 修复：发送关注通知（type=3）到 NOTIFICATION_TOPIC
+     * <p>
+     * 关注成功（Lua selfResult=1 且非重复关注）后通知被关注者；
+     * 对齐 CommentService 通知模式，senderName 暂不填（O-Comment-2 统一观察项）。
+     * </p>
+     */
+    private void sendFollowNotification(Long senderId, Long targetUserId) {
+        try {
+            Map<String, Object> notification = new HashMap<>();
+            notification.put("type", 3); // 3=关注
+            notification.put("senderId", senderId);
+            notification.put("targetUserId", targetUserId);
+            notification.put("targetId", targetUserId);
+            // R5：targetType 不填——DTO 语义为 1-笔记 2-商品 3-订单，无"用户"类型；null 避免语义化错误
+            notification.put("content", "关注了你");
+            rocketMQTemplate.asyncSend("NOTIFICATION_TOPIC",
+                    MqTraceHelper.wrapWithTraceContext(
+                            org.springframework.messaging.support.MessageBuilder.withPayload(notification).build()),
+                    new org.apache.rocketmq.client.producer.SendCallback() {
+                        @Override
+                        public void onSuccess(org.apache.rocketmq.client.producer.SendResult sendResult) {
+                            log.debug("[关注] 关注通知已发送: senderId={}, targetUserId={}", senderId, targetUserId);
+                        }
+                        @Override
+                        public void onException(Throwable e) {
+                            log.warn("[关注] 关注通知发送失败(不影响关注): targetUserId={}", targetUserId, e);
+                        }
+                    });
+        } catch (Exception e) {
+            log.warn("[关注] 关注通知发送异常(不影响关注): targetUserId={}, err={}", targetUserId, e.getMessage());
+        }
+    }
+
+    /**
      * 【修复R10】发送关注/取关计数事件到 counter 服务
      * <p>
      * FOLLOW: follower FOLLOWING+1, followee FOLLOWER+1
@@ -586,4 +635,32 @@ public class FollowService {
                     followerUserId, followeeUserId, action, e);
         }
     }
+
+    /**
+     * T-013: 校验目标用户存在（Feign 内部调用；失败 fail-closed）
+     */
+    private boolean userExists(Long targetUserId) {
+        try {
+            com.myxhs.common.response.R<Boolean> r = userFeignClient.userExists(targetUserId);
+            return r != null && r.isSuccess() && Boolean.TRUE.equals(r.getData());
+        } catch (Exception e) {
+            log.error("[关注] 用户存在性校验失败(拒绝), target={}", targetUserId, e);
+            throw new BizException(ResultCode.SERVICE_UNAVAILABLE, "用户服务暂不可用");
+        }
+    }
+
+    /**
+     * T-016: 对方是否已拉黑当前用户（Redis Set 直读）
+     */
+    private boolean isBlockedBy(Long targetUserId, Long userId) {
+        try {
+            Boolean blocked = stringRedisTemplate.opsForSet().isMember(
+                    "myxhs:user:block:" + targetUserId, String.valueOf(userId));
+            return Boolean.TRUE.equals(blocked);
+        } catch (Exception e) {
+            log.warn("[关注] 拉黑状态读取失败(放行), target={}, user={}", targetUserId, userId);
+            return false;
+        }
+    }
+
 }

@@ -83,6 +83,7 @@ public class InventoryDeductConsumer implements RocketMQListener<MessageExt> {
                 case "PRE_DEDUCT" -> handlePreDeduct(event);
                 case "CONFIRM" -> handleConfirm(event);
                 case "RELEASE" -> handleRelease(event);
+                case "REFUND_RESTORE" -> handleRefundRestore(event);
                 default -> log.warn("[库存L2] 未知操作类型: {}", event.getAction());
             }
         } catch (Exception e) {
@@ -158,6 +159,18 @@ public class InventoryDeductConsumer implements RocketMQListener<MessageExt> {
             log.info("[库存L2] 释放库存MySQL成功: skuId={}, qty={}", event.getSkuId(), event.getQuantity());
         } else {
             log.warn("[库存L2] 释放库存MySQL失败: skuId={}, qty={}（等待L3对账修复）",
+                    event.getSkuId(), event.getQuantity());
+        }
+    }
+
+    /** T-071：退款回补（MySQL available_stock +qty——独立语义，非 locked→available） */
+    private void handleRefundRestore(InventoryDeductEvent event) {
+        if (!checkEventVersion(event)) return;
+        int affected = inventoryMapper.refundRestoreStock(event.getSkuId(), event.getQuantity());
+        if (affected > 0) {
+            log.info("[库存L2] 退款回补MySQL成功: skuId={}, qty={}", event.getSkuId(), event.getQuantity());
+        } else {
+            log.warn("[库存L2] 退款回补MySQL失败: skuId={}, qty={}（等待L3对账修复）",
                     event.getSkuId(), event.getQuantity());
         }
     }

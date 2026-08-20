@@ -1,0 +1,60 @@
+[
+    {
+        "Id": "sha256:f128f59ba0c51e1f1ef7dc641987071b3264f45710bbab6e6cfa2c60b8bdebe5",
+        "RepoTags": [
+            "mirrors.tencent.com/codevpro/codev-agent:2.2.0"
+        ],
+        "RepoDigests": [
+            "mirrors.tencent.com/codevpro/codev-agent@sha256:d746ee5e8c1b22edfa0b33a7308b4e27fff00404f57a2e2636ecac2dd24302ca"
+        ],
+        "Parent": "",
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2025-06-03T11:50:28.818771665+08:00",
+        "DockerVersion": "",
+        "Author": "",
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 65840087,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/data/docker/lib/overlay2/4fdb20bc66396ae5bde14c9f42229d77149553bb74f9ebb35d67b5de3fbf67cc/diff:/data/docker/lib/overlay2/7d59a0d86b428005cb8436aa75f8c01589417f8ef2215c1541fe607caceca4dd/diff:/data/docker/lib/overlay2/22c25b035ca5e977e0154577518f794fc540c47098b3ad9c3a25b794d7ee0ed2/diff:/data/docker/lib/overlay2/8582ad764d685765d22ea32c2ba5068102ea93701b96602c4d415d5175418544/diff",
+                "MergedDir": "/data/docker/lib/overlay2/c7113b2e741954b0214eeb1786856db74569404394e764b58a1fe38a8048c439/merged",
+                "UpperDir": "/data/docker/lib/overlay2/c7113b2e741954b0214eeb1786856db74569404394e764b58a1fe38a8048c439/diff",
+                "WorkDir": "/data/docker/lib/overlay2/c7113b2e741954b0214eeb1786856db74569404394e764b58a1fe38a8048c439/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:8d78b2117a5b8bff0a001610c8e3eecb6dcfd5e82a25d23048df7a09e77d6307",
+                "sha256:50aedec577264a660fb229513c1821cab5b21230b9fa3fb7a2209b43ff0f8d7d",
+                "sha256:8f62f0ac4ee21f173789c83255fe5e677fea176daf8594fca292384ed76d5cde",
+                "sha256:5bfdb16258daa7fea2fed2c5846da7d7cd49351d8db2fa174091a2ec94fc379b",
+                "sha256:8c480fabc48937eef8ce587a18321662f4d8908f4f326fcb3b4540f571237b41"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        },
+        "Config": {
+            "ArgsEscaped": true,
+            "Cmd": null,
+            "Entrypoint": [
+                "/sbin/tini",
+                "--",
+                "./main"
+            ],
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "TZ=Asia/Shanghai",
+                "CONFIG_PROVIDER=file"
+            ],
+            "Labels": null,
+            "OnBuild": null,
+            "User": "",
+            "Volumes": null,
+            "WorkingDir": "/opt/solution/codev-agent"
+        }
+    }
+]

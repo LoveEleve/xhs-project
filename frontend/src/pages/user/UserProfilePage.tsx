@@ -29,8 +29,8 @@ export default function UserProfilePage() {
   useEffect(() => { load(); }, [userId]);
 
   if (loading) return <div style={{ textAlign: 'center', padding: 80 }}><Spin size="large" /></div>;
-  if (error) return <Alert type="error" title={error} style={{ margin: 24 }} />;
-  if (!profile) return <Alert type="error" title="用户不存在" style={{ margin: 24 }} />;
+  if (error) return <Alert type="error" message={error} style={{ margin: 24 }} />;
+  if (!profile) return <Alert type="error" message="用户不存在" style={{ margin: 24 }} />;
 
   const isSelf = myId === profile.userId;
   const targetId = profile.userId;

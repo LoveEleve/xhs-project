@@ -1,0 +1,295 @@
+[
+    {
+        "Id": "c87d1f400a4fa5608781e7a1f6fa067a0cda953d70d9294b604b5637529cb2a4",
+        "Created": "2026-08-08T14:01:41.445399477Z",
+        "Path": "docker-entrypoint.sh",
+        "Args": [
+            "redis-sentinel",
+            "/etc/redis/sentinel.conf"
+        ],
+        "State": {
+            "Status": "running",
+            "Running": true,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 283079,
+            "ExitCode": 0,
+            "Error": "",
+            "StartedAt": "2026-08-09T03:24:34.268335167Z",
+            "FinishedAt": "2026-08-09T03:24:34.225834232Z",
+            "Health": {
+                "Status": "healthy",
+                "FailingStreak": 0,
+                "Log": [
+                    {
+                        "Start": "2026-08-11T16:22:48.433572511+08:00",
+                        "End": "2026-08-11T16:22:48.533953923+08:00",
+                        "ExitCode": 0,
+                        "Output": ""
+                    },
+                    {
+                        "Start": "2026-08-11T16:23:03.535218244+08:00",
+                        "End": "2026-08-11T16:23:03.632404194+08:00",
+                        "ExitCode": 0,
+                        "Output": ""
+                    },
+                    {
+                        "Start": "2026-08-11T16:23:18.633516541+08:00",
+                        "End": "2026-08-11T16:23:18.733744345+08:00",
+                        "ExitCode": 0,
+                        "Output": ""
+                    },
+                    {
+                        "Start": "2026-08-11T16:23:33.734765228+08:00",
+                        "End": "2026-08-11T16:23:33.832102894+08:00",
+                        "ExitCode": 0,
+                        "Output": ""
+                    },
+                    {
+                        "Start": "2026-08-11T16:23:48.833112008+08:00",
+                        "End": "2026-08-11T16:23:48.931777824+08:00",
+                        "ExitCode": 0,
+                        "Output": ""
+                    }
+                ]
+            }
+        },
+        "Image": "sha256:487efc0616382465781b8fdc3d6d1db449e6fd80ae23bf48432a2da6b6929908",
+        "ResolvConfPath": "/data/docker/lib/containers/c87d1f400a4fa5608781e7a1f6fa067a0cda953d70d9294b604b5637529cb2a4/resolv.conf",
+        "HostnamePath": "/data/docker/lib/containers/c87d1f400a4fa5608781e7a1f6fa067a0cda953d70d9294b604b5637529cb2a4/hostname",
+        "HostsPath": "/data/docker/lib/containers/c87d1f400a4fa5608781e7a1f6fa067a0cda953d70d9294b604b5637529cb2a4/hosts",
+        "LogPath": "",
+        "Name": "/my-xhs-redis-sentinel",
+        "RestartCount": 0,
+        "Driver": "overlay2",
+        "Platform": "linux",
+        "MountLabel": "",
+        "ProcessLabel": "",
+        "AppArmorProfile": "",
+        "ExecIDs": null,
+        "HostConfig": {
+            "Binds": [
+                "/data/workspace/my-xhs-deploy-zip/config/redis/sentinel.conf:/etc/redis/sentinel.conf:rw"
+            ],
+            "ContainerIDFile": "",
+            "LogConfig": {
+                "Type": "journald",
+                "Config": {}
+            },
+            "NetworkMode": "host",
+            "PortBindings": {},
+            "RestartPolicy": {
+                "Name": "unless-stopped",
+                "MaximumRetryCount": 0
+            },
+            "AutoRemove": false,
+            "VolumeDriver": "",
+            "VolumesFrom": null,
+            "ConsoleSize": [
+                0,
+                0
+            ],
+            "CapAdd": null,
+            "CapDrop": null,
+            "CgroupnsMode": "private",
+            "Dns": null,
+            "DnsOptions": null,
+            "DnsSearch": null,
+            "ExtraHosts": [],
+            "GroupAdd": null,
+            "IpcMode": "private",
+            "Cgroup": "",
+            "Links": null,
+            "OomScoreAdj": 0,
+            "PidMode": "",
+            "Privileged": false,
+            "PublishAllPorts": false,
+            "ReadonlyRootfs": false,
+            "SecurityOpt": null,
+            "UTSMode": "",
+            "UsernsMode": "",
+            "ShmSize": 67108864,
+            "Runtime": "runc",
+            "Isolation": "",
+            "CpuShares": 0,
+            "Memory": 67108864,
+            "NanoCpus": 100000000,
+            "CgroupParent": "",
+            "BlkioWeight": 0,
+            "BlkioWeightDevice": null,
+            "BlkioDeviceReadBps": null,
+            "BlkioDeviceWriteBps": null,
+            "BlkioDeviceReadIOps": null,
+            "BlkioDeviceWriteIOps": null,
+            "CpuPeriod": 0,
+            "CpuQuota": 0,
+            "CpuRealtimePeriod": 0,
+            "CpuRealtimeRuntime": 0,
+            "CpusetCpus": "",
+            "CpusetMems": "",
+            "Devices": null,
+            "DeviceCgroupRules": null,
+            "DeviceRequests": null,
+            "MemoryReservation": 33554432,
+            "MemorySwap": 134217728,
+            "MemorySwappiness": null,
+            "OomKillDisable": null,
+            "PidsLimit": null,
+            "Ulimits": [
+                {
+                    "Name": "nofile",
+                    "Hard": 1048576,
+                    "Soft": 1048576
+                }
+            ],
+            "CpuCount": 0,
+            "CpuPercent": 0,
+            "IOMaximumIOps": 0,
+            "IOMaximumBandwidth": 0,
+            "MaskedPaths": [
+                "/proc/asound",
+                "/proc/acpi",
+                "/proc/interrupts",
+                "/proc/kcore",
+                "/proc/keys",
+                "/proc/latency_stats",
+                "/proc/timer_list",
+                "/proc/timer_stats",
+                "/proc/sched_debug",
+                "/proc/scsi",
+                "/sys/firmware",
+                "/sys/devices/virtual/powercap"
+            ],
+            "ReadonlyPaths": [
+                "/proc/bus",
+                "/proc/fs",
+                "/proc/irq",
+                "/proc/sys",
+                "/proc/sysrq-trigger"
+            ]
+        },
+        "GraphDriver": {
+            "Data": {
+                "ID": "c87d1f400a4fa5608781e7a1f6fa067a0cda953d70d9294b604b5637529cb2a4",
+                "LowerDir": "/data/docker/lib/overlay2/f4712655bb45e1c160a87bf1785501e50a564471b3e3f5e6c252473962a17e53-init/diff:/data/docker/lib/overlay2/88dd08c4d69dc97a6a805758b969e0777438fc314c59c80fea8fc9aff015572d/diff:/data/docker/lib/overlay2/dcd1757833dd8986223b2327bd609717060a7eb7f5d3aacdd4863e079398b624/diff:/data/docker/lib/overlay2/c0abdc8593f0d14de218c58903034d7a83e2132ef3e4c6f9b9a0e966c53d287e/diff:/data/docker/lib/overlay2/f214968468d4a5e46b57b522031592b05c208d1aa39dfae24b88fe0b7c93cd33/diff:/data/docker/lib/overlay2/df0ff1c9e70f015d4dea35b80dad2080af9881b23ebe7333ae9ec90ece1ad113/diff:/data/docker/lib/overlay2/d905c69bb62bdecf11f88ea083853a5c447ba28db369d006b0b773d6006815c6/diff:/data/docker/lib/overlay2/024d53945596fe697770f8d6a1dac48e2da43f0468268d8b3b365ddf2df27dad/diff",
+                "MergedDir": "/data/docker/lib/overlay2/f4712655bb45e1c160a87bf1785501e50a564471b3e3f5e6c252473962a17e53/merged",
+                "UpperDir": "/data/docker/lib/overlay2/f4712655bb45e1c160a87bf1785501e50a564471b3e3f5e6c252473962a17e53/diff",
+                "WorkDir": "/data/docker/lib/overlay2/f4712655bb45e1c160a87bf1785501e50a564471b3e3f5e6c252473962a17e53/work"
+            },
+            "Name": "overlay2"
+        },
+        "Mounts": [
+            {
+                "Type": "bind",
+                "Source": "/data/workspace/my-xhs-deploy-zip/config/redis/sentinel.conf",
+                "Destination": "/etc/redis/sentinel.conf",
+                "Mode": "rw",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "volume",
+                "Name": "0c6f97359d5ee1fe908d0031a22d49e6733431e5f8bd138ec61e278ebc181c44",
+                "Source": "/data/docker/lib/volumes/0c6f97359d5ee1fe908d0031a22d49e6733431e5f8bd138ec61e278ebc181c44/_data",
+                "Destination": "/data",
+                "Driver": "local",
+                "Mode": "",
+                "RW": true,
+                "Propagation": ""
+            }
+        ],
+        "Config": {
+            "Hostname": "VM-247-89-tencentos",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": true,
+            "AttachStderr": true,
+            "ExposedPorts": {
+                "6379/tcp": {}
+            },
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "REDIS_VERSION=7.4.9"
+            ],
+            "Cmd": [
+                "redis-sentinel",
+                "/etc/redis/sentinel.conf"
+            ],
+            "Healthcheck": {
+                "Test": [
+                    "CMD-SHELL",
+                    "redis-cli -p 26379 ping | grep -q PONG || exit 1"
+                ],
+                "Interval": 15000000000,
+                "Timeout": 5000000000,
+                "StartPeriod": 10000000000,
+                "Retries": 3
+            },
+            "Image": "redis:7-alpine",
+            "Volumes": {
+                "/data": {}
+            },
+            "WorkingDir": "/data",
+            "Entrypoint": [
+                "docker-entrypoint.sh"
+            ],
+            "OnBuild": null,
+            "Labels": {
+                "com.docker.compose.config-hash": "7eecd86a4fd708efd641c7beed380d2c050c9353b51b64fa43051570516ce66f",
+                "com.docker.compose.container-number": "1",
+                "com.docker.compose.depends_on": "redis:service_started:false,redis-slave:service_started:false",
+                "com.docker.compose.image": "sha256:487efc0616382465781b8fdc3d6d1db449e6fd80ae23bf48432a2da6b6929908",
+                "com.docker.compose.oneoff": "False",
+                "com.docker.compose.project": "my-xhs-deploy-zip",
+                "com.docker.compose.project.config_files": "/data/workspace/my-xhs-deploy-zip/docker-compose.yml",
+                "com.docker.compose.project.working_dir": "/data/workspace/my-xhs-deploy-zip",
+                "com.docker.compose.service": "redis-sentinel",
+                "com.docker.compose.version": "2.29.2"
+            }
+        },
+        "NetworkSettings": {
+            "Bridge": "",
+            "SandboxID": "c3cd99f04027ea6ab1703e2f2a5a8b1d89064e5dcda53334ff93666a2a23afa0",
+            "SandboxKey": "/var/run/docker/netns/default",
+            "Ports": {},
+            "HairpinMode": false,
+            "LinkLocalIPv6Address": "",
+            "LinkLocalIPv6PrefixLen": 0,
+            "SecondaryIPAddresses": null,
+            "SecondaryIPv6Addresses": null,
+            "EndpointID": "",
+            "Gateway": "",
+            "GlobalIPv6Address": "",
+            "GlobalIPv6PrefixLen": 0,
+            "IPAddress": "",
+            "IPPrefixLen": 0,
+            "IPv6Gateway": "",
+            "MacAddress": "",
+            "Networks": {
+                "host": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": null,
+                    "MacAddress": "",
+                    "DriverOpts": null,
+                    "GwPriority": 0,
+                    "NetworkID": "69303899f57d4447764f56f161dceb184df134844eb038322985183a4f6b4dff",
+                    "EndpointID": "37fed315a35651a9420a1fd22eb4aa0a4650635c40a674341b869a1ad329104d",
+                    "Gateway": "",
+                    "IPAddress": "",
+                    "IPPrefixLen": 0,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "DNSNames": null
+                }
+            }
+        }
+    }
+]

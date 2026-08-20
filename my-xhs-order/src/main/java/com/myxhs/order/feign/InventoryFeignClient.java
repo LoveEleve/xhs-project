@@ -32,6 +32,10 @@ public interface InventoryFeignClient {
     @PostMapping("/api/inventory/release")
     R<Void> releaseStock(@RequestBody Map<String, Object> request);
 
+    /** T-071：退款回补库存（全额退款后 Redis/MySQL 库存加回） */
+    @PostMapping("/api/inventory/refund-restore")
+    R<Void> refundRestore(@RequestBody Map<String, Object> request);
+
     /**
      * 确认扣减（支付成功后调用，locked_stock 正式扣除）
      */

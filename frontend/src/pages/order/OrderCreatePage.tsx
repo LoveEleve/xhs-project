@@ -84,10 +84,16 @@ export default function OrderCreatePage() {
 
   const subtotal = items.reduce((s, it) => s + it.price * it.quantity, 0);
   const selectedCoupon = coupons.find(c => c.id === couponId);
+  // 对齐后端 CouponService.calculateDiscount：1=满减(减discountValue) 2=折扣(售价×discountValue/10) 3=无门槛(减discountValue)
   let discount = 0;
-  if (selectedCoupon && selectedCoupon.type === 1 && subtotal >= selectedCoupon.minAmount) {
-    discount = selectedCoupon.discountValue;
+  if (selectedCoupon && subtotal >= selectedCoupon.minAmount) {
+    if (selectedCoupon.type === 1 || selectedCoupon.type === 3) {
+      discount = selectedCoupon.discountValue;
+    } else if (selectedCoupon.type === 2) {
+      discount = Math.round((subtotal - subtotal * selectedCoupon.discountValue / 10) * 100) / 100;
+    }
   }
+  discount = Math.min(discount, subtotal); // 减免不能超过订单金额
   const payAmount = Math.max(0, subtotal - discount);
 
   const handleSubmit = async () => {
@@ -161,7 +167,7 @@ export default function OrderCreatePage() {
               <Radio value={0}>不使用优惠券</Radio>
               {coupons.map(c => (
                 <Radio key={c.id} value={c.id}>
-                  {c.name}（满{c.minAmount}减{c.discountValue}）
+                  {c.name}（{c.type === 2 ? `满${c.minAmount}打${c.discountValue}折` : `满${c.minAmount}减${c.discountValue}`}）
                 </Radio>
               ))}
             </Space>

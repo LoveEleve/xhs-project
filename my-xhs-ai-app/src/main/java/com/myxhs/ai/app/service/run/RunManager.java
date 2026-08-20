@@ -78,6 +78,12 @@ public class RunManager {
     private final IntentRouter intentRouter;
     /** 会话服务（M10；=null 时多轮功能关闭，兼容旧测试构造） */
     private final ConversationService conversation;
+    /** M10 用户级长期记忆（跨会话持久化；=null 时记忆功能关闭） */
+    private final com.myxhs.ai.app.service.memory.MemoryService memory;
+    /** D6 Langfuse Trace：Agent 事件 → OTel span（=null 时 trace 功能关闭） */
+    private final com.myxhs.ai.app.service.agent.tracing.LangfuseTracingListener tracingListener;
+    /** D6 Langfuse Trace：run 级 metadata（userId/sessionId） */
+    private final com.myxhs.ai.app.service.agent.tracing.RunMetadataStore runMetadataStore;
     /** M13：Agent 领域分派（AGENT 意图 → 业务/排障画像；规则零成本） */
     private final com.myxhs.ai.app.service.agent.profile.AgentDispatcher dispatcher =
             new com.myxhs.ai.app.service.agent.profile.AgentDispatcher();
@@ -86,18 +92,27 @@ public class RunManager {
     @Autowired
     public RunManager(AgentHarness harness, RunStore store, RunMetrics metrics, IntentRouter intentRouter,
                       @org.springframework.beans.factory.annotation.Autowired(required = false)
-                      ConversationService conversation) {
+                      ConversationService conversation,
+                      @org.springframework.beans.factory.annotation.Autowired(required = false)
+                      com.myxhs.ai.app.service.memory.MemoryService memory,
+                      @org.springframework.beans.factory.annotation.Autowired(required = false)
+                      com.myxhs.ai.app.service.agent.tracing.LangfuseTracingListener tracingListener,
+                      @org.springframework.beans.factory.annotation.Autowired(required = false)
+                      com.myxhs.ai.app.service.agent.tracing.RunMetadataStore runMetadataStore) {
         this.harness = harness;
         this.store = store;
         this.metrics = metrics;
         this.intentRouter = intentRouter;
         this.conversation = conversation;
+        this.memory = memory;
+        this.tracingListener = tracingListener;
+        this.runMetadataStore = runMetadataStore;
         this.budget = harness.defaultBudget();
     }
 
     /** 纯规则降级（测试/离线；无 LLM 分类时无信号输入默认引导） */
     public RunManager(AgentHarness harness, RunStore store, RunMetrics metrics, IntentRouter intentRouter) {
-        this(harness, store, metrics, intentRouter, null);
+        this(harness, store, metrics, intentRouter, null, null, null, null);
     }
 
     public RunManager(AgentHarness harness, RunStore store, RunMetrics metrics) {
@@ -148,9 +163,10 @@ public class RunManager {
         } catch (Exception ignored) {
         }
         LinkedBlockingQueue<HarnessEvent> queue = new LinkedBlockingQueue<>();
+        java.util.function.Consumer<HarnessEvent> compositeListener = compositeListener(queue, tracingListener);
         AtomicBoolean cancelToken = new AtomicBoolean(false);
         CompletableFuture<AgentRun> future = CompletableFuture.supplyAsync(() ->
-                harness.resume(runId, queue::offer, cancelToken), executor)
+                harness.resume(runId, compositeListener, cancelToken), executor)
                 .exceptionally(ex -> {
                     log.warn("[runmgr] run={} 恢复执行异常: {}", runId, ex.getMessage());
                     queue.offer(new HarnessEvent(runId, HarnessEventType.FAILED, 0, null, null, null,
@@ -242,12 +258,32 @@ public class RunManager {
                 log.warn("[runmgr] 用户消息落库失败 conv={} err={}", convId, e.getMessage());
             }
         }
+        // M10 Memory：研发用户级长期记忆注入（语义检索：用当前 query 找最相关记忆）
+        if (memory != null && userId != null && !"anonymous".equals(userId)) {
+            try {
+                List<ChatMessage> memCtx = memory.buildMemoryContext(userId, query);
+                if (!memCtx.isEmpty()) {
+                    if (initial == null) initial = new java.util.ArrayList<>();
+                    initial.addAll(memCtx); // 记忆在最后面（优先级最低）
+                }
+            } catch (Exception e) {
+                log.warn("[runmgr] 记忆注入失败 user={} err={}", userId, e.getMessage());
+            }
+        }
+        // D6 Langfuse：预写 run metadata（供 trace 读取 userId/sessionId）
+        if (runMetadataStore != null) {
+            runMetadataStore.put(new com.myxhs.ai.app.service.agent.tracing.RunMetadataStore.RunMetadata(
+                    runId, userId, convId, "mimo-v2.5-pro", 0, 0, 0.0));
+        }
+
         List<ChatMessage> initialMessages = initial;
         // M13：AGENT 领域分派（业务/排障画像——prompt 变体 + 工具子集）
         LinkedBlockingQueue<HarnessEvent> queue = new LinkedBlockingQueue<>();
+        // D6：复合 listener——SSE 推送 + Langfuse trace（tracingListener 可选）
+        java.util.function.Consumer<HarnessEvent> compositeListener = compositeListener(queue, tracingListener);
         AtomicBoolean cancelToken = new AtomicBoolean(false);
         CompletableFuture<AgentRun> future = CompletableFuture.supplyAsync(() ->
-                harness.run(runId, query, budget, queue::offer, userId, cancelToken, initialMessages,
+                harness.run(runId, query, budget, compositeListener, userId, cancelToken, initialMessages,
                         dispatcher.dispatch(query)), executor)
                 .exceptionally(ex -> {
                     // 异常兜底：补发 FAILED 终态事件（订阅者不会拿到无终态空流）
@@ -279,6 +315,14 @@ public class RunManager {
                                         .map(com.myxhs.ai.app.service.agent.harness.EvidenceChain.Evidence::evidenceId)
                                         .toList());
                         conversation.updateSummary(cid, run.finalAnswer());
+                        // M10 Memory：从结论中自动提取用户记忆
+                        if (memory != null) {
+                            try {
+                                memory.extractFromConclusion(userId, runId, run.finalAnswer());
+                            } catch (Exception e) {
+                                log.warn("[runmgr] 记忆提取失败 user={} run={}: {}", userId, runId, e.getMessage());
+                            }
+                        }
                     }
                 } catch (Exception e) {
                     log.warn("[runmgr] 会话终态落库失败 conv={} run={} err={}", cid, runId, e.getMessage());
@@ -506,6 +550,19 @@ public class RunManager {
     private static boolean isOld(AgentRun run) {
         return run != null && run.endedAt() != null
                 && Duration.between(run.endedAt(), Instant.now()).compareTo(DONE_TTL) > 0;
+    }
+
+    /** D6：复合 listener——SSE 队列 + Langfuse trace（tracingListener 可选，null 时只进队列） */
+    private static java.util.function.Consumer<HarnessEvent> compositeListener(
+            LinkedBlockingQueue<HarnessEvent> queue,
+            com.myxhs.ai.app.service.agent.tracing.LangfuseTracingListener tracingListener) {
+        if (tracingListener == null) {
+            return queue::offer;
+        }
+        return event -> {
+            queue.offer(event);
+            tracingListener.accept(event);
+        };
     }
 
     @PreDestroy

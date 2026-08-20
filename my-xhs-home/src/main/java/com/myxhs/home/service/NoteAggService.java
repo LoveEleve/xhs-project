@@ -2,6 +2,7 @@ package com.myxhs.home.service;
 
 import com.myxhs.common.response.R;
 import com.myxhs.home.dto.NoteDetailAggVO;
+import com.myxhs.home.exception.DownstreamUnavailableException;
 import com.myxhs.home.feign.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -127,9 +128,8 @@ public class NoteAggService {
         // - 服务降级（503）：不返回 null，而是抛出异常让上层感知
         // - 数据为空（成功但 data 为 null/empty）：笔记确实不存在
         if (noteResult == null || !noteResult.isSuccess()) {
-            // 服务不可用，不能确定笔记是否存在，返回 null 让 Controller 返回 503
             log.warn("[笔记详情] content服务不可用，无法获取笔记: noteId={}", noteId);
-            return null;
+            throw new DownstreamUnavailableException("内容服务不可用");
         }
         Map<String, Object> noteData = noteResult.getData();
         if (noteData == null || noteData.isEmpty()) {
@@ -140,8 +140,8 @@ public class NoteAggService {
         Boolean isCollected = collectFuture.getNow(false);
         Map<String, Long> counters = counterFuture.getNow(Collections.emptyMap());
 
-        // 提取作者 ID
-        Long authorId = noteData.get("userId") != null ? ((Number) noteData.get("userId")).longValue() : null;
+        // 提取作者 ID（R4：Long 序列化为 String，兼容转换）
+        Long authorId = toLongValue(noteData.get("userId"));
 
         // ========== 第 2 层并行（依赖第 1 层的 authorId）：作者信息 + 关注关系 + 热门评论 ==========
 
@@ -204,15 +204,15 @@ public class NoteAggService {
                 .images(noteData.get("images") instanceof List ? (List<String>) noteData.get("images") : Collections.emptyList())
                 .videoUrl((String) noteData.get("videoUrl"))
                 .coverUrl((String) noteData.get("coverUrl"))
-                .noteType(noteData.get("noteType") != null ? ((Number) noteData.get("noteType")).intValue() : 0)
+                .noteType(toIntValue(noteData.get("noteType"), 0))
                 .tags(noteData.get("tags") instanceof List ? (List<String>) noteData.get("tags") : Collections.emptyList())
                 .createdAt(parseDateTime(noteData.get("createdAt")))
                 .authorId(authorId)
                 .authorNickname((String) authorData.get("nickname"))
                 .authorAvatar((String) authorData.get("avatar"))
-                .likeCount(counters.getOrDefault("like", 0L))
-                .collectCount(counters.getOrDefault("collect", 0L))
-                .commentCount(counters.getOrDefault("comment", 0L))
+                .likeCount(toLongValue(counters.get("like"), 0L))
+                .collectCount(toLongValue(counters.get("collect"), 0L))
+                .commentCount(toLongValue(counters.get("comment"), 0L))
                 .isLiked(isLiked)
                 .isCollected(isCollected)
                 .isFollowed(relationData.getOrDefault("isFollowing", false))
@@ -230,6 +230,34 @@ public class NoteAggService {
             return LocalDateTime.parse(value.toString(), DateTimeFormatter.ISO_LOCAL_DATE_TIME);
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    /**
+     * 兼容 Long→ToStringSerializer（R4）：下游 Feign 返回的 Long 字段实际为 String
+     */
+    private Long toLongValue(Object o) {
+        if (o == null) return null;
+        if (o instanceof Number) return ((Number) o).longValue();
+        try {
+            return Long.parseLong(o.toString());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private Long toLongValue(Object o, long def) {
+        Long v = toLongValue(o);
+        return v != null ? v : def;
+    }
+
+    private int toIntValue(Object o, int def) {
+        if (o == null) return def;
+        if (o instanceof Number) return ((Number) o).intValue();
+        try {
+            return Integer.parseInt(o.toString());
+        } catch (Exception e) {
+            return def;
         }
     }
 }

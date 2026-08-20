@@ -15,18 +15,20 @@
     <!-- 日志目录 -->
     <property name="LOG_HOME" value="./logs/${APP_NAME}"/>
 
-    <!-- 日志格式（含业务 TraceId + SkyWalking tid） -->
+    <!-- 日志格式（含业务 TraceId + SkyWalking tid）——T-099：启用 TraceIdPatternLogbackLayout %tid 输出 SW traceId -->
     <property name="LOG_PATTERN"
-              value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId:-}]  %-5level %logger{36} - %msg%n"/>
+              value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] [%X{traceId:-}] [SW:%tid]  %-5level %logger{36} - %msg%n"/>
 
     <!-- 彩色控制台格式 -->
     <property name="CONSOLE_PATTERN"
-              value="%d{HH:mm:ss.SSS} %highlight(%-5level) [%boldYellow(%X{traceId:-})] [%boldCyan()] [%thread] %cyan(%logger{36}) - %msg%n"/>
+              value="%d{HH:mm:ss.SSS} %highlight(%-5level) [%boldYellow(%X{traceId:-})] [%boldCyan(SW:%tid)] [%thread] %cyan(%logger{36}) - %msg%n"/>
 
     <!-- ==================== 控制台输出 ==================== -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder>
-            <pattern>${CONSOLE_PATTERN}</pattern>
+        <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
+            <layout class="org.apache.skywalking.apm.toolkit.log.logback.v1.x.TraceIdPatternLogbackLayout">
+                <pattern>${CONSOLE_PATTERN}</pattern>
+            </layout>
             <charset>UTF-8</charset>
         </encoder>
     </appender>
@@ -40,8 +42,10 @@
             <maxHistory>30</maxHistory>
             <totalSizeCap>3GB</totalSizeCap>
         </rollingPolicy>
-        <encoder>
-            <pattern>${LOG_PATTERN}</pattern>
+        <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
+            <layout class="org.apache.skywalking.apm.toolkit.log.logback.v1.x.TraceIdPatternLogbackLayout">
+                <pattern>${LOG_PATTERN}</pattern>
+            </layout>
             <charset>UTF-8</charset>
         </encoder>
         <filter class="ch.qos.logback.classic.filter.LevelFilter">
@@ -60,8 +64,10 @@
             <maxHistory>30</maxHistory>
             <totalSizeCap>1GB</totalSizeCap>
         </rollingPolicy>
-        <encoder>
-            <pattern>${LOG_PATTERN}</pattern>
+        <encoder class="ch.qos.logback.core.encoder.LayoutWrappingEncoder">
+            <layout class="org.apache.skywalking.apm.toolkit.log.logback.v1.x.TraceIdPatternLogbackLayout">
+                <pattern>${LOG_PATTERN}</pattern>
+            </layout>
             <charset>UTF-8</charset>
         </encoder>
         <filter class="ch.qos.logback.classic.filter.ThresholdFilter">

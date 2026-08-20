@@ -21,4 +21,4 @@ logging:
 myxhs:
   ai:
     log-search:
-      files: ${MYXHS_LOG_SEARCH_FILES:}
+      files: ${MYXHS_LOG_SEARCH_FILES:my-xhs-order=/data/workspace/my-xhs/logs/my-xhs-order.log,my-xhs-inventory=/data/workspace/my-xhs/logs/my-xhs-inventory.log,my-xhs-payment=/data/workspace/my-xhs/logs/my-xhs-payment.log,my-xhs-gateway=/data/workspace/my-xhs/logs/my-xhs-gateway.log,my-xhs-content=/data/workspace/my-xhs/logs/my-xhs-content.log,my-xhs-user=/data/workspace/my-xhs/logs/my-xhs-user.log}

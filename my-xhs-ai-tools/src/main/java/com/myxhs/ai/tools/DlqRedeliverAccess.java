@@ -16,4 +16,8 @@ public interface DlqRedeliverAccess {
     }
 
     String queryDlqMessages(String consumerGroup);
+
+    default String queryDlqMessages(String consumerGroup, String keyword) {
+        return queryDlqMessages(consumerGroup);
+    }
 }

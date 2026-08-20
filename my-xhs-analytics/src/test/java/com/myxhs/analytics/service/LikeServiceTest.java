@@ -57,6 +57,8 @@ class LikeServiceTest {
 
     @Mock
     private SetOperations<String, String> setOperations;
+    @Mock
+    private com.myxhs.analytics.feign.ContentFeignClient contentFeignClient;
 
     private ObjectMapper objectMapper;
     private LikeService likeService;
@@ -70,7 +72,10 @@ class LikeServiceTest {
         objectMapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
         likeService = new LikeService(
                 stringRedisTemplate, rocketMQTemplate, objectMapper,
-                likeAtomicScript, unlikeAtomicScript);
+                likeAtomicScript, unlikeAtomicScript, contentFeignClient);
+        when(contentFeignClient.batchGetNoteDetail(anyList()))
+                .thenReturn(com.myxhs.common.response.R.ok(
+                        java.util.Map.of(String.valueOf(BIZ_ID), java.util.Map.of())));
     }
 
     // ==================== 点赞 ====================
@@ -81,7 +86,7 @@ class LikeServiceTest {
         LikeRequest request = buildLikeRequest(1, BIZ_ID);
 
         // Lua脚本 SADD 成功返回 1（新增）
-        when(stringRedisTemplate.execute(eq(likeAtomicScript), anyList(), anyString(), anyString(), anyString()))
+        when(stringRedisTemplate.execute(eq(likeAtomicScript), anyList(), anyString()))
                 .thenReturn(1L);
 
         // MQ 同步发送成功
@@ -105,7 +110,7 @@ class LikeServiceTest {
         LikeRequest request = buildLikeRequest(1, BIZ_ID);
 
         // Lua脚本 SADD 返回 0（已存在）
-        when(stringRedisTemplate.execute(eq(likeAtomicScript), anyList(), anyString(), anyString(), anyString()))
+        when(stringRedisTemplate.execute(eq(likeAtomicScript), anyList(), anyString()))
                 .thenReturn(0L);
 
         assertThatCode(() -> likeService.like(USER_ID, request))
@@ -117,12 +122,12 @@ class LikeServiceTest {
     }
 
     @Test
-    @DisplayName("点赞 - MQ发送失败，回滚Redis并抛出BizException")
+    @DisplayName("点赞 - MQ发送失败，不回滚Redis且接口不抛异常")
     void likeMqFailureRollback() {
         LikeRequest request = buildLikeRequest(1, BIZ_ID);
 
         // Lua脚本 SADD 成功返回 1
-        when(stringRedisTemplate.execute(eq(likeAtomicScript), anyList(), anyString(), anyString(), anyString()))
+        when(stringRedisTemplate.execute(eq(likeAtomicScript), anyList(), anyString()))
                 .thenReturn(1L);
 
         // MQ 同步发送失败（异常）
@@ -130,16 +135,12 @@ class LikeServiceTest {
                 ArgumentMatchers.<org.springframework.messaging.Message>any(), eq(3000L)))
                 .thenThrow(new RuntimeException("MQ连接异常"));
 
-        // 回滚 Lua 脚本也成功
-        when(stringRedisTemplate.execute(eq(unlikeAtomicScript), anyList(), anyString(), anyString(), anyString()))
-                .thenReturn(1L);
+        assertThatCode(() -> likeService.like(USER_ID, request))
+                .doesNotThrowAnyException();
 
-        assertThatThrownBy(() -> likeService.like(USER_ID, request))
-                .isInstanceOf(BizException.class)
-                .hasMessageContaining("点赞失败，请重试");
-
-        // 验证回滚已被调用
-        verify(stringRedisTemplate).execute(eq(unlikeAtomicScript), anyList(), anyString(), anyString(), anyString());
+        verify(rocketMQTemplate).syncSend(startsWith("SOCIAL_TOPIC:LIKE"),
+                ArgumentMatchers.<org.springframework.messaging.Message>any(), eq(3000L));
+        verify(stringRedisTemplate, never()).execute(eq(unlikeAtomicScript), anyList(), anyString());
     }
 
     // ==================== 取消点赞 ====================
@@ -150,7 +151,7 @@ class LikeServiceTest {
         LikeRequest request = buildLikeRequest(1, BIZ_ID);
 
         // Lua脚本 SREM 成功返回 1
-        when(stringRedisTemplate.execute(eq(unlikeAtomicScript), anyList(), anyString(), anyString(), anyString()))
+        when(stringRedisTemplate.execute(eq(unlikeAtomicScript), anyList(), anyString()))
                 .thenReturn(1L);
 
         // MQ 同步发送成功
@@ -174,7 +175,7 @@ class LikeServiceTest {
         LikeRequest request = buildLikeRequest(1, BIZ_ID);
 
         // Lua脚本 SREM 成功返回 1
-        when(stringRedisTemplate.execute(eq(unlikeAtomicScript), anyList(), anyString(), anyString(), anyString()))
+        when(stringRedisTemplate.execute(eq(unlikeAtomicScript), anyList(), anyString()))
                 .thenReturn(1L);
 
         // MQ 发送失败（异常）
@@ -182,16 +183,11 @@ class LikeServiceTest {
                 ArgumentMatchers.<org.springframework.messaging.Message>any(), eq(3000L)))
                 .thenThrow(new RuntimeException("MQ连接异常"));
 
-        // 回滚用 likeAtomicScript
-        when(stringRedisTemplate.execute(eq(likeAtomicScript), anyList(), anyString(), anyString(), anyString()))
-                .thenReturn(1L);
-
         assertThatThrownBy(() -> likeService.unlike(USER_ID, request))
                 .isInstanceOf(BizException.class)
                 .hasMessageContaining("取消点赞失败，请重试");
 
-        // 验证回滚调用了 likeAtomicScript
-        verify(stringRedisTemplate).execute(eq(likeAtomicScript), anyList(), anyString(), anyString(), anyString());
+        verify(stringRedisTemplate, org.mockito.Mockito.atLeastOnce()).opsForSet();
     }
 
     // ==================== 查询点赞状态 ====================

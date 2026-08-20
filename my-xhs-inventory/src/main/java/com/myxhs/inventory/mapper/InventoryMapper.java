@@ -49,6 +49,21 @@ public interface InventoryMapper extends BaseMapper<Inventory> {
             "WHERE sku_id = #{skuId} AND locked_stock >= #{quantity} AND deleted = 0")
     int releaseStock(@Param("skuId") Long skuId, @Param("quantity") int quantity);
 
+    /** T-071：退款回补库存（available_stock +qty——退款回补语义，非 locked→available） */
+    @org.apache.ibatis.annotations.Update("UPDATE t_inventory SET available_stock = available_stock + #{quantity}, " +
+            "updated_at = NOW() WHERE sku_id = #{skuId} AND deleted = 0")
+    int refundRestoreStock(@Param("skuId") Long skuId, @Param("quantity") int quantity);
+
+    /** T-079：预扣幂等表——INSERT IGNORE 探测（冲突返回 0=已存在=幂等；
+     *  不用 ON DUPLICATE：JDBC 默认 found rows 语义会返回 1 导致探测失效） */
+    @org.apache.ibatis.annotations.Insert("INSERT IGNORE INTO t_inventory_prededuct_idem (order_id, sku_id) " +
+            "VALUES (#{orderId}, #{skuId})")
+    int insertPredeductIdem(@Param("orderId") Long orderId, @Param("skuId") Long skuId);
+
+    /** T-079：预扣失败（库存不足/未初始化）时删除幂等占位，允许重试 */
+    @org.apache.ibatis.annotations.Delete("DELETE FROM t_inventory_prededuct_idem WHERE order_id = #{orderId} AND sku_id = #{skuId}")
+    int deletePredeductIdem(@Param("orderId") Long orderId, @Param("skuId") Long skuId);
+
     /**
      * TCC Try: 冻结库存（available_stock -= qty, freezing_stock += qty）
      * @return affected rows (1=成功, 0=库存不足)
@@ -112,10 +127,10 @@ public interface InventoryMapper extends BaseMapper<Inventory> {
     /**
      * 存储库存事件 Outbox 记录
      */
-    @org.apache.ibatis.annotations.Insert("INSERT INTO t_inventory_outbox (order_id, sku_id, quantity, action, status, created_at) " +
-            "VALUES (#{orderId}, #{skuId}, #{quantity}, #{action}, 0, NOW()) " +
-            "ON DUPLICATE KEY UPDATE quantity = VALUES(quantity), action = VALUES(action), status = 0, created_at = NOW()")
-    int insertOutboxEvent(@Param("orderId") Long orderId, @Param("skuId") Long skuId,
+    @org.apache.ibatis.annotations.Insert("INSERT INTO t_inventory_outbox (id, order_id, sku_id, quantity, action, status, created_at) " +
+            "VALUES (#{eventId}, #{orderId}, #{skuId}, #{quantity}, #{action}, 0, NOW()) " +
+            "ON DUPLICATE KEY UPDATE quantity = VALUES(quantity), status = 0, created_at = NOW()")
+    int insertOutboxEvent(@Param("eventId") Long eventId, @Param("orderId") Long orderId, @Param("skuId") Long skuId,
             @Param("quantity") int quantity, @Param("action") String action);
 
     /**
@@ -128,15 +143,15 @@ public interface InventoryMapper extends BaseMapper<Inventory> {
     /**
      * 标记 Outbox 事件已发送
      */
-    @org.apache.ibatis.annotations.Update("UPDATE t_inventory_outbox SET status = 1 WHERE order_id = #{orderId} AND sku_id = #{skuId}")
-    int markOutboxSent(@Param("orderId") Long orderId, @Param("skuId") Long skuId);
+    @org.apache.ibatis.annotations.Update("UPDATE t_inventory_outbox SET status = 1 WHERE id = #{eventId}")
+    int markOutboxSent(@Param("eventId") Long eventId);
 
     /**
      * 取消 Outbox 事件（syncSend 失败且已回滚 Redis 时调用，
      * 防止 OutboxSenderJob 补发已回滚的事件导致 MySQL 幻影扣减）
      */
-    @org.apache.ibatis.annotations.Delete("DELETE FROM t_inventory_outbox WHERE order_id = #{orderId} AND sku_id = #{skuId} AND status = 0")
-    int cancelOutboxEvent(@Param("orderId") Long orderId, @Param("skuId") Long skuId);
+    @org.apache.ibatis.annotations.Delete("DELETE FROM t_inventory_outbox WHERE id = #{eventId} AND status = 0")
+    int cancelOutboxEvent(@Param("eventId") Long eventId);
 
     /**
      * 写入补偿记录（回滚失败时需要人工/自动重试）

@@ -1,0 +1,307 @@
+[
+    {
+        "Id": "6c18b7b150cfcabc809b9a118885d052a6120ac380a93671eae245cf2e18da5c",
+        "Created": "2026-08-08T14:01:41.369462681Z",
+        "Path": "bash",
+        "Args": [
+            "docker-entrypoint.sh"
+        ],
+        "State": {
+            "Status": "running",
+            "Running": true,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 3328604,
+            "ExitCode": 0,
+            "Error": "",
+            "StartedAt": "2026-08-08T14:02:16.505938265Z",
+            "FinishedAt": "2026-08-08T14:02:16.399014996Z",
+            "Health": {
+                "Status": "healthy",
+                "FailingStreak": 0,
+                "Log": [
+                    {
+                        "Start": "2026-08-11T16:21:53.305587492+08:00",
+                        "End": "2026-08-11T16:21:53.339740839+08:00",
+                        "ExitCode": 0,
+                        "Output": "Status: 404\nDescription: Not Found\n"
+                    },
+                    {
+                        "Start": "2026-08-11T16:22:23.339995679+08:00",
+                        "End": "2026-08-11T16:22:23.37742755+08:00",
+                        "ExitCode": 0,
+                        "Output": "Status: 404\nDescription: Not Found\n"
+                    },
+                    {
+                        "Start": "2026-08-11T16:22:53.37779972+08:00",
+                        "End": "2026-08-11T16:22:53.417175127+08:00",
+                        "ExitCode": 0,
+                        "Output": "Status: 404\nDescription: Not Found\n"
+                    },
+                    {
+                        "Start": "2026-08-11T16:23:23.417890155+08:00",
+                        "End": "2026-08-11T16:23:23.453309989+08:00",
+                        "ExitCode": 0,
+                        "Output": "Status: 404\nDescription: Not Found\n"
+                    },
+                    {
+                        "Start": "2026-08-11T16:23:53.453729682+08:00",
+                        "End": "2026-08-11T16:23:53.497454715+08:00",
+                        "ExitCode": 0,
+                        "Output": "Status: 404\nDescription: Not Found\n"
+                    }
+                ]
+            }
+        },
+        "Image": "sha256:ce5e1a86944cf78afad773f6fb5c84382b48ca16d922b3a2decd981b8ccbe9a5",
+        "ResolvConfPath": "/data/docker/lib/containers/6c18b7b150cfcabc809b9a118885d052a6120ac380a93671eae245cf2e18da5c/resolv.conf",
+        "HostnamePath": "/data/docker/lib/containers/6c18b7b150cfcabc809b9a118885d052a6120ac380a93671eae245cf2e18da5c/hostname",
+        "HostsPath": "/data/docker/lib/containers/6c18b7b150cfcabc809b9a118885d052a6120ac380a93671eae245cf2e18da5c/hosts",
+        "LogPath": "",
+        "Name": "/my-xhs-skywalking-oap",
+        "RestartCount": 1,
+        "Driver": "overlay2",
+        "Platform": "linux",
+        "MountLabel": "",
+        "ProcessLabel": "",
+        "AppArmorProfile": "",
+        "ExecIDs": null,
+        "HostConfig": {
+            "Binds": [
+                "/data/workspace/my-xhs-deploy-zip/config/skywalking:/skywalking/config:ro",
+                "/opt/kona-jdk17:/opt/kona-jdk17:ro"
+            ],
+            "ContainerIDFile": "",
+            "LogConfig": {
+                "Type": "journald",
+                "Config": {}
+            },
+            "NetworkMode": "host",
+            "PortBindings": {},
+            "RestartPolicy": {
+                "Name": "unless-stopped",
+                "MaximumRetryCount": 0
+            },
+            "AutoRemove": false,
+            "VolumeDriver": "",
+            "VolumesFrom": null,
+            "ConsoleSize": [
+                0,
+                0
+            ],
+            "CapAdd": null,
+            "CapDrop": null,
+            "CgroupnsMode": "private",
+            "Dns": null,
+            "DnsOptions": null,
+            "DnsSearch": null,
+            "ExtraHosts": [],
+            "GroupAdd": null,
+            "IpcMode": "private",
+            "Cgroup": "",
+            "Links": null,
+            "OomScoreAdj": 0,
+            "PidMode": "",
+            "Privileged": false,
+            "PublishAllPorts": false,
+            "ReadonlyRootfs": false,
+            "SecurityOpt": null,
+            "UTSMode": "",
+            "UsernsMode": "",
+            "ShmSize": 67108864,
+            "Runtime": "runc",
+            "Isolation": "",
+            "CpuShares": 0,
+            "Memory": 1610612736,
+            "NanoCpus": 1000000000,
+            "CgroupParent": "",
+            "BlkioWeight": 0,
+            "BlkioWeightDevice": null,
+            "BlkioDeviceReadBps": null,
+            "BlkioDeviceWriteBps": null,
+            "BlkioDeviceReadIOps": null,
+            "BlkioDeviceWriteIOps": null,
+            "CpuPeriod": 0,
+            "CpuQuota": 0,
+            "CpuRealtimePeriod": 0,
+            "CpuRealtimeRuntime": 0,
+            "CpusetCpus": "",
+            "CpusetMems": "",
+            "Devices": null,
+            "DeviceCgroupRules": null,
+            "DeviceRequests": null,
+            "MemoryReservation": 805306368,
+            "MemorySwap": 3221225472,
+            "MemorySwappiness": null,
+            "OomKillDisable": null,
+            "PidsLimit": null,
+            "Ulimits": [
+                {
+                    "Name": "nofile",
+                    "Hard": 1048576,
+                    "Soft": 1048576
+                }
+            ],
+            "CpuCount": 0,
+            "CpuPercent": 0,
+            "IOMaximumIOps": 0,
+            "IOMaximumBandwidth": 0,
+            "MaskedPaths": [
+                "/proc/asound",
+                "/proc/acpi",
+                "/proc/interrupts",
+                "/proc/kcore",
+                "/proc/keys",
+                "/proc/latency_stats",
+                "/proc/timer_list",
+                "/proc/timer_stats",
+                "/proc/sched_debug",
+                "/proc/scsi",
+                "/sys/firmware",
+                "/sys/devices/virtual/powercap"
+            ],
+            "ReadonlyPaths": [
+                "/proc/bus",
+                "/proc/fs",
+                "/proc/irq",
+                "/proc/sys",
+                "/proc/sysrq-trigger"
+            ]
+        },
+        "GraphDriver": {
+            "Data": {
+                "ID": "6c18b7b150cfcabc809b9a118885d052a6120ac380a93671eae245cf2e18da5c",
+                "LowerDir": "/data/docker/lib/overlay2/7219e215a77daed94ee97cdf47012a2f56247d26c16f254345a02e5d0460482a-init/diff:/data/docker/lib/overlay2/fbc88b3bdb10f384eba9db04c844d83fad4883e643d688a6f4606b5afc018b4b/diff:/data/docker/lib/overlay2/5b80ae9f1d928cd41cdeda33c598f77b4cfbc59a0e4db51518868519fe127704/diff:/data/docker/lib/overlay2/1e23af0b7ee99df4f18b0b3814308957c0c60a62843d6cf91313574c297778a7/diff:/data/docker/lib/overlay2/d5bc24c00a171a81b2f8405d108caa17fa072c104c4d5a4378b176bbdf50859e/diff:/data/docker/lib/overlay2/ad18b765a3609f0e754720fd9a7df832ac581c2993065b07d7dd72eecaf8b090/diff:/data/docker/lib/overlay2/907e962077dbe3a12bb06786fbadc7feaedeb808e98f202f0b0a719c5996a0b8/diff:/data/docker/lib/overlay2/f272f45f49d747c50e0b6bca45a9d2a070434e6454b8de03b430f05633ab39b2/diff:/data/docker/lib/overlay2/03eb2bd4813ae9c03755a493ae5d6355d27222855fb97c78ca60a248620026a9/diff:/data/docker/lib/overlay2/1add21c5782a1d54f14c04e6eabb35779b2d8eac9ffc64e078375803eeff21a5/diff:/data/docker/lib/overlay2/e20bb665f87697394d482ad5eff2ab87126b583faf6b7a830d1b463a50dd97cb/diff:/data/docker/lib/overlay2/d21ba27e2f77bddb34038055e98d000243e8c9e7953b1a6559f702988879fe29/diff:/data/docker/lib/overlay2/52e6d8324f83cd6622ed48eb031e0ba9f7fea70a44bf1132d6d7ec3751e401d8/diff",
+                "MergedDir": "/data/docker/lib/overlay2/7219e215a77daed94ee97cdf47012a2f56247d26c16f254345a02e5d0460482a/merged",
+                "UpperDir": "/data/docker/lib/overlay2/7219e215a77daed94ee97cdf47012a2f56247d26c16f254345a02e5d0460482a/diff",
+                "WorkDir": "/data/docker/lib/overlay2/7219e215a77daed94ee97cdf47012a2f56247d26c16f254345a02e5d0460482a/work"
+            },
+            "Name": "overlay2"
+        },
+        "Mounts": [
+            {
+                "Type": "bind",
+                "Source": "/opt/kona-jdk17",
+                "Destination": "/opt/kona-jdk17",
+                "Mode": "ro",
+                "RW": false,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "bind",
+                "Source": "/data/workspace/my-xhs-deploy-zip/config/skywalking",
+                "Destination": "/skywalking/config",
+                "Mode": "ro",
+                "RW": false,
+                "Propagation": "rprivate"
+            }
+        ],
+        "Config": {
+            "Hostname": "VM-247-89-tencentos",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": true,
+            "AttachStderr": true,
+            "ExposedPorts": {
+                "11800/tcp": {},
+                "1234/tcp": {},
+                "12800/tcp": {}
+            },
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "SW_ES_USER=elastic",
+                "SW_HEALTH_CHECKER=default",
+                "SW_STORAGE_ES_CLUSTER_NODES=127.0.0.1:19201",
+                "SW_TELEMETRY_PROMETHEUS_PORT=1234",
+                "SW_TELEMETRY_PROMETHEUS_HOST=127.0.0.1",
+                "SW_TELEMETRY=prometheus",
+                "JAVA_OPTS=-Xms512m -Xmx1024m",
+                "JAVA_HOME=/opt/kona-jdk17",
+                "SW_ES_PASSWORD=Xhs@2026#ElasticSW",
+                "SW_STORAGE=elasticsearch",
+                "PATH=/skywalking/bin:/opt/java/openjdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "LANG=en_US.UTF-8",
+                "LANGUAGE=en_US:en",
+                "LC_ALL=en_US.UTF-8",
+                "JAVA_VERSION=jdk-11.0.21+9",
+                "SKYWALKING_HOME=/skywalking"
+            ],
+            "Cmd": null,
+            "Healthcheck": {
+                "Test": [
+                    "CMD-SHELL",
+                    "curl -s http://127.0.0.1:12800/healthCheck || exit 1"
+                ],
+                "Interval": 30000000000,
+                "Timeout": 10000000000,
+                "StartPeriod": 90000000000,
+                "Retries": 3
+            },
+            "Image": "apache/skywalking-oap-server:9.7.0",
+            "Volumes": null,
+            "WorkingDir": "/skywalking",
+            "Entrypoint": [
+                "bash",
+                "docker-entrypoint.sh"
+            ],
+            "OnBuild": null,
+            "Labels": {
+                "com.docker.compose.config-hash": "0d62790c7793f15e98b44006da5fe3bcf6bb5d34610e4503c467f2992a26ecdb",
+                "com.docker.compose.container-number": "1",
+                "com.docker.compose.depends_on": "elasticsearch-skywalking:service_started:false",
+                "com.docker.compose.image": "sha256:ce5e1a86944cf78afad773f6fb5c84382b48ca16d922b3a2decd981b8ccbe9a5",
+                "com.docker.compose.oneoff": "False",
+                "com.docker.compose.project": "my-xhs-deploy-zip",
+                "com.docker.compose.project.config_files": "/data/workspace/my-xhs-deploy-zip/docker-compose.yml",
+                "com.docker.compose.project.working_dir": "/data/workspace/my-xhs-deploy-zip",
+                "com.docker.compose.service": "skywalking-oap",
+                "com.docker.compose.version": "2.29.2",
+                "org.opencontainers.image.ref.name": "ubuntu",
+                "org.opencontainers.image.version": "22.04"
+            }
+        },
+        "NetworkSettings": {
+            "Bridge": "",
+            "SandboxID": "6c21732235d75e1dac6699013cc2e71bbddab70c58b4d2b290388db5852227df",
+            "SandboxKey": "/var/run/docker/netns/default",
+            "Ports": {},
+            "HairpinMode": false,
+            "LinkLocalIPv6Address": "",
+            "LinkLocalIPv6PrefixLen": 0,
+            "SecondaryIPAddresses": null,
+            "SecondaryIPv6Addresses": null,
+            "EndpointID": "",
+            "Gateway": "",
+            "GlobalIPv6Address": "",
+            "GlobalIPv6PrefixLen": 0,
+            "IPAddress": "",
+            "IPPrefixLen": 0,
+            "IPv6Gateway": "",
+            "MacAddress": "",
+            "Networks": {
+                "host": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": null,
+                    "MacAddress": "",
+                    "DriverOpts": null,
+                    "GwPriority": 0,
+                    "NetworkID": "69303899f57d4447764f56f161dceb184df134844eb038322985183a4f6b4dff",
+                    "EndpointID": "c297e465c4aa454d4a31f103968475a86cb500c12185b2edc7e65d32a408ec14",
+                    "Gateway": "",
+                    "IPAddress": "",
+                    "IPPrefixLen": 0,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "DNSNames": null
+                }
+            }
+        }
+    }
+]

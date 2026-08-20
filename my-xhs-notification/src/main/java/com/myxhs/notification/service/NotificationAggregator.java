@@ -12,6 +12,8 @@ import org.springframework.stereotype.Component;
 
 import com.myxhs.notification.dto.NotificationType;
 
+import org.springframework.transaction.annotation.Transactional;
+
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -60,7 +62,7 @@ public class NotificationAggregator {
      * 如果需要动态更新模板，可以加 TTL 或监听配置变更。
      * </p>
      */
-    private final ConcurrentHashMap<String, PushTemplate> templateCache = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, CachedTemplate> templateCache = new ConcurrentHashMap<>();
 
     /**
      * Lua 脚本：原子性 SETNX + 写入通知 ID
@@ -93,7 +95,13 @@ public class NotificationAggregator {
      *
      * @param notification 待处理的通知（已填充基本字段）
      * @return 最终的通知记录（可能是新建的，也可能是更新后的主通知）
+     * <p>
+     * T-098：加 @Transactional（读写分离下事务内 SQL 走 master）——
+     * 原实现 incrementAggregateCount（master UPDATE）后 getAggregateCount 读从库，
+     * 主从延迟竞态导致聚合标题 count 间歇滞后（如"等2人"vs count=3）。
+     * </p>
      */
+    @Transactional(rollbackFor = Exception.class)
     public Notification processWithAggregate(Notification notification) {
         // 聚合 Key = userId:type:targetId
         // 同一用户 + 同一类型 + 同一目标 → 当天内合并（窗口=当天剩余秒数，对齐按天聚合索引）
@@ -211,8 +219,24 @@ public class NotificationAggregator {
 
     /**
      * 带本地缓存的模板查询
+     * <p>
+     * T-130（2026-08-16）：缓存加 5min TTL——修复前 ConcurrentHashMap computeIfAbsent 永久缓存
+     * （改 t_push_template 需重启才生效，G7 登记观察项）；空值也缓存防 DB 压力
+     * </p>
      */
+    private record CachedTemplate(PushTemplate template, long expireAt) {
+    }
+
+    private static final long TEMPLATE_CACHE_TTL_MS = 5 * 60 * 1000L;
+
     private PushTemplate getTemplateWithCache(String typeStr) {
-        return templateCache.computeIfAbsent(typeStr, pushTemplateMapper::selectByType);
+        long now = System.currentTimeMillis();
+        CachedTemplate cached = templateCache.get(typeStr);
+        if (cached != null && cached.expireAt() > now) {
+            return cached.template();
+        }
+        PushTemplate template = pushTemplateMapper.selectByType(typeStr);
+        templateCache.put(typeStr, new CachedTemplate(template, now + TEMPLATE_CACHE_TTL_MS));
+        return template;
     }
 }

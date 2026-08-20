@@ -217,7 +217,13 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
         if ("COMMENT".equals(tag)) {
             executed = counterService.incrementWithDedup(msgId, targetType, noteId, countType);
         } else {
-            executed = counterService.decrementWithDedup(msgId, targetType, noteId, countType);
+            // O-Counter-2 修复：UNCOMMENT 事件带 count（级联删除 1+N 条）——按 count 递减，非固定 1
+            long delta = 1;
+            Object countObj = eventMap.get("count");
+            if (countObj != null) {
+                try { delta = Long.parseLong(countObj.toString()); } catch (NumberFormatException ignored) {}
+            }
+            executed = counterService.decrementWithDedup(msgId, targetType, noteId, countType, delta);
         }
 
         log.info("[计数Consumer] 评论计数{}: msgId={}, targetType={}, targetId={}, countType=COMMENT, action={}",

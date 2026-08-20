@@ -1,0 +1,23 @@
+############ my-xhs-logstash 真实生效配置(进程实际使用的)
+#### ENTRYPOINT
+[
+    "/usr/local/bin/docker-entrypoint"
+]
+#### CMD(命令行参数=多数服务真实配置)
+[
+    "logstash",
+    "-e",
+    "\n  input {\n    tcp { port => 15044 codec => json_lines }\n    beats { port => 15045 }\n  }\n  output {\n    elasticsearch {\n      hosts => [\"127.0.0.1:19200\"]\n      user => \"elastic\"\n      password => \"Xhs@2026#Elastic\"\n      index => \"myxhs-logs-%{+YYYY.MM.dd}\"\n    }\n  }\n"
+]
+#### ENV(环境变量)
+XPACK_MONITORING_ENABLED=false
+LS_JAVA_OPTS=-Xms256m -Xmx512m
+PATH=/usr/share/logstash/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ELASTIC_CONTAINER=true
+LANG=en_US.UTF-8
+LC_ALL=en_US.UTF-8
+
+#### 资源限制
+MemLimit=805306368 CPULimit=500000000 Restart=unless-stopped
+#### 挂载的配置文件
+

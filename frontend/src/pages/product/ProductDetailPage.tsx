@@ -60,8 +60,8 @@ export default function ProductDetailPage() {
   }, [product]);
 
   if (loading) return <div style={{ textAlign: 'center', padding: 80 }}><Spin size="large" /></div>;
-  if (error) return <Alert type="error" title={error} style={{ margin: 24 }} />;
-  if (!product) return <Alert type="error" title="商品不存在" style={{ margin: 24 }} />;
+  if (error) return <Alert type="error" message={error} style={{ margin: 24 }} />;
+  if (!product) return <Alert type="error" message="商品不存在" style={{ margin: 24 }} />;
 
   const currentPrice = selectedSku ? Number(selectedSku.price) : minPrice;
   const currentSkuId = selectedSku?.skuId;

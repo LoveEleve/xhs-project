@@ -46,9 +46,13 @@ public class UserService {
     private final CaptchaService captchaService;
     private final RedisOperator redisOperator;
     private final RedissonClient redissonClient;
+    /** T-016 修复: block Set 用 stringRedisTemplate（避免 RedisOperator Jackson 引号序列化，跨服务读取不匹配） */
+    private final org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
     private final CacheHelper cacheHelper;
 
     private final PasswordEncoder passwordEncoder;
+    /** P2-15: 事务只包 DB 写入（BCrypt/Redis 操作在事务外执行，避免长占连接） */
+    private final org.springframework.transaction.support.TransactionTemplate transactionTemplate;
 
     /** 登录失败最大次数 */
     private static final int MAX_LOGIN_FAIL = 5;
@@ -69,7 +73,6 @@ public class UserService {
      * 5. 插入数据库
      * </p>
      */
-    @Transactional(rollbackFor = Exception.class)
     public void register(RegisterRequest request) {
         try {
             doRegister(request);
@@ -117,8 +120,10 @@ public class UserService {
             user.setPhone(request.getPhone());
             user.setGender(0);
             user.setStatus(1);
+            user.setRole("OPERATOR"); // 默认运营角色（Gateway 集成 2026-08-17）
 
-            userMapper.insert(user);
+            // P2-15: 事务仅覆盖 DB 写入（BCrypt/Redis/锁均在事务外）
+            transactionTemplate.executeWithoutResult(status -> userMapper.insert(user));
             log.info("[注册] 用户注册成功, userId={}, username={}", user.getId(), user.getUsername());
 
         } catch (DuplicateKeyException e) {
@@ -152,7 +157,6 @@ public class UserService {
      * 5. 登录成功 → 清除失败计数 → 生成 Token 对
      * </p>
      */
-    @Transactional(rollbackFor = Exception.class)
     public TokenResponse login(LoginRequest request, String clientIp) {
         // Redis 不可用时返回明确错误，而非 500
         try {
@@ -211,9 +215,10 @@ public class UserService {
         // 6. 登录成功，清除失败计数
         clearLoginFail(username, clientIp);
 
-        // 7. 生成 Token 对
-        TokenResponse tokenResponse = tokenService.generateTokenPair(user.getId());
-        log.info("[登录] 用户登录成功, userId={}, username={}", user.getId(), username);
+// 7. 生成 Token 对
+        // Gateway 集成（2026-08-17）：role 从 t_user.role 读入 JWT claim，gateway 注入 X-User-Role
+        TokenResponse tokenResponse = tokenService.generateTokenPair(user.getId(), user.getRole());
+        log.info("[登录] 用户登录成功, userId={}, username={}, role={}", user.getId(), user.getUsername(), user.getRole());
         return tokenResponse;
     }
 
@@ -227,12 +232,33 @@ public class UserService {
     }
 
     // ==================== 注销 ====================
-
     /**
      * 退出登录
      */
     public void logout(String accessToken, String refreshToken) {
         tokenService.logout(accessToken, refreshToken);
+    }
+
+    /**
+     * T-122（2026-08-16）：管理员删除用户
+     * <p>
+     * 修复前：无删除用户入口（测试直删 SQL 绕过服务）——t_user 行删除后旧 token 仍有效
+     * （gateway JWT 无状态校验不查用户存在性，30min 窗口内仍可调用 API）。
+     * 修复：逻辑删除（@TableLogic）+ 吊销该用户全部 token（黑名单+清 Redis 映射+删 hmac secret）。
+     * </p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteUser(Long targetUserId) {
+        User user = userMapper.selectById(targetUserId);
+        if (user == null) {
+            throw new BizException(ResultCode.USER_NOT_FOUND);
+        }
+        userMapper.deleteById(targetUserId);
+        // 吊销全部活跃 token（黑名单 + 清 Redis 映射 + 删 hmac secret），防删号后凭证残留
+        tokenService.revokeAllTokens(targetUserId);
+        // 清用户缓存（防逻辑删除后缓存残留导致信息可查）
+        redisOperator.delete(RedisKeyConstants.USER_INFO + targetUserId);
+        log.info("[用户] 管理员删除用户: userId={}, username={}", targetUserId, user.getUsername());
     }
 
     // ==================== 用户信息 ====================
@@ -341,6 +367,8 @@ public class UserService {
         updateUser.setId(userId);
         updateUser.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userMapper.updateById(updateUser);
+        // T-012: 改密后旧凭证全部失效（黑名单 + 清 Redis + 删 hmac secret）
+        tokenService.invalidateUserCredentials(userId);
 
         // 注销当前用户所有活跃 Token（加入黑名单 + 清除 Redis 映射）
         tokenService.revokeAllTokens(userId);
@@ -467,8 +495,8 @@ public class UserService {
             throw new BizException(ResultCode.BAD_REQUEST, "不能屏蔽自己");
         }
         String blockKey = RedisKeyConstants.USER_BLOCK_LIST + userId;
-        redisOperator.sAdd(blockKey, targetUserId.toString());
-        redisOperator.expire(blockKey, 365, TimeUnit.DAYS);
+        stringRedisTemplate.opsForSet().add(blockKey, targetUserId.toString());
+        stringRedisTemplate.expire(blockKey, 365, TimeUnit.DAYS);
         log.info("[屏蔽] 用户屏蔽成功: userId={}, targetUserId={}", userId, targetUserId);
     }
 
@@ -477,7 +505,7 @@ public class UserService {
      */
     public void unblockUser(Long userId, Long targetUserId) {
         String blockKey = RedisKeyConstants.USER_BLOCK_LIST + userId;
-        redisOperator.sRemove(blockKey, targetUserId.toString());
+        stringRedisTemplate.opsForSet().remove(blockKey, targetUserId.toString());
         log.info("[屏蔽] 用户取消屏蔽: userId={}, targetUserId={}", userId, targetUserId);
     }
 
@@ -486,7 +514,7 @@ public class UserService {
      */
     public Set<Object> getBlockList(Long userId) {
         String blockKey = RedisKeyConstants.USER_BLOCK_LIST + userId;
-        return redisOperator.sMembers(blockKey);
+        return new java.util.HashSet<>(stringRedisTemplate.opsForSet().members(blockKey));
     }
 
     /**
@@ -523,5 +551,13 @@ public class UserService {
                 .signature(user.getSignature())
                 .createdAt(user.getCreatedAt())
                 .build();
+    }
+
+
+    /**
+     * T-013: 用户存在性校验（关注链路内部调用）
+     */
+    public boolean userExists(Long userId) {
+        return userMapper.selectById(userId) != null;
     }
 }

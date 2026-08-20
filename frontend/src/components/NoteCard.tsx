@@ -40,7 +40,7 @@ export default function NoteCard({ noteId, coverUrl, title, noteType, authorNick
           )}
         </div>
       }
-      bodyStyle={{ padding: '8px 12px' }}
+      styles={{ body: { padding: '8px 12px' } }}
       onClick={() => onClick ? onClick() : navigate(`/note/${noteId}`)}
     >
       <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>

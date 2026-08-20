@@ -108,11 +108,13 @@ public class SkuService {
         if (skuList.isEmpty()) {
             return List.of();
         }
+        Set<Long> spuIds = skuList.stream().map(Sku::getSpuId).collect(Collectors.toSet());
         // P2-1：批量预取 SPU 首图（一次 IN 查询），消除每 SKU 单独查 SPU 的 N+1
-        Map<Long, String> spuImageMap = buildSpuImageMap(
-                skuList.stream().map(Sku::getSpuId).collect(Collectors.toSet()));
+        Map<Long, String> spuImageMap = buildSpuImageMap(spuIds);
+        // T-047：批量预取 SPU 状态，供 cart 判断 SPU 维度有效性
+        Map<Long, Integer> spuStatusMap = buildSpuStatusMap(spuIds);
         return skuList.stream()
-                .map(sku -> toSkuVO(sku, spuImageMap.get(sku.getSpuId())))
+                .map(sku -> toSkuVO(sku, spuImageMap.get(sku.getSpuId()), spuStatusMap.get(sku.getSpuId())))
                 .collect(Collectors.toList());
     }
 
@@ -132,8 +134,15 @@ public class SkuService {
         // P2-1：批量预取 SPU 首图，消除 N+1
         Map<Long, String> spuImageMap = buildSpuImageMap(
                 skuList.stream().map(Sku::getSpuId).collect(Collectors.toSet()));
+        final Integer spuStatus;
+        Spu spu = spuMapper.selectById(spuId);
+        if (spu != null) {
+            spuStatus = spu.getStatus();
+        } else {
+            spuStatus = null;
+        }
         return skuList.stream()
-                .map(sku -> toSkuVO(sku, spuImageMap.get(sku.getSpuId())))
+                .map(sku -> toSkuVO(sku, spuImageMap.get(sku.getSpuId()), spuStatus))
                 .collect(Collectors.toList());
     }
 
@@ -163,11 +172,31 @@ public class SkuService {
         return result;
     }
 
+    /**
+     * 构建 SPU 状态 Map（T-047：一次 IN 查询，供 SkuVO.spuStatus 填充，
+     * cart 侧据此判断 SPU 维度有效性——SPU 下架后购物车条目应标记无效）
+     */
+    private Map<Long, Integer> buildSpuStatusMap(Set<Long> spuIds) {
+        if (spuIds == null || spuIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<Spu> spuList = spuMapper.selectBatchIds(spuIds);
+        Map<Long, Integer> result = new HashMap<>();
+        for (Spu spu : spuList) {
+            result.put(spu.getId(), spu.getStatus());
+        }
+        return result;
+    }
+
     private SkuVO toSkuVO(Sku sku) {
-        return toSkuVO(sku, resolveSpuImage(sku.getSpuId()));
+        return toSkuVO(sku, resolveSpuImage(sku.getSpuId()), null);
     }
 
     private SkuVO toSkuVO(Sku sku, String firstImage) {
+        return toSkuVO(sku, firstImage, null);
+    }
+
+    private SkuVO toSkuVO(Sku sku, String firstImage, Integer spuStatus) {
         SkuVO vo = new SkuVO();
         vo.setId(sku.getId());
         vo.setSpuId(sku.getSpuId());
@@ -178,6 +207,8 @@ public class SkuService {
         vo.setSpecs(sku.getSpecs());
         vo.setImage(firstImage);
         vo.setStatus(sku.getStatus());
+        // T-047：填充所属 SPU 状态（cart 判断 SPU 维度有效性）
+        vo.setSpuStatus(spuStatus);
         return vo;
     }
 

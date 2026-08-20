@@ -1,0 +1,60 @@
+# secu-tcs-agent monitor, install at Tue Mar 11 02:49:41 PM CST 2025
+* * * * * /usr/local/sa/agent/secu-tcs-agent-mon-safe.sh > /dev/null 2>&1
+# TSC Agent and Proxy monitor, install at Tue Mar 11 03:02:11 PM CST 2025
+*/3 * * * * /usr/local/TsysAgent/bin/control.sh start >/dev/null 2>&1
+
+
+* * * * * /usr/local/tencent/tmp_agent/check_tmp_agent.sh > /dev/null 2>&1
+# tmanager-service monitor, install at Tue Mar 11 03:25:10 PM CST 2025
+* * * * * /usr/local/tmanager/tmanager-service-mon-safe.sh > /dev/null 2>&1
+# tagent monitor, install at Thu Nov 27 05:40:58 PM CST 2025
+* * * * * /usr/local/tagent/tagent-monitor.sh > /dev/null 2>&1
+
+# iGeneral: check nslcd alive
+*/1 * * * * cd /usr/local/sa/tjj/sbin;sh check_alive_nslcd.sh > /dev/null 2>&1
+
+*/5 * * * * flock -xn /tmp/stargate.lock -c '/usr/local/qcloud/stargate/admin/start.sh > /dev/null 2>&1 &'
+########## 部署 zip 内容清单
+--- /data/workspace/my-xhs-deploy.zip
+Archive:  /data/workspace/my-xhs-deploy.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+    25666  08-08-2026 21:45   config/docker-compose.yml
+      255  08-08-2026 21:38   config/redis/sentinel.conf
+    50971  08-08-2026 20:44   sql/init-all.sql
+      413  08-08-2026 21:36   sql/init-replication.sql
+     1328  08-08-2026 21:00   config/rocketmq/broker.conf
+      718  08-08-2026 20:48   config/canal/conf/note_instance/instance.properties
+      788  08-08-2026 20:48   config/canal/conf/product_instance/instance.properties
+      984  08-08-2026 20:48   config/canal/conf/inventory_instance/instance.properties
+     2442  08-08-2026 20:20   config/prometheus/prometheus.yml
+     2612  08-08-2026 20:24   config/sentinel/my-xhs-gateway-flow-rules.json
+     3882  08-08-2026 20:22   start-all.sh
+---------                     -------
+    90059                     11 files
+--- /data/workspace/my-xhs-deploy-v2.zip
+Archive:  /data/workspace/my-xhs-deploy-v2.zip
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+        0  08-08-2026 21:59   my-xhs-deploy-zip/
+        0  08-08-2026 21:49   my-xhs-deploy-zip/config/
+        0  08-08-2026 21:49   my-xhs-deploy-zip/config/skywalking/
+        0  08-08-2026 21:49   my-xhs-deploy-zip/config/skywalking/envoy-metrics-rules/
+     4398  08-08-2026 21:49   my-xhs-deploy-zip/config/skywalking/envoy-metrics-rules/envoy.yaml
+     3072  08-08-2026 21:49   my-xhs-deploy-zip/config/skywalking/envoy-metrics-rules/envoy-svc-relation.yaml
+        0  08-08-2026 21:49   my-xhs-deploy-zip/config/skywalking/meter-analyzer-config/
+      977  08-08-2026 21:49   my-xhs-deploy-zip/config/skywalking/meter-analyzer-config/threadpool.yaml
+     1575  08-08-2026 21:49   my-xhs-deploy-zip/config/skywalking/meter-analyzer-config/python-runtime.yaml
+     4029  08-08-2026 21:49   my-xhs-deploy-zip/config/skywalking/meter-analyzer-config/go-runtime.yaml
+     1554  08-08-2026 21:49   my-xhs-deploy-zip/config/skywalking/meter-analyzer-config/continuous-profiling.yaml
+     1760  08-08-2026 21:49   my-xhs-deploy-zip/config/skywalking/meter-analyzer-config/satellite.yaml
+      967  08-08-2026 21:49   my-xhs-deploy-zip/config/skywalking/meter-analyzer-config/datasource.yaml
+    10623  08-08-2026 21:49   my-xhs-deploy-zip/config/skywalking/meter-analyzer-config/network-profiling.yaml
+     2411  08-08-2026 21:49   my-xhs-deploy-zip/config/skywalking/meter-analyzer-config/spring-micrometer.yaml
+        0  08-08-2026 21:49   my-xhs-deploy-zip/config/skywalking/otel-rules/
+     3041  08-08-2026 21:49   my-xhs-deploy-zip/config/skywalking/otel-rules/windows.yaml
+        0  08-08-2026 21:49   my-xhs-deploy-zip/config/skywalking/otel-rules/elasticsearch/
+    10773  08-08-2026 21:49   my-xhs-deploy-zip/config/skywalking/otel-rules/elasticsearch/elasticsearch-index.yaml
+    10836  08-08-2026 21:49   my-xhs-deploy-zip/config/skywalking/otel-rules/elasticsearch/elasticsearch-node.yaml
+     4068  08-08-2026 21:49   my-xhs-deploy-zip/config/skywalking/otel-rules/elasticsearch/elasticsearch-cluster.yaml
+        0  08-08-2026 21:49   my-xhs-deploy-zip/config/skywalking/otel-rules/aws-eks/

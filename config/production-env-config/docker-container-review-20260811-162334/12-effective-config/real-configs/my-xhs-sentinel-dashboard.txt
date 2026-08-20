@@ -1,0 +1,28 @@
+############ my-xhs-sentinel-dashboard 真实生效配置(进程实际使用的)
+#### ENTRYPOINT
+[
+    "java",
+    "-Djava.security.egd=file:/dev/./urandom",
+    "-Dserver.port=8858",
+    "-Dcsp.sentinel.api.port=8719",
+    "-Dcsp.sentinel.dashboard.server=localhost:8858",
+    "-Dproject.name=sentinel-dashboard",
+    "-jar",
+    "app.jar"
+]
+#### CMD(命令行参数=多数服务真实配置)
+null
+#### ENV(环境变量)
+SERVER_PORT=8858
+JAVA_HOME=/opt/kona-jdk17
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+LANG=en_US.UTF-8
+LANGUAGE=en_US:en
+LC_ALL=en_US.UTF-8
+TZ=Etc/UTC
+
+#### 资源限制
+MemLimit=268435456 CPULimit=250000000 Restart=unless-stopped
+#### 挂载的配置文件
+/opt/kona-jdk17 -> /opt/kona-jdk17
+

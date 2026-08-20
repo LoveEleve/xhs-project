@@ -1,0 +1,45 @@
+# my-xhs-ai 真实 E2E 评测集（2026-08-19 首次创建）
+# 与 cases.yaml 的区别：这些 case 依赖真实外部服务（RocketMQ Dashboard / MySQL / 日志文件），不 mock。
+# 运行条件：中间件机 21.130.247.89 可达 + 微服务机 21.214.97.212 日志文件存在。
+# 运行方式：EvalRunner 直接跑（不走 nightly，因为依赖外部环境）。
+cases:
+  # ===== E2E-1：L1 业务指标查询（真实 DB）=====
+  - id: e2e_order_volume
+    query: "2026-08-01 到 2026-08-07 的下单量是多少？"
+    tags: [e2e, l1, metric]
+    statusIn: [SUCCEEDED]
+    minEvidence: 1
+    contains: ["证据"]
+    numbersConsistent: true
+
+  # ===== E2E-2：L2 观测查询（真实 Prometheus）=====
+  - id: e2e_http_errors
+    query: "最近 1 小时有哪些 HTTP 5xx 错误？"
+    tags: [e2e, l2, obs]
+    statusIn: [SUCCEEDED, PARTIAL]
+    minEvidence: 1
+    contains: ["证据"]
+
+  # ===== E2E-3：L2 DLQ 查询（真实 RocketMQ Dashboard）=====
+  - id: e2e_dlq_query
+    query: "查一下 inventory-order-transaction-consumer-group 的死信消息"
+    tags: [e2e, l2, mq]
+    statusIn: [SUCCEEDED, PARTIAL]
+    minEvidence: 1
+    contains: ["证据"]
+
+  # ===== E2E-4：L2 日志检索（真实日志文件）=====
+  - id: e2e_log_search
+    query: "在 my-xhs-order 日志中搜索 ERROR 关键词"
+    tags: [e2e, l2, log]
+    statusIn: [SUCCEEDED, PARTIAL]
+    minEvidence: 1
+    contains: ["证据"]
+
+  # ===== E2E-5：拒绝 + 诚实（不编造）=====
+  - id: e2e_decline_non_diagnostic
+    query: "今天天气怎么样？"
+    tags: [e2e, honesty]
+    statusIn: [SUCCEEDED]
+    minEvidence: 0
+    anyContains: ["无法", "不能", "超出", "不在", "能力范围", "天气"]

@@ -59,6 +59,7 @@ public class CartService {
     private final ProductFeignClient productFeignClient;
     private final ObjectMapper objectMapper;
     private final DefaultRedisScript<Long> cartAddScript;
+    private final com.myxhs.cart.mapper.CartItemMapper cartItemMapper;  // P2-7: Redis 丢失时从 MySQL 恢复
     private final DefaultRedisScript<Long> cartRemoveScript;
     private final DefaultRedisScript<Long> cartCheckAllScript;
     private final DefaultRedisScript<Long> cartUpdateQuantityScript;
@@ -119,6 +120,13 @@ public class CartService {
         String checkedKey = checkedKey(userId);
         String sortKey = sortKey(userId);
 
+        // G3-02-15（2026-08-16）：加购前校验 SKU 存在性——修复幽灵购物车条目
+        // （此前无校验：不存在的 skuId 加购 200 成功 + 落 MySQL，列表层仅靠 valid 标记兜底）
+        // 对照 T-103/116（like/favorite 校验目标存在性）；商品服务不可用时降级放行（写操作可用性优先）
+        if (!skuExists(request.getSkuId())) {
+            throw new BizException(ResultCode.PRODUCT_NOT_FOUND, "商品不存在或未上架");
+        }
+
         // Lua 脚本原子执行：检查上限 + 累加 + 截断 + 选中 + 排序
         Long result = stringRedisTemplate.execute(
                 cartAddScript,
@@ -144,7 +152,14 @@ public class CartService {
 
         // MQ 异步持久化（Lua 脚本外执行，MQ 失败不影响购物车操作）
         refreshTTL(userId);
-        sendCartSyncEvent(userId, request.getSkuId(), result.intValue(), 1, "ADD");
+        // T-107（2026-08-15）：Lua 返回 >=10000 表示新商品（checked=1 默认勾选，与 Redis SADD 一致）；
+        // 已存在商品返回 <10000 → checked=null（不覆盖 MySQL 勾选态，消除 Redis/MySQL 不一致源头）
+        if (result >= 10000) {
+            int actualQty = result.intValue() - 10000;
+            sendCartSyncEvent(userId, request.getSkuId(), actualQty, 1, "ADD");
+        } else {
+            sendCartSyncEvent(userId, request.getSkuId(), result.intValue(), null, "ADD");
+        }
     }
 
     // ==================== 修改数量 ====================
@@ -316,13 +331,32 @@ public class CartService {
                 : Collections.emptyMap();
 
         if (itemsMap.isEmpty()) {
-            return CartListVO.builder()
-                    .items(Collections.emptyList())
-                    .checkedCount(0)
-                    .checkedAmount(BigDecimal.ZERO)
-                    .totalCount(0)
-                    .allChecked(false)  // C-24: 空购物车不应显示"全选"
-                    .build();
+            // P2-7: Redis 购物车丢失（主从切换/重启/驱逐）时从 MySQL 恢复并回写 Redis，
+            //       与 CartReconcileJob 注释"Redis 丢失后以 MySQL 恢复"保持一致
+            itemsMap = restoreCartFromDb(userId, itemsKey, checkedKey, sortKey);
+            if (itemsMap.isEmpty()) {
+                return CartListVO.builder()
+                        .items(Collections.emptyList())
+                        .checkedCount(0)
+                        .checkedAmount(BigDecimal.ZERO)
+                        .totalCount(0)
+                        .allChecked(false)  // C-24: 空购物车不应显示"全选"
+                        .build();
+            }
+            // O-P2-7-1（2026-08-16）：恢复后重新读取三结构——
+            // 修复前 checkedSet/sortMap 仍用恢复前的空 pipeline 结果，导致恢复后首次响应
+            // checked=False/checkedCount=0（第二次起才正确）；restore 已回写 Redis，重读即可
+            pipelineResults = stringRedisTemplate.executePipelined(
+                    (org.springframework.data.redis.core.RedisCallback<Object>) connection -> {
+                        byte[] itemsKeyBytes = itemsKey.getBytes();
+                        byte[] checkedKeyBytes = checkedKey.getBytes();
+                        byte[] sortKeyBytes = sortKey.getBytes();
+                        connection.hashCommands().hGetAll(itemsKeyBytes);
+                        connection.setCommands().sMembers(checkedKeyBytes);
+                        connection.zSetCommands().zRevRangeWithScores(sortKeyBytes, 0, -1);
+                        return null;
+                    }
+            );
         }
 
         @SuppressWarnings("unchecked")
@@ -394,11 +428,13 @@ public class CartService {
                         .specs(sku.getSpecs());
 
                 // 判断商品是否有效
-                // 注：product 批量接口已过滤 status=ON_SHELF，下架商品不会返回此处分支。
+                // 注：product 批量接口已过滤 SKU status=ON_SHELF，下架 SKU 不会返回此处分支。
                 // 保留此检查作为防御层——若 product 侧行为变更，cart 仍能正确处理。
                 // 注2：不再检查 sku.getStock()——product 的 stock 是创建时冗余占位值（从不更新），
                 // 真实库存校验由 inventory 服务在下单/扣减时执行。
-                if (sku.getStatus() == null || sku.getStatus() != PRODUCT_STATUS_ON_SHELF) {
+                // T-047：SPU 下架（spuStatus=0）→ 商品无效（SPU 维度），与 SKU 下架同语义
+                if (sku.getStatus() == null || sku.getStatus() != PRODUCT_STATUS_ON_SHELF
+                        || sku.getSpuStatus() == null || sku.getSpuStatus() != PRODUCT_STATUS_ON_SHELF) {
                     builder.valid(false).invalidReason("商品已下架");
                 } else {
                     builder.valid(true);
@@ -466,6 +502,12 @@ public class CartService {
 
         for (CartMergeRequest.MergeItem item : request.getItems()) {
             if (item.getSkuId() == null || item.getQuantity() == null || item.getQuantity() <= 0) {
+                continue;
+            }
+
+            // G3-02-15（2026-08-16）：合并同样校验 SKU 存在性（幽灵条目不入购物车）
+            if (!skuExists(item.getSkuId())) {
+                log.warn("[购物车] 合并跳过（SKU不存在）: userId={}, skuId={}", userId, item.getSkuId());
                 continue;
             }
 
@@ -553,6 +595,24 @@ public class CartService {
      * - 加购/删购/改数量等写操作不依赖商品服务
      * </p>
      */
+    /**
+     * G3-02-15（2026-08-16）：SKU 存在性校验（加购/合并前置）
+     * <p>
+     * product getSkuDetail 不过滤 status（下架 SKU 详情仍返回 200）——本校验只拦截"不存在"的幽灵 SKU；
+     * 商品服务不可用时降级放行（写操作不依赖商品服务，可用性优先，列表层由 valid 标记兜底）。
+     * </p>
+     */
+    private boolean skuExists(Long skuId) {
+        try {
+            R<ProductFeignClient.SkuDTO> response = productFeignClient.getSkuDetail(skuId);
+            return response != null && response.isSuccess()
+                    && response.getData() != null && response.getData().getId() != null;
+        } catch (Exception e) {
+            log.warn("[购物车] SKU存在性校验失败, 降级放行: skuId={}, error={}", skuId, e.getMessage());
+            return true;
+        }
+    }
+
     private Map<Long, ProductFeignClient.SkuDTO> batchGetSkuInfo(List<Long> skuIds) {
         if (skuIds == null || skuIds.isEmpty()) {
             return new HashMap<>();
@@ -631,5 +691,42 @@ public class CartService {
             // MQ 发送失败不影响购物车操作（Redis 为权威数据源）
             log.error("[购物车] MQ发送异常: userId={}, skuId={}, action={}", userId, skuId, action, e);
         }
+    }
+
+
+    /**
+     * P2-7: 从 MySQL 恢复购物车到 Redis（items/checked/sort 三结构），返回 itemsMap 供读取
+     */
+    private Map<Object, Object> restoreCartFromDb(Long userId, String itemsKey, String checkedKey, String sortKey) {
+        List<com.myxhs.cart.entity.CartItem> dbItems = cartItemMapper.selectList(
+                new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.myxhs.cart.entity.CartItem>()
+                        .eq(com.myxhs.cart.entity.CartItem::getUserId, userId)
+                        // G3（2026-08-16）：恢复上限防御——最多恢复 MAX_CART_SIZE 种（最新在前），
+                        // 与加购 Lua 的 50 种上限一致，防止历史脏数据恢复后购物车超限
+                        .orderByDesc(com.myxhs.cart.entity.CartItem::getCreatedAt)
+                        .last("LIMIT " + MAX_CART_SIZE));
+        if (dbItems.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Object, Object> itemsMap = new LinkedHashMap<>();
+        stringRedisTemplate.executePipelined((org.springframework.data.redis.core.RedisCallback<Object>) connection -> {
+            for (com.myxhs.cart.entity.CartItem item : dbItems) {
+                byte[] skuBytes = String.valueOf(item.getSkuId()).getBytes();
+                connection.hashCommands().hSet(itemsKey.getBytes(), skuBytes,
+                        String.valueOf(item.getQuantity()).getBytes());
+                if (item.getChecked() != null && item.getChecked() == 1) {
+                    connection.setCommands().sAdd(checkedKey.getBytes(), skuBytes);
+                }
+                connection.zSetCommands().zAdd(sortKey.getBytes(),
+                        item.getCreatedAt() != null ? item.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli() : System.currentTimeMillis(),
+                        skuBytes);
+                itemsMap.put(String.valueOf(item.getSkuId()), String.valueOf(item.getQuantity()));
+            }
+            return null;
+        });
+        log.info("[购物车] P2-7: Redis 丢失，已从 MySQL 恢复: userId={}, items={}", userId, dbItems.size());
+        // T-108（2026-08-15）：恢复后补刷新三 key TTL（30 天）——修复恢复后永不过期的内存残留
+        refreshTTL(userId);
+        return itemsMap;
     }
 }

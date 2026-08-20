@@ -1,0 +1,45 @@
+CONTAINER ID   NAME                        CPU %     MEM USAGE / LIMIT   MEM %     NET I/O   BLOCK I/O         PIDS
+967f40d3edf2   my-xhs-canal                1.75%     396.1MiB / 1GiB     38.68%    0B / 0B   0B / 219MB        177
+bd848006fd9a   my-xhs-mysql-slave          0.28%     749.1MiB / 768MiB   97.54%    0B / 0B   2.31MB / 63.6GB   100
+659c6bfd4c91   my-xhs-nacos                0.57%     897.9MiB / 1.5GiB   58.45%    0B / 0B   0B / 261MB        187
+685a5b04f28b   my-xhs-filebeat             0.00%     35.29MiB / 192MiB   18.38%    0B / 0B   0B / 8.19kB       9
+322f22bf645c   my-xhs-skywalking-ui        0.09%     182.6MiB / 640MiB   28.53%    0B / 0B   0B / 69MB         17
+c87d1f400a4f   my-xhs-redis-sentinel       0.45%     7.605MiB / 64MiB    11.88%    0B / 0B   0B / 16.4kB       6
+15ae772066b3   my-xhs-kibana               0.61%     564MiB / 1.5GiB     36.72%    0B / 0B   0B / 4.1kB        12
+348f9e5ea94b   my-xhs-logstash             0.50%     721.6MiB / 768MiB   93.96%    0B / 0B   0B / 123MB        39
+6c18b7b150cf   my-xhs-skywalking-oap       3.69%     1.185GiB / 1.5GiB   79.02%    0B / 0B   0B / 132MB        670
+b54763dada5d   my-xhs-xxl-job-admin        0.14%     811.4MiB / 1GiB     79.24%    0B / 0B   848kB / 118MB     93
+1e81e90ef3d1   my-xhs-rocketmq-dashboard   0.12%     249.9MiB / 640MiB   39.04%    0B / 0B   0B / 82.9MB       63
+0cc2dddd85f6   my-xhs-grafana              0.02%     48.88MiB / 640MiB   7.64%     0B / 0B   0B / 31MB         26
+18328386099a   my-xhs-mq-broker            4.74%     540.8MiB / 768MiB   70.42%    0B / 0B   213MB / 8.32GB    271
+9b7b0969c249   my-xhs-redis-slave          0.36%     7.695MiB / 256MiB   3.01%     0B / 0B   362MB / 418MB     7
+1a522be0e421   my-xhs-mq-namesrv           0.39%     178.2MiB / 640MiB   27.84%    0B / 0B   0B / 287MB        70
+dbb2a5a05910   my-xhs-es-skywalking        0.18%     1.105GiB / 1.5GiB   73.67%    0B / 0B   238MB / 39.8GB    100
+a5a853631adb   my-xhs-mysql                2.67%     964.4MiB / 1.5GiB   62.79%    0B / 0B   2.03MB / 62.5GB   143
+e9105a884f35   my-xhs-prometheus           0.49%     95.01MiB / 640MiB   14.84%    0B / 0B   0B / 1.33GB       39
+607fcd6be717   my-xhs-redis                0.36%     8.277MiB / 384MiB   2.16%     0B / 0B   362MB / 418MB     6
+37f930ef81f0   my-xhs-elasticsearch        0.87%     808MiB / 2GiB       39.45%    0B / 0B   359MB / 30.2GB    114
+c156ec1fe997   my-xhs-sentinel-dashboard   0.31%     176.9MiB / 256MiB   69.11%    0B / 0B   0B / 235MB        54
+21c8021a9a87   my-xhs-victoria-metrics     0.06%     6.77MiB / 640MiB    1.06%     0B / 0B   0B / 16.4kB       6
+my-xhs-canal cpu=0.16% mem=395.1MiB / 1GiB net=0B / 0B block=0B / 219MB pids=177
+my-xhs-mysql-slave cpu=0.83% mem=750.4MiB / 768MiB net=0B / 0B block=2.31MB / 63.6GB pids=100
+my-xhs-nacos cpu=0.40% mem=897.6MiB / 1.5GiB net=0B / 0B block=0B / 261MB pids=187
+my-xhs-filebeat cpu=0.00% mem=35.29MiB / 192MiB net=0B / 0B block=0B / 8.19kB pids=9
+my-xhs-skywalking-ui cpu=0.03% mem=182.3MiB / 640MiB net=0B / 0B block=0B / 69MB pids=17
+my-xhs-redis-sentinel cpu=0.45% mem=6.359MiB / 64MiB net=0B / 0B block=0B / 16.4kB pids=6
+my-xhs-kibana cpu=0.39% mem=564.2MiB / 1.5GiB net=0B / 0B block=0B / 4.1kB pids=12
+my-xhs-logstash cpu=0.33% mem=721.6MiB / 768MiB net=0B / 0B block=0B / 123MB pids=39
+my-xhs-skywalking-oap cpu=4.63% mem=1.185GiB / 1.5GiB net=0B / 0B block=0B / 132MB pids=670
+my-xhs-xxl-job-admin cpu=0.37% mem=812.6MiB / 1GiB net=0B / 0B block=848kB / 118MB pids=93
+my-xhs-rocketmq-dashboard cpu=0.08% mem=249.6MiB / 640MiB net=0B / 0B block=0B / 82.9MB pids=63
+my-xhs-grafana cpu=0.04% mem=48.87MiB / 640MiB net=0B / 0B block=0B / 31MB pids=26
+my-xhs-mq-broker cpu=4.45% mem=541.8MiB / 768MiB net=0B / 0B block=213MB / 8.32GB pids=271
+my-xhs-redis-slave cpu=0.37% mem=8.008MiB / 256MiB net=0B / 0B block=362MB / 418MB pids=7
+my-xhs-mq-namesrv cpu=0.84% mem=179.2MiB / 640MiB net=0B / 0B block=0B / 287MB pids=70
+my-xhs-es-skywalking cpu=0.12% mem=1.105GiB / 1.5GiB net=0B / 0B block=238MB / 39.8GB pids=100
+my-xhs-mysql cpu=0.33% mem=964.7MiB / 1.5GiB net=0B / 0B block=2.03MB / 62.5GB pids=143
+my-xhs-prometheus cpu=0.49% mem=96.37MiB / 640MiB net=0B / 0B block=0B / 1.33GB pids=39
+my-xhs-redis cpu=0.29% mem=8.332MiB / 384MiB net=0B / 0B block=362MB / 418MB pids=6
+my-xhs-elasticsearch cpu=2.58% mem=809MiB / 2GiB net=0B / 0B block=359MB / 30.2GB pids=113
+my-xhs-sentinel-dashboard cpu=0.12% mem=175.7MiB / 256MiB net=0B / 0B block=0B / 235MB pids=54
+my-xhs-victoria-metrics cpu=0.06% mem=6.77MiB / 640MiB net=0B / 0B block=0B / 16.4kB pids=6

@@ -99,6 +99,8 @@ public class ApiMetricsFilter extends OncePerRequestFilter {
                     .tag("status", String.valueOf(status))
                     .tag("status_group", statusGroup)
                     .publishPercentiles(0.5, 0.9, 0.95, 0.99) // P50/P90/P95/P99
+                    // T-030: 同时输出 histogram bucket（P99/错误率占比等 histogram_quantile 查询可用）
+                    .publishPercentileHistogram()
                     .register(registry)
                     .record(durationNanos, TimeUnit.NANOSECONDS);
         }

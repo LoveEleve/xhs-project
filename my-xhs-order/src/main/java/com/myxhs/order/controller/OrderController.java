@@ -245,7 +245,11 @@ public class OrderController {
             return R.fail(403, "仅允许内部服务调用");
         }
         log.info("[订单回调] 收到退款成功通知: orderId={}, refundNo={}", orderId, refundNo);
-        orderService.onRefundSuccess(orderId);
+        boolean success = orderService.onRefundSuccess(orderId);
+        if (!success) {
+            log.warn("[订单回调] 退款成功但订单状态未收敛: orderId={}, refundNo={}", orderId, refundNo);
+            return R.fail(ResultCode.ORDER_STATUS_ERROR, "退款状态未收敛");
+        }
         return R.ok();
     }
 

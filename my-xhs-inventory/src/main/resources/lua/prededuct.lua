@@ -19,8 +19,9 @@
 -- ARGV[2] = orderId
 -- ARGV[3] = quantity (扣减数量)
 -- ARGV[4] = bucketCount (分桶数)
--- ARGV[5] = userId (用于路由)
+-- ARGV[5] = userId (备用)
 -- ARGV[6] = expireSeconds (预扣记录过期时间)
+-- ARGV[7] = routeBucket (T-073: Java 侧精确取模桶号; Lua 双精度对 >2^53 ID 取模失真恒偏)
 --
 -- 返回值：
 --   1  : 扣减成功
@@ -36,8 +37,8 @@ local skuId = ARGV[1]
 local orderId = ARGV[2]
 local quantity = tonumber(ARGV[3])
 local bucketCount = tonumber(ARGV[4])
-local userId = tonumber(ARGV[5])
-local expireSeconds = tonumber(ARGV[6])
+local expireSeconds = tonumber(ARGV[7])
+local routeBucket = tonumber(ARGV[6])
 
 -- 0. 幂等检查：同一订单不能重复预扣
 local existingQty = redis.call('HGET', predeductKey, skuId)
@@ -60,8 +61,7 @@ end
 local time = redis.call('TIME')
 local expireAtMs = time[1] * 1000 + expireSeconds * 1000
 
--- 3. 计算路由桶号（桶 Key 从 KEYS[3] 开始）
-local routeBucket = userId % bucketCount
+-- 3. 路由桶号（T-073：Java 侧精确取模传入，Lua 双精度对 >2^53 ID 取模失真）
 local routeKeyIdx = 3 + routeBucket  -- KEYS 数组下标（Lua 从 1 开始）
 
 -- 4. 尝试从路由桶扣减

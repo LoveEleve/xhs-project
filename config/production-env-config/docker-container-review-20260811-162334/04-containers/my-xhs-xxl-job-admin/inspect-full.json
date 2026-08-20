@@ -1,0 +1,237 @@
+[
+    {
+        "Id": "b54763dada5d13925670ac6de9670bcf27ff65a75fc97b65fecea80cdd25b101",
+        "Created": "2026-08-08T14:01:41.36817553Z",
+        "Path": "sh",
+        "Args": [
+            "-c",
+            "java -jar $JAVA_OPTS /app.jar $PARAMS"
+        ],
+        "State": {
+            "Status": "running",
+            "Running": true,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 4156558,
+            "ExitCode": 0,
+            "Error": "",
+            "StartedAt": "2026-08-08T23:49:55.468492652Z",
+            "FinishedAt": "2026-08-08T23:49:55.364735472Z"
+        },
+        "Image": "sha256:776d09cf1493d76b6bb694b005fa46c894ef0758cd6de846378209cc01953069",
+        "ResolvConfPath": "/data/docker/lib/containers/b54763dada5d13925670ac6de9670bcf27ff65a75fc97b65fecea80cdd25b101/resolv.conf",
+        "HostnamePath": "/data/docker/lib/containers/b54763dada5d13925670ac6de9670bcf27ff65a75fc97b65fecea80cdd25b101/hostname",
+        "HostsPath": "/data/docker/lib/containers/b54763dada5d13925670ac6de9670bcf27ff65a75fc97b65fecea80cdd25b101/hosts",
+        "LogPath": "",
+        "Name": "/my-xhs-xxl-job-admin",
+        "RestartCount": 2,
+        "Driver": "overlay2",
+        "Platform": "linux",
+        "MountLabel": "",
+        "ProcessLabel": "",
+        "AppArmorProfile": "",
+        "ExecIDs": null,
+        "HostConfig": {
+            "Binds": [
+                "/opt/kona-jdk17:/opt/kona-jdk17:ro"
+            ],
+            "ContainerIDFile": "",
+            "LogConfig": {
+                "Type": "journald",
+                "Config": {}
+            },
+            "NetworkMode": "host",
+            "PortBindings": {},
+            "RestartPolicy": {
+                "Name": "unless-stopped",
+                "MaximumRetryCount": 0
+            },
+            "AutoRemove": false,
+            "VolumeDriver": "",
+            "VolumesFrom": null,
+            "ConsoleSize": [
+                0,
+                0
+            ],
+            "CapAdd": null,
+            "CapDrop": null,
+            "CgroupnsMode": "private",
+            "Dns": null,
+            "DnsOptions": null,
+            "DnsSearch": null,
+            "ExtraHosts": [],
+            "GroupAdd": null,
+            "IpcMode": "private",
+            "Cgroup": "",
+            "Links": null,
+            "OomScoreAdj": 0,
+            "PidMode": "",
+            "Privileged": false,
+            "PublishAllPorts": false,
+            "ReadonlyRootfs": false,
+            "SecurityOpt": null,
+            "UTSMode": "",
+            "UsernsMode": "",
+            "ShmSize": 67108864,
+            "Runtime": "runc",
+            "Isolation": "",
+            "CpuShares": 0,
+            "Memory": 1073741824,
+            "NanoCpus": 500000000,
+            "CgroupParent": "",
+            "BlkioWeight": 0,
+            "BlkioWeightDevice": null,
+            "BlkioDeviceReadBps": null,
+            "BlkioDeviceWriteBps": null,
+            "BlkioDeviceReadIOps": null,
+            "BlkioDeviceWriteIOps": null,
+            "CpuPeriod": 0,
+            "CpuQuota": 0,
+            "CpuRealtimePeriod": 0,
+            "CpuRealtimeRuntime": 0,
+            "CpusetCpus": "",
+            "CpusetMems": "",
+            "Devices": null,
+            "DeviceCgroupRules": null,
+            "DeviceRequests": null,
+            "MemoryReservation": 536870912,
+            "MemorySwap": 2147483648,
+            "MemorySwappiness": null,
+            "OomKillDisable": null,
+            "PidsLimit": null,
+            "Ulimits": [
+                {
+                    "Name": "nofile",
+                    "Hard": 1048576,
+                    "Soft": 1048576
+                }
+            ],
+            "CpuCount": 0,
+            "CpuPercent": 0,
+            "IOMaximumIOps": 0,
+            "IOMaximumBandwidth": 0,
+            "MaskedPaths": [
+                "/proc/asound",
+                "/proc/acpi",
+                "/proc/interrupts",
+                "/proc/kcore",
+                "/proc/keys",
+                "/proc/latency_stats",
+                "/proc/timer_list",
+                "/proc/timer_stats",
+                "/proc/sched_debug",
+                "/proc/scsi",
+                "/sys/firmware",
+                "/sys/devices/virtual/powercap"
+            ],
+            "ReadonlyPaths": [
+                "/proc/bus",
+                "/proc/fs",
+                "/proc/irq",
+                "/proc/sys",
+                "/proc/sysrq-trigger"
+            ]
+        },
+        "GraphDriver": {
+            "Data": {
+                "ID": "b54763dada5d13925670ac6de9670bcf27ff65a75fc97b65fecea80cdd25b101",
+                "LowerDir": "/data/docker/lib/overlay2/cc841715f4ac5b129cad84770de7fdfd41b2e45a24b81d59b3b3285c97b5fa12-init/diff:/data/docker/lib/overlay2/4e8f6d237c7dcea4cc3c112a0f4c64bcd852c71397d7e3573da344715ba99d83/diff:/data/docker/lib/overlay2/4426be24fcac9e37a5dcc67a135b364235c382c70d492b286a584daf47b5f3a4/diff:/data/docker/lib/overlay2/ed7cf75faa01193768fa9c0d403aa3f8ec084539b192565f7ba246c6230740f6/diff:/data/docker/lib/overlay2/31e72ac1f9531d88131cfbdff73160da2fc15a662a909d0ee3270bf888a2fa7e/diff:/data/docker/lib/overlay2/0ff9f7b4ea9d18dc8ffed0ec35baace7b85a91b4341a0e0afcaada8d00a12946/diff:/data/docker/lib/overlay2/0c06535ea80c58c534e8b7305d8f0a1109fcb3e32d337ca2ac81c37901de0e85/diff",
+                "MergedDir": "/data/docker/lib/overlay2/cc841715f4ac5b129cad84770de7fdfd41b2e45a24b81d59b3b3285c97b5fa12/merged",
+                "UpperDir": "/data/docker/lib/overlay2/cc841715f4ac5b129cad84770de7fdfd41b2e45a24b81d59b3b3285c97b5fa12/diff",
+                "WorkDir": "/data/docker/lib/overlay2/cc841715f4ac5b129cad84770de7fdfd41b2e45a24b81d59b3b3285c97b5fa12/work"
+            },
+            "Name": "overlay2"
+        },
+        "Mounts": [
+            {
+                "Type": "bind",
+                "Source": "/opt/kona-jdk17",
+                "Destination": "/opt/kona-jdk17",
+                "Mode": "ro",
+                "RW": false,
+                "Propagation": "rprivate"
+            }
+        ],
+        "Config": {
+            "Hostname": "VM-247-89-tencentos",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": true,
+            "AttachStderr": true,
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "JAVA_HOME=/opt/kona-jdk17",
+                "PARAMS=--spring.datasource.url=jdbc:mysql://127.0.0.1:3306/xxl_job?useUnicode=true&characterEncoding=UTF-8&autoReconnect=true&serverTimezone=Asia/Shanghai --spring.datasource.username=root --spring.datasource.password=Xhs@2026#MySQL --server.port=18080 --xxl.job.accessToken=my-xhs-xxl-job-token-2026 --xxl.job.i18n=zh_CN",
+                "PATH=/usr/local/openjdk-8/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "LANG=C.UTF-8",
+                "JAVA_VERSION=8u342",
+                "TZ=PRC"
+            ],
+            "Cmd": null,
+            "Image": "xuxueli/xxl-job-admin:2.4.2",
+            "Volumes": null,
+            "WorkingDir": "",
+            "Entrypoint": [
+                "sh",
+                "-c",
+                "java -jar $JAVA_OPTS /app.jar $PARAMS"
+            ],
+            "OnBuild": null,
+            "Labels": {
+                "com.docker.compose.config-hash": "4b8d7bfe4e963dfdf3e1ccdeb86cbc25b55003ac426b0cc1c0a26edda22eb008",
+                "com.docker.compose.container-number": "1",
+                "com.docker.compose.depends_on": "mysql:service_started:false",
+                "com.docker.compose.image": "sha256:776d09cf1493d76b6bb694b005fa46c894ef0758cd6de846378209cc01953069",
+                "com.docker.compose.oneoff": "False",
+                "com.docker.compose.project": "my-xhs-deploy-zip",
+                "com.docker.compose.project.config_files": "/data/workspace/my-xhs-deploy-zip/docker-compose.yml",
+                "com.docker.compose.project.working_dir": "/data/workspace/my-xhs-deploy-zip",
+                "com.docker.compose.service": "xxl-job-admin",
+                "com.docker.compose.version": "2.29.2"
+            }
+        },
+        "NetworkSettings": {
+            "Bridge": "",
+            "SandboxID": "e0cd1499b03ef48d557f438821ccdf3d1cf58aae0a37038c25440e90076d99bc",
+            "SandboxKey": "/var/run/docker/netns/default",
+            "Ports": {},
+            "HairpinMode": false,
+            "LinkLocalIPv6Address": "",
+            "LinkLocalIPv6PrefixLen": 0,
+            "SecondaryIPAddresses": null,
+            "SecondaryIPv6Addresses": null,
+            "EndpointID": "",
+            "Gateway": "",
+            "GlobalIPv6Address": "",
+            "GlobalIPv6PrefixLen": 0,
+            "IPAddress": "",
+            "IPPrefixLen": 0,
+            "IPv6Gateway": "",
+            "MacAddress": "",
+            "Networks": {
+                "host": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": null,
+                    "MacAddress": "",
+                    "DriverOpts": null,
+                    "GwPriority": 0,
+                    "NetworkID": "69303899f57d4447764f56f161dceb184df134844eb038322985183a4f6b4dff",
+                    "EndpointID": "8d703e1388d36424fcaa0dd51370d993dd97ade788f3abb2f6d21e6d4d031919",
+                    "Gateway": "",
+                    "IPAddress": "",
+                    "IPPrefixLen": 0,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "DNSNames": null
+                }
+            }
+        }
+    }
+]

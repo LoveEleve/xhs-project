@@ -63,13 +63,13 @@ public class OrderTransactionConsumer implements RocketMQListener<MessageExt> {
             String body = new String(msg.getBody(), StandardCharsets.UTF_8);
             JsonNode payload = objectMapper.readTree(body);
 
-            // 坏消息防御：缺 orderNo/userId 时直接跳过不重试（NPE 重试 5 次进 DLQ 无意义）
             JsonNode orderNoNode = payload.get("orderNo");
             JsonNode userIdNode = payload.get("userId");
-            if (orderNoNode == null || userIdNode == null) {
-                log.warn("[库存-事务消费] 消息缺少必填字段(orderNo/userId), 跳过不重试: msgId={}, body={}",
-                        msg.getMsgId(), body);
-                return;
+            JsonNode skuItems = payload.get("skuItems");
+            if (orderNoNode == null || orderNoNode.isNull() || orderNoNode.asText().isBlank()
+                    || userIdNode == null || userIdNode.isNull() || !userIdNode.canConvertToLong()
+                    || skuItems == null || !skuItems.isArray() || skuItems.isEmpty()) {
+                throw new IllegalArgumentException("订单事务消息缺少关键字段(orderNo/userId/skuItems)");
             }
             String orderNo = orderNoNode.asText();
             Long userId = userIdNode.asLong();
@@ -81,38 +81,57 @@ public class OrderTransactionConsumer implements RocketMQListener<MessageExt> {
             }
 
             // 从 orderNo 派生伪 orderId（用作库存预扣幂等键）
-            // 原实现：orderNo.hashCode() & 0x7FFFFFFF（仅 31 bit，1 万订单碰撞~2%）
-            // 修复：多重乘法折叠为 63 bit，有效空间 ~2^50，碰撞概率逼近零
-            long pseudoOrderId = 0;
-            for (int i = 0; i < orderNo.length(); i++) {
-                pseudoOrderId = pseudoOrderId * 31 + orderNo.charAt(i);
+            // T-067（2026-08-14 G5 执行发现）：原 fold-hash(*31+char) 与 OrderService.derivePseudoOrderId
+            // 的 SHA-256 前 8 字节（P2-12 修复）不一致 → 预扣 key 与释放/确认 key 对不上 → 库存永远无法释放（泄漏）。
+            // 统一为 SHA-256 前 8 字节（Big-endian signed long，与 OrderService 完全一致）。
+            long pseudoOrderId;
+            try {
+                byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(orderNo.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                long r = 0;
+                for (int i = 0; i < 8; i++) {
+                    r = (r << 8) | (digest[i] & 0xFF);
+                }
+                pseudoOrderId = r;
+            } catch (java.security.NoSuchAlgorithmException e) {
+                throw new IllegalStateException("SHA-256 不可用", e);
             }
 
-            // 对每个 SKU 执行预扣减
-            JsonNode skuItems = payload.get("skuItems");
-            if (skuItems != null && skuItems.isArray()) {
-                for (JsonNode item : skuItems) {
-                    Long skuId = item.get("skuId").asLong();
-                    int quantity = item.get("quantity").asInt();
+            for (JsonNode item : skuItems) {
+                JsonNode skuIdNode = item.get("skuId");
+                JsonNode quantityNode = item.get("quantity");
+                if (skuIdNode == null || !skuIdNode.canConvertToLong()
+                        || quantityNode == null || !quantityNode.canConvertToInt()
+                        || quantityNode.asInt() <= 0) {
+                    throw new IllegalArgumentException("订单事务消息 skuItems 字段异常");
+                }
+                Long skuId = skuIdNode.asLong();
+                int quantity = quantityNode.asInt();
 
-                    PreDeductRequest preDeductRequest = new PreDeductRequest();
-                    preDeductRequest.setOrderId(pseudoOrderId);
-                    preDeductRequest.setSkuId(skuId);
-                    preDeductRequest.setQuantity(quantity);
-                    preDeductRequest.setUserId(userId);
+                PreDeductRequest preDeductRequest = new PreDeductRequest();
+                preDeductRequest.setOrderId(pseudoOrderId);
+                preDeductRequest.setSkuId(skuId);
+                preDeductRequest.setQuantity(quantity);
+                preDeductRequest.setUserId(userId);
 
-                    try {
-                        inventoryService.preDeduct(preDeductRequest);
-                        log.info("[库存-事务消费] 预扣减成功: orderNo={}, skuId={}, qty={}",
-                                orderNo, skuId, quantity);
+                try {
+                    inventoryService.preDeduct(preDeductRequest);
+                    log.info("[库存-事务消费] 预扣减成功: orderNo={}, skuId={}, qty={}",
+                            orderNo, skuId, quantity);
+                    } catch (com.myxhs.common.exception.BizException e) {
+                        if ("SKU不存在".equals(e.getMessage())) {
+                            log.error("[库存-事务消费] 不可恢复坏消息，SKU不存在，停止重试: orderNo={}, skuId={}, qty={}",
+                                    orderNo, skuId, quantity, e);
+                            return;
+                        }
+                        log.error("[库存-事务消费] 预扣减失败: orderNo={}, skuId={}, qty={}",
+                                orderNo, skuId, quantity, e);
+                        throw new RuntimeException("库存预扣减失败: skuId=" + skuId, e);
                     } catch (Exception e) {
-                        // 预扣减失败，抛出异常触发 RocketMQ 重试
-                        // msgId 级别幂等确保 rebalance 后不会跳过未处理的 SKU
                         log.error("[库存-事务消费] 预扣减失败: orderNo={}, skuId={}, qty={}",
                                 orderNo, skuId, quantity, e);
                         throw new RuntimeException("库存预扣减失败: skuId=" + skuId, e);
                     }
-                }
             }
 
             log.info("[库存-事务消费] 订单库存预扣减完成: orderNo={}, userId={}", orderNo, userId);

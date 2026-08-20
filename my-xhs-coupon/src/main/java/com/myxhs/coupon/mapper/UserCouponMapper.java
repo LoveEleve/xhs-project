@@ -40,13 +40,23 @@ public interface UserCouponMapper extends BaseMapper<UserCoupon> {
      * 如果有百万级过期券，一次性 UPDATE 会长时间持有行锁，阻塞其他写操作。
      * 分批处理（每次 1000 条）减少锁持有时间，降低对线上业务的影响。
      * </p>
+     * <p>
+     * T-058（2026-08-14）：原多表 JOIN UPDATE + LIMIT 为 MySQL 非法语法
+     * （Incorrect usage of UPDATE and LIMIT），任务每分钟执行必失败、过期券永不标记。
+     * 改为派生表子查询：内层 JOIN 选出过期券 id（LIMIT 分批），外层单表 UPDATE。
+     * 派生表二次包装规避"UPDATE 子查询引用同表"限制（MySQL 8.0）。
+     * </p>
      *
      * @return 本批次实际更新的行数
      */
-    @Update("UPDATE t_user_coupon uc " +
-            "INNER JOIN t_coupon_template ct ON uc.coupon_id = ct.id AND ct.deleted = 0 " +
-            "SET uc.status = 2 " +
-            "WHERE uc.status = 0 AND ct.valid_end < NOW() " +
-            "LIMIT #{batchSize}")
+    @Update("UPDATE t_user_coupon SET status = 2 " +
+            "WHERE status = 0 AND id IN (" +
+            "  SELECT id FROM (" +
+            "    SELECT uc2.id FROM t_user_coupon uc2 " +
+            "    INNER JOIN t_coupon_template ct2 ON uc2.coupon_id = ct2.id AND ct2.deleted = 0 " +
+            "    WHERE uc2.status = 0 AND ct2.valid_end < NOW() " +
+            "    LIMIT #{batchSize}" +
+            "  ) tmp" +
+            ")")
     int batchExpire(@Param("batchSize") int batchSize);
 }

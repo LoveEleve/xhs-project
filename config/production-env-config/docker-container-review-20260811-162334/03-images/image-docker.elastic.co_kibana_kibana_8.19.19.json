@@ -1,0 +1,91 @@
+[
+    {
+        "Id": "sha256:3be65208f86ba35ac1d16528cc830e42d6f3816b5ce205364fb41d1b094f045c",
+        "RepoTags": [
+            "docker.elastic.co/kibana/kibana:8.19.19"
+        ],
+        "RepoDigests": [
+            "docker.elastic.co/kibana/kibana@sha256:cc1f9f8c09e2fe0869965ccbf4008a4af0b2691b370fe189dfb8e19f516215c7"
+        ],
+        "Parent": "",
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2026-07-15T18:37:55.873207174Z",
+        "DockerVersion": "",
+        "Author": "",
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 1345681535,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/data/docker/lib/overlay2/eb5048c85586c557cfda2e7dab0be8a19157004bd585d9d5a4ab40ac90230135/diff:/data/docker/lib/overlay2/5a95564f2553cc55d078b3970a0b8e98b02a1ab98fc0e3bdfb6a5dc7c00fd790/diff:/data/docker/lib/overlay2/4433265b2dd8993d65c211f60d4555749e07dac2f47a1497b65f7867cc7cece1/diff:/data/docker/lib/overlay2/b260f3a63661947cd8a827e7af76e64622eef454cc94cdbeace4ab076576985e/diff:/data/docker/lib/overlay2/690c54faa06ea06cf7dce9d584878308ff7b8261a1b6374a9d2583a53186c352/diff:/data/docker/lib/overlay2/5ae79e8aa4348c5bc60c42f2c20d387bae9947be0d36353bdf7bad7a78be4fc0/diff:/data/docker/lib/overlay2/ff4f499945983698dc7589bc9dab61feeef5719a48373a35e11c59c30ed4a45a/diff:/data/docker/lib/overlay2/e51a553460410fcd45f9d2998674d124409819b0602e2ca9866cc91eeea223de/diff:/data/docker/lib/overlay2/4602788570c2776cae2bd13c1363d33128d3418a15bdf7875cb065f22cf4c7fc/diff:/data/docker/lib/overlay2/56d3023631a3526f0c65890fb26d391e04a5f1a0d4f7fc66dae6b1a357c341b9/diff:/data/docker/lib/overlay2/8087a8577917b8c44b298c93a8b25abc46773df5f4ed35b1310aea7ce2271775/diff:/data/docker/lib/overlay2/05f5535a836aaedf5629fad720594b47b3fd003410bb1a905d9e63fbc9242141/diff",
+                "MergedDir": "/data/docker/lib/overlay2/c44f57572976d19420dd7d67a5671129f646bbcff2081531772dbc341d9ba626/merged",
+                "UpperDir": "/data/docker/lib/overlay2/c44f57572976d19420dd7d67a5671129f646bbcff2081531772dbc341d9ba626/diff",
+                "WorkDir": "/data/docker/lib/overlay2/c44f57572976d19420dd7d67a5671129f646bbcff2081531772dbc341d9ba626/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:f103cd120fdd6cbc7f3d0e1d5bfb3e16290c32ead7b822d15c34460ecdf64b29",
+                "sha256:c9931193dc63baac6fd909f38bbed0682e418e2a83566e8f9ae444d5fb1849d4",
+                "sha256:ee8a622c30d0b9366809d4e9069fa20c94bd4f34e989d2f3b90071eec9bda6db",
+                "sha256:921b52bc5cfe1cbc7f65f85c7393645b7505670ea208fdc9da6ca2d2f963a4e8",
+                "sha256:f879106942e041467a2705c756e5ecc2d85c5ad10dcc6e4d026bd95839163d17",
+                "sha256:758b1cc3a873d5741d7d1a89ceb872e005196525bb0ea7d54aa6344668965c2a",
+                "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
+                "sha256:ff36e72707c0bc618d06458f49ae7825bdc4e051e2e86d805fde72d0a3296da5",
+                "sha256:b451f1c5f88b0aa006a9c410866adec31b8786af467ac9a5994bd48d0d9eb833",
+                "sha256:feb791e13dc0e7b663cae9670eb21c8ff98988099bced3e57cca79875d48fbba",
+                "sha256:16739007b05f889026d9e684d4c2fc3429c866f294282a87c76756e4dec1d750",
+                "sha256:f10beb88f580ef5ee0a34463b16d3b97a45cfc3dc7fd9dea232d9fe4866f32d8",
+                "sha256:5c4fc321cda2676632cf78b0cc3cba02d9d5d428ba876948a580bdfbff335188"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        },
+        "Config": {
+            "ArgsEscaped": true,
+            "Cmd": [
+                "/usr/local/bin/kibana-docker"
+            ],
+            "Entrypoint": [
+                "/bin/tini",
+                "--"
+            ],
+            "Env": [
+                "PATH=/usr/share/kibana/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "ELASTIC_CONTAINER=true"
+            ],
+            "ExposedPorts": {
+                "5601/tcp": {}
+            },
+            "Labels": {
+                "org.label-schema.build-date": "2026-07-15T18:11:08.890Z",
+                "org.label-schema.license": "Elastic License",
+                "org.label-schema.name": "Kibana",
+                "org.label-schema.schema-version": "1.0",
+                "org.label-schema.url": "https://www.elastic.co/products/kibana",
+                "org.label-schema.usage": "https://www.elastic.co/guide/en/kibana/reference/index.html",
+                "org.label-schema.vcs-ref": "9bed9b7c05fe39507eb73d1a334ca96aa0c32cee",
+                "org.label-schema.vcs-url": "https://github.com/elastic/kibana",
+                "org.label-schema.vendor": "Elastic",
+                "org.label-schema.version": "8.19.19",
+                "org.opencontainers.image.created": "2026-07-15T18:11:08.890Z",
+                "org.opencontainers.image.documentation": "https://www.elastic.co/guide/en/kibana/reference/index.html",
+                "org.opencontainers.image.licenses": "Elastic License",
+                "org.opencontainers.image.revision": "9bed9b7c05fe39507eb73d1a334ca96aa0c32cee",
+                "org.opencontainers.image.source": "https://github.com/elastic/kibana",
+                "org.opencontainers.image.title": "Kibana",
+                "org.opencontainers.image.url": "https://www.elastic.co/products/kibana",
+                "org.opencontainers.image.vendor": "Elastic",
+                "org.opencontainers.image.version": "8.19.19"
+            },
+            "OnBuild": null,
+            "User": "1000",
+            "Volumes": null,
+            "WorkingDir": "/usr/share/kibana"
+        }
+    }
+]

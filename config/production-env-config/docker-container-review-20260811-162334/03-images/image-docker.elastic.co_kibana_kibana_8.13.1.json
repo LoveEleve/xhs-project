@@ -1,0 +1,94 @@
+[
+    {
+        "Id": "sha256:f58842903125938a204107caec702560e0b6c883643ce35c5bba807e95fb7b60",
+        "RepoTags": [
+            "docker.elastic.co/kibana/kibana:8.13.1"
+        ],
+        "RepoDigests": [
+            "docker.elastic.co/kibana/kibana@sha256:0a002f6121aeaecb02c1c9b0b19580d26d47013620653e06fc3f661cea39134e"
+        ],
+        "Parent": "",
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2024-03-29T12:40:08.120004515Z",
+        "DockerVersion": "",
+        "Author": "",
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 1063271588,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/data/docker/lib/overlay2/222725374ce0f401736d734f3150c15f8eb85fae223966023d708edd3b3f7db9/diff:/data/docker/lib/overlay2/e60fc6658aed47f8770bc10f82e80459580dc9f30531900ec90e13b0f0b5555c/diff:/data/docker/lib/overlay2/d4d7711862f4f33deda3fbbb78617b2cdb47d4ed359001c2dc2aea17307cd723/diff:/data/docker/lib/overlay2/3343d9432ba3492bc5f2b935b56a91409b78e416a050b1c810bbfd170070eb45/diff:/data/docker/lib/overlay2/16f3ad383c2427a7e56d3dc385338fb3181ade475ee43d8ee4120b146aa12f1a/diff:/data/docker/lib/overlay2/09cc0fd6e29711a3584c174a74e5b1278ac75f7d5fe78d6d4af9515f9317e5ea/diff:/data/docker/lib/overlay2/6a3a868186b6f5c5bac7e7af132f92c86a8a7cc02347bd72833c35f895b57dcc/diff:/data/docker/lib/overlay2/1a0fc9a5444efd5ac0d309244ec31d522495452e9c6cda8cbeb3a147e262883d/diff:/data/docker/lib/overlay2/87c70d64f4f27c9b5196a48e2dc72a3c7ca3a17aa1c66f58f3faee5765db7adf/diff:/data/docker/lib/overlay2/b3dbd64a1ebfff373289be5b6b19da95e9b4899feae1291922397e717f9f54da/diff:/data/docker/lib/overlay2/d1fab9875c21924949ddbf4fcc86b346e1393c64d00c2c7d43ed8c134fc10630/diff:/data/docker/lib/overlay2/22c89ffacdd4379f68774382829c843ad0d36d492975b88dc6d915766be6e0d9/diff:/data/docker/lib/overlay2/e4272c1cd94634b70b6f8e5b869063325b96185cbbcf948af2fc2c003b2aa420/diff:/data/docker/lib/overlay2/0404631926bdfd3f1435eff09f8422763877852aeb5a3f9e09ed1bd26f8c66e7/diff",
+                "MergedDir": "/data/docker/lib/overlay2/a947e401a9a54ccc7a125664757d86b44f6e2937a7ed3a527d82c5471b88fb32/merged",
+                "UpperDir": "/data/docker/lib/overlay2/a947e401a9a54ccc7a125664757d86b44f6e2937a7ed3a527d82c5471b88fb32/diff",
+                "WorkDir": "/data/docker/lib/overlay2/a947e401a9a54ccc7a125664757d86b44f6e2937a7ed3a527d82c5471b88fb32/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:5faf9c0a9efe4675ecd21a4ec417d51077d5e75da9e673161a94e7d6cd43f92c",
+                "sha256:36d99158fbd51fd3eafc5265ecd8170701cd541e6b3245ba34f9393864074448",
+                "sha256:31e6153a0be2302e7b0288ca0faa7e07c0eca0bd04222737e3388c2a7edd2d7f",
+                "sha256:de5f3f827e198a61ce2bf3839894b6cb6ec990c55fe768c6f5f60cc8c50205fc",
+                "sha256:db541731064f69d711a39e7e868916c460535c0becc6c06b24dfa1b585c0c8d5",
+                "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
+                "sha256:baa0361ad37c75803c21de41a02038a573d38a4edcff5841154047834c909616",
+                "sha256:a22d07a62681cf3d1cee08f4a0a3438f02f0d6e9ac5401b475bbb24fe722828c",
+                "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
+                "sha256:7d79afe3bd7aea36ea36cae9b46e35269605cd9d575c4af8652ffd623cd1d6a1",
+                "sha256:697e4abf5908af97c5ac8c6481c15a0451a6210ebb336da89b090db83a220fae",
+                "sha256:0f6b7b11b375714a992679ae60f28920ed85ab585840b752d8cd434eb62b39ec",
+                "sha256:d7c5d49df6d133f11e7c0922cf137b49bf7ed46fa00f87165c944de695bca097",
+                "sha256:2ab4181a60e508597dfe349e0e3caf1f7b02b31c1694f86607caa954d4bcfcab",
+                "sha256:929b009f6634e8fb6684fe1dfb8f3923e4c57a02013204b0b93426d1284eeab6"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        },
+        "Config": {
+            "ArgsEscaped": true,
+            "Cmd": [
+                "/usr/local/bin/kibana-docker"
+            ],
+            "Entrypoint": [
+                "/bin/tini",
+                "--"
+            ],
+            "Env": [
+                "PATH=/usr/share/kibana/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "ELASTIC_CONTAINER=true"
+            ],
+            "ExposedPorts": {
+                "5601/tcp": {}
+            },
+            "Labels": {
+                "org.label-schema.build-date": "2024-03-29T12:06:31.613Z",
+                "org.label-schema.license": "Elastic License",
+                "org.label-schema.name": "Kibana",
+                "org.label-schema.schema-version": "1.0",
+                "org.label-schema.url": "https://www.elastic.co/products/kibana",
+                "org.label-schema.usage": "https://www.elastic.co/guide/en/kibana/reference/index.html",
+                "org.label-schema.vcs-ref": "091f486ab05863258cf2f3fa18ea0c59097dee80",
+                "org.label-schema.vcs-url": "https://github.com/elastic/kibana",
+                "org.label-schema.vendor": "Elastic",
+                "org.label-schema.version": "8.13.1",
+                "org.opencontainers.image.created": "2024-03-29T12:06:31.613Z",
+                "org.opencontainers.image.documentation": "https://www.elastic.co/guide/en/kibana/reference/index.html",
+                "org.opencontainers.image.licenses": "Elastic License",
+                "org.opencontainers.image.ref.name": "ubuntu",
+                "org.opencontainers.image.revision": "091f486ab05863258cf2f3fa18ea0c59097dee80",
+                "org.opencontainers.image.source": "https://github.com/elastic/kibana",
+                "org.opencontainers.image.title": "Kibana",
+                "org.opencontainers.image.url": "https://www.elastic.co/products/kibana",
+                "org.opencontainers.image.vendor": "Elastic",
+                "org.opencontainers.image.version": "8.13.1"
+            },
+            "OnBuild": null,
+            "User": "1000",
+            "Volumes": null,
+            "WorkingDir": "/usr/share/kibana"
+        }
+    }
+]

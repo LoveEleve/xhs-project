@@ -101,6 +101,19 @@ public class InventoryController {
     }
 
     /**
+     * 退款回补库存（T-071：全额退款后库存加回——confirm 已清预扣记录，release 无记录可退；
+     * 本接口为独立语义：Redis total/桶 +qty + MQ REFUND_RESTORE 同步 MySQL available）
+     */
+    @PostMapping("/refund-restore")
+    public R<Void> refundRestore(
+            @Valid @RequestBody com.myxhs.inventory.dto.request.RefundRestoreRequest request,
+            @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
+        if (!isInternalCall(internalCall)) return R.fail(403, "仅限内部服务调用");
+        inventoryService.refundRestore(request);
+        return R.ok();
+    }
+
+    /**
      * 【M9】重新初始化库存（管理后台调用）
      * <p>
      * 清除 Redis Key → 从 MySQL 恢复真实库存 → 按新桶数重新分桶。

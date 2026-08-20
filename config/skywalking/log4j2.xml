@@ -31,5 +31,9 @@
         <Root level="INFO">
             <AppenderRef ref="Console"/>
         </Root>
+        <!-- 降噪: 1234 指标端口 netty 每连接事件刷 INFO(见 DEPLOY-NOTES) -->
+        <Logger name="io.netty.handler.logging" level="WARN" additivity="false">
+            <AppenderRef ref="Console"/>
+        </Logger>
     </Loggers>
 </Configuration>

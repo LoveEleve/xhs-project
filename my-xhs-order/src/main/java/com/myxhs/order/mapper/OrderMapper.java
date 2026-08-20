@@ -97,15 +97,14 @@ public interface OrderMapper extends BaseMapper<Order> {
                                     @Param("limit") int limit);
 
     /**
-     * 查询最近创建的订单（映射表补录使用）
+     * 查询待补录映射的订单（按 ID 游标分页）
      * <p>
      * 注意：此查询不带分片键，ShardingSphere 会扫描所有分片。
-     * 定时任务低频执行（每 5 分钟一次），性能可接受。
+     * 定时任务低频执行（每 5 分钟一次），按 ID 游标分页控制单次批量。
+     * 不再限制最近时间窗口，避免持续故障后历史缺失映射永久遗漏。
      * </p>
      */
-    @Select("SELECT * FROM t_order WHERE deleted = 0 " +
-            "AND created_at >= #{since} AND id > #{lastId} ORDER BY id ASC LIMIT #{limit}")
-    List<Order> selectRecentOrders(@Param("since") LocalDateTime since,
-                                   @Param("lastId") Long lastId,
-                                   @Param("limit") int limit);
+    @Select("SELECT * FROM t_order WHERE deleted = 0 AND id > #{lastId} ORDER BY id ASC LIMIT #{limit}")
+    List<Order> selectOrdersForMappingRepair(@Param("lastId") Long lastId,
+                                             @Param("limit") int limit);
 }

@@ -13,8 +13,9 @@ import java.util.List;
 @Data
 public class OrderCreateRequest {
 
-    /** SKU 商品列表 */
+    /** SKU 商品列表（T-068：补 @Valid 使嵌套校验生效——原缺失导致缺 skuId/quantity 返回 50002/500 而非 40002） */
     @NotEmpty(message = "商品列表不能为空")
+    @jakarta.validation.Valid
     private List<SkuItem> skuItems;
 
     /** 优惠券ID（可选） */

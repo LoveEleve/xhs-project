@@ -166,8 +166,15 @@ public class HmacSignatureFilter implements GlobalFilter, Ordered {
             log.info("[Gateway-HMAC] 签名校验失败, 缺少 X-User-Id, path={}", path);
             return forbidden(exchange, "签名校验失败：缺少用户身份");
         }
-        String perUserSecret = stringRedisTemplate.opsForValue().get(
-                "myxhs:user:hmac:secret:" + userId);
+        String perUserSecret;
+        try {
+            perUserSecret = stringRedisTemplate.opsForValue().get(
+                    "myxhs:user:hmac:secret:" + userId);
+        } catch (Exception e) {
+            // P2-11: Redis 故障时拒绝请求（fail-closed），避免 500 与签名校验绕过
+            log.warn("[Gateway-HMAC] Redis 读取 HMAC 密钥异常, path={}, userId={}, err={}", path, userId, e.getMessage());
+            return forbidden(exchange, "签名校验暂不可用，请稍后重试");
+        }
         if (perUserSecret == null) {
             log.info("[Gateway-HMAC] 签名校验失败, HMAC密钥已过期, userId={}, path={}", userId, path);
             return forbidden(exchange, "签名校验失败：HMAC 密钥已过期，请重新登录");
@@ -179,8 +186,16 @@ public class HmacSignatureFilter implements GlobalFilter, Ordered {
         }
 
         // 6. 重新计算 HMAC-SHA256 签名（用 per-session secret）
+        // T-009/010/011: 签名串 = method|path|query|ts|nonce|bodyHash（竖线分隔 + query + body 摘要）
         String method = request.getMethod().name();
-        String signStr = method + path + timestamp + nonce;
+        String query = request.getURI().getRawQuery();
+        if (query == null) query = "";
+        byte[] cachedBody = exchange.getAttribute(BodyCacheFilter.CACHED_BODY_ATTR);
+        String bodyHash = "";
+        if (cachedBody != null && cachedBody.length > 0) {
+            bodyHash = sha256Hex(cachedBody);
+        }
+        String signStr = method + "|" + path + "|" + query + "|" + timestamp + "|" + nonce + "|" + bodyHash;
         String expectedSignature = hmacSha256(signStr, perUserSecret);
 
         if (expectedSignature == null || !MessageDigest.isEqual(
@@ -215,6 +230,27 @@ public class HmacSignatureFilter implements GlobalFilter, Ordered {
 
     /**
      * 计算 HMAC-SHA256 签名
+     *
+     * @param data 待签名数据
+     * @param key  HMAC 密钥
+     * @return Base64 编码的签名值，异常时返回 null
+     */
+    private String sha256Hex(byte[] data) {
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(data);
+            StringBuilder sb = new StringBuilder();
+            for (byte b : digest) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 不可用", e);
+        }
+    }
+
+    /**
+     * HMAC-SHA256 计算
      *
      * @param data 待签名数据
      * @param key  HMAC 密钥

@@ -133,12 +133,15 @@ public class RedisConfig {
         // 忽略未知属性（向前兼容：字段增减不影响反序列化）
         objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         // 启用类型信息（反序列化时能还原具体类型，而非 LinkedHashMap）
-        // 安全策略：仅允许 com.myxhs. / java.util. / java.lang. / java.time. 包下的类型
+        // 安全策略：仅允许 com.myxhs. / java.util. / java.lang. / java.time. / java.math. 包下的类型
+        // T-046 修复（2026-08-13）：漏配 java.math. 导致 BigDecimal（SkuVO.price）反序列化被
+        // PolymorphicTypeValidator 拒绝 → product 多级缓存 L2 命中恒失败（每次穿 DB）
         PolymorphicTypeValidator ptv = BasicPolymorphicTypeValidator.builder()
                 .allowIfBaseType("com.myxhs.")
                 .allowIfBaseType("java.util.")
                 .allowIfBaseType("java.lang.")
                 .allowIfBaseType("java.time.")
+                .allowIfBaseType("java.math.")
                 .build();
         objectMapper.activateDefaultTyping(
                 ptv,

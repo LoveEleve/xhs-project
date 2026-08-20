@@ -1,0 +1,100 @@
+[
+    {
+        "Id": "sha256:d4c99df6b952aacda49644d8e933d9700bd2427d89f19f5d34dc0c898b56ede5",
+        "RepoTags": [
+            "docker.elastic.co/beats/filebeat:8.19.19"
+        ],
+        "RepoDigests": [
+            "docker.elastic.co/beats/filebeat@sha256:537f0577a7ff7dc81cd3db33f9b0aecc9ea7bc9038f7e5217382030a8cee5c9c"
+        ],
+        "Parent": "",
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2026-07-15T12:03:58.999030542Z",
+        "DockerVersion": "",
+        "Author": "",
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 428737907,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/data/docker/lib/overlay2/484957a09e25a2260760060f4e3843782d90b291f768e6c4075ba51736304fc0/diff:/data/docker/lib/overlay2/eb90dd847764c4b045c6f38bbcb0be3d4fb2879af9e808b6bc0bfcc012731f93/diff:/data/docker/lib/overlay2/98e4e14e1fa7e447c6e90b57e72cec1c15ff04428050486c818abea5379a1ed7/diff:/data/docker/lib/overlay2/75419e5f098659dc944ab94ae90e4f6fd0f2c6c1857591c7aa5bbef5868cca58/diff:/data/docker/lib/overlay2/0c3054b4d8a5466df14c41c3016cacda466ca1e9da6266a65d13d132191b8dae/diff:/data/docker/lib/overlay2/9bd1ee5e34f4b574f3d6c9b51bacb263279f397d0c8c7e67b95abc467ca06c12/diff:/data/docker/lib/overlay2/37b3ba0f41fc36d58f54565bf23255094e8c3859c574b5f594ea7bc61f85a6c9/diff:/data/docker/lib/overlay2/58e67e165665fe4307da860f1bf461a8fa87389b9885efc8cc5ca7a36817e22d/diff:/data/docker/lib/overlay2/715087a69bc26f632dbdb7dd7d8d439313e5ed05c464b92ed01bf91ea895ceb9/diff:/data/docker/lib/overlay2/c0b58854c128109bf036bb4b09f87c18878daf88a164037dac5e3513a4addaed/diff:/data/docker/lib/overlay2/907743a3436759e794d037c93c932720e0f45567bebe541207002c326d43058a/diff:/data/docker/lib/overlay2/b73b11ebfec75a419f64bfd4e88b414fe31a7f6e3681e373e2d9f07609bef342/diff:/data/docker/lib/overlay2/05f5535a836aaedf5629fad720594b47b3fd003410bb1a905d9e63fbc9242141/diff",
+                "MergedDir": "/data/docker/lib/overlay2/9bb08f2bc90d097b911d42709793dee944c2b191481832b999a56ae08ed6cd28/merged",
+                "UpperDir": "/data/docker/lib/overlay2/9bb08f2bc90d097b911d42709793dee944c2b191481832b999a56ae08ed6cd28/diff",
+                "WorkDir": "/data/docker/lib/overlay2/9bb08f2bc90d097b911d42709793dee944c2b191481832b999a56ae08ed6cd28/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:f103cd120fdd6cbc7f3d0e1d5bfb3e16290c32ead7b822d15c34460ecdf64b29",
+                "sha256:9b5306a159cc334a3b51eb6501c31c7bdbe291a5b8cf1bd7dd24422d62211b8e",
+                "sha256:a483c54f97415860fef1c130502b1e6162fda32587af9e3bf89cb633549475c3",
+                "sha256:88ee6e51ca277c597ad0a6bac53fc7106578395b7115185133c84ab81ec636cb",
+                "sha256:a6379fbda8ff451e11829b9f511b6d30aaf75ae02ba9b35f2ce254dcf0267240",
+                "sha256:438b027715bdd1c9df7cfd4eeebfe2f1bce870202e3f78bf05a2a52f669ea542",
+                "sha256:ea24f56ca8aec335911ed2961acab558e503d7f7b20f5e5e28a89f08aac1bccc",
+                "sha256:9d53251a781763171abb644e95588d6c979787a9d6aa30720aa9846a8ad4f30c",
+                "sha256:f0f093ad7f5c5458a0859cdd2e5b0c1c45212ca4614c26d56c915decf70a7b05",
+                "sha256:a4b4f139fa23b89257b5452be7d8b6c97678a7fe10005216ca2f44c8ec6e7311",
+                "sha256:9adf1d6e2a59ace8d04805a9a09222b36f4002988c8144285e43f823e1e977f9",
+                "sha256:2667f8d9c13a68b50731c778dc4787bd4ced6490af1f540d7dad4711b4748ad6",
+                "sha256:4d16d4569bb002b3861c5a1601e9eaf9e15eeb3d0d3a2027173d582e6bc9302f",
+                "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        },
+        "Config": {
+            "ArgsEscaped": true,
+            "Cmd": [
+                "--environment",
+                "container"
+            ],
+            "Entrypoint": [
+                "/usr/bin/tini",
+                "--",
+                "/usr/local/bin/docker-entrypoint"
+            ],
+            "Env": [
+                "PATH=/usr/share/filebeat:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "ELASTIC_CONTAINER=true",
+                "GODEBUG=madvdontneed=1",
+                "LIBBEAT_MONITORING_CGROUPS_HIERARCHY_OVERRIDE=/"
+            ],
+            "Labels": {
+                "description": "Filebeat sends log files to Logstash or directly to Elasticsearch.",
+                "io.k8s.description": "Filebeat sends log files to Logstash or directly to Elasticsearch.",
+                "io.k8s.display-name": "Filebeat image",
+                "license": "Elastic License",
+                "maintainer": "infra@elastic.co",
+                "name": "filebeat",
+                "org.label-schema.build-date": "2026-07-15T11:56:45Z",
+                "org.label-schema.license": "Elastic License",
+                "org.label-schema.name": "filebeat",
+                "org.label-schema.schema-version": "1.0",
+                "org.label-schema.url": "https://www.elastic.co/beats/filebeat",
+                "org.label-schema.vcs-ref": "07e825c0cf248b728a2d3272f47198046d6bb072",
+                "org.label-schema.vcs-url": "github.com/elastic/beats/v7",
+                "org.label-schema.vendor": "Elastic",
+                "org.label-schema.version": "8.19.19",
+                "org.opencontainers.image.authors": "infra@elastic.co",
+                "org.opencontainers.image.created": "2026-07-15T11:56:45Z",
+                "org.opencontainers.image.licenses": "Elastic License",
+                "org.opencontainers.image.title": "Filebeat",
+                "org.opencontainers.image.vendor": "Elastic",
+                "org.opencontainers.image.version": "24.04",
+                "release": "1",
+                "summary": "filebeat",
+                "url": "https://www.elastic.co/beats/filebeat",
+                "vendor": "Elastic",
+                "version": "8.19.19"
+            },
+            "OnBuild": null,
+            "User": "1000",
+            "Volumes": null,
+            "WorkingDir": "/usr/share/filebeat"
+        }
+    }
+]

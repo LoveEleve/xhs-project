@@ -1,0 +1,54 @@
+########## 容器内 canal 日志尾部
+canal
+example
+inventory_instance
+note_instance
+product_instance
+/home/admin/canal-server/logs/example/example.log
+/home/admin/canal-server/logs/inventory_instance/meta.log
+/home/admin/canal-server/logs/inventory_instance/inventory_instance.log
+/home/admin/canal-server/logs/product_instance/product_instance.log
+/home/admin/canal-server/logs/product_instance/meta.log
+/home/admin/canal-server/logs/note_instance/note_instance.log
+/home/admin/canal-server/logs/note_instance/meta.log
+/home/admin/canal-server/logs/canal/canal.log
+/home/admin/canal-server/logs/canal/canal_stdout.log
+/home/admin/canal-server/logs/canal/rocketmq_client.log
+########## 各实例 position
+canal.ip =
+canal.port = 11111
+canal.zkServers =
+canal.instance.tsdb.dir = ${canal.file.data.dir:../conf}/${canal.instance.destination:}
+######### 		destinations		#############
+canal.destinations = note_instance,product_instance,inventory_instance
+########## instance 运行状态(日志中)
+inventory_instance
+note_instance
+product_instance
+########## 容器内 canal 日志尾部
+canal
+example
+inventory_instance
+note_instance
+product_instance
+/home/admin/canal-server/logs/example/example.log
+/home/admin/canal-server/logs/inventory_instance/meta.log
+/home/admin/canal-server/logs/inventory_instance/inventory_instance.log
+/home/admin/canal-server/logs/product_instance/product_instance.log
+/home/admin/canal-server/logs/product_instance/meta.log
+/home/admin/canal-server/logs/note_instance/note_instance.log
+/home/admin/canal-server/logs/note_instance/meta.log
+/home/admin/canal-server/logs/canal/canal.log
+/home/admin/canal-server/logs/canal/canal_stdout.log
+/home/admin/canal-server/logs/canal/rocketmq_client.log
+########## 各实例 position
+canal.ip =
+canal.port = 11111
+canal.zkServers =
+canal.instance.tsdb.dir = ${canal.file.data.dir:../conf}/${canal.instance.destination:}
+######### 		destinations		#############
+canal.destinations = note_instance,product_instance,inventory_instance
+########## instance 运行状态(日志中)
+inventory_instance
+note_instance
+product_instance

@@ -1,0 +1,2 @@
+UID                 PID                 PPID                C                   STIME               TTY                 TIME                CMD
+root                3322372             3322228             0                   Aug08               ?                   00:10:53            java -Djava.security.egd=file:/dev/./urandom -Dserver.port=8858 -Dcsp.sentinel.api.port=8719 -Dcsp.sentinel.dashboard.server=localhost:8858 -Dproject.name=sentinel-dashboard -jar app.jar

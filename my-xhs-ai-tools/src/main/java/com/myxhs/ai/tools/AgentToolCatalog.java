@@ -23,7 +23,7 @@ public class AgentToolCatalog {
             {"type":"object","properties":{"service":{"type":"string","description":"白名单服务名，如 my-xhs-order"},"keyword":{"type":"string","description":"检索关键词，字母数字与常见符号，长度≤100"},"tailLines":{"type":"string","description":"最近多少行内检索（1~5000，默认 500）"}},"required":["service","keyword"]}
             """;
     private static final String DLQ_QUERY_SCHEMA = """
-            {"type":"object","properties":{"consumerGroup":{"type":"string","description":"消费组名，如 cart-sync-consumer-group"}},"required":["consumerGroup"]}
+            {"type":"object","properties":{"consumerGroup":{"type":"string","description":"消费组名，如 cart-sync-consumer-group"},"keyword":{"type":"string","description":"可选过滤关键词（如 orderNo），匹配消息体，缩小返回范围"}},"required":["consumerGroup"]}
             """;
     private static final String L3_SCHEMA = """
             {"type":"object","properties":{"msgId":{"type":"string","description":"RocketMQ 消息 ID（32 位 hex）"},"consumerGroup":{"type":"string","description":"消费组名，如 cart-sync-consumer-group"},"retryTopic":{"type":"string","description":"原始消息 topic，来自 DLQ 消息属性 RETRY_TOPIC"}},"required":["msgId","consumerGroup"]}

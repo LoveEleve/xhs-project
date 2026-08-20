@@ -7,6 +7,15 @@ MYSQL_HOST="21.130.247.89"
 MYSQL_PORT="3306"
 MYSQL_USER="root"
 MYSQL_PASS="Xhs@2026#MySQL"
+
+# P-B4 后管理令牌随机化：从 tokens.env 读取（start-all.sh 生成），缺失则跳过管理调用
+TOKENS_ENV="${MYXHS_TOKEN_FILE:-/data/workspace/my-xhs/.secrets/tokens.env}"
+if [ -f "$TOKENS_ENV" ]; then
+  . "$TOKENS_ENV"
+else
+  echo "[WARN] 未找到 $TOKENS_ENV（管理接口调用将失败，可先执行 start-all.sh 生成）"
+fi
+export ADMIN_TOKEN
 REDIS_HOST="21.130.247.89"
 REDIS_PORT="6379"
 REDIS_PASS="Xhs@2026#Redis"
@@ -190,7 +199,7 @@ else
   SKUS=$(mysql -h $MYSQL_HOST -P $MYSQL_PORT -u $MYSQL_USER -p"$MYSQL_PASS" -N -e "USE my_xhs_product; SELECT id,stock FROM t_sku WHERE status=1 AND deleted=0 AND stock>0 LIMIT 10;" 2>/dev/null)
   while read -r sku_id sku_stock; do
     resp=$(curl -s -X POST "http://localhost:19009/api/inventory/init" \
-      -H "X-Admin-Call: my-xhs-admin-token-2026" \
+      -H "X-Admin-Call: ${ADMIN_TOKEN}" \
       -H "Content-Type: application/json" \
       -d "{\"skuId\":$sku_id,\"totalStock\":$sku_stock,\"bucketCount\":4}")
     code=$(echo "$resp" | python3 -c "import json,sys;print(json.load(sys.stdin).get('code','?'))" 2>/dev/null)

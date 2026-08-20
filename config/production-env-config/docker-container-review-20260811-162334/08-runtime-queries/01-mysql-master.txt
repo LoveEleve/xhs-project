@@ -1,0 +1,59 @@
+########## SHOW VARIABLES 关键项
+Variable_name	Value
+binlog_expire_logs_seconds	2592000
+binlog_format	ROW
+binlog_row_image	FULL
+character_set_server	utf8mb4
+collation_server	utf8mb4_unicode_ci
+default_authentication_plugin	mysql_native_password
+enforce_gtid_consistency	ON
+gtid_mode	ON
+innodb_buffer_pool_size	1073741824
+log_bin	ON
+lower_case_table_names	0
+max_connections	500
+port	3306
+server_id	1
+version	8.0.46
+########## SHOW DATABASES + 表数量
+TABLE_SCHEMA	tables
+mysql	38
+information_schema	79
+performance_schema	111
+sys	101
+nacos_config	12
+xxl_job	8
+my_xhs_user	3
+my_xhs_analytics	4
+my_xhs_notification	4
+my_xhs_im	2
+seata_lab	2
+my_xhs_content	5
+my_xhs_counter	1
+my_xhs_search	2
+my_xhs_product	3
+my_xhs_cart	1
+my_xhs_coupon	3
+my_xhs_order	1
+my_xhs_order_0	20
+my_xhs_order_1	20
+my_xhs_order_2	20
+my_xhs_order_3	20
+my_xhs_payment	2
+my_xhs_inventory	5
+########## MASTER STATUS
+*************************** 1. row ***************************
+             File: mysql-bin.000003
+         Position: 277024692
+     Binlog_Do_DB: 
+ Binlog_Ignore_DB: 
+Executed_Gtid_Set: 3dc17b61-7b9f-11f1-befe-525400d7fee1:1-1322,
+3dc456aa-7b9f-11f1-822d-525400d7fee1:1-274,
+3dc78fe8-7b9f-11f1-a092-525400d7fee1:1-955,
+3dc78ffe-7b9f-11f1-a2d5-525400d7fee1:1-859347,
+aea946e0-9331-11f1-8918-525400d7fee1:1-346878
+########## BINARY LOGS
+Log_name	File_size	Encrypted
+mysql-bin.000001	180	No
+mysql-bin.000002	3070106	No
+mysql-bin.000003	277024692	No

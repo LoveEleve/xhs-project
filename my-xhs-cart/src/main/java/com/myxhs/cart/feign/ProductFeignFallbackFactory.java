@@ -28,6 +28,12 @@ public class ProductFeignFallbackFactory implements FallbackFactory<ProductFeign
                 log.warn("[Feign降级] batchGetSkuDetails 降级, skuIds={}", skuIds);
                 return R.fail("商品服务暂不可用");
             }
+
+            @Override
+            public R<SkuDTO> getSkuDetail(Long skuId) {
+                log.warn("[Feign降级] getSkuDetail 降级, skuId={}", skuId);
+                return R.fail("商品服务暂不可用");
+            }
         };
     }
 }

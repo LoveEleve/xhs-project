@@ -1,0 +1,345 @@
+[
+    {
+        "Id": "9b7b0969c2490c975be41ddbc81077d9a14bf41574e403469c2fe7037ef33832",
+        "Created": "2026-08-08T14:01:41.367358354Z",
+        "Path": "docker-entrypoint.sh",
+        "Args": [
+            "redis-server",
+            "--port",
+            "6380",
+            "--bind",
+            "0.0.0.0",
+            "--requirepass",
+            "Xhs@2026#Redis",
+            "--masterauth",
+            "Xhs@2026#Redis",
+            "--replicaof",
+            "127.0.0.1",
+            "6379",
+            "--appendonly",
+            "yes",
+            "--appendfsync",
+            "everysec",
+            "--maxmemory",
+            "256mb",
+            "--maxmemory-policy",
+            "allkeys-lru",
+            "--save",
+            "900",
+            "1",
+            "--save",
+            "300",
+            "10"
+        ],
+        "State": {
+            "Status": "running",
+            "Running": true,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 3322987,
+            "ExitCode": 0,
+            "Error": "",
+            "StartedAt": "2026-08-08T14:01:41.677458236Z",
+            "FinishedAt": "0001-01-01T00:00:00Z",
+            "Health": {
+                "Status": "healthy",
+                "FailingStreak": 0,
+                "Log": [
+                    {
+                        "Start": "2026-08-11T16:23:04.251287031+08:00",
+                        "End": "2026-08-11T16:23:04.28221685+08:00",
+                        "ExitCode": 0,
+                        "Output": "Warning: Using a password with '-a' or '-u' option on the command line interface may not be safe.\nPONG\n"
+                    },
+                    {
+                        "Start": "2026-08-11T16:23:19.282694004+08:00",
+                        "End": "2026-08-11T16:23:19.321043893+08:00",
+                        "ExitCode": 0,
+                        "Output": "Warning: Using a password with '-a' or '-u' option on the command line interface may not be safe.\nPONG\n"
+                    },
+                    {
+                        "Start": "2026-08-11T16:23:34.321767863+08:00",
+                        "End": "2026-08-11T16:23:34.366372168+08:00",
+                        "ExitCode": 0,
+                        "Output": "Warning: Using a password with '-a' or '-u' option on the command line interface may not be safe.\nPONG\n"
+                    },
+                    {
+                        "Start": "2026-08-11T16:23:49.36718524+08:00",
+                        "End": "2026-08-11T16:23:49.400558568+08:00",
+                        "ExitCode": 0,
+                        "Output": "Warning: Using a password with '-a' or '-u' option on the command line interface may not be safe.\nPONG\n"
+                    },
+                    {
+                        "Start": "2026-08-11T16:24:04.401527078+08:00",
+                        "End": "2026-08-11T16:24:04.436159462+08:00",
+                        "ExitCode": 0,
+                        "Output": "Warning: Using a password with '-a' or '-u' option on the command line interface may not be safe.\nPONG\n"
+                    }
+                ]
+            }
+        },
+        "Image": "sha256:487efc0616382465781b8fdc3d6d1db449e6fd80ae23bf48432a2da6b6929908",
+        "ResolvConfPath": "/data/docker/lib/containers/9b7b0969c2490c975be41ddbc81077d9a14bf41574e403469c2fe7037ef33832/resolv.conf",
+        "HostnamePath": "/data/docker/lib/containers/9b7b0969c2490c975be41ddbc81077d9a14bf41574e403469c2fe7037ef33832/hostname",
+        "HostsPath": "/data/docker/lib/containers/9b7b0969c2490c975be41ddbc81077d9a14bf41574e403469c2fe7037ef33832/hosts",
+        "LogPath": "",
+        "Name": "/my-xhs-redis-slave",
+        "RestartCount": 0,
+        "Driver": "overlay2",
+        "Platform": "linux",
+        "MountLabel": "",
+        "ProcessLabel": "",
+        "AppArmorProfile": "",
+        "ExecIDs": null,
+        "HostConfig": {
+            "Binds": null,
+            "ContainerIDFile": "",
+            "LogConfig": {
+                "Type": "journald",
+                "Config": {}
+            },
+            "NetworkMode": "host",
+            "PortBindings": {},
+            "RestartPolicy": {
+                "Name": "unless-stopped",
+                "MaximumRetryCount": 0
+            },
+            "AutoRemove": false,
+            "VolumeDriver": "",
+            "VolumesFrom": null,
+            "ConsoleSize": [
+                0,
+                0
+            ],
+            "CapAdd": null,
+            "CapDrop": null,
+            "CgroupnsMode": "private",
+            "Dns": null,
+            "DnsOptions": null,
+            "DnsSearch": null,
+            "ExtraHosts": [],
+            "GroupAdd": null,
+            "IpcMode": "private",
+            "Cgroup": "",
+            "Links": null,
+            "OomScoreAdj": 0,
+            "PidMode": "",
+            "Privileged": false,
+            "PublishAllPorts": false,
+            "ReadonlyRootfs": false,
+            "SecurityOpt": null,
+            "UTSMode": "",
+            "UsernsMode": "",
+            "ShmSize": 67108864,
+            "Runtime": "runc",
+            "Isolation": "",
+            "CpuShares": 0,
+            "Memory": 268435456,
+            "NanoCpus": 250000000,
+            "CgroupParent": "",
+            "BlkioWeight": 0,
+            "BlkioWeightDevice": null,
+            "BlkioDeviceReadBps": null,
+            "BlkioDeviceWriteBps": null,
+            "BlkioDeviceReadIOps": null,
+            "BlkioDeviceWriteIOps": null,
+            "CpuPeriod": 0,
+            "CpuQuota": 0,
+            "CpuRealtimePeriod": 0,
+            "CpuRealtimeRuntime": 0,
+            "CpusetCpus": "",
+            "CpusetMems": "",
+            "Devices": null,
+            "DeviceCgroupRules": null,
+            "DeviceRequests": null,
+            "MemoryReservation": 134217728,
+            "MemorySwap": 536870912,
+            "MemorySwappiness": null,
+            "OomKillDisable": null,
+            "PidsLimit": null,
+            "Ulimits": [
+                {
+                    "Name": "nofile",
+                    "Hard": 1048576,
+                    "Soft": 1048576
+                }
+            ],
+            "CpuCount": 0,
+            "CpuPercent": 0,
+            "IOMaximumIOps": 0,
+            "IOMaximumBandwidth": 0,
+            "Mounts": [
+                {
+                    "Type": "volume",
+                    "Source": "my-xhs-deploy-zip_redis-slave-data",
+                    "Target": "/data",
+                    "VolumeOptions": {}
+                }
+            ],
+            "MaskedPaths": [
+                "/proc/asound",
+                "/proc/acpi",
+                "/proc/interrupts",
+                "/proc/kcore",
+                "/proc/keys",
+                "/proc/latency_stats",
+                "/proc/timer_list",
+                "/proc/timer_stats",
+                "/proc/sched_debug",
+                "/proc/scsi",
+                "/sys/firmware",
+                "/sys/devices/virtual/powercap"
+            ],
+            "ReadonlyPaths": [
+                "/proc/bus",
+                "/proc/fs",
+                "/proc/irq",
+                "/proc/sys",
+                "/proc/sysrq-trigger"
+            ]
+        },
+        "GraphDriver": {
+            "Data": {
+                "ID": "9b7b0969c2490c975be41ddbc81077d9a14bf41574e403469c2fe7037ef33832",
+                "LowerDir": "/data/docker/lib/overlay2/3e45c61a1b7ef666c24547483be552f3d25ce7e3fa36217e666990b83d7f3a8e-init/diff:/data/docker/lib/overlay2/88dd08c4d69dc97a6a805758b969e0777438fc314c59c80fea8fc9aff015572d/diff:/data/docker/lib/overlay2/dcd1757833dd8986223b2327bd609717060a7eb7f5d3aacdd4863e079398b624/diff:/data/docker/lib/overlay2/c0abdc8593f0d14de218c58903034d7a83e2132ef3e4c6f9b9a0e966c53d287e/diff:/data/docker/lib/overlay2/f214968468d4a5e46b57b522031592b05c208d1aa39dfae24b88fe0b7c93cd33/diff:/data/docker/lib/overlay2/df0ff1c9e70f015d4dea35b80dad2080af9881b23ebe7333ae9ec90ece1ad113/diff:/data/docker/lib/overlay2/d905c69bb62bdecf11f88ea083853a5c447ba28db369d006b0b773d6006815c6/diff:/data/docker/lib/overlay2/024d53945596fe697770f8d6a1dac48e2da43f0468268d8b3b365ddf2df27dad/diff",
+                "MergedDir": "/data/docker/lib/overlay2/3e45c61a1b7ef666c24547483be552f3d25ce7e3fa36217e666990b83d7f3a8e/merged",
+                "UpperDir": "/data/docker/lib/overlay2/3e45c61a1b7ef666c24547483be552f3d25ce7e3fa36217e666990b83d7f3a8e/diff",
+                "WorkDir": "/data/docker/lib/overlay2/3e45c61a1b7ef666c24547483be552f3d25ce7e3fa36217e666990b83d7f3a8e/work"
+            },
+            "Name": "overlay2"
+        },
+        "Mounts": [
+            {
+                "Type": "volume",
+                "Name": "my-xhs-deploy-zip_redis-slave-data",
+                "Source": "/data/docker/lib/volumes/my-xhs-deploy-zip_redis-slave-data/_data",
+                "Destination": "/data",
+                "Driver": "local",
+                "Mode": "z",
+                "RW": true,
+                "Propagation": ""
+            }
+        ],
+        "Config": {
+            "Hostname": "VM-247-89-tencentos",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": true,
+            "AttachStderr": true,
+            "ExposedPorts": {
+                "6379/tcp": {}
+            },
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "REDIS_VERSION=7.4.9"
+            ],
+            "Cmd": [
+                "redis-server",
+                "--port",
+                "6380",
+                "--bind",
+                "0.0.0.0",
+                "--requirepass",
+                "Xhs@2026#Redis",
+                "--masterauth",
+                "Xhs@2026#Redis",
+                "--replicaof",
+                "127.0.0.1",
+                "6379",
+                "--appendonly",
+                "yes",
+                "--appendfsync",
+                "everysec",
+                "--maxmemory",
+                "256mb",
+                "--maxmemory-policy",
+                "allkeys-lru",
+                "--save",
+                "900",
+                "1",
+                "--save",
+                "300",
+                "10"
+            ],
+            "Healthcheck": {
+                "Test": [
+                    "CMD",
+                    "redis-cli",
+                    "-p",
+                    "6380",
+                    "-a",
+                    "Xhs@2026#Redis",
+                    "ping"
+                ],
+                "Interval": 15000000000,
+                "Timeout": 5000000000,
+                "Retries": 3
+            },
+            "Image": "redis:7-alpine",
+            "Volumes": {
+                "/data": {}
+            },
+            "WorkingDir": "/data",
+            "Entrypoint": [
+                "docker-entrypoint.sh"
+            ],
+            "OnBuild": null,
+            "Labels": {
+                "com.docker.compose.config-hash": "f03ebdf0887b4a4d03d25e2e4fa181356032c4d9b6b058046337bb8605e30e91",
+                "com.docker.compose.container-number": "1",
+                "com.docker.compose.depends_on": "redis:service_started:false",
+                "com.docker.compose.image": "sha256:487efc0616382465781b8fdc3d6d1db449e6fd80ae23bf48432a2da6b6929908",
+                "com.docker.compose.oneoff": "False",
+                "com.docker.compose.project": "my-xhs-deploy-zip",
+                "com.docker.compose.project.config_files": "/data/workspace/my-xhs-deploy-zip/docker-compose.yml",
+                "com.docker.compose.project.working_dir": "/data/workspace/my-xhs-deploy-zip",
+                "com.docker.compose.service": "redis-slave",
+                "com.docker.compose.version": "2.29.2"
+            }
+        },
+        "NetworkSettings": {
+            "Bridge": "",
+            "SandboxID": "6d5529544e405051c66bbf7bc8c3ae893dbfe9340ff9174110034cb0e9a691c2",
+            "SandboxKey": "/var/run/docker/netns/default",
+            "Ports": {},
+            "HairpinMode": false,
+            "LinkLocalIPv6Address": "",
+            "LinkLocalIPv6PrefixLen": 0,
+            "SecondaryIPAddresses": null,
+            "SecondaryIPv6Addresses": null,
+            "EndpointID": "",
+            "Gateway": "",
+            "GlobalIPv6Address": "",
+            "GlobalIPv6PrefixLen": 0,
+            "IPAddress": "",
+            "IPPrefixLen": 0,
+            "IPv6Gateway": "",
+            "MacAddress": "",
+            "Networks": {
+                "host": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": null,
+                    "MacAddress": "",
+                    "DriverOpts": null,
+                    "GwPriority": 0,
+                    "NetworkID": "69303899f57d4447764f56f161dceb184df134844eb038322985183a4f6b4dff",
+                    "EndpointID": "ba24bd41848f69e6142ba1b238f04a74aedc686b7b00e5a2c47e1b8acf06f86d",
+                    "Gateway": "",
+                    "IPAddress": "",
+                    "IPPrefixLen": 0,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "DNSNames": null
+                }
+            }
+        }
+    }
+]
