@@ -115,6 +115,21 @@ class ConversationServiceTest {
     }
 
     @Test
+    void 工作流摘要_包含追问来源与当前定位() {
+        String convId = "conv_workflow";
+        service.ensureConversation(convId, "u1", "首问：哪个类负责库存预扣？");
+        service.updateWorkflowSummary(convId, "为什么优先看 InventoryService.preDeduct()？", "代码结构结论",
+                "codeSearch", "为什么优先看 InventoryService.preDeduct()？", "run_prev", "inventory",
+                "InventoryService", "preDeduct");
+        String summary = service.get(convId).orElseThrow().summary();
+        assertTrue(summary.contains("工作流追问：codeSearch"), summary);
+        assertTrue(summary.contains("来源 run：run_prev"), summary);
+        assertTrue(summary.contains("来源服务：inventory"), summary);
+        assertTrue(summary.contains("当前定位类：InventoryService"), summary);
+        assertTrue(summary.contains("当前定位方法：preDeduct()"), summary);
+    }
+
+    @Test
     void 摘要注入_为空则跳过() {
         String convId = "conv_test_4";
         service.ensureConversation(convId, "u1", "q");

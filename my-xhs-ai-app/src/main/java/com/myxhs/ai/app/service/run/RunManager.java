@@ -419,7 +419,14 @@ public class RunManager {
                 conversation.ensureConversation(convId, userId, query);
                 conversation.appendUserMessage(convId, runId, query);
                 conversation.appendAssistantMessage(convId, runId, answer, List.of());
-                conversation.updateSummary(convId, answer);
+                if (codeSearchResult != null) {
+                    String primaryService = codeSearchResult.topHit() == null ? null : codeSearchResult.topHit().primaryService();
+                    String methodHint = codeSearchResult.topHit() == null ? null : codeSearchResult.topHit().methodHint();
+                    conversation.updateWorkflowSummary(convId, query, answer, followupSourceKind, followupSourceText,
+                            followupSourceRunId, followupSourceService, primaryService, methodHint);
+                } else {
+                    conversation.updateSummary(convId, answer);
+                }
             } catch (Exception e) {
                 log.warn("[runmgr] direct-answer 会话落库失败 conv={} err={}", convId, e.getMessage());
             }
@@ -483,7 +490,12 @@ public class RunManager {
                 conversation.ensureConversation(convId, userId, query);
                 conversation.appendUserMessage(convId, runId, query);
                 conversation.appendAssistantMessage(convId, runId, answer, List.of());
-                conversation.updateSummary(convId, answer);
+                String primaryService = diagnosis == null || diagnosis.serviceProfiles().isEmpty()
+                        ? null : diagnosis.serviceProfiles().get(0).primaryService();
+                String methodHint = diagnosis == null || diagnosis.serviceProfiles().isEmpty()
+                        ? null : diagnosis.serviceProfiles().get(0).methodHint();
+                conversation.updateWorkflowSummary(convId, query, answer, followupSourceKind, followupSourceText,
+                        followupSourceRunId, followupSourceService, primaryService, methodHint);
             } catch (Exception e) {
                 log.warn("[runmgr] trace-direct 会话落库失败 conv={} err={}", convId, e.getMessage());
             }

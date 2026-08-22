@@ -120,6 +120,37 @@ public class ConversationService {
         store.updateSummary(convId, summary);
     }
 
+    public void updateWorkflowSummary(String convId, String query, String finalAnswer,
+                                      String followupKind, String followupText,
+                                      String followupSourceRunId, String followupSourceService,
+                                      String primaryService, String methodHint) {
+        if (convId == null) {
+            return;
+        }
+        String title = store.load(convId)
+                .map(ConversationStore.Conversation::title).orElse(null);
+        StringBuilder workflow = new StringBuilder(summarize(title, finalAnswer));
+        if (followupKind != null && !followupKind.isBlank()) {
+            workflow.append("\n工作流追问：").append(followupKind).append(" -> ")
+                    .append(followupText == null ? "" : followupText);
+        }
+        if (followupSourceRunId != null && !followupSourceRunId.isBlank()) {
+            workflow.append("\n来源 run：").append(followupSourceRunId);
+        }
+        if (followupSourceService != null && !followupSourceService.isBlank()) {
+            workflow.append("\n来源服务：").append(followupSourceService);
+        }
+        if (primaryService != null && !primaryService.isBlank()) {
+            workflow.append("\n当前定位类：").append(primaryService);
+        }
+        if (methodHint != null && !methodHint.isBlank()) {
+            workflow.append("\n当前定位方法：").append(methodHint).append("()");
+        }
+        String summary = workflow.toString();
+        store.updateSummary(convId, summary.length() <= SUMMARY_MAX_LEN
+                ? summary : summary.substring(0, SUMMARY_MAX_LEN) + "…");
+    }
+
     public Optional<ConversationStore.Conversation> get(String convId) {
         return store.load(convId);
     }
