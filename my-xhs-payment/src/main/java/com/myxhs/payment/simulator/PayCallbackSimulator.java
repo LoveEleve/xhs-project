@@ -53,9 +53,9 @@ public class PayCallbackSimulator {
      */
     public void registerCallback(String paymentNo, Integer payType) {
         String key = CALLBACK_PENDING_PREFIX + payType + ":" + paymentNo;
-        // TTL 5 分钟（足够模拟器扫描并发送回调）
+        // TTL 24 小时，避免支付服务连续故障超过短扫描窗口后丢失模拟回调
         redisTemplate.opsForValue().set(key, String.valueOf(System.currentTimeMillis()),
-                java.time.Duration.ofMinutes(5));
+                java.time.Duration.ofHours(24));
         log.info("[回调模拟] 注册待回调: paymentNo={}, payType={}", paymentNo, payType);
     }
 
@@ -121,9 +121,6 @@ public class PayCallbackSimulator {
                 int delay = 1000 + ThreadLocalRandom.current().nextInt(2000);
                 Thread.sleep(delay);
 
-                // 删除待回调标记
-                redisTemplate.delete(key);
-
                 // 模拟回调：90% 成功率
                 boolean success = ThreadLocalRandom.current().nextDouble() < SUCCESS_RATE;
                 String tradeNo = success ? "MOCK_TRADE_" + System.currentTimeMillis() : null;
@@ -131,8 +128,9 @@ public class PayCallbackSimulator {
                 log.info("[回调模拟] 发送回调: paymentNo={}, payType={}, success={}, delay={}ms",
                         paymentNo, payType, success, delay);
 
-                // 通过 PaymentService 处理回调（内部会走完整的支付成功/失败逻辑）
+                // 先处理回调，成功后再删除待回调标记；失败保留 key 等下一轮重试
                 paymentServiceProvider.getObject().handlePayCallback(paymentNo, tradeNo, success);
+                redisTemplate.delete(key);
 
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -160,12 +158,17 @@ public class PayCallbackSimulator {
             for (String key : keys) {
                 try {
                     String refundNo = key.substring(REFUND_CALLBACK_PENDING_PREFIX.length());
+                    String lockKey = "myxhs:payment:refund-callback:simulate:" + refundNo;
+                    Boolean locked = redisTemplate.opsForValue().setIfAbsent(lockKey, "1", java.time.Duration.ofSeconds(30));
+                    if (!Boolean.TRUE.equals(locked)) {
+                        continue;
+                    }
                     int delay = 1000 + ThreadLocalRandom.current().nextInt(2000);
                     Thread.sleep(delay);
-                    redisTemplate.delete(key);
                     boolean success = ThreadLocalRandom.current().nextDouble() < SUCCESS_RATE;
                     log.info("[回调模拟] 发送退款回调: refundNo={}, success={}, delay={}ms", refundNo, success, delay);
                     paymentServiceProvider.getObject().handleRefundCallback(refundNo, success);
+                    redisTemplate.delete(key);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     log.warn("[回调模拟] 退款回调被中断");

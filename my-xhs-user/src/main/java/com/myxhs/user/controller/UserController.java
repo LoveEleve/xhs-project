@@ -104,6 +104,11 @@ public class UserController {
         return R.ok(userService.getUserPublicInfo(userId));
     }
 
+    @PostMapping("/batch/info")
+    public R<java.util.Map<Long, UserPublicInfoResponse>> batchGetUserPublicInfo(@RequestBody Set<Long> userIds) {
+        return R.ok(userService.batchGetUserPublicInfo(userIds));
+    }
+
     /**
      * 更新当前用户信息
      */

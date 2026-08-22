@@ -122,6 +122,11 @@ public class SkuService {
      * 按 SPU 查询 SKU 列表
      */
     public List<SkuVO> listSkusBySpuId(Long spuId) {
+        Spu spu = spuMapper.selectById(spuId);
+        if (spu == null || spu.getStatus() == null || spu.getStatus() != ProductStatus.ON_SHELF.getCode()) {
+            return List.of();
+        }
+
         List<Sku> skuList = skuMapper.selectList(
                 new LambdaQueryWrapper<Sku>()
                         .eq(Sku::getSpuId, spuId)
@@ -134,13 +139,7 @@ public class SkuService {
         // P2-1：批量预取 SPU 首图，消除 N+1
         Map<Long, String> spuImageMap = buildSpuImageMap(
                 skuList.stream().map(Sku::getSpuId).collect(Collectors.toSet()));
-        final Integer spuStatus;
-        Spu spu = spuMapper.selectById(spuId);
-        if (spu != null) {
-            spuStatus = spu.getStatus();
-        } else {
-            spuStatus = null;
-        }
+        final Integer spuStatus = spu.getStatus();
         return skuList.stream()
                 .map(sku -> toSkuVO(sku, spuImageMap.get(sku.getSpuId()), spuStatus))
                 .collect(Collectors.toList());

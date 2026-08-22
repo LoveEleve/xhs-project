@@ -16,6 +16,7 @@ import com.myxhs.product.entity.Sku;
 import com.myxhs.product.entity.Spu;
 import com.myxhs.product.enums.ProductStatus;
 import com.myxhs.product.mapper.CategoryMapper;
+import com.myxhs.product.mapper.ProductBehaviorMapper;
 import com.myxhs.product.mapper.SkuMapper;
 import com.myxhs.product.mapper.SpuMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -67,6 +68,8 @@ class SpuServiceTest {
     @Mock
     private IdGeneratorUtil idGeneratorUtil;
     @Mock
+    private ProductBehaviorMapper productBehaviorMapper;
+    @Mock
     private RBloomFilter<Long> spuBloomFilter;
 
     private SpuService spuService;
@@ -87,7 +90,7 @@ class SpuServiceTest {
     @BeforeEach
     void setUp() {
         spuService = new SpuService(
-                spuMapper, skuMapper, categoryMapper, redisOperator, redissonClient, idGeneratorUtil);
+                spuMapper, skuMapper, categoryMapper, redisOperator, redissonClient, idGeneratorUtil, productBehaviorMapper);
 
         // 通过反射注入布隆过滤器（避免调用 @PostConstruct 初始化逻辑）
         ReflectionTestUtils.setField(spuService, "spuBloomFilter", spuBloomFilter);
@@ -182,6 +185,51 @@ class SpuServiceTest {
         // 布隆过滤器拦截后不应该访问 Redis
         verify(redisOperator, never()).get(anyString());
         verify(spuMapper, never()).selectById(anyLong());
+    }
+
+    @Test
+    @DisplayName("查询 SPU 详情 - 未拿到加载锁时优先等待缓存回填")
+    void getSpuDetailWaitsForCacheRefillWhenLoadLockNotAcquired() throws Exception {
+        ReflectionTestUtils.setField(spuService, "bloomFilterReady", new AtomicBoolean(false));
+
+        org.redisson.api.RLock loadLock = mock(org.redisson.api.RLock.class);
+        when(redissonClient.getLock(anyString())).thenReturn(loadLock);
+        when(loadLock.tryLock(1, 10, java.util.concurrent.TimeUnit.SECONDS)).thenReturn(false);
+
+        RedisCacheData<SpuDetailVO> cacheMiss = null;
+        SpuDetailVO detailVO = new SpuDetailVO();
+        detailVO.setId(SPU_ID);
+        detailVO.setName("回填成功");
+        RedisCacheData<SpuDetailVO> cacheHit = RedisCacheData.of(detailVO, 30);
+        when(redisOperator.get(RedisKeyConstants.PRODUCT_SPU + SPU_ID)).thenReturn(cacheMiss, cacheHit);
+
+        SpuDetailVO result = spuService.getSpuDetail(SPU_ID);
+
+        assertThat(result).isNotNull();
+        assertThat(result.getName()).isEqualTo("回填成功");
+        verify(spuMapper, never()).selectById(anyLong());
+    }
+
+    @Test
+    @DisplayName("查询 SPU 详情 - SPU下架时返回null并写空值缓存")
+    void getSpuDetailReturnsNullWhenSpuOffShelf() throws Exception {
+        ReflectionTestUtils.setField(spuService, "bloomFilterReady", new AtomicBoolean(false));
+
+        org.redisson.api.RLock loadLock = mock(org.redisson.api.RLock.class);
+        when(redissonClient.getLock(anyString())).thenReturn(loadLock);
+        when(loadLock.tryLock(1, 10, java.util.concurrent.TimeUnit.SECONDS)).thenReturn(true);
+        when(loadLock.isHeldByCurrentThread()).thenReturn(true);
+
+        when(redisOperator.get(RedisKeyConstants.PRODUCT_SPU + SPU_ID)).thenReturn(null, null);
+        Spu offShelf = buildSpu();
+        offShelf.setStatus(ProductStatus.OFF_SHELF.getCode());
+        when(spuMapper.selectById(SPU_ID)).thenReturn(offShelf);
+
+        SpuDetailVO result = spuService.getSpuDetail(SPU_ID);
+
+        assertThat(result).isNull();
+        verify(redisOperator).set(eq(RedisKeyConstants.PRODUCT_SPU + SPU_ID), any(RedisCacheData.class), eq(5L), eq(java.util.concurrent.TimeUnit.MINUTES));
+        verify(loadLock).unlock();
     }
 
     // ==================== 更新 SPU ====================

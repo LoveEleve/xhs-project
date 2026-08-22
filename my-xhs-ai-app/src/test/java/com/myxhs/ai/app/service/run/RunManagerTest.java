@@ -6,6 +6,13 @@ import com.myxhs.ai.app.service.agent.harness.AgentRun;
 import com.myxhs.ai.app.service.agent.harness.AgentHarness;
 import com.myxhs.ai.app.service.agent.harness.HarnessEvent;
 import com.myxhs.ai.app.service.agent.harness.HarnessEventType;
+import com.myxhs.ai.app.service.knowledge.CodeSearchService;
+import com.myxhs.ai.app.service.knowledge.KnowledgeAnswerComposer;
+import com.myxhs.ai.app.service.knowledge.KnowledgeCardLoader;
+import com.myxhs.ai.app.service.knowledge.KnowledgeQuestionClassifier;
+import com.myxhs.ai.app.service.knowledge.KnowledgeRoutingService;
+import com.myxhs.ai.app.service.trace.TraceDiagnosisService;
+import com.myxhs.ai.app.service.trace.TraceSearchResult;
 import com.myxhs.ai.tools.LogSearchAccess;
 import com.myxhs.ai.tools.MetricToolAccess;
 import com.myxhs.ai.tools.ObsToolAccess;
@@ -107,7 +114,6 @@ class RunManagerTest {
     }
 
     private static class FakeLogSearch implements LogSearchAccess {
-        @Override
         public java.util.List<String> services() {
             return List.of("my-xhs-gateway", "my-xhs-order", "my-xhs-payment");
         }
@@ -358,20 +364,48 @@ class RunManagerTest {
     }
 
     @Test
+    void codeStructure查询_优先走CodeSearchService而不是旧知识卡() {
+        AgentHarness harness = new AgentHarness(new FakeModel(), new FakeTools(), new FakeObs(),
+                MAPPER, AgentBudget.defaults(), 0.002, 2, null, "fake");
+        KnowledgeRoutingService knowledge = new KnowledgeRoutingService(new KnowledgeCardLoader(),
+                new KnowledgeQuestionClassifier(), new KnowledgeAnswerComposer());
+        RunManager mgr = new RunManager(harness, null, null, new com.myxhs.ai.app.service.router.IntentRouter(),
+                null, knowledge, null, null, new CodeSearchService(), null, null, null);
+
+        AgentRun run = mgr.submit("哪个类负责库存预扣？", "u1").future().join();
+
+        assertEquals("SUCCEEDED", run.status().name());
+        assertTrue(run.finalAnswer().startsWith("代码结构："), run.finalAnswer());
+        assertTrue(run.finalAnswer().contains("InventoryService"), run.finalAnswer());
+    }
+
+    @Test
     void requestTrace查询_走跨服务直答() throws Exception {
         AgentHarness harness = new AgentHarness(new FakeModel(), new FakeTools(), new FakeObs(),
                 MAPPER, AgentBudget.defaults(), 0.002, 2, null, "fake");
+        TraceDiagnosisService traceService = new TraceDiagnosisService(traceId -> new TraceSearchResult(
+                traceId, "remote-es", List.of(
+                new TraceSearchResult.ServiceHit("my-xhs-gateway", "入口/聚合层", 2),
+                new TraceSearchResult.ServiceHit("my-xhs-order", "交易链路", 2)),
+                List.of("my-xhs-payment"), List.of(),
+                List.of(new TraceSearchResult.TraceEvent("2026-08-21T10:00:00", "my-xhs-gateway", "INFO", "gateway enter")),
+                "my-xhs-gateway", "my-xhs-order"), new com.myxhs.ai.app.service.trace.TraceServiceContextLoader(), new com.myxhs.ai.app.service.trace.TraceCallChainLoader(), new com.myxhs.ai.app.service.trace.TraceNavigationLoader(), new com.myxhs.ai.app.service.trace.TraceDiagnosisReviewer());
         RunManager mgr = new RunManager(harness, null, null, new com.myxhs.ai.app.service.router.IntentRouter(),
-                null, null, new FakeLogSearch(), null, null, null);
+                null, null, new FakeLogSearch(), traceService, null, null, null, null);
 
         RunManager.RunEntry e = mgr.submit("26f97b1880974a4f86eb5f0f0d950f9b", "u1");
         e.future().get(10, TimeUnit.SECONDS);
 
         AgentRun run = e.future().join();
         assertEquals("SUCCEEDED", run.status().name());
+        assertTrue(e.traceDiagnosis() != null, "应挂上结构化 traceDiagnosis");
+        assertEquals("remote-es", e.traceDiagnosis().source());
+        assertTrue(run.finalAnswer().contains("来源：remote-es"), run.finalAnswer());
         assertTrue(run.finalAnswer().contains("my-xhs-gateway"), run.finalAnswer());
         assertTrue(run.finalAnswer().contains("my-xhs-order"), run.finalAnswer());
         assertTrue(run.finalAnswer().contains("my-xhs-payment"), run.finalAnswer());
+        assertTrue(run.finalAnswer().contains("入口服务：my-xhs-gateway"), run.finalAnswer());
+        assertTrue(run.finalAnswer().contains("最后命中服务：my-xhs-order"), run.finalAnswer());
         assertEquals(0, run.steps().size(), "request trace 直答分支不应进入 Agent 循环");
     }
 
@@ -388,13 +422,19 @@ class RunManagerTest {
                 return super.searchLog(service, keyword, tailLines);
             }
         };
+        TraceDiagnosisService traceService = new TraceDiagnosisService(traceId -> new TraceSearchResult(
+                traceId, "local-log-fallback", List.of(
+                new TraceSearchResult.ServiceHit("my-xhs-gateway", "入口/聚合层", 2)),
+                List.of("my-xhs-payment"), List.of("my-xhs-order"),
+                List.of(), "my-xhs-gateway", "my-xhs-gateway"), new com.myxhs.ai.app.service.trace.TraceServiceContextLoader(), new com.myxhs.ai.app.service.trace.TraceCallChainLoader(), new com.myxhs.ai.app.service.trace.TraceNavigationLoader(), new com.myxhs.ai.app.service.trace.TraceDiagnosisReviewer());
         RunManager mgr = new RunManager(harness, null, null, new com.myxhs.ai.app.service.router.IntentRouter(),
-                null, null, access, null, null, null);
+                null, null, access, traceService, null, null, null, null);
 
         RunManager.RunEntry e = mgr.submit("26f97b1880974a4f86eb5f0f0d950f9b", "u1");
         AgentRun run = e.future().get(10, TimeUnit.SECONDS);
 
+        assertTrue(run.finalAnswer().contains("来源：local-log-fallback"), run.finalAnswer());
         assertTrue(run.finalAnswer().contains("my-xhs-gateway"), run.finalAnswer());
-        assertTrue(run.finalAnswer().contains("扫描失败服务：my-xhs-order"), run.finalAnswer());
+        assertTrue(run.finalAnswer().contains("失败服务：my-xhs-order"), run.finalAnswer());
     }
 }

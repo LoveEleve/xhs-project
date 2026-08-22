@@ -95,6 +95,7 @@ public class CartService {
     private static String itemsKey(Long userId) { return KEY_PREFIX + userId + ITEMS_KEY_SUFFIX; }
     private static String checkedKey(Long userId) { return KEY_PREFIX + userId + CHECKED_KEY_SUFFIX; }
     private static String sortKey(Long userId) { return KEY_PREFIX + userId + SORT_KEY_SUFFIX; }
+    private static String clearedMarkerKey(Long userId) { return KEY_PREFIX + userId + "}:cleared"; }
 
     /** MQ Topic */
     private static final String CART_TOPIC = "CART_TOPIC";
@@ -150,6 +151,7 @@ public class CartService {
         log.info("[购物车] 加入成功: userId={}, skuId={}, quantity={}, 当前数量={}",
                 userId, request.getSkuId(), request.getQuantity(), result);
 
+        clearClearedMarker(userId);
         // MQ 异步持久化（Lua 脚本外执行，MQ 失败不影响购物车操作）
         refreshTTL(userId);
         // T-107（2026-08-15）：Lua 返回 >=10000 表示新商品（checked=1 默认勾选，与 Redis SADD 一致）；
@@ -188,6 +190,7 @@ public class CartService {
         log.info("[购物车] 修改数量: userId={}, skuId={}, newQuantity={}",
                 userId, request.getSkuId(), request.getQuantity());
 
+        clearClearedMarker(userId);
         refreshTTL(userId);
         sendCartSyncEvent(userId, request.getSkuId(), request.getQuantity(), null, "UPDATE");
     }
@@ -252,6 +255,7 @@ public class CartService {
         log.info("[购物车] 勾选变更: userId={}, skuId={}, checked={}",
                 userId, request.getSkuId(), request.getChecked());
 
+        clearClearedMarker(userId);
         // MQ 异步持久化
         refreshTTL(userId);
         sendCartSyncEvent(userId, request.getSkuId(), null,
@@ -283,6 +287,7 @@ public class CartService {
         log.info("[购物车] 全选变更: userId={}, checked={}, selectedCount={}",
                 userId, checked, result != null ? result : 0);
 
+        clearClearedMarker(userId);
         // C-11: 发送 CHECK_ALL 事件同步勾选状态到 MySQL
         refreshTTL(userId);
         sendCartSyncEvent(userId, null, null, checked ? 1 : 0, "CHECK_ALL");
@@ -331,6 +336,15 @@ public class CartService {
                 : Collections.emptyMap();
 
         if (itemsMap.isEmpty()) {
+            if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(clearedMarkerKey(userId)))) {
+                return CartListVO.builder()
+                        .items(Collections.emptyList())
+                        .checkedCount(0)
+                        .checkedAmount(BigDecimal.ZERO)
+                        .totalCount(0)
+                        .allChecked(false)
+                        .build();
+            }
             // P2-7: Redis 购物车丢失（主从切换/重启/驱逐）时从 MySQL 恢复并回写 Redis，
             //       与 CartReconcileJob 注释"Redis 丢失后以 MySQL 恢复"保持一致
             itemsMap = restoreCartFromDb(userId, itemsKey, checkedKey, sortKey);
@@ -541,6 +555,7 @@ public class CartService {
             }
         }
 
+        clearClearedMarker(userId);
         // 合并写入后刷新 TTL（与其他写路径一致，防止长期活跃用户购物车过期）
         refreshTTL(userId);
         log.info("[购物车] 匿名购物车合并完成: userId={}, 合并{}项", userId, request.getItems().size());
@@ -573,6 +588,11 @@ public class CartService {
 
         List<String> keys = List.of(itemsKey, checkedKey, sortKey);
         stringRedisTemplate.delete(keys);
+        try {
+            stringRedisTemplate.opsForValue().set(clearedMarkerKey(userId), "1", CART_TTL);
+        } catch (Exception e) {
+            log.warn("[购物车] 写入清空标记失败: userId={}", userId, e);
+        }
 
         log.info("[购物车] 清空成功: userId={}", userId);
 
@@ -605,8 +625,11 @@ public class CartService {
     private boolean skuExists(Long skuId) {
         try {
             R<ProductFeignClient.SkuDTO> response = productFeignClient.getSkuDetail(skuId);
-            return response != null && response.isSuccess()
-                    && response.getData() != null && response.getData().getId() != null;
+            if (response == null || !response.isSuccess() || response.getData() == null || response.getData().getId() == null) {
+                return false;
+            }
+            ProductFeignClient.SkuDTO sku = response.getData();
+            return sku.getStatus() != null && sku.getStatus() == PRODUCT_STATUS_ON_SHELF;
         } catch (Exception e) {
             log.warn("[购物车] SKU存在性校验失败, 降级放行: skuId={}, error={}", skuId, e.getMessage());
             return true;
@@ -642,9 +665,25 @@ public class CartService {
      * 每次写操作后延长过期时间，30 天无操作自动清除。
      */
     private void refreshTTL(Long userId) {
-        stringRedisTemplate.expire(itemsKey(userId), CART_TTL);
-        stringRedisTemplate.expire(checkedKey(userId), CART_TTL);
-        stringRedisTemplate.expire(sortKey(userId), CART_TTL);
+        try {
+            Boolean itemsOk = stringRedisTemplate.expire(itemsKey(userId), CART_TTL);
+            Boolean checkedOk = stringRedisTemplate.expire(checkedKey(userId), CART_TTL);
+            Boolean sortOk = stringRedisTemplate.expire(sortKey(userId), CART_TTL);
+            if (!Boolean.TRUE.equals(itemsOk) || !Boolean.TRUE.equals(checkedOk) || !Boolean.TRUE.equals(sortOk)) {
+                log.warn("[购物车] TTL刷新部分失败: userId={}, itemsOk={}, checkedOk={}, sortOk={}",
+                        userId, itemsOk, checkedOk, sortOk);
+            }
+        } catch (Exception e) {
+            log.error("[购物车] TTL刷新异常: userId={}", userId, e);
+        }
+    }
+
+    private void clearClearedMarker(Long userId) {
+        try {
+            stringRedisTemplate.delete(clearedMarkerKey(userId));
+        } catch (Exception e) {
+            log.warn("[购物车] 清理清空标记失败: userId={}", userId, e);
+        }
     }
 
     /**
@@ -666,8 +705,12 @@ public class CartService {
                     .action(action)
                     .build();
             // 用单调递增序列号保证同毫秒事件不被 C-05 误判跳过
-            event.setTimestamp(java.time.Instant.ofEpochMilli(System.currentTimeMillis())
-                    .plusNanos(EVENT_SEQ.incrementAndGet()));
+            java.time.Instant eventTs = java.time.Instant.ofEpochMilli(System.currentTimeMillis())
+                    .plusNanos(EVENT_SEQ.incrementAndGet());
+            event.setTimestamp(eventTs);
+            if ("CLEAR".equals(action)) {
+                event.setClearBarrierTs(eventTs.toEpochMilli());
+            }
 
             String payload = objectMapper.writeValueAsString(event);
             rocketMQTemplate.asyncSend(

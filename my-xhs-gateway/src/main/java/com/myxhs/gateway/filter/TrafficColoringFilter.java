@@ -106,8 +106,14 @@ public class TrafficColoringFilter implements GlobalFilter, Ordered {
                     headers.set(API_VERSION_HEADER, finalApiVersion);
                     headers.set(AB_GROUP_HEADER, finalAbGroup);
                     headers.set(PRESSURE_TEST_HEADER, finalPressureTest);
-                    // 【P0-7修复】覆盖 X-Forwarded-For 为实际连接IP, 防客户端伪造绕过反作弊
-                    headers.set("X-Forwarded-For", exchange.getRequest().getRemoteAddress().getAddress().getHostAddress());
+                    // 【P0-7修复】追加当前连接IP到 X-Forwarded-For，保留原始代理链，防客户端伪造绕过反作弊
+                    String originalXff = headers.getFirst("X-Forwarded-For");
+                    String remoteAddr = exchange.getRequest().getRemoteAddress().getAddress().getHostAddress();
+                    if (originalXff != null && !originalXff.isEmpty()) {
+                        headers.set("X-Forwarded-For", originalXff + ", " + remoteAddr);
+                    } else {
+                        headers.set("X-Forwarded-For", remoteAddr);
+                    }
                 })
                 .build();
 

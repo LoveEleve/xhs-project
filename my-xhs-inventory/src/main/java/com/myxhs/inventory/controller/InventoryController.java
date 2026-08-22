@@ -12,6 +12,7 @@ import com.myxhs.inventory.dto.response.StockVO;
 import com.myxhs.inventory.job.InventoryReconcileJob;
 import com.myxhs.inventory.service.InventoryService;
 import com.myxhs.inventory.service.InventoryTccService;
+import jakarta.annotation.PostConstruct;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -45,8 +46,18 @@ public class InventoryController {
     @org.springframework.beans.factory.annotation.Value("${myxhs.internal.token}")
     private String internalToken;
 
-    private boolean isInternalCall(String v) { return internalToken != null && !internalToken.isEmpty() && internalToken.equals(v); }
-    private boolean isAdminCall(String v) { return adminToken != null && !adminToken.isEmpty() && adminToken.equals(v); }
+    @PostConstruct
+    public void validateTokens() {
+        if (internalToken == null || internalToken.isBlank()) {
+            throw new IllegalStateException("myxhs.internal.token 未配置，拒绝启动 inventory 服务");
+        }
+        if (adminToken == null || adminToken.isBlank()) {
+            throw new IllegalStateException("myxhs.admin.token 未配置，拒绝启动 inventory 服务");
+        }
+    }
+
+    private boolean isInternalCall(String v) { return internalToken.equals(v); }
+    private boolean isAdminCall(String v) { return adminToken.equals(v); }
 
     /**
      * 库存初始化（DB → Redis 分桶）

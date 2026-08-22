@@ -28,6 +28,69 @@ export interface RunStep {
   evidenceRefs?: string[];
 }
 
+export interface TraceServiceProfile {
+  service: string;
+  layer: string;
+  role: string;
+  followupCodeQuestion?: string;
+  keyServices: string[];
+  keyControllers: string[];
+  keyConsumers: string[];
+  source: string;
+  owner?: { name: string; email: string; commit: string; summary: string };
+  recentCommits: string[];
+  callChainHints: string[];
+  primaryController: string;
+  primaryControllerPath: string;
+  primaryControllerSnippet: string;
+  primaryService: string;
+  primaryServicePath: string;
+  primaryServiceSnippet: string;
+  nextHops: string[];
+  classSources: Array<{ className: string; filePath: string; snippet: string }>;
+}
+
+export interface RecommendedFollowup {
+  text: string;
+  kind: string;
+  priority: number;
+  suggestedConversationInput: string;
+}
+
+export interface TraceDiagnosis {
+  traceId: string;
+  source: string;
+  recommendedFollowups?: RecommendedFollowup[];
+  verdict: 'complete' | 'continue' | 'blocked' | 'uncertain' | string;
+  verificationStatus: string;
+  reviewerMode?: string;
+  reviewerRationale?: string;
+  suspiciousEvents: string[];
+  hypotheses: string[];
+  nextActions: string[];
+  entryService?: string;
+  lastService?: string;
+  hitServices: string[];
+  hitServiceDetails?: Array<{ service: string; layer: string; matches: number }>;
+  serviceProfiles: TraceServiceProfile[];
+  renderedAnswer?: string;
+}
+
+export interface CodeSearchHit {
+  service: string;
+  primaryService?: string;
+  primaryServicePath?: string;
+  methodHint?: string;
+  relatedTraceSamples?: Array<{ id: string; traceId: string; route: string; note: string }>;
+}
+
+export interface CodeSearchResultView {
+  query: string;
+  summary: string;
+  topHit: CodeSearchHit;
+  recommendedFollowups?: RecommendedFollowup[];
+}
+
 export interface RunView {
   runId: string;
   status: string;
@@ -37,8 +100,9 @@ export interface RunView {
   evidence: string[];
   finalAnswer?: string;
   costMs: number;
-  /** 零步骤直答（问候/闲聊）说明，后端 view 提供 */
   note?: string;
+  traceDiagnosis?: TraceDiagnosis;
+  codeSearch?: CodeSearchResultView;
 }
 
 export const TERMINAL_TYPES = new Set(['COMPLETED', 'PARTIAL', 'FAILED', 'CANCELLED']);
@@ -58,10 +122,19 @@ export interface RunSubmitResponse {
   conversationId: string;
 }
 
-export const submitRun = (message: string, conversationId?: string) =>
-  client.post<RunSubmitResponse>('/api/runs', conversationId
-    ? { message, conversationId }
-    : { message }).then((r) => r.data);
+export interface FollowupMeta {
+  sourceKind: 'codeSearch' | 'traceDiagnosis';
+  sourceText: string;
+  sourceRunId?: string;
+  sourceService?: string;
+}
+
+export const submitRun = (message: string, conversationId?: string, followupMeta?: FollowupMeta) =>
+  client.post<RunSubmitResponse>('/api/runs', {
+    message,
+    ...(conversationId ? { conversationId } : {}),
+    ...(followupMeta ? { followupMeta } : {}),
+  }).then((r) => r.data);
 
 export const getRun = (runId: string) =>
   client.get<RunView>(`/api/runs/${runId}`).then((r) => r.data);
@@ -90,6 +163,8 @@ export interface RunView {
   /** M11 HITL：WAITING_APPROVAL 时待审批工具与参数 */
   pendingTool?: string;
   pendingApproval?: Record<string, string>;
+  traceDiagnosis?: TraceDiagnosis;
+  codeSearch?: CodeSearchResultView;
 }
 
 /** 订阅 run 事件流（GET /api/runs/{id}/stream，SSE 命名事件；返回调用方负责 close） */

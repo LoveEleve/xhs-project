@@ -89,7 +89,7 @@ public class IntentRouter {
                 "bff", "编排中心", "三级扣减", "事务消息", "本地消息表", "补偿任务", "支付链", "退款链", "关单", "补偿路径")) {
             return Intent.SYSTEM_KNOWLEDGE;
         }
-        if (containsAny(text, "哪个类", "哪个核心类", "核心类", "哪个consumer", "哪个 consumer", "哪个job", "哪个 job", "哪个topic", "哪个 topic", "哪个feign", "哪个 feign", "代码里在哪", "哪一层负责", "主逻辑在哪", "负责库存预扣主逻辑", "负责支付主逻辑", "负责退款主逻辑")) {
+        if (containsAny(text, "哪个类", "哪个核心类", "核心类", "哪个服务", "哪个模块", "哪个组件", "哪个消费者", "哪个consumer", "哪个 consumer", "哪个job", "哪个 job", "哪个topic", "哪个 topic", "哪个feign", "哪个 feign", "代码里在哪", "代码在哪", "源码在哪", "源码落点", "在哪里实现", "哪一层负责", "主逻辑在哪", "谁负责", "负责库存预扣主逻辑", "负责支付主逻辑", "负责退款主逻辑", "为什么优先看", "这个方法", "负责什么", "最近谁改过")) {
             return Intent.CODE_STRUCTURE;
         }
 

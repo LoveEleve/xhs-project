@@ -116,7 +116,7 @@ public class RefundNotifyCompensateJob {
                     continue;
                 }
 
-                String notifiedKey = "myxhs:payment:refund:notified:" + refund.orderId;
+                String notifiedKey = "myxhs:payment:refund:notified:" + refund.refundNo;
                 if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(notifiedKey))) {
                     log.debug("[补偿任务] 退款订单 {} 已通知过，跳过", refund.orderId);
                     continue;

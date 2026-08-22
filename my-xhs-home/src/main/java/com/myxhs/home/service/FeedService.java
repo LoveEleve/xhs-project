@@ -17,6 +17,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -59,6 +60,8 @@ public class FeedService {
 
     @Value("${home.feed.default-page-size:20}")
     private int defaultPageSize;
+
+    private static final Duration BIG_V_FOLLOWING_CACHE_TTL = Duration.ofMinutes(5);
 
     /**
      * 获取关注 Feed 流（推拉混合 + 游标分页 + 并行聚合）
@@ -351,6 +354,12 @@ public class FeedService {
      * </p>
      */
     private List<Long> getFollowingBigVIds(Long userId) {
+        String cacheKey = "myxhs:feed:following:bigv:" + userId;
+        Set<String> cached = stringRedisTemplate.opsForSet().members(cacheKey);
+        if (cached != null && !cached.isEmpty()) {
+            return cached.stream().map(Long::valueOf).collect(Collectors.toList());
+        }
+
         String followingKey = RedisKeyConstants.FOLLOW_LIST + userId;
         Set<String> followingIds = stringRedisTemplate.opsForZSet().reverseRange(followingKey, 0, -1);
         if (followingIds == null || followingIds.isEmpty()) {
@@ -375,6 +384,10 @@ public class FeedService {
                 bigVIds.add(Long.valueOf(followingList.get(i)));
             }
             // 缓存不存在（null）时不查询粉丝数，由定时任务或粉丝数变更事件刷新
+        }
+        if (!bigVIds.isEmpty()) {
+            stringRedisTemplate.opsForSet().add(cacheKey, bigVIds.stream().map(String::valueOf).toArray(String[]::new));
+            stringRedisTemplate.expire(cacheKey, BIG_V_FOLLOWING_CACHE_TTL);
         }
         return bigVIds;
     }
@@ -461,45 +474,26 @@ public class FeedService {
     }
 
     /**
-     * 批量获取用户信息（并行 Feign 调用，allOf 并行等待）
+     * 批量获取用户信息（单次批量 Feign 调用）
      */
     private Map<Long, Map<String, Object>> batchGetUserInfos(Set<Long> userIds) {
-        Map<Long, CompletableFuture<Map.Entry<Long, Map<String, Object>>>> futures = new HashMap<>();
-        for (Long uid : userIds) {
-            CompletableFuture<Map.Entry<Long, Map<String, Object>>> future = CompletableFuture
-                    .supplyAsync(() -> {
-                        try {
-                            R<Map<String, Object>> r = userFeignClient.getUserPublicInfo(uid);
-                            if (r != null && r.isSuccess() && r.getData() != null) {
-                                return Map.entry(uid, r.getData());
-                            }
-                        } catch (Exception e) {
-                            log.warn("[Feed] 获取用户信息失败: userId={}", uid);
-                        }
-                        return null;
-                    }, batchFeignPool);
-            futures.put(uid, future);
+        if (userIds == null || userIds.isEmpty()) {
+            return Collections.emptyMap();
         }
-
         try {
-            CompletableFuture.allOf(futures.values().toArray(new CompletableFuture[0]))
-                    .get(3, TimeUnit.SECONDS);
-        } catch (Exception e) {
-            log.warn("[Feed] 批量获取用户信息超时(部分降级)");
-        }
-
-        Map<Long, Map<String, Object>> result = new HashMap<>();
-        for (Map.Entry<Long, CompletableFuture<Map.Entry<Long, Map<String, Object>>>> entry : futures.entrySet()) {
-            try {
-                Map.Entry<Long, Map<String, Object>> pair = entry.getValue().getNow(null);
-                if (pair != null) {
-                    result.put(pair.getKey(), pair.getValue());
-                }
-            } catch (Exception e) {
-                log.warn("[Feed] 获取用户信息异常: userId={}", entry.getKey());
+            R<Map<Long, Map<String, Object>>> r = userFeignClient.batchGetUserPublicInfo(userIds);
+            if (r != null && r.getCode() == 503) {
+                throw new DownstreamUnavailableException("用户服务不可用");
             }
+            if (r != null && r.isSuccess() && r.getData() != null) {
+                return r.getData();
+            }
+        } catch (DownstreamUnavailableException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("[Feed] 批量获取用户信息失败(整体降级为空): userIds={}", userIds, e);
         }
-        return result;
+        return Collections.emptyMap();
     }
 
     /**

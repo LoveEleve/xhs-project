@@ -68,6 +68,7 @@ public class CouponService {
     private static final String TEMPLATE_KEY_PREFIX = "myxhs:coupon:template:";
     private static final String COUPON_CLAIM_TOPIC = "COUPON_CLAIM_TOPIC";
     private static final String COUPON_RETURN_REDIS_REPAIR_TOPIC = "COUPON_RETURN_REDIS_REPAIR_TOPIC";
+    private static final String RETURN_REPAIR_FALLBACK_KEY = "myxhs:coupon:return:repair:pending";
     private static final long TEMPLATE_CACHE_SECONDS = 1800L; // 模板缓存 30 分钟
 
     private static String stockKey(Long templateId) { return String.format(STOCK_KEY_TPL, templateId); }
@@ -557,13 +558,13 @@ public class CouponService {
             } else {
                 log.error("[优惠券] MQ发送状态异常: userId={}, templateId={}, claimNo={}, status={}",
                         userId, templateId, claimNo, sendResult.getSendStatus());
-                outboxMapper.deleteByClaimNo(claimNo);  // 回滚Outbox: 防Job补发与回滚冲突
+                // 保留 Outbox 未发送记录，交由补发任务兜底，避免发送端误判失败时丢失唯一补偿锚点。
                 return null;
             }
         } catch (Exception e) {
             log.error("[优惠券] MQ同步发送异常: userId={}, templateId={}, claimNo={}",
                     userId, templateId, claimNo, e);
-            outboxMapper.deleteByClaimNo(claimNo);  // 回滚Outbox
+            // 保留 Outbox 未发送记录，交由补发任务兜底。
             return null;
         }
     }
@@ -596,6 +597,13 @@ public class CouponService {
             log.info("[优惠券] 退券Redis补偿消息已发送: userId={}, templateId={}", userId, templateId);
         } catch (Exception ex) {
             log.error("[优惠券] 退券Redis补偿消息发送失败: userId={}, templateId={}", userId, templateId, ex);
+            try {
+                String member = templateId + ":" + userId;
+                stringRedisTemplate.opsForSet().add(RETURN_REPAIR_FALLBACK_KEY, member);
+                log.warn("[优惠券] 退券Redis补偿已写入本地兜底集合: {}", member);
+            } catch (Exception fallbackEx) {
+                log.error("[优惠券] 退券Redis补偿兜底集合写入失败: userId={}, templateId={}", userId, templateId, fallbackEx);
+            }
         }
     }
 

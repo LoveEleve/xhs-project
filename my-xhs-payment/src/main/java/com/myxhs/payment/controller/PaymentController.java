@@ -7,6 +7,7 @@ import com.myxhs.payment.dto.request.PayCreateRequest;
 import com.myxhs.payment.dto.request.RefundRequest;
 import com.myxhs.payment.dto.response.PaymentVO;
 import com.myxhs.payment.service.PaymentService;
+import jakarta.annotation.PostConstruct;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,12 +36,22 @@ public class PaymentController {
     /** 内部调用令牌（配置化管理，不再硬编码；生产环境应为第三方签名验签） */
     @org.springframework.beans.factory.annotation.Value("${myxhs.internal.token}")
     private String internalToken;
-    private boolean isInternalCall(String v) { return internalToken != null && !internalToken.isEmpty() && internalToken.equals(v); }
+    @PostConstruct
+    public void validateTokens() {
+        if (internalToken == null || internalToken.isBlank()) {
+            throw new IllegalStateException("myxhs.internal.token 未配置，拒绝启动 payment 服务");
+        }
+        if (adminToken == null || adminToken.isBlank()) {
+            throw new IllegalStateException("myxhs.admin.token 未配置，拒绝启动 payment 服务");
+        }
+    }
+
+    private boolean isInternalCall(String v) { return internalToken.equals(v); }
 
     /** 管理接口令牌（配置化管理，不再硬编码） */
     @org.springframework.beans.factory.annotation.Value("${myxhs.admin.token}")
     private String adminToken;
-    private boolean isAdminCall(String v) { return adminToken != null && !adminToken.isEmpty() && adminToken.equals(v); }
+    private boolean isAdminCall(String v) { return adminToken.equals(v); }
 
     /**
      * 发起支付
@@ -80,7 +91,15 @@ public class PaymentController {
         // 解析回调数据（不同支付渠道格式不同）
         // Mock 实现：简化解析逻辑
         String paymentNo = extractPaymentNo(callbackData, payType);
+        if (paymentNo == null || paymentNo.isBlank()) {
+            log.error("[支付回调] 缺少有效paymentNo，拒绝确认: payType={}", payType);
+            return "fail";
+        }
         String tradeNo = extractTradeNo(callbackData, payType);
+        if (tradeNo == null || tradeNo.isBlank()) {
+            log.error("[支付回调] 缺少有效tradeNo，拒绝确认: paymentNo={}", paymentNo);
+            return "fail";
+        }
         boolean success = extractPayResult(callbackData, payType);
         // P2-5: 回调体脱敏，仅记录摘要（原实现打印完整回调体，泄露支付数据）
         log.info("[支付回调] 收到回调: payType={}, paymentNo={}, success={}, bodySize={}B", payType, paymentNo, success, callbackData.length());
@@ -165,19 +184,35 @@ public class PaymentController {
         } catch (Exception e) {
             log.warn("[支付回调] 解析回调数据失败: {}", e.getMessage());
         }
-        return "PAY_" + System.currentTimeMillis();
+        return null;
     }
 
     private String extractTradeNo(String callbackData, Integer payType) {
-        // Mock 实现：从回调数据中提取第三方交易号
-        return "TRADE_" + System.currentTimeMillis();
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            com.fasterxml.jackson.databind.JsonNode node = mapper.readTree(callbackData);
+            if (node.has("trade_no")) return node.get("trade_no").asText();
+            if (node.has("transaction_id")) return node.get("transaction_id").asText();
+        } catch (Exception e) {
+            log.warn("[支付回调] 交易号解析失败: {}", e.getMessage());
+        }
+        return null;
     }
 
     private boolean extractPayResult(String callbackData, Integer payType) {
-        // Mock 实现：从回调数据中提取支付结果
-        // 支付宝：trade_status == "TRADE_SUCCESS"
-        // 微信：result_code == "SUCCESS"
-        return callbackData.contains("success") || callbackData.contains("SUCCESS");
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            com.fasterxml.jackson.databind.JsonNode node = mapper.readTree(callbackData);
+            String tradeStatus = node.has("trade_status") ? node.get("trade_status").asText() : null;
+            String resultCode = node.has("result_code") ? node.get("result_code").asText() : null;
+            String status = node.has("status") ? node.get("status").asText() : null;
+            return "TRADE_SUCCESS".equals(tradeStatus)
+                    || "SUCCESS".equals(resultCode)
+                    || "SUCCESS".equals(status);
+        } catch (Exception e) {
+            log.warn("[支付回调] 支付结果解析失败: {}", e.getMessage());
+            return false;
+        }
     }
 
     private String extractRefundNo(String callbackData, Integer payType) {
@@ -193,7 +228,18 @@ public class PaymentController {
     }
 
     private boolean extractRefundResult(String callbackData, Integer payType) {
-        // Mock 实现：从退款回调数据中提取退款结果
-        return callbackData.contains("success") || callbackData.contains("SUCCESS") || callbackData.contains("REFUND_SUCCESS");
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            com.fasterxml.jackson.databind.JsonNode node = mapper.readTree(callbackData);
+            String refundStatus = node.has("refund_status") ? node.get("refund_status").asText() : null;
+            String resultCode = node.has("result_code") ? node.get("result_code").asText() : null;
+            String status = node.has("status") ? node.get("status").asText() : null;
+            return "REFUND_SUCCESS".equals(refundStatus)
+                    || "SUCCESS".equals(resultCode)
+                    || "SUCCESS".equals(status);
+        } catch (Exception e) {
+            log.warn("[退款回调] 退款结果解析失败: {}", e.getMessage());
+            return false;
+        }
     }
 }

@@ -179,10 +179,13 @@ public class HmacSignatureFilter implements GlobalFilter, Ordered {
             log.info("[Gateway-HMAC] 签名校验失败, HMAC密钥已过期, userId={}, path={}", userId, path);
             return forbidden(exchange, "签名校验失败：HMAC 密钥已过期，请重新登录");
         }
-        // RedisOperator 用 RedisTemplate（Jackson 序列化）存 String，Redis 里带引号 "xxx"，
-        // strip 引号后才是原始 secret（与登录响应返回的 hmacSecret 一致）
-        if (perUserSecret.length() >= 2 && perUserSecret.startsWith("\"") && perUserSecret.endsWith("\"")) {
-            perUserSecret = perUserSecret.substring(1, perUserSecret.length() - 1);
+        // 统一反序列化处理：RedisTemplate 用 Jackson 序列化 String 可能多一层引号。
+        // 使用 com.fasterxml.jackson.databind.ObjectMapper 直接反序列化替代手工 strip，
+        // 避免密钥本身以引号开头/结尾时被截断。
+        try {
+            perUserSecret = objectMapper.readValue(perUserSecret, String.class);
+        } catch (Exception e) {
+            log.warn("[Gateway-HMAC] HMAC 密钥反序列化失败，使用原始值: userId={}", userId);
         }
 
         // 6. 重新计算 HMAC-SHA256 签名（用 per-session secret）

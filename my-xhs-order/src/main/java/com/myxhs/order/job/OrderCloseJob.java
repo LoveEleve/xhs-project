@@ -31,8 +31,11 @@ import java.util.List;
 @RequiredArgsConstructor
 public class OrderCloseJob {
 
+    private static final String ORDER_COMPENSATION_FALLBACK_KEY = "myxhs:order:compensation:pending";
+
     private final OrderMapper orderMapper;
     private final OrderService orderService;
+    private final org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
 
     private static final int BATCH_SIZE = 100;
 
@@ -88,6 +91,39 @@ public class OrderCloseJob {
             log.info("[兜底关单] 完成: 扫描{}条, 关闭{}条", totalScanned, totalClosed);
         }
 
+        replayCompensationFallback();
         return totalClosed;
+    }
+
+    private void replayCompensationFallback() {
+        try {
+            java.util.Set<String> pending = stringRedisTemplate.opsForSet().members(ORDER_COMPENSATION_FALLBACK_KEY);
+            if (pending == null || pending.isEmpty()) {
+                return;
+            }
+            for (String member : pending) {
+                String[] parts = member.split(":", 4);
+                if (parts.length < 3) {
+                    stringRedisTemplate.opsForSet().remove(ORDER_COMPENSATION_FALLBACK_KEY, member);
+                    continue;
+                }
+                try {
+                    String action = parts[0];
+                    Long orderId = Long.valueOf(parts[1]);
+                    Long userId = Long.valueOf(parts[2]);
+                    switch (action) {
+                        case "RELEASE_STOCK" -> orderService.compensateReleaseStock(orderId, userId);
+                        case "RETURN_COUPON" -> orderService.compensateReturnCoupon(orderId, userId);
+                        default -> orderService.closeTimeoutOrder(orderId, userId);
+                    }
+                    stringRedisTemplate.opsForSet().remove(ORDER_COMPENSATION_FALLBACK_KEY, member);
+                    log.info("[兜底关单] 本地补偿兜底重放成功: {}", member);
+                } catch (Exception e) {
+                    log.warn("[兜底关单] 本地补偿兜底重放失败: {}", member, e);
+                }
+            }
+        } catch (Exception e) {
+            log.error("[兜底关单] 本地补偿兜底扫描异常", e);
+        }
     }
 }

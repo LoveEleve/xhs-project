@@ -5,7 +5,9 @@ import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileReader;
+import java.io.FileInputStream;
+import java.io.InputStreamReader;
+import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -30,6 +32,9 @@ public class DirectLogSearchAccess implements LogSearchAccess {
     private static final int MAX_MATCH_LINES = 20;
     private static final int MAX_LINE_LEN = 500;
     private static final int MAX_TOTAL_LEN = 8000;
+    private static final long LARGE_FILE_THRESHOLD_BYTES = 64L * 1024 * 1024;
+    private static final int LARGE_FILE_READ_BYTES = 2 * 1024 * 1024;
+    private static final int REVERSE_READ_BLOCK_BYTES = 64 * 1024;
 
     private final Map<String, String> fileWhitelist;
 
@@ -121,17 +126,66 @@ public class DirectLogSearchAccess implements LogSearchAccess {
     }
 
     private static List<String> tailLinesOf(File f, int tail) throws Exception {
-        List<String> lines = new ArrayList<>();
-        try (BufferedReader r = new BufferedReader(new FileReader(f, StandardCharsets.UTF_8))) {
+        if (f.length() > LARGE_FILE_THRESHOLD_BYTES) {
+            return tailLinesOfLargeFile(f, tail);
+        }
+        java.util.ArrayDeque<String> lines = new java.util.ArrayDeque<>();
+        try (BufferedReader r = new BufferedReader(new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8))) {
             String line;
             while ((line = r.readLine()) != null) {
-                lines.add(line);
-                if (lines.size() > tail) {
-                    lines.remove(0);
+                if (lines.size() == tail) {
+                    lines.removeFirst();
                 }
+                lines.addLast(line);
             }
         }
-        return lines;
+        return new ArrayList<>(lines);
+    }
+
+    private static List<String> tailLinesOfLargeFile(File f, int tail) throws Exception {
+        try (RandomAccessFile raf = new RandomAccessFile(f, "r")) {
+            long fileLength = raf.length();
+            long lowerBound = Math.max(0L, fileLength - LARGE_FILE_READ_BYTES);
+            long position = fileLength;
+            byte[] block = new byte[REVERSE_READ_BLOCK_BYTES];
+            java.io.ByteArrayOutputStream reversed = new java.io.ByteArrayOutputStream();
+            int newlineCount = 0;
+            while (position > lowerBound && newlineCount <= tail + 1) {
+                int readSize = (int) Math.min(block.length, position - lowerBound);
+                position -= readSize;
+                raf.seek(position);
+                raf.readFully(block, 0, readSize);
+                for (int i = readSize - 1; i >= 0; i--) {
+                    byte b = block[i];
+                    reversed.write(b);
+                    if (b == '\n') {
+                        newlineCount++;
+                        if (newlineCount > tail + 1) {
+                            break;
+                        }
+                    }
+                }
+            }
+            byte[] raw = reversed.toByteArray();
+            for (int i = 0, j = raw.length - 1; i < j; i++, j--) {
+                byte tmp = raw[i];
+                raw[i] = raw[j];
+                raw[j] = tmp;
+            }
+            String text = new String(raw, StandardCharsets.UTF_8);
+            String[] split = text.split("\\R");
+            java.util.ArrayDeque<String> lines = new java.util.ArrayDeque<>();
+            for (String line : split) {
+                if (line.isEmpty()) {
+                    continue;
+                }
+                if (lines.size() == tail) {
+                    lines.removeFirst();
+                }
+                lines.addLast(line);
+            }
+            return new ArrayList<>(lines);
+        }
     }
 
     private static String escape(String s) {

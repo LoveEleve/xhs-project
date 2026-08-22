@@ -58,6 +58,7 @@ public class RecommendService {
             "HOT", 0.6,
             "GEO", 0.5
     );
+    private static final long MAX_SEEN_SET_SIZE = 5000L;
 
     public RecommendService(
             List<RecallStrategy> recallStrategies,
@@ -107,7 +108,7 @@ public class RecommendService {
         List<RecallItem> roughRanked = roughRank(candidates);
 
         // 4. 精排（当前用规则，预留 ML 接口）
-        List<RecallItem> fineRanked = fineRank(roughRanked);
+        List<RecallItem> fineRanked = fineRank(roughRanked, userId);
 
         // 5. 重排（已读过滤 + 品类打散）
         List<RecallItem> reRanked = reRank(fineRanked, userId);
@@ -239,6 +240,7 @@ public class RecommendService {
                     .get(recallTimeoutMs, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             log.warn("[推荐] 召回超时({}ms)，使用已完成的结果", recallTimeoutMs);
+            futures.forEach(f -> f.cancel(true));
         } catch (Exception e) {
             log.error("[推荐] 召回异常", e);
         }
@@ -324,7 +326,7 @@ public class RecommendService {
      * 取 Top 50
      * </p>
      */
-    private List<RecallItem> fineRank(List<RecallItem> candidates) {
+    private List<RecallItem> fineRank(List<RecallItem> candidates, Long userId) {
         // 1. 补充内容特征
         enrichCategory(candidates);
 
@@ -334,7 +336,7 @@ public class RecommendService {
         // 3. 四维加权计算
         for (RecallItem item : candidates) {
             double sourceWeight = SOURCE_WEIGHT.getOrDefault(item.getSource(), 0.5);
-            double userPreference = getUserPreferenceScore(item);
+            double userPreference = getUserPreferenceScore(item, userId);
             double quality = getQualityScore(item, qualityScores);
             double timeDecay = computeTimeDecay(item);
 
@@ -384,12 +386,19 @@ public class RecommendService {
     /**
      * 用户偏好得分：从 Redis 用户标签权重读取
      */
-    private double getUserPreferenceScore(RecallItem item) {
+    private double getUserPreferenceScore(RecallItem item, Long userId) {
         try {
-            String userTagKey = "recommend:user_tags:" + item.getNoteId();
-            // 简化：使用粗排分数中已经暗含的相似度
-            // 真实实现应查询 Redis Hash 中用户对笔记标签的偏好权重
-            return 0.5; // 兜底默认值
+            String category = item.getCategory();
+            if (category == null || category.isBlank() || "unknown".equals(category)) {
+                return 0.5;
+            }
+            String userTagKey = RedisKeyConstants.RECOMMEND_USER_TAGS + userId;
+            Object weightObj = stringRedisTemplate.opsForHash().get(userTagKey, category);
+            if (weightObj == null) {
+                return 0.5;
+            }
+            double weight = Double.parseDouble(weightObj.toString());
+            return Math.min(1.0, 0.3 + weight / 10.0);
         } catch (Exception e) {
             return 0.5;
         }
@@ -465,6 +474,11 @@ public class RecommendService {
             stringRedisTemplate.opsForSet().add(seenKey, noteIds);
             // 7 天过期
             stringRedisTemplate.expire(seenKey, 7, java.util.concurrent.TimeUnit.DAYS);
+            Long size = stringRedisTemplate.opsForSet().size(seenKey);
+            if (size != null && size > MAX_SEEN_SET_SIZE) {
+                stringRedisTemplate.expire(seenKey, 1, java.util.concurrent.TimeUnit.DAYS);
+                log.warn("[推荐] 已读集合过大，提前收缩TTL: userId={}, size={}", userId, size);
+            }
         }
 
         return result;

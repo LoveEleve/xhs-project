@@ -10,6 +10,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.nio.charset.StandardCharsets;
 
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,5 +35,16 @@ class CouponReturnRedisRepairConsumerTest {
         consumer.onMessage(message);
 
         verify(couponService).repairReturnCouponRedis(1001L, 1L);
+    }
+
+    @Test
+    void shouldSkipDirtyRepairMessage() {
+        MessageExt message = new MessageExt();
+        message.setMsgId("msg-2");
+        message.setBody("{\"userId\":1001}".getBytes(StandardCharsets.UTF_8));
+
+        consumer.onMessage(message);
+
+        verify(couponService, never()).repairReturnCouponRedis(1001L, 1L);
     }
 }

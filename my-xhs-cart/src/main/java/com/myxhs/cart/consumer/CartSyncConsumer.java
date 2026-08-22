@@ -40,6 +40,9 @@ import java.time.ZoneId;
 )
 public class CartSyncConsumer implements RocketMQListener<MessageExt> {
 
+    private static final java.util.concurrent.ConcurrentHashMap<Long, LocalDateTime> CLEAR_BARRIERS =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     private final CartItemMapper cartItemMapper;
     private final IdGeneratorUtil idGeneratorUtil;
     private final ObjectMapper objectMapper;
@@ -90,6 +93,12 @@ public class CartSyncConsumer implements RocketMQListener<MessageExt> {
      */
     private void upsertCartItem(CartSyncEvent event) {
         LocalDateTime eventTime = LocalDateTime.ofInstant(event.getTimestamp(), ZoneId.systemDefault());
+        LocalDateTime clearBarrier = CLEAR_BARRIERS.get(event.getUserId());
+        if (clearBarrier != null && eventTime.isBefore(clearBarrier)) {
+            log.warn("[购物车同步] 跳过CLEAR屏障之前的旧写事件: action={}, userId={}, skuId={}, eventTime={}, clearBarrier={}",
+                    event.getAction(), event.getUserId(), event.getSkuId(), eventTime, clearBarrier);
+            return;
+        }
 
         // C-05: 时间戳乱序保护 — 先查是否存在更新的行
         CartItem existing = cartItemMapper.selectOne(
@@ -149,6 +158,12 @@ public class CartSyncConsumer implements RocketMQListener<MessageExt> {
      */
     private void deleteCartItem(CartSyncEvent event) {
         LocalDateTime eventTime = LocalDateTime.ofInstant(event.getTimestamp(), ZoneId.systemDefault());
+        LocalDateTime clearBarrier = CLEAR_BARRIERS.get(event.getUserId());
+        if (clearBarrier != null && eventTime.isBefore(clearBarrier)) {
+            log.warn("[购物车同步] 跳过CLEAR屏障之前的旧DELETE: userId={}, skuId={}, eventTime={}, clearBarrier={}",
+                    event.getUserId(), event.getSkuId(), eventTime, clearBarrier);
+            return;
+        }
 
         // C-05: 仅当行未被更晚的事件覆盖时才删除
         CartItem existing = cartItemMapper.selectOne(
@@ -176,13 +191,15 @@ public class CartSyncConsumer implements RocketMQListener<MessageExt> {
      */
     private void clearCartItems(CartSyncEvent event) {
         LocalDateTime eventTime = LocalDateTime.ofInstant(event.getTimestamp(), ZoneId.systemDefault());
+        CLEAR_BARRIERS.put(event.getUserId(), eventTime);
         // 按 updatedAt 过滤: 只删"事件时间之前最后修改"的行
         // 修复: createdAt 在 UPSERT 时不重置，CLEAR 按 createdAt 会误删"清空后重新加购"的行
         int deleted = cartItemMapper.delete(
                 new LambdaQueryWrapper<CartItem>()
                         .eq(CartItem::getUserId, event.getUserId())
                         .lt(CartItem::getUpdatedAt, eventTime));
-        log.info("[购物车同步] 清空: userId={}, cutoffTime={}, affected={}", event.getUserId(), eventTime, deleted);
+        log.info("[购物车同步] 清空: userId={}, cutoffTime={}, barrierTs={}, affected={}",
+                event.getUserId(), eventTime, event.getClearBarrierTs(), deleted);
     }
 
     /**
@@ -190,6 +207,12 @@ public class CartSyncConsumer implements RocketMQListener<MessageExt> {
      */
     private void checkAllItems(CartSyncEvent event) {
         LocalDateTime eventTime = LocalDateTime.ofInstant(event.getTimestamp(), ZoneId.systemDefault());
+        LocalDateTime clearBarrier = CLEAR_BARRIERS.get(event.getUserId());
+        if (clearBarrier != null && eventTime.isBefore(clearBarrier)) {
+            log.warn("[购物车同步] 跳过CLEAR屏障之前的旧CHECK_ALL: userId={}, eventTime={}, clearBarrier={}",
+                    event.getUserId(), eventTime, clearBarrier);
+            return;
+        }
         // C-05 时间戳保护：仅更新 updatedAt 早于事件时间的行，防止旧 CHECK_ALL 全量覆盖新 CHECK
         // 使用 eventTime（生产者时钟）而非 now()（消费者时钟），与其他写路径统一时钟域
         LambdaUpdateWrapper<CartItem> wrapper = new LambdaUpdateWrapper<CartItem>()
@@ -210,6 +233,12 @@ public class CartSyncConsumer implements RocketMQListener<MessageExt> {
      */
     private void updateCheckedStatus(CartSyncEvent event) {
         LocalDateTime eventTime = LocalDateTime.ofInstant(event.getTimestamp(), ZoneId.systemDefault());
+        LocalDateTime clearBarrier = CLEAR_BARRIERS.get(event.getUserId());
+        if (clearBarrier != null && eventTime.isBefore(clearBarrier)) {
+            log.warn("[购物车同步] 跳过CLEAR屏障之前的旧CHECK: userId={}, skuId={}, eventTime={}, clearBarrier={}",
+                    event.getUserId(), event.getSkuId(), eventTime, clearBarrier);
+            return;
+        }
 
         // C-05: 时间戳乱序保护 — 仅当事件比 DB 更新时才应用
         CartItem existing = cartItemMapper.selectOne(
@@ -219,14 +248,9 @@ public class CartSyncConsumer implements RocketMQListener<MessageExt> {
         );
 
         if (existing == null) {
-            CartItem newItem = new CartItem();
-            newItem.setUserId(event.getUserId());
-            newItem.setSkuId(event.getSkuId());
-            newItem.setQuantity(1);
-            newItem.setChecked(1);
-            newItem.setCreatedAt(eventTime);
-            newItem.setUpdatedAt(eventTime);
-            cartItemMapper.insert(newItem);
+            // 乱序 CHECK 先于 ADD/UPDATE 到达时，不凭空创建购物车项；等待后续主事件或对账恢复。
+            log.warn("[购物车同步] CHECK事件对应条目不存在, 跳过避免伪造购物车项: userId={}, skuId={}",
+                    event.getUserId(), event.getSkuId());
             return;
         }
         if (existing.getUpdatedAt() != null && !existing.getUpdatedAt().isBefore(eventTime)) {

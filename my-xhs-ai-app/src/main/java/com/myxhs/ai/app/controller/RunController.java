@@ -52,22 +52,32 @@ public class RunController {
     }
 
     @PostMapping
-    public Map<String, String> submit(@RequestBody Map<String, String> body,
+    public Map<String, String> submit(@RequestBody Map<String, Object> body,
                                       @org.springframework.web.bind.annotation.RequestHeader(value = "X-User-Id", required = false) String headerUserId) {
-        String message = body.getOrDefault("message", "");
+        String message = String.valueOf(body.getOrDefault("message", ""));
         if (message.isBlank()) {
             throw new IllegalArgumentException("message 不能为空");
         }
         // Gateway 集成（2026-08-16）：X-User-Id header 优先（统一鉴权注入）、body 兜底（直连/开发兼容）
-        String userId = firstNonBlank(headerUserId, body.get("userId"), "anonymous");
+        String userId = firstNonBlank(headerUserId,
+                body.get("userId") == null ? null : String.valueOf(body.get("userId")), "anonymous");
         // M10：显式 conversationId 优先；无则新建会话（响应带 convId，前端缓存用于后续多轮）
-        String convId = body.get("conversationId");
+        String convId = body.get("conversationId") == null ? null : String.valueOf(body.get("conversationId"));
         boolean freshConv = convId == null || convId.isBlank();
         if (freshConv) {
             convId = com.myxhs.ai.app.service.conversation.ConversationService.newConvId();
         }
         try {
-            RunManager.RunEntry entry = runManager.submit(message, userId, convId);
+            @SuppressWarnings("unchecked")
+            Map<String, String> followupMeta = body.get("followupMeta") instanceof Map<?, ?> m
+                    ? m.entrySet().stream().collect(java.util.stream.Collectors.toMap(
+                    e -> String.valueOf(e.getKey()), e -> String.valueOf(e.getValue())))
+                    : null;
+            RunManager.RunEntry entry = runManager.submit(message, userId, convId,
+                    followupMeta == null ? null : followupMeta.get("sourceKind"),
+                    followupMeta == null ? null : followupMeta.get("sourceText"),
+                    followupMeta == null ? null : followupMeta.get("sourceRunId"),
+                    followupMeta == null ? null : followupMeta.get("sourceService"));
             Map<String, String> resp = new java.util.LinkedHashMap<>();
             resp.put("runId", entry.runId());
             resp.put("status", "RECEIVED");
@@ -131,7 +141,9 @@ public class RunController {
             m.put("pendingApproval", run.pendingApproval());
             return m;
         }
-        return view(run);
+        return view(run, entry.traceDiagnosis(), entry.codeSearchResult(),
+                entry.followupSourceKind(), entry.followupSourceText(),
+                entry.followupSourceRunId(), entry.followupSourceService());
     }
 
     /** 历史 run 视图（store 回退）：RunRecord + StepRecord 重建（finalAnswer/steps/evidence 全量可查） */
@@ -229,7 +241,13 @@ public class RunController {
         return null;
     }
 
-    private static Map<String, Object> view(AgentRun run) {
+    private static Map<String, Object> view(AgentRun run,
+                                            com.myxhs.ai.app.service.trace.TraceDiagnosisResult traceDiagnosis,
+                                            com.myxhs.ai.app.service.knowledge.CodeSearchResult codeSearchResult,
+                                            String followupSourceKind,
+                                            String followupSourceText,
+                                            String followupSourceRunId,
+                                            String followupSourceService) {
         List<Map<String, Object>> steps = run.steps().stream().map(RunController::stepView).toList();
         List<String> evidence = run.evidenceChain().entries().stream()
                 .map(EvidenceChain.Evidence::evidenceId).toList();
@@ -245,10 +263,177 @@ public class RunController {
         m.put("evidence", evidence);
         m.put("finalAnswer", run.finalAnswer());
         m.put("costMs", costMs);
-        // 非诊断任务直答（问候/超范围，零步骤 COMPLETED）：说明未调用工具/模型，避免前端"空执行"误解
-        if (run.steps().isEmpty() && run.terminationReason() == TerminationReason.COMPLETED) {
-            m.put("note", "输入被识别为非诊断任务（问候/闲聊/超范围话题），直接应答，未调用工具/模型");
+        if (followupSourceKind != null && !followupSourceKind.isBlank()) {
+            java.util.Map<String, Object> followup = new java.util.LinkedHashMap<>();
+            followup.put("sourceKind", followupSourceKind);
+            followup.put("sourceText", followupSourceText == null ? "" : followupSourceText);
+            followup.put("sourceRunId", followupSourceRunId == null ? "" : followupSourceRunId);
+            followup.put("sourceService", followupSourceService == null ? "" : followupSourceService);
+            m.put("followupMeta", followup);
         }
+        if (codeSearchResult != null) {
+            Map<String, Object> code = new java.util.LinkedHashMap<>();
+            code.put("query", codeSearchResult.query());
+            code.put("summary", codeSearchResult.summary());
+            code.put("topHit", hitView(codeSearchResult.topHit()));
+            code.put("hits", codeSearchResult.hits().stream().map(RunController::hitView).toList());
+            code.put("recommendedFollowups", buildCodeFollowups(codeSearchResult));
+            m.put("codeSearch", code);
+        }
+        if (traceDiagnosis != null) {
+            Map<String, Object> diagnosis = new java.util.LinkedHashMap<>();
+            diagnosis.put("traceId", traceDiagnosis.traceId());
+            diagnosis.put("source", traceDiagnosis.source());
+            diagnosis.put("verdict", traceDiagnosis.verdict());
+            diagnosis.put("verificationStatus", traceDiagnosis.verificationStatus());
+            diagnosis.put("reviewerMode", traceDiagnosis.reviewerMode());
+            diagnosis.put("reviewerRationale", traceDiagnosis.reviewerRationale());
+            diagnosis.put("suspiciousEvents", traceDiagnosis.suspiciousEvents());
+            diagnosis.put("hypotheses", traceDiagnosis.hypotheses());
+            diagnosis.put("nextActions", traceDiagnosis.nextActions());
+            diagnosis.put("serviceProfiles", traceDiagnosis.serviceProfiles().stream().map(p -> {
+                Map<String, Object> profile = new java.util.LinkedHashMap<>();
+                profile.put("service", p.service());
+                profile.put("layer", p.layer());
+                profile.put("role", p.role() == null ? "" : p.role());
+                profile.put("keyServices", p.keyServices());
+                profile.put("keyControllers", p.keyControllers());
+                profile.put("keyConsumers", p.keyConsumers());
+                profile.put("source", p.source() == null ? "" : p.source());
+                profile.put("primaryController", p.primaryController() == null ? "" : p.primaryController());
+                profile.put("primaryControllerPath", p.primaryControllerPath() == null ? "" : p.primaryControllerPath());
+                profile.put("primaryControllerSnippet", p.primaryControllerSnippet() == null ? "" : p.primaryControllerSnippet());
+                profile.put("primaryService", p.primaryService() == null ? "" : p.primaryService());
+                profile.put("primaryServicePath", p.primaryServicePath() == null ? "" : p.primaryServicePath());
+                profile.put("primaryServiceSnippet", p.primaryServiceSnippet() == null ? "" : p.primaryServiceSnippet());
+                profile.put("diagnosisTriplet", p.diagnosisTriplet() == null ? "" : p.diagnosisTriplet());
+                profile.put("methodBlameSummary", p.methodBlameSummary() == null ? "" : p.methodBlameSummary());
+                profile.put("methodSnippet", p.methodSnippet() == null ? "" : p.methodSnippet());
+                profile.put("followupCodeQuestion", p.followupCodeQuestion() == null ? "" : p.followupCodeQuestion());
+                profile.put("methodHint", p.methodHint() == null ? "" : p.methodHint());
+                profile.put("blameSummary", p.blameSummary() == null ? "" : p.blameSummary());
+                profile.put("changeExplanation", p.changeExplanation() == null ? "" : p.changeExplanation());
+                profile.put("nextHops", p.nextHops());
+                profile.put("classSources", p.classSources().stream().map(cs -> {
+                    Map<String, Object> m2 = new java.util.LinkedHashMap<>();
+                    m2.put("className", cs.className());
+                    m2.put("filePath", cs.filePath());
+                    m2.put("snippet", cs.snippet() == null ? "" : cs.snippet());
+                    return m2;
+                }).toList());
+                profile.put("owner", p.owner() == null ? Map.of() : Map.of(
+                        "name", p.owner().name(),
+                        "email", p.owner().email(),
+                        "commit", p.owner().commit(),
+                        "summary", p.owner().summary()));
+                profile.put("recentCommits", p.recentCommits());
+                profile.put("callChainHints", p.callChainHints());
+                return profile;
+            }).toList());
+            if (traceDiagnosis.traceSearch() != null) {
+                diagnosis.put("entryService", traceDiagnosis.traceSearch().entryService());
+                diagnosis.put("lastService", traceDiagnosis.traceSearch().lastService());
+                diagnosis.put("hitServices", traceDiagnosis.traceSearch().hits().stream().map(h -> h.service()).toList());
+                diagnosis.put("hitServiceDetails", traceDiagnosis.traceSearch().hits().stream().map(h -> Map.of(
+                        "service", h.service(),
+                        "layer", h.layer(),
+                        "matches", h.matches())).toList());
+            }
+            diagnosis.put("renderedAnswer", traceDiagnosis.renderedAnswer());
+            diagnosis.put("recommendedFollowups", buildTraceFollowups(traceDiagnosis));
+            m.put("traceDiagnosis", diagnosis);
+        }
+        if (run.steps().isEmpty() && "SUCCEEDED".equals(run.status().name())) {
+            String answer = run.finalAnswer() == null ? "" : run.finalAnswer();
+            if (answer.contains("来源：remote-es") || answer.contains("来源：local-log-fallback")) {
+                m.put("note", "输入被识别为 requestId/traceId 请求流转诊断，直接返回结构化检索结果，未调用模型");
+            } else {
+                m.put("note", "输入被识别为非诊断任务（问候/闲聊/超范围话题），直接应答，未调用工具/模型");
+            }
+        }
+
+        return m;
+    }
+
+    private static java.util.List<Map<String, Object>> buildCodeFollowups(com.myxhs.ai.app.service.knowledge.CodeSearchResult result) {
+        if (result == null || result.topHit() == null) {
+            return List.of();
+        }
+        var hit = result.topHit();
+        java.util.List<Map<String, Object>> out = new java.util.ArrayList<>();
+        if (hit.primaryService() != null && hit.methodHint() != null) {
+            out.add(followup("为什么优先看 " + hit.primaryService() + "." + hit.methodHint() + "()？", "code", 100));
+        }
+        if (hit.relatedTraceSamples() != null && !hit.relatedTraceSamples().isEmpty()) {
+            out.add(followup("用真实 trace 看看 " + hit.primaryService() + "." + hit.methodHint() + "() 在哪条请求里最可疑：" + hit.relatedTraceSamples().get(0).traceId(), "trace", 90));
+        }
+        if (hit.methodHint() != null) {
+            out.add(followup(hit.service() + " 这个方法 " + hit.methodHint() + "() 负责什么？", "change", 80));
+        }
+        return out;
+    }
+
+    private static java.util.List<Map<String, Object>> buildTraceFollowups(com.myxhs.ai.app.service.trace.TraceDiagnosisResult diagnosis) {
+        if (diagnosis == null || diagnosis.serviceProfiles() == null || diagnosis.serviceProfiles().isEmpty()) {
+            return List.of();
+        }
+        var first = diagnosis.serviceProfiles().get(0);
+        java.util.List<Map<String, Object>> out = new java.util.ArrayList<>();
+        if (first.followupCodeQuestion() != null && !first.followupCodeQuestion().isBlank()) {
+            out.add(followup(first.followupCodeQuestion(), "code", 100));
+        }
+        if (first.primaryService() != null && first.methodHint() != null) {
+            out.add(followup("帮我继续看 " + diagnosis.traceId() + " 里 " + first.primaryService() + "." + first.methodHint() + "() 最近谁改过？", "change", 90));
+        }
+        if (first.diagnosisTriplet() != null && !first.diagnosisTriplet().isBlank()) {
+            out.add(followup(first.diagnosisTriplet(), "trace", 80));
+        }
+        return out;
+    }
+
+    private static Map<String, Object> followup(String text, String kind, int priority) {
+        return Map.of("text", text, "kind", kind, "priority", priority, "suggestedConversationInput", text);
+    }
+
+    private static Map<String, Object> hitView(com.myxhs.ai.app.service.knowledge.CodeSearchResult.Hit hit) {
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("title", hit.title());
+        m.put("service", hit.service());
+        m.put("role", hit.role());
+        m.put("semanticRole", hit.semanticRole());
+        m.put("question", hit.question());
+        m.put("clientClass", hit.clientClass());
+        m.put("callerService", hit.callerService());
+        m.put("calleeService", hit.calleeService());
+        m.put("source", hit.source());
+        m.put("keyServices", hit.keyServices());
+        m.put("keyControllers", hit.keyControllers());
+        m.put("keyConsumers", hit.keyConsumers());
+        m.put("keyFeignClients", hit.keyFeignClients());
+        m.put("responsibilities", hit.responsibilities());
+        m.put("owner", hit.owner() == null ? Map.of() : Map.of(
+                "name", hit.owner().name(),
+                "email", hit.owner().email(),
+                "commit", hit.owner().commit(),
+                "summary", hit.owner().summary()));
+        m.put("recentCommits", hit.recentCommits());
+        m.put("blameSummary", hit.blameSummary() == null ? "" : hit.blameSummary());
+        m.put("changeExplanation", hit.changeExplanation() == null ? "" : hit.changeExplanation());
+        m.put("primaryService", hit.primaryService());
+        m.put("primaryServicePath", hit.primaryServicePath());
+        m.put("primaryServiceSnippet", hit.primaryServiceSnippet() == null ? "" : hit.primaryServiceSnippet());
+        m.put("diagnosisTriplet", hit.diagnosisTriplet() == null ? "" : hit.diagnosisTriplet());
+        m.put("methodBlameSummary", hit.methodBlameSummary() == null ? "" : hit.methodBlameSummary());
+        m.put("methodSnippet", hit.methodSnippet() == null ? "" : hit.methodSnippet());
+        m.put("relatedTraceSamples", hit.relatedTraceSamples().stream().map(s -> Map.of(
+                "id", s.id(),
+                "traceId", s.traceId(),
+                "route", s.route(),
+                "note", s.note())).toList());
+        m.put("methodHint", hit.methodHint() == null ? "" : hit.methodHint());
+        m.put("nextHops", hit.nextHops());
+        m.put("score", hit.score());
+        m.put("renderedText", hit.renderedText());
         return m;
     }
 

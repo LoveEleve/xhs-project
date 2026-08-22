@@ -1,10 +1,12 @@
 package com.myxhs.cart.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.myxhs.cart.dto.request.CartAddRequest;
 import com.myxhs.cart.dto.request.CartUpdateQuantityRequest;
 import com.myxhs.cart.dto.response.CartListVO;
 import com.myxhs.cart.feign.ProductFeignClient;
+import com.myxhs.cart.mapper.CartItemMapper;
 import com.myxhs.common.exception.BizException;
 import com.myxhs.common.response.R;
 import com.myxhs.common.response.ResultCode;
@@ -68,6 +70,8 @@ class CartServiceTest {
 
     @Mock
     private DefaultRedisScript<Long> cartCheckItemScript;
+    @Mock
+    private CartItemMapper cartItemMapper;
 
     private ObjectMapper objectMapper;
     private CartService cartService;
@@ -78,12 +82,14 @@ class CartServiceTest {
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper();
+        objectMapper.registerModule(new JavaTimeModule());
         cartService = new CartService(
                 stringRedisTemplate,
                 rocketMQTemplate,
                 productFeignClient,
                 objectMapper,
                 cartAddScript,
+                cartItemMapper,
                 cartRemoveScript,
                 cartCheckAllScript,
                 cartUpdateQuantityScript,
@@ -100,6 +106,11 @@ class CartServiceTest {
         CartAddRequest request = new CartAddRequest();
         request.setSkuId(SKU_ID);
         request.setQuantity(2);
+
+        ProductFeignClient.SkuDTO skuDTO = new ProductFeignClient.SkuDTO();
+        skuDTO.setId(SKU_ID);
+        skuDTO.setStatus(1);
+        when(productFeignClient.getSkuDetail(SKU_ID)).thenReturn(R.ok(skuDTO));
 
         // Lua 脚本返回当前数量（表示成功）
         // 使用具体数量的 any() 匹配 varargs（5 个 String 参数）
@@ -129,6 +140,10 @@ class CartServiceTest {
         request.setSkuId(SKU_ID);
         request.setQuantity(1);
 
+        ProductFeignClient.SkuDTO skuDTO = new ProductFeignClient.SkuDTO();
+        skuDTO.setId(SKU_ID);
+        skuDTO.setStatus(1);
+        when(productFeignClient.getSkuDetail(SKU_ID)).thenReturn(R.ok(skuDTO));
         when(stringRedisTemplate.execute(eq(cartAddScript), anyList(), any(), any(), any(), any(), any()))
                 .thenReturn(null);
 
@@ -144,12 +159,34 @@ class CartServiceTest {
         request.setSkuId(SKU_ID);
         request.setQuantity(1);
 
+        ProductFeignClient.SkuDTO skuDTO = new ProductFeignClient.SkuDTO();
+        skuDTO.setId(SKU_ID);
+        skuDTO.setStatus(1);
+        when(productFeignClient.getSkuDetail(SKU_ID)).thenReturn(R.ok(skuDTO));
         when(stringRedisTemplate.execute(eq(cartAddScript), anyList(), any(), any(), any(), any(), any()))
                 .thenReturn(-1L);
 
         assertThatThrownBy(() -> cartService.addToCart(USER_ID, request))
                 .isInstanceOf(BizException.class)
                 .hasMessageContaining("购物车最多添加");
+    }
+
+    @Test
+    @DisplayName("加入购物车 - 下架SKU被拒绝")
+    void addToCartRejectsOffShelfSku() {
+        CartAddRequest request = new CartAddRequest();
+        request.setSkuId(SKU_ID);
+        request.setQuantity(1);
+
+        ProductFeignClient.SkuDTO skuDTO = new ProductFeignClient.SkuDTO();
+        skuDTO.setId(SKU_ID);
+        skuDTO.setStatus(0);
+        when(productFeignClient.getSkuDetail(SKU_ID)).thenReturn(R.ok(skuDTO));
+
+        assertThatThrownBy(() -> cartService.addToCart(USER_ID, request))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("商品不存在或未上架");
+        verify(stringRedisTemplate, never()).execute(any(), anyList(), any(), any(), any(), any(), any());
     }
 
     // ==================== 购物车列表 ====================
@@ -182,6 +219,7 @@ class CartServiceTest {
         skuDTO.setOriginalPrice(new BigDecimal("199.00"));
         skuDTO.setStock(100);
         skuDTO.setStatus(1);
+        skuDTO.setSpuStatus(1);
         skuDTO.setSpecs("{\"颜色\":\"红色\"}");
 
         R<List<ProductFeignClient.SkuDTO>> r = R.ok(Collections.singletonList(skuDTO));
@@ -316,6 +354,9 @@ class CartServiceTest {
     @DisplayName("清空购物车 - 成功清空且验证 Redis DEL 被调用")
     void clearCartSuccess() {
         when(stringRedisTemplate.delete(anyCollection())).thenReturn(3L);
+
+        org.springframework.data.redis.core.ValueOperations<String, String> valueOps = mock(org.springframework.data.redis.core.ValueOperations.class);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOps);
 
         assertThatCode(() -> cartService.clearCart(USER_ID))
                 .doesNotThrowAnyException();

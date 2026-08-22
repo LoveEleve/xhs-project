@@ -1,0 +1,135 @@
+# Prometheus 配置文件
+# 采集 my-xhs 所有微服务的 /actuator/prometheus 端点
+
+global:
+  scrape_interval: 5s        # 采集间隔（高频采集，利于实时告警）
+  evaluation_interval: 15s   # 告警规则评估间隔
+  scrape_timeout: 4s         # 采集超时（必须 < scrape_interval）
+
+# P-D13: 告警通知出口（Alertmanager 容器，见 docker-compose.yml alertmanager 段）
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['127.0.0.1:19093']
+
+# P-D6: 双存储（VictoriaMetrics 长期存储，重启不丢历史）
+remote_write:
+  - url: http://127.0.0.1:8428/api/v1/write
+    queue_config:
+      max_samples_per_send: 5000
+
+# 告警规则文件
+rule_files:
+  - "alert_rules/*.yml"
+
+# 采集目标
+scrape_configs:
+  # ==================== my-xhs 微服务（非标准端口） ====================
+  - job_name: 'my-xhs-services'
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 10s
+    static_configs:
+      # 网关服务
+      - targets: ['${MICROSERVICE_IP}:19000']
+        labels:
+          service: 'my-xhs-gateway'
+      # 用户服务
+      - targets: ['${MICROSERVICE_IP}:19001']
+        labels:
+          service: 'my-xhs-user'
+      # 内容服务
+      - targets: ['${MICROSERVICE_IP}:19002']
+        labels:
+          service: 'my-xhs-content'
+      # 互动分析服务
+      - targets: ['${MICROSERVICE_IP}:19003']
+        labels:
+          service: 'my-xhs-analytics'
+      # 计数服务
+      - targets: ['${MICROSERVICE_IP}:19004']
+        labels:
+          service: 'my-xhs-counter'
+      # 商品服务
+      - targets: ['${MICROSERVICE_IP}:19006']
+        labels:
+          service: 'my-xhs-product'
+      # 购物车服务
+      - targets: ['${MICROSERVICE_IP}:19008']
+        labels:
+          service: 'my-xhs-cart'
+      # 库存服务
+      - targets: ['${MICROSERVICE_IP}:19009']
+        labels:
+          service: 'my-xhs-inventory'
+      # 优惠券服务
+      - targets: ['${MICROSERVICE_IP}:19010']
+        labels:
+          service: 'my-xhs-coupon'
+      # 订单服务
+      - targets: ['${MICROSERVICE_IP}:19011']
+        labels:
+          service: 'my-xhs-order'
+      # 支付服务
+      - targets: ['${MICROSERVICE_IP}:19012']
+        labels:
+          service: 'my-xhs-payment'
+      # 通知服务
+      - targets: ['${MICROSERVICE_IP}:19013']
+        labels:
+          service: 'my-xhs-notification'
+      # IM 服务
+      - targets: ['${MICROSERVICE_IP}:19014']
+        labels:
+          service: 'my-xhs-im'
+      # 首页聚合服务
+      - targets: ['${MICROSERVICE_IP}:19015']
+        labels:
+          service: 'my-xhs-home'
+      # 搜索服务
+      - targets: ['${MICROSERVICE_IP}:19016']
+        labels:
+          service: 'my-xhs-search'
+
+  # ==================== Prometheus 自身 ====================
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['${HOST_IP}:19090']
+
+  # ==================== SkyWalking OAP（P-T3） ====================
+  - job_name: 'skywalking-oap'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['${HOST_IP}:1234']
+
+  # ==================== 中间件 Exporter（P-D4 补全） ====================
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['${HOST_IP}:9151']
+
+  - job_name: 'elasticsearch'
+    static_configs:
+      - targets: ['${HOST_IP}:9114']
+
+  - job_name: 'mysql'
+    static_configs:
+      - targets: ['${HOST_IP}:9104']
+  - job_name: 'mysql-slave'
+    static_configs:
+      - targets: ['${HOST_IP}:9105']
+
+  # ==================== Canal（自带 prometheus 端点 11112） ====================
+  - job_name: 'canal'
+    metric_relabel_configs:
+      - source_labels: [destination]
+        regex: 'example'
+        action: drop
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['${HOST_IP}:11112']
+
+  # ==================== 宿主机（node_exporter） ====================
+  - job_name: 'node'
+    static_configs:
+      - targets: ['${HOST_IP}:9100']

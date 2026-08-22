@@ -1,0 +1,317 @@
+{
+ "title": "HikariCP 数据库连接池",
+ "uid": "myxhs-hikaricp",
+ "templating": {
+  "list": [
+   {
+    "name": "application",
+    "type": "query",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "PBFA97CFB590B2093"
+    },
+    "query": "label_values(hikaricp_connections_active, application)",
+    "includeAll": true,
+    "allValue": ".*",
+    "current": {
+     "selected": true,
+     "text": [
+      "All"
+     ],
+     "value": [
+      "$__all"
+     ]
+    },
+    "refresh": 1,
+    "multi": true,
+    "sort": 1
+   }
+  ]
+ },
+ "panels": [
+  {
+   "type": "timeseries",
+   "title": "活跃 vs 上限连接",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "hikaricp_connections_active{application=~\"$application\"}",
+     "legendFormat": "{{application}} active"
+    },
+    {
+     "expr": "hikaricp_connections_max{application=~\"$application\"}",
+     "legendFormat": "{{application}} max"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "连接池使用率",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(hikaricp_connections_active{application=~\"$application\"}) by (application) / sum(hikaricp_connections_max{application=~\"$application\"}) by (application) * 100",
+     "legendFormat": "{{application}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 0
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "空闲连接数",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(hikaricp_connections_idle{application=~\"$application\"}) by (application)",
+     "legendFormat": "{{application}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 8
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "等待获取连接数",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(hikaricp_connections_pending{application=~\"$application\"}) by (application)",
+     "legendFormat": "{{application}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 8
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "获取连接耗时(平均/峰值)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(hikaricp_connections_acquire_seconds_sum{application=~\"$application\"}[5m])) by (application) / sum(rate(hikaricp_connections_acquire_seconds_count{application=~\"$application\"}[5m])) by (application)",
+     "legendFormat": "{{application}} avg"
+    },
+    {
+     "expr": "max(hikaricp_connections_acquire_seconds_max{application=~\"$application\"}) by (application)",
+     "legendFormat": "{{application}} max"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 16
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "连接获取速率(5m)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(hikaricp_connections_acquire_seconds_count{application=~\"$application\"}[5m])) by (application)",
+     "legendFormat": "{{application}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 16
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "连接超时速率(5m)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(hikaricp_connections_timeout_total{application=~\"$application\"}[5m])) by (application)",
+     "legendFormat": "{{application}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 24
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "连接使用耗时(平均/峰值)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(hikaricp_connections_usage_seconds_sum{application=~\"$application\"}[5m])) by (application) / sum(rate(hikaricp_connections_usage_seconds_count{application=~\"$application\"}[5m])) by (application)",
+     "legendFormat": "{{application}} avg"
+    },
+    {
+     "expr": "max(hikaricp_connections_usage_seconds_max{application=~\"$application\"}) by (application)",
+     "legendFormat": "{{application}} max"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 24
+   }
+  }
+ ]
+}

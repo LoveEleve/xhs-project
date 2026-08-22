@@ -125,12 +125,15 @@ public class ImRouteSubscriber implements MessageListener {
                 log.debug("[IM路由] 跨实例推送成功: receiverId={}, msgId={}",
                         routeMsg.getReceiverId(), routeMsg.getMsgId());
             } else {
-                // 推送失败，降级：TYPING(无msgId)只记日志，聊天消息/已读回执存离线
-                if (routeMsg.getMsgId() != null) {
+                // 推送失败，降级：仅普通聊天消息存离线。已读回执/输入状态属于瞬时信号，不进入离线重放。
+                if (routeMsg.getMsgId() != null && msgType != 99 && msgType != 98) {
                     chatService.storeOfflineMessage(routeMsg.getReceiverId(), routeMsg.getMsgId());
+                    log.info("[IM路由] 用户已离线，降级存离线: receiverId={}, msgId={}, msgType={}",
+                            routeMsg.getReceiverId(), routeMsg.getMsgId(), msgType);
+                } else {
+                    log.info("[IM路由] 用户已离线，瞬时信号不存离线: receiverId={}, msgId={}, msgType={}",
+                            routeMsg.getReceiverId(), routeMsg.getMsgId(), msgType);
                 }
-                log.info("[IM路由] 用户已离线，降级存离线: receiverId={}, msgId={}, msgType={}",
-                        routeMsg.getReceiverId(), routeMsg.getMsgId(), msgType);
             }
         } catch (Exception e) {
             log.error("[IM路由] Pub/Sub回调异常", e);

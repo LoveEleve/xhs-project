@@ -12,7 +12,7 @@ import {
 import {
   submitRun, getRun, cancelRun, approveRun, openRunStream, TERMINAL_TYPES,
 } from '../../api/ai';
-import type { HarnessEvent, RunStep } from '../../api/ai';
+import type { CodeSearchResultView, HarnessEvent, RunStep, TraceDiagnosis } from '../../api/ai';
 
 const { TextArea } = Input;
 const { Text, Paragraph } = Typography;
@@ -41,6 +41,26 @@ function truncate(text: string, max: number) {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
+const SNIPPET_PREVIEW_LINES = 120;
+
+function SnippetBlock({ snippet }: { snippet: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const lines = snippet ? snippet.split('\n') : [];
+  const preview = expanded ? lines : lines.slice(0, SNIPPET_PREVIEW_LINES);
+  return (
+    <>
+      <pre style={{ whiteSpace: 'pre-wrap', background: '#f5f5f5', fontSize: 12, padding: 8, borderRadius: 6, maxHeight: expanded ? 800 : 420, overflow: 'auto' }}>
+        {preview.join('\n')}
+      </pre>
+      {lines.length > SNIPPET_PREVIEW_LINES && (
+        <Button type="link" size="small" onClick={() => setExpanded(!expanded)} style={{ padding: 0 }}>
+          {expanded ? '收起' : `展开更多（共 ${lines.length} 行）`}
+        </Button>
+      )}
+    </>
+  );
+}
+
 export default function AgentConsolePage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -52,6 +72,8 @@ export default function AgentConsolePage() {
   const [status, setStatus] = useState<string | undefined>();
   const [terminationReason, setTerminationReason] = useState<string | undefined>();
   const [finalAnswer, setFinalAnswer] = useState<string | undefined>();
+  const [traceDiagnosis, setTraceDiagnosis] = useState<TraceDiagnosis | undefined>();
+  const [codeSearch, setCodeSearch] = useState<CodeSearchResultView | undefined>();
   const [costMs, setCostMs] = useState<number | undefined>();
   const [steps, setSteps] = useState<DisplayStep[]>([]);
   const [runNote, setRunNote] = useState<string | null>(null);
@@ -121,8 +143,11 @@ export default function AgentConsolePage() {
         setPhase('done');
         setStatus(view.status);
         setTerminationReason(view.terminationReason);
-        if (view.finalAnswer) setFinalAnswer(view.finalAnswer);
-        setCostMs(view.costMs);
+         if (view.finalAnswer) setFinalAnswer(view.finalAnswer);
+         setTraceDiagnosis(view.traceDiagnosis);
+         setCodeSearch(view.codeSearch);
+         setCostMs(view.costMs);
+
         if (view.note) setRunNote(view.note);
         const mapped: DisplayStep[] = (view.steps || []).map((s: RunStep) => ({
           key: `${s.state || 'STEP'}-${s.stepNumber}`,
@@ -162,8 +187,11 @@ export default function AgentConsolePage() {
       setPhase('done');
       setStatus(view.status);
       setTerminationReason(view.terminationReason);
-      setFinalAnswer(view.finalAnswer);
-      setCostMs(view.costMs);
+       setFinalAnswer(view.finalAnswer);
+       setTraceDiagnosis(view.traceDiagnosis);
+       setCodeSearch(view.codeSearch);
+       setCostMs(view.costMs);
+
       if (view.note) setRunNote(view.note);
       fetchedRef.current = id;
       const mapped: DisplayStep[] = (view.steps || []).map((s: RunStep) => ({
@@ -201,6 +229,8 @@ export default function AgentConsolePage() {
     setSteps([]);
     setRunNote(null);
     setFinalAnswer(undefined);
+    setTraceDiagnosis(undefined);
+    setCodeSearch(undefined);
     setStatus(undefined);
     setTerminationReason(undefined);
     setCostMs(undefined);
@@ -242,6 +272,38 @@ export default function AgentConsolePage() {
       message.info('已发送取消请求（当前步完成后生效）');
     } catch (e) {
       message.error(`取消失败: ${(e as Error).message}`);
+    }
+  };
+
+  const handleFollowupAsk = async (text: string, sourceKind: 'codeSearch' | 'traceDiagnosis', sourceService?: string) => {
+    const normalized = typeof text === 'string' ? text : String(text || '');
+    if (!normalized.trim()) return;
+    setQuery(normalized);
+    setErrorMsg(null);
+    setLoading(true);
+    setSteps([]);
+    setRunNote(null);
+    setFinalAnswer(undefined);
+    setTraceDiagnosis(undefined);
+    setCodeSearch(undefined);
+    setStatus(undefined);
+    setTerminationReason(undefined);
+    setCostMs(undefined);
+    fetchedRef.current = '';
+    try {
+      const { runId: id, conversationId: cid } = await submitRun(normalized.trim(), convId || undefined, {
+        sourceKind,
+        sourceText: normalized.trim(),
+        sourceRunId: runId || undefined,
+        sourceService,
+      });
+      setRunId(id);
+      if (cid) setConvId(cid);
+      setSearchParams({ run: id, conv: cid }, { replace: true });
+    } catch (e) {
+      message.error(`继续提问失败: ${(e as Error).message}`);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -404,10 +466,130 @@ export default function AgentConsolePage() {
           )}
           {phase === 'done' && (
             <>
-              <Divider />
-              <Paragraph>
-                <Text strong>结论：</Text>
-              </Paragraph>
+              {traceDiagnosis && (
+                <Card size="small" title="请求流转诊断" style={{ marginTop: 16 }}>
+                  <Space direction="vertical" style={{ width: '100%' }} size="small">
+                    <Space wrap>
+                      <Tag color={traceDiagnosis.verdict === 'complete' ? 'green' : traceDiagnosis.verdict === 'uncertain' ? 'orange' : 'blue'}>
+                        verdict: {traceDiagnosis.verdict}
+                      </Tag>
+                      <Tag>来源: {traceDiagnosis.source}</Tag>
+                      <Tag>验证: {traceDiagnosis.verificationStatus}</Tag>
+                      {traceDiagnosis.reviewerMode && <Tag>审查: {traceDiagnosis.reviewerMode}</Tag>}
+                    </Space>
+                    <Text>链路: {traceDiagnosis.hitServices.join(' → ') || '未命中'}</Text>
+                    {traceDiagnosis.reviewerRationale && <Text type="secondary">审查结论: {traceDiagnosis.reviewerRationale}</Text>}
+                    {traceDiagnosis.suspiciousEvents.length > 0 && (
+                      <Alert type="warning" showIcon title="可疑事件" description={traceDiagnosis.suspiciousEvents.join('；')} />
+                    )}
+                    {traceDiagnosis.hypotheses.length > 0 && (
+                      <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                        假设: {traceDiagnosis.hypotheses.join('；')}
+                      </Paragraph>
+                    )}
+                    {traceDiagnosis.nextActions.length > 0 && (
+                      <Paragraph style={{ marginBottom: 0 }}>
+                        下一步: {traceDiagnosis.nextActions.join('；')}
+                      </Paragraph>
+                    )}
+                     {traceDiagnosis.recommendedFollowups && traceDiagnosis.recommendedFollowups.length > 0 && (
+                       <Card size="small" type="inner" title="推荐继续追问">
+                         <Space wrap>
+                     {traceDiagnosis.recommendedFollowups.map((q) => (
+                       <Button key={q.text} size="small" onClick={() => handleFollowupAsk(q.suggestedConversationInput, 'traceDiagnosis', traceDiagnosis.lastService)}>{q.text}</Button>
+                     ))}
+
+                         </Space>
+                       </Card>
+                     )}
+                     {traceDiagnosis.serviceProfiles.length > 0 && (
+                       <Timeline items={traceDiagnosis.serviceProfiles.map((profile) => ({
+
+                        color: profile.service === traceDiagnosis.lastService ? 'green' : 'blue',
+                        children: (
+                          <Space direction="vertical" size={0} style={{ width: '100%' }}>
+                            <Text strong>{profile.service}</Text>
+                            <Text>{profile.role || '职责未知'} · {profile.layer}</Text>
+                            {profile.primaryService && (
+                              <details>
+                                <summary style={{ cursor: 'pointer' }}>
+                                  <Text type="secondary">主服务类: {profile.primaryService}{profile.primaryServicePath ? ` · ${profile.primaryServicePath}` : ''}</Text>
+                                </summary>
+                                {profile.primaryServiceSnippet && (
+                                  <SnippetBlock snippet={profile.primaryServiceSnippet} />
+                                )}
+                              </details>
+                            )}
+                            {profile.primaryController && (
+                              <details>
+                                <summary style={{ cursor: 'pointer' }}>
+                                  <Text type="secondary">主入口控制器: {profile.primaryController}{profile.primaryControllerPath ? ` · ${profile.primaryControllerPath}` : ''}</Text>
+                                </summary>
+                                {profile.primaryControllerSnippet && (
+                                  <SnippetBlock snippet={profile.primaryControllerSnippet} />
+                                )}
+                              </details>
+                            )}
+                            {profile.keyServices.length > 0 && (
+                              <Text type="secondary">关键服务类: {profile.keyServices.join('、')}</Text>
+                            )}
+                            {profile.keyControllers.length > 0 && (
+                              <Text type="secondary">关键控制器: {profile.keyControllers.join('、')}</Text>
+                            )}
+                            {profile.keyConsumers.length > 0 && (
+                              <Text type="secondary">关键消费者: {profile.keyConsumers.join('、')}</Text>
+                            )}
+                            {profile.source && <Text type="secondary">源码落点: {profile.source}</Text>}
+                            {profile.owner && (
+                              <Text type="secondary">最近责任人: {profile.owner.name} · {profile.owner.commit} · {profile.owner.summary}</Text>
+                            )}
+                            {profile.recentCommits.length > 0 && (
+                              <Text type="secondary">最近变更: {profile.recentCommits.join('；')}</Text>
+                            )}
+                            {profile.callChainHints.length > 0 && (
+                              <Text type="secondary">调用链提示: {profile.callChainHints.join('；')}</Text>
+                            )}
+                            {profile.nextHops.length > 0 && (
+                              <Text type="secondary">下一跳: {profile.nextHops.join('、')}</Text>
+                            )}
+                            {profile.classSources.length > 0 && (
+                              <details>
+                                <summary style={{ cursor: 'pointer' }}><Text type="secondary">关键类源码</Text></summary>
+                                <Space direction="vertical" size={4} style={{ width: '100%', marginTop: 4 }}>
+                                  {profile.classSources.map((cs) => (
+                                    <details key={cs.className}>
+                                      <summary style={{ cursor: 'pointer', fontSize: 12 }}>
+                                        {cs.className}{cs.filePath ? ` · ${cs.filePath}` : ''}
+                                      </summary>
+                                      {cs.snippet && (
+                                        <SnippetBlock snippet={cs.snippet} />
+                                      )}
+                                    </details>
+                                  ))}
+                                </Space>
+                              </details>
+                            )}
+                          </Space>
+                        ),
+                      }))} />
+                    )}
+                  </Space>
+                </Card>
+              )}
+               {codeSearch?.recommendedFollowups && codeSearch.recommendedFollowups.length > 0 && (
+                 <Card size="small" title="推荐继续追问" style={{ marginTop: 16 }}>
+                   <Space wrap>
+                     {codeSearch.recommendedFollowups.map((q) => (
+                       <Button key={q.text} size="small" onClick={() => handleFollowupAsk(q.suggestedConversationInput, 'codeSearch', codeSearch.topHit?.service)}>{q.text}</Button>
+                     ))}
+                   </Space>
+                 </Card>
+               )}
+               <Divider />
+               <Paragraph>
+                 <Text strong>结论：</Text>
+               </Paragraph>
+
               <Paragraph style={{ whiteSpace: 'pre-wrap', background: '#fafafa', padding: 12, borderRadius: 8 }}>
                 {finalAnswer || '（无最终答案）'}
               </Paragraph>

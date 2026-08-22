@@ -11,6 +11,7 @@ import com.myxhs.im.entity.ChatUserRelation;
 import com.myxhs.im.handler.ImWebSocketHandler;
 import com.myxhs.im.service.ChatService;
 import com.myxhs.im.service.OnlineRouteService;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -45,6 +46,13 @@ public class ImController {
 
     @org.springframework.beans.factory.annotation.Value("${jwt.secret:${IM_JWT_SECRET:}}")
     private String jwtSecret;
+
+    @PostConstruct
+    public void validateJwtSecret() {
+        if (jwtSecret == null || jwtSecret.isBlank() || "MyXhs@2026#JwtSecretKey!ForTokenSign".equals(jwtSecret)) {
+            throw new IllegalStateException("jwt.secret 未安全配置，拒绝启动 im 服务");
+        }
+    }
 
     private static final DateTimeFormatter DT_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 

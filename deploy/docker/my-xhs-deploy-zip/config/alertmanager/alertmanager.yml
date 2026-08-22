@@ -1,0 +1,28 @@
+# Alertmanager 配置（P-D13 告警出口）
+# 通知渠道：默认 webhook 占位——部署后按实际渠道配置（企业微信/钉钉/邮箱 webhook 任选）
+# 若用邮箱通知，去掉下面 route/receivers 注释并按需修改
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname', 'service']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  receiver: 'default-webhook'
+
+receivers:
+  - name: 'default-webhook'
+    webhook_configs:
+      - url: 'http://127.0.0.1:19000/api/alert/hook'   # 占位地址：替换为内部通知端点或企业微信机器人
+        send_resolved: true
+
+# 邮箱示例（如需）：
+# receivers:
+#   - name: 'default-webhook'
+#     email_configs:
+#       - to: 'ops@example.com'
+#         from: 'alert@example.com'
+#         smarthost: 'smtp.example.com:465'
+#         auth_username: 'alert@example.com'
+#         auth_password: '<密码>'

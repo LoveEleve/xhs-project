@@ -487,7 +487,7 @@ public class SpuService {
         RLock loadLock = redissonClient.getLock(loadLockKey);
         boolean loadLocked = false;
         try {
-            // tryLock 短等待：拿不到锁的线程短暂等待后重查缓存（持锁线程已回填）
+            // 只有拿到锁的线程查 DB 并回填；其他线程短暂等待后重查缓存，避免冷 key 并发 miss 打爆 DB。
             loadLocked = loadLock.tryLock(1, 10, TimeUnit.SECONDS);
             if (loadLocked) {
                 // 双重检查：持锁期间其他线程可能已回填
@@ -499,32 +499,52 @@ public class SpuService {
                 } catch (Exception e) {
                     log.warn("[多级缓存] 双重检查读缓存失败(降级), spuId={}", spuId, e);
                 }
+
+                log.info("[多级缓存] L2 Redis 未命中, 查询 DB, spuId={}", spuId);
+                SpuDetailVO detail = loadSpuDetailFromDb(spuId);
+                if (detail != null) {
+                    // 回填 L2（逻辑过期 30min + 物理 TTL 2h 兜底）；Redis 故障降级仅记日志
+                    RedisCacheData<SpuDetailVO> newCacheData = RedisCacheData.of(detail, LOGIC_EXPIRE_MINUTES);
+                    try {
+                        redisOperator.set(redisKey, newCacheData, PHYSICAL_TTL_MINUTES, TimeUnit.MINUTES);
+                    } catch (Exception e) {
+                        log.warn("[多级缓存] Redis 回填失败(降级, DB数据仍正常返回), spuId={}", spuId, e);
+                    }
+                } else {
+                    // 【第二层防穿透】DB 也查不到 → 缓存空值（统一用 RedisCacheData 包装）
+                    // 逻辑过期 2 分钟（2 分钟后重新查 DB，数据可能已新增）
+                    // 物理 TTL 5 分钟（兜底清理，防止攻击者用大量不存在 ID 打爆 Redis 内存）
+                    RedisCacheData<SpuDetailVO> nullCacheData = RedisCacheData.of(null, NULL_CACHE_EXPIRE_MINUTES);
+                    try {
+                        redisOperator.set(redisKey, nullCacheData, 5, TimeUnit.MINUTES);
+                    } catch (Exception e) {
+                        log.warn("[多级缓存] 空值缓存写入失败(降级), spuId={}", spuId, e);
+                    }
+                    log.info("[多级缓存] DB 未查到, 缓存空值(防穿透, 逻辑过期={}min, 物理TTL=5min), spuId={}",
+                            NULL_CACHE_EXPIRE_MINUTES, spuId);
+                }
+                return detail;
             }
 
-            log.info("[多级缓存] L2 Redis 未命中, 查询 DB, spuId={}", spuId);
-            SpuDetailVO detail = loadSpuDetailFromDb(spuId);
-            if (detail != null) {
-                // 回填 L2（逻辑过期 30min + 物理 TTL 2h 兜底）；Redis 故障降级仅记日志
-                RedisCacheData<SpuDetailVO> newCacheData = RedisCacheData.of(detail, LOGIC_EXPIRE_MINUTES);
-                try {
-                    redisOperator.set(redisKey, newCacheData, PHYSICAL_TTL_MINUTES, TimeUnit.MINUTES);
-                } catch (Exception e) {
-                    log.warn("[多级缓存] Redis 回填失败(降级, DB数据仍正常返回), spuId={}", spuId, e);
-                }
-            } else {
-                // 【第二层防穿透】DB 也查不到 → 缓存空值（统一用 RedisCacheData 包装）
-                // 逻辑过期 2 分钟（2 分钟后重新查 DB，数据可能已新增）
-                // 物理 TTL 5 分钟（兜底清理，防止攻击者用大量不存在 ID 打爆 Redis 内存）
-                RedisCacheData<SpuDetailVO> nullCacheData = RedisCacheData.of(null, NULL_CACHE_EXPIRE_MINUTES);
-                try {
-                    redisOperator.set(redisKey, nullCacheData, 5, TimeUnit.MINUTES);
-                } catch (Exception e) {
-                    log.warn("[多级缓存] 空值缓存写入失败(降级), spuId={}", spuId, e);
-                }
-                log.info("[多级缓存] DB 未查到, 缓存空值(防穿透, 逻辑过期={}min, 物理TTL=5min), spuId={}",
-                        NULL_CACHE_EXPIRE_MINUTES, spuId);
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("[多级缓存] 等待持锁线程回填缓存时被中断, spuId={}", spuId);
+                return loadSpuDetailFromDb(spuId);
             }
-            return detail;
+
+            try {
+                RedisCacheData<SpuDetailVO> recheck = redisOperator.get(redisKey);
+                if (recheck != null && !recheck.isExpired()) {
+                    return recheck.getData();
+                }
+            } catch (Exception e) {
+                log.warn("[多级缓存] 等待后重查缓存失败(降级), spuId={}", spuId, e);
+            }
+
+            log.info("[多级缓存] 未获取到加载锁且缓存仍未命中, 降级查 DB, spuId={}", spuId);
+            return loadSpuDetailFromDb(spuId);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("[多级缓存] 加载锁被中断, spuId={}", spuId);

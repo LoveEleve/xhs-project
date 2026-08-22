@@ -346,18 +346,22 @@ public class PaymentService {
 
         businessMetrics.recordPaymentCallback("success");
 
-        // 发送支付成功消息到 MQ（订单服务消费后更新订单状态为"已支付"）
-        sendPayResultMq(orderId, userId, true, tradeNo);
-
-        // 同步通知订单服务支付成功（Feign 直调，保证订单状态及时更新）
+        // 先同步通知订单服务支付成功，确认订单域接受这笔支付后再发 MQ。
         // P1-1：若订单明确返回业务失败（已取消/已支付，非瞬态503）→ 自动退款，避免钱货两空
+        // 只有在订单接受后才发 MQ，否则 MQ 已发但退款后订单消费者可能误处理。
         boolean businessRejected = false;
+        boolean feignFailed = false;
         try {
             R<Void> nr = orderFeignClient.notifyPaySuccess(orderId, tradeNo);
             businessRejected = (nr != null && !nr.isSuccess()
                     && nr.getCode() != ResultCode.SERVICE_UNAVAILABLE.getCode());
         } catch (Exception e) {
+            feignFailed = true;
             log.error("[支付成功] 通知订单服务失败(订单MQ消费者会兜底): orderId={}, tradeNo={}", orderId, tradeNo, e);
+        }
+        // 订单接收成功或 Feign 临时故障（503）时都发 MQ 兜底；业务拒绝时不发 MQ 避免退款后乱序
+        if (!businessRejected) {
+            sendPayResultMq(orderId, userId, true, tradeNo);
         }
         if (businessRejected) {
             try {
@@ -603,7 +607,11 @@ public class PaymentService {
 
         // 4. 清理 Redis
         stringRedisTemplate.delete(REFUNDING_KEY_PREFIX + refund.getPaymentId());
-        stringRedisTemplate.opsForValue().set("myxhs:payment:status:" + refund.getOrderId(), "3", PAYING_KEY_TTL);
+        if (paymentAmount != null && refundedTotal.compareTo(paymentAmount) >= 0) {
+            stringRedisTemplate.opsForValue().set("myxhs:payment:status:" + refund.getOrderId(), "3", PAYING_KEY_TTL);
+        } else {
+            stringRedisTemplate.opsForValue().set("myxhs:payment:status:" + refund.getOrderId(), "1", PAYING_KEY_TTL);
+        }
 
         log.info("[退款成功] refundNo={}, paymentId={}, orderId={}", refundNo, refund.getPaymentId(), refund.getOrderId());
 
@@ -661,7 +669,7 @@ public class PaymentService {
         String lockKey = "myxhs:payment:lock:timeout-check";
         String lockValue = java.util.UUID.randomUUID().toString();
         Boolean locked = stringRedisTemplate.opsForValue()
-                .setIfAbsent(lockKey, lockValue, Duration.ofSeconds(30));
+                .setIfAbsent(lockKey, lockValue, Duration.ofMinutes(5));
         if (Boolean.FALSE.equals(locked)) {
             log.debug("[支付超时检查] 未获取到分布式锁，跳过本次检查");
             return;
@@ -847,7 +855,10 @@ public class PaymentService {
                             if (payAmount != null && payAmount.compareTo(BigDecimal.ZERO) > 0) {
                                 log.error("[对账] 不一致: 支付成功但订单仍待支付, orderId={}", record.orderId());
                                 inconsistent++;
-                                orderFeignClient.notifyPaySuccess(record.orderId(), record.paymentNo());
+                                R<Void> notifyResult = orderFeignClient.notifyPaySuccess(record.orderId(), record.paymentNo());
+                                if (notifyResult == null || !notifyResult.isSuccess()) {
+                                    log.error("[对账] 支付成功补偿通知失败: orderId={}, resp={}", record.orderId(), notifyResult);
+                                }
                             }
                         }
                     } catch (Exception e) {

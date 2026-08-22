@@ -1,0 +1,618 @@
+{
+ "uid": "myxhs-mysql",
+ "title": "MySQL 监控",
+ "schemaVersion": 38,
+ "panels": [
+  {
+   "type": "timeseries",
+   "title": "连接数 vs 上限",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 0
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "mysql_global_status_threads_connected",
+     "legendFormat": "已连接"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line"
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "连接上限",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 0
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "mysql_global_variables_max_connections",
+     "legendFormat": "{{__name__}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line"
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "慢查询速率",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "rate(mysql_global_status_slow_queries[5m])",
+     "legendFormat": "{{__name__}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "drawStyle": "line"
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "查询吞吐",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 8
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "rate(mysql_global_status_queries[5m])",
+     "legendFormat": "{{__name__}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "drawStyle": "line"
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "运行线程",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 16
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "mysql_global_status_threads_running",
+     "legendFormat": "{{__name__}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line"
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "InnoDB 缓冲池数据",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 16
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "mysql_global_status_innodb_buffer_pool_bytes_data",
+     "legendFormat": "{{__name__}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "bytes",
+     "custom": {
+      "drawStyle": "line"
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "缓冲池命中率",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 24
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "rate(mysql_global_status_innodb_buffer_pool_read_requests[5m]) / (rate(mysql_global_status_innodb_buffer_pool_read_requests[5m]) + rate(mysql_global_status_innodb_buffer_pool_reads[5m]))",
+     "legendFormat": "{{__name__}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percentunit",
+     "custom": {
+      "drawStyle": "line"
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "连接错误",
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 24
+   },
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "rate(mysql_global_status_connection_errors_total[5m])",
+     "legendFormat": "{{__name__}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "drawStyle": "line"
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "从库复制延迟",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "mysql_slave_status_seconds_behind_master",
+     "legendFormat": ""
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 32
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "从库 IO 线程运行",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "mysql_slave_status_slave_io_running",
+     "legendFormat": ""
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 32
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "从库 SQL 线程运行",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "mysql_slave_status_slave_sql_running",
+     "legendFormat": ""
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 40
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "InnoDB 行锁等待",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "rate(mysql_global_status_innodb_row_lock_waits[5m])",
+     "legendFormat": ""
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 40
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "行锁等待速率 (5m)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "rate(mysql_global_status_innodb_row_lock_waits[5m])",
+     "legendFormat": ""
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 48
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "当前行锁等待",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "mysql_global_status_innodb_row_lock_current_waits",
+     "legendFormat": ""
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 48
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "行锁平均等待时长 (ms)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "mysql_global_status_innodb_row_lock_time_avg",
+     "legendFormat": ""
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ms",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 56
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "行锁最长等待 (ms)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "mysql_global_status_innodb_row_lock_time_max",
+     "legendFormat": ""
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ms",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 56
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "死锁累计次数",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "mysql_innodb_deadlock_total",
+     "legendFormat": ""
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 64
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "新死锁事件(每5分钟)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "mysql_innodb_deadlock_new_events",
+     "legendFormat": ""
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 64
+   }
+  }
+ ],
+ "templating": {
+  "list": []
+ },
+ "time": {
+  "from": "now-1h",
+  "to": "now"
+ }
+}

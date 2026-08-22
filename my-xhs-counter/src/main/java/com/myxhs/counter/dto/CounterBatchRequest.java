@@ -18,6 +18,7 @@ public class CounterBatchRequest {
 
     /** 查询列表 */
     @NotEmpty(message = "查询列表不能为空")
+    @Size(max = 100, message = "查询列表最多 100 项")
     @Valid
     private List<QueryItem> queries;
 
@@ -38,6 +39,7 @@ public class CounterBatchRequest {
 
         /** 需要查询的计数类型列表 */
         @NotEmpty(message = "计数类型不能为空")
+        @Size(max = 7, message = "计数类型最多 7 项")
         private List<@NotNull @Min(1) @Max(7) Integer> countTypes;
     }
 }

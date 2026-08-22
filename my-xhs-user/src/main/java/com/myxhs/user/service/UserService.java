@@ -274,6 +274,28 @@ public class UserService {
         return toUserPublicInfoResponse(user);
     }
 
+    public java.util.Map<Long, UserPublicInfoResponse> batchGetUserPublicInfo(java.util.Set<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return java.util.Collections.emptyMap();
+        }
+        java.util.Map<Long, UserPublicInfoResponse> result = new java.util.LinkedHashMap<>();
+        for (Long userId : userIds) {
+            if (userId == null) {
+                continue;
+            }
+            try {
+                result.put(userId, getUserPublicInfo(userId));
+            } catch (BizException e) {
+                if (e.getCode() == ResultCode.USER_NOT_FOUND.getCode()) {
+                    log.warn("[用户] 批量公开信息跳过不存在用户: userId={}", userId);
+                    continue;
+                }
+                throw e;
+            }
+        }
+        return result;
+    }
+
     /**
      * 获取用户信息（带缓存）
      */

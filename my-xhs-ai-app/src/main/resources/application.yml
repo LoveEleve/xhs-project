@@ -65,6 +65,9 @@ myxhs:
       es-url: ${MYXHS_ES_URL:http://21.130.247.89:19200}
       es-user: ${MYXHS_ES_USER:elastic}
       es-pass: ${MYXHS_ES_PASS:}
+    trace-search:
+      es-index: ${MYXHS_TRACE_LOG_INDEX:myxhs-logs-*}
+      max-events: ${MYXHS_TRACE_MAX_EVENTS:200}
       # dense 检索 embedding（火山 Agent Plan 专属端点，doubao-embedding-vision-large 2048 维）
       embedding-url: ${ARK_PLAN_BASE_URL:https://ark.cn-beijing.volces.com/api/plan/v3}
       embedding-key: ${ARK_PLAN_API_KEY:}

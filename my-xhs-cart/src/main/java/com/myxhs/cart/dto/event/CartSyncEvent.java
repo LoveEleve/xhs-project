@@ -33,6 +33,9 @@ public class CartSyncEvent extends AbstractDomainEvent<CartSyncEvent> {
     /** 操作类型：ADD / UPDATE / DELETE / CHECK / CHECK_ALL / CLEAR */
     private String action;
 
+    /** 清空屏障时间戳（仅 CLEAR 使用；后续消费者可据此过滤旧条目恢复） */
+    private Long clearBarrierTs;
+
     @Override
     public String getEventType() {
         return "CART_SYNC";

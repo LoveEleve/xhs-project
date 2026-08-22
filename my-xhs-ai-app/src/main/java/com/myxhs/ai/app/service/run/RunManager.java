@@ -7,9 +7,11 @@ import com.myxhs.ai.app.service.agent.harness.HarnessEvent;
 import com.myxhs.ai.app.service.agent.harness.HarnessEventType;
 import com.myxhs.ai.app.service.agent.harness.TerminationReason;
 import com.myxhs.ai.app.service.conversation.ConversationService;
+import com.myxhs.ai.app.service.knowledge.CodeSearchService;
 import com.myxhs.ai.app.service.router.Intent;
 import com.myxhs.ai.app.service.router.IntentRouter;
 import com.myxhs.ai.app.service.store.RunStore;
+import com.myxhs.ai.app.service.trace.TraceDiagnosisService;
 import com.myxhs.ai.tools.LogSearchAccess;
 import dev.langchain4j.data.message.ChatMessage;
 import jakarta.annotation.PostConstruct;
@@ -58,7 +60,13 @@ public class RunManager {
                            LinkedBlockingQueue<HarnessEvent> events,
                            CompletableFuture<AgentRun> future,
                            AtomicBoolean streaming,
-                           AtomicBoolean cancelToken) {
+                           AtomicBoolean cancelToken,
+                           com.myxhs.ai.app.service.trace.TraceDiagnosisResult traceDiagnosis,
+                           com.myxhs.ai.app.service.knowledge.CodeSearchResult codeSearchResult,
+                           String followupSourceKind,
+                           String followupSourceText,
+                           String followupSourceRunId,
+                           String followupSourceService) {
     }
 
     /** 心跳超时阈值：超过视为崩溃（正常单步最长约 1min，留余量） */
@@ -82,6 +90,8 @@ public class RunManager {
     /** 第一版系统知识问答服务（=null 时知识路由关闭） */
     private final com.myxhs.ai.app.service.knowledge.KnowledgeRoutingService knowledgeRoutingService;
     private final LogSearchAccess logSearchAccess;
+    private final TraceDiagnosisService traceDiagnosisService;
+    private final CodeSearchService codeSearchService;
     /** M10 用户级长期记忆（跨会话持久化；=null 时记忆功能关闭） */
     private final com.myxhs.ai.app.service.memory.MemoryService memory;
     /** D6 Langfuse Trace：Agent 事件 → OTel span（=null 时 trace 功能关闭） */
@@ -102,6 +112,10 @@ public class RunManager {
                       @org.springframework.beans.factory.annotation.Autowired(required = false)
                       com.myxhs.ai.tools.LogSearchAccess logSearchAccess,
                       @org.springframework.beans.factory.annotation.Autowired(required = false)
+                      com.myxhs.ai.app.service.trace.TraceDiagnosisService traceDiagnosisService,
+                      @org.springframework.beans.factory.annotation.Autowired(required = false)
+                      com.myxhs.ai.app.service.knowledge.CodeSearchService codeSearchService,
+                      @org.springframework.beans.factory.annotation.Autowired(required = false)
                       com.myxhs.ai.app.service.memory.MemoryService memory,
                       @org.springframework.beans.factory.annotation.Autowired(required = false)
                       com.myxhs.ai.app.service.agent.tracing.LangfuseTracingListener tracingListener,
@@ -114,6 +128,8 @@ public class RunManager {
         this.conversation = conversation;
         this.knowledgeRoutingService = knowledgeRoutingService;
         this.logSearchAccess = logSearchAccess;
+        this.traceDiagnosisService = traceDiagnosisService;
+        this.codeSearchService = codeSearchService;
         this.memory = memory;
         this.tracingListener = tracingListener;
         this.runMetadataStore = runMetadataStore;
@@ -122,7 +138,7 @@ public class RunManager {
 
     /** 纯规则降级（测试/离线；无 LLM 分类时无信号输入默认引导） */
     public RunManager(AgentHarness harness, RunStore store, RunMetrics metrics, IntentRouter intentRouter) {
-        this(harness, store, metrics, intentRouter, null, null, null, null, null, null);
+        this(harness, store, metrics, intentRouter, null, null, null, null, null, null, null, null);
     }
 
     public RunManager(AgentHarness harness, RunStore store, RunMetrics metrics) {
@@ -214,7 +230,7 @@ public class RunManager {
         }
         // 恢复是既有 run 的续跑：不碰 running/runs_total 指标（避免口径失真，P1-2）
         RunEntry entry = new RunEntry(runId, userId, query, queue, future,
-                new AtomicBoolean(false), cancelToken);
+                new AtomicBoolean(false), cancelToken, null, null, null, null, null, null);
         runs.put(runId, entry);
         log.info("[runmgr] resume run={} user={}", runId, userId);
         return entry;
@@ -224,35 +240,55 @@ public class RunManager {
      *  意图预检：问候/超范围话题（无诊断目标）不进 Agent，直接完成（零模型/工具成本，
      *  防"你好→调 baselineWindow"“天气→查主从延迟"类蠢回答）。 */
     public RunEntry submit(String query, String userId) {
-        return submit(query, userId, null);
+        return submit(query, userId, null, null, null, null, null);
+    }
+
+    public RunEntry submit(String query, String userId, String convId) {
+        return submit(query, userId, convId, null, null, null, null);
     }
 
     /** 多轮提交（M10）：convId 非空时挂接会话（历史注入/消息落库/同会话串行 409） */
-    public RunEntry submit(String query, String userId, String convId) {
+    public RunEntry submit(String query, String userId, String convId, String followupSourceKind, String followupSourceText,
+                           String followupSourceRunId, String followupSourceService) {
         purgeDone();
-        // 第一版知识问答主路径：先于传统 IntentRouter，避免“整体架构是什么”误走运行态诊断或 out-of-scope
+        boolean codeStructureQuestion = knowledgeRoutingService != null
+                ? knowledgeRoutingService.isCodeStructure(query)
+                : intentRouter.classify(query) == Intent.CODE_STRUCTURE;
+        if (codeStructureQuestion && codeSearchService != null) {
+            com.myxhs.ai.app.service.knowledge.CodeSearchResult codeResult = codeSearchService.searchStructured(query);
+            if (codeResult != null) {
+                return submitDirectAnswer(query, userId, convId, codeResult.summary(),
+                        mergeFollowupNote("源码结构问答（code-map 主路径）", followupSourceKind, followupSourceText),
+                        codeResult, followupSourceKind, followupSourceText, followupSourceRunId, followupSourceService);
+            }
+        }
+
         if (knowledgeRoutingService != null && knowledgeRoutingService.matches(query)) {
             String answer = knowledgeRoutingService.answer(query);
-            String note = query.contains("哪个类") || query.contains("哪个核心类") || query.contains("哪个consumer")
-                    || query.contains("哪个 consumer") || query.contains("哪个job") || query.contains("哪个 topic")
-                    || query.contains("哪个topic") || query.contains("哪个feign") || query.contains("哪个 feign")
+            String note = codeStructureQuestion
                     ? "源码结构问答（cards/maps 主路径）"
                     : "系统知识问答（cards/maps 主路径）";
-            return submitDirectAnswer(query, userId, convId, answer, note);
+            return submitDirectAnswer(query, userId, convId, answer,
+                    mergeFollowupNote(note, followupSourceKind, followupSourceText), null,
+                    followupSourceKind, followupSourceText, followupSourceRunId, followupSourceService);
         }
 
         Intent intent = intentRouter.classify(query);
         if (intent == Intent.GREETING) {
             return submitDirectAnswer(query, userId, convId, IntentRouter.GREETING_ANSWER,
-                    "问候直答（非诊断任务，未调用工具/模型）");
+                    mergeFollowupNote("问候直答（非诊断任务，未调用工具/模型）", followupSourceKind, followupSourceText), null,
+                    followupSourceKind, followupSourceText, followupSourceRunId, followupSourceService);
         }
         if (intent == Intent.OUT_OF_SCOPE) {
             return submitDirectAnswer(query, userId, convId, IntentRouter.OUT_OF_SCOPE_ANSWER,
-                    "超范围话题拒答（非诊断任务，未调用工具/模型）");
+                    mergeFollowupNote("超范围话题拒答（非诊断任务，未调用工具/模型）", followupSourceKind, followupSourceText), null,
+                    followupSourceKind, followupSourceText, followupSourceRunId, followupSourceService);
         }
         if (intent == Intent.REQUEST_TRACE) {
-            return submitDirectAnswer(query, userId, convId, diagnoseRequestTrace(query),
-                    "requestId/traceId 请求流转诊断（跨服务日志汇总）");
+            return submitTraceDirectAnswer(query, userId, convId,
+                    traceDiagnosisService == null ? null : traceDiagnosisService.diagnoseStructured(extractTraceKeyword(query)),
+                    mergeFollowupNote("requestId/traceId 请求流转诊断（远程日志优先）", followupSourceKind, followupSourceText),
+                    followupSourceKind, followupSourceText, followupSourceRunId, followupSourceService);
         }
         String runId = AgentHarness.newRunId();
         if (convId != null && conversation != null) {
@@ -358,7 +394,7 @@ public class RunManager {
                 }
             });
         }
-        RunEntry entry = new RunEntry(runId, userId, query, queue, future, new AtomicBoolean(false), cancelToken);
+        RunEntry entry = new RunEntry(runId, userId, query, queue, future, new AtomicBoolean(false), cancelToken, null, null, null, null, null, null);
         runs.put(runId, entry);
         log.info("[runmgr] submit run={} query={} user={} conv={}", runId, query, userId, convId);
         return entry;
@@ -368,6 +404,15 @@ public class RunManager {
      *  落库（M8-4 可追溯闭环：所有 run 统一可追溯，重启/TTL 后历史直答也可查）；
      *  M10：挂接会话时同步写 user/assistant 消息 + 摘要（直答零耗时，无需锁） */
     private RunEntry submitDirectAnswer(String query, String userId, String convId, String answer, String note) {
+        return submitDirectAnswer(query, userId, convId, answer, note, null, null, null, null, null);
+    }
+
+    private RunEntry submitDirectAnswer(String query, String userId, String convId, String answer, String note,
+                                        com.myxhs.ai.app.service.knowledge.CodeSearchResult codeSearchResult,
+                                        String followupSourceKind,
+                                        String followupSourceText,
+                                        String followupSourceRunId,
+                                        String followupSourceService) {
         String runId = AgentHarness.newRunId();
         if (convId != null && conversation != null) {
             try {
@@ -404,7 +449,8 @@ public class RunManager {
             future.whenComplete((r, ex) -> metrics.onRunFinished(r));
         }
         RunEntry entry = new RunEntry(runId, userId, query, queue, future,
-                new AtomicBoolean(false), new AtomicBoolean(false));
+                new AtomicBoolean(false), new AtomicBoolean(false), null, codeSearchResult,
+                followupSourceKind, followupSourceText, followupSourceRunId, followupSourceService);
         runs.put(runId, entry);
         log.info("[runmgr] direct-answer run={} query={} user={} note={}", runId, query, userId, note);
         return entry;
@@ -414,80 +460,62 @@ public class RunManager {
         return runs.get(runId);
     }
 
-    private String diagnoseRequestTrace(String query) {
-        String keyword = extractTraceKeyword(query);
-        if (keyword == null) {
-            return "未识别到 requestId/traceId，请直接提供 32 位 traceId，或在问题里带上 requestId/traceId 关键字。";
+    private static String mergeFollowupNote(String note, String kind, String text) {
+        if (kind == null || kind.isBlank() || text == null || text.isBlank()) {
+            return note;
         }
-        if (logSearchAccess == null || logSearchAccess.services().isEmpty()) {
-            return "当前未配置可检索的日志服务白名单，暂时无法做 requestId/traceId 请求流转诊断。";
-        }
-        java.util.List<String> services = logSearchAccess.services().stream().distinct().toList();
-        java.util.List<CompletableFuture<TraceServiceResult>> scans = services.stream()
-                .map(service -> CompletableFuture.supplyAsync(
-                        () -> scanTraceService(service, keyword), executor)
-                        .completeOnTimeout(TraceServiceResult.failed(service), 3, TimeUnit.SECONDS)
-                        .exceptionally(ex -> TraceServiceResult.failed(service)))
-                .toList();
-        java.util.List<TraceServiceResult> results = scans.stream().map(CompletableFuture::join).toList();
-        java.util.List<String> hits = results.stream()
-                .filter(TraceServiceResult::hit)
-                .map(r -> r.service() + layerHint(r.service()) + " 命中")
-                .toList();
-        java.util.List<String> miss = results.stream()
-                .filter(r -> !r.hit() && !r.failed())
-                .map(TraceServiceResult::service)
-                .toList();
-        java.util.List<String> failed = results.stream()
-                .filter(TraceServiceResult::failed)
-                .map(TraceServiceResult::service)
-                .toList();
-        if (hits.isEmpty()) {
-            StringBuilder answer = new StringBuilder("未在当前白名单服务日志中检索到 `")
-                    .append(keyword).append("`。已扫描服务：").append(String.join(", ", services));
-            appendFailures(answer, failed);
-            answer.append("。建议扩大日志行数、补齐业务服务白名单，或换 traceId/requestId 原值重试。");
-            return answer.toString();
-        }
-        StringBuilder answer = new StringBuilder();
-        answer.append("已按 requestId/traceId=`").append(keyword).append("` 扫描白名单服务日志。\n\n命中服务：")
-                .append(String.join("、", hits));
-        if (!miss.isEmpty()) {
-            answer.append("\n未命中服务：").append(String.join("、", miss));
-        }
-        appendFailures(answer, failed);
-        answer.append("\n\n这说明请求大致经过以上命中服务；优先查看最靠后的命中服务与其下游依赖，再结合对应服务日志定位卡点或异常代码层。\n如果你愿意，我下一步可以继续把命中服务映射到具体 code structure card / 类职责。\n");
-        return answer.toString();
+        return note + "（来源追问:" + kind + " -> " + text + "）";
     }
 
-    private TraceServiceResult scanTraceService(String service, String keyword) {
-        try {
-            String result = logSearchAccess.searchLog(service, keyword, "2000");
-            return new TraceServiceResult(service, hasLogMatch(result), false);
-        } catch (Exception e) {
-            log.warn("[runmgr] trace scan failed service={} keyword={} err={}", service, keyword, e.getMessage());
-            return TraceServiceResult.failed(service);
+    private RunEntry submitTraceDirectAnswer(String query, String userId, String convId,
+                                             com.myxhs.ai.app.service.trace.TraceDiagnosisResult diagnosis,
+                                             String note,
+                                             String followupSourceKind,
+                                             String followupSourceText,
+                                             String followupSourceRunId,
+                                             String followupSourceService) {
+        String answer = diagnosis == null
+                ? "当前未配置 requestId/traceId 诊断服务。"
+                : diagnosis.renderedAnswer();
+        String runId = AgentHarness.newRunId();
+        if (convId != null && conversation != null) {
+            try {
+                conversation.ensureConversation(convId, userId, query);
+                conversation.appendUserMessage(convId, runId, query);
+                conversation.appendAssistantMessage(convId, runId, answer, List.of());
+                conversation.updateSummary(convId, answer);
+            } catch (Exception e) {
+                log.warn("[runmgr] trace-direct 会话落库失败 conv={} err={}", convId, e.getMessage());
+            }
         }
-    }
-
-    private static boolean hasLogMatch(String result) {
-        if (result == null || !result.contains("\"status\":\"ok\"")) {
-            return false;
+        LinkedBlockingQueue<HarnessEvent> queue = new LinkedBlockingQueue<>();
+        AgentRun run = new AgentRun(runId, query, budget);
+        run.terminate(TerminationReason.COMPLETED, answer);
+        CompletableFuture<AgentRun> future = CompletableFuture.completedFuture(run);
+        if (store != null) {
+            try {
+                store.createRun(runId, userId == null || userId.isBlank() ? "anonymous" : userId,
+                        null, query, "{}", "{}");
+                store.updateRunStatus(runId, "SUCCEEDED", "COMPLETED", 0, 0);
+                store.updateFinalAnswer(runId, answer);
+            } catch (Exception e) {
+                log.error("[runmgr] trace-direct 落库失败 run={} query={} err={}", runId, query, e.getMessage());
+                note = note + "（注：历史追溯落库失败）";
+            }
         }
-        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\\\"matches\\\"\\s*:\\s*([1-9][0-9]*)").matcher(result);
-        return matcher.find();
-    }
-
-    private static void appendFailures(StringBuilder answer, java.util.List<String> failed) {
-        if (!failed.isEmpty()) {
-            answer.append("\n扫描失败服务：").append(String.join("、", failed));
+        queue.offer(new HarnessEvent(runId, HarnessEventType.RUN_STARTED, 0, null, null, null, null, note));
+        queue.offer(new HarnessEvent(runId, HarnessEventType.COMPLETED, 0, null, null, null,
+                TerminationReason.COMPLETED.name(), answer));
+        if (metrics != null) {
+            metrics.onRunSubmitted();
+            future.whenComplete((r, ex) -> metrics.onRunFinished(r));
         }
-    }
-
-    private record TraceServiceResult(String service, boolean hit, boolean failed) {
-        private static TraceServiceResult failed(String service) {
-            return new TraceServiceResult(service, false, true);
-        }
+        RunEntry entry = new RunEntry(runId, userId, query, queue, future,
+                new AtomicBoolean(false), new AtomicBoolean(false), diagnosis, null,
+                followupSourceKind, followupSourceText, followupSourceRunId, followupSourceService);
+        runs.put(runId, entry);
+        log.info("[runmgr] trace-direct run={} query={} user={} note={}", runId, query, userId, note);
+        return entry;
     }
 
     private static String extractTraceKeyword(String query) {
@@ -506,18 +534,6 @@ public class RunManager {
         return null;
     }
 
-    private static String layerHint(String service) {
-        if (service.contains("gateway") || service.contains("home")) {
-            return "（入口/聚合层）";
-        }
-        if (service.contains("order") || service.contains("payment") || service.contains("inventory") || service.contains("coupon")) {
-            return "（交易链路）";
-        }
-        if (service.contains("content") || service.contains("search") || service.contains("product") || service.contains("user") || service.contains("cart")) {
-            return "（业务服务层）";
-        }
-        return "";
-    }
 
     public boolean isDone(String runId) {
         RunEntry e = runs.get(runId);

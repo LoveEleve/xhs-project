@@ -23,6 +23,7 @@ public class AgentRun {
     private volatile String finalAnswer;
     private volatile Instant startedAt = Instant.now();
     private volatile Instant endedAt;
+    private volatile com.myxhs.ai.app.service.trace.TraceDiagnosisResult traceDiagnosis;
     /** M13：Agent 画像（工具子集/prompt 变体；FULL=单 Agent 全量）。per-run 字段，非单例（并发安全） */
     private volatile com.myxhs.ai.app.service.agent.profile.AgentProfile profile;
 
@@ -119,5 +120,13 @@ public class AgentRun {
 
     public Instant endedAt() {
         return endedAt;
+    }
+
+    public void setTraceDiagnosis(com.myxhs.ai.app.service.trace.TraceDiagnosisResult traceDiagnosis) {
+        this.traceDiagnosis = traceDiagnosis;
+    }
+
+    public com.myxhs.ai.app.service.trace.TraceDiagnosisResult traceDiagnosis() {
+        return traceDiagnosis;
     }
 }

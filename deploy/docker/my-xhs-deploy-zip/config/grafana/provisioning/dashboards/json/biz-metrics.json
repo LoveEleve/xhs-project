@@ -1,0 +1,546 @@
+{
+ "annotations": {
+  "list": [
+   {
+    "builtIn": 1,
+    "datasource": "-- Grafana --",
+    "enable": true,
+    "hide": true,
+    "iconColor": "rgba(0, 211, 255, 1)",
+    "name": "Annotations & Alerts",
+    "type": "dashboard"
+   }
+  ]
+ },
+ "editable": true,
+ "gnetId": null,
+ "graphTooltip": 0,
+ "id": null,
+ "links": [],
+ "panels": [
+  {
+   "type": "timeseries",
+   "title": "订单创建速率",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(orders_created_total{application=~\"$application\"}[5m])) by (application)",
+     "legendFormat": "{{application}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "支付速率",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(orders_paid_total{application=~\"$application\"}[5m])) by (application)",
+     "legendFormat": "{{application}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 0
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "超时关单速率",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(orders_timeout_closed_total{application=~\"$application\"}[5m])) by (application)",
+     "legendFormat": "{{application}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 8
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "支付回调速率",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(payment_callback_total{application=~\"$application\"}[5m])) by (application)",
+     "legendFormat": "{{application}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 8
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "券动作速率",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(coupon_action_total{application=~\"$application\"}[5m])) by (application)",
+     "legendFormat": "{{application}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 16
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "库存动作/预扣速率",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(inventory_action_total{application=~\"$application\"}[5m])) by (application)",
+     "legendFormat": "{{application}} action"
+    },
+    {
+     "expr": "sum(rate(inventory_prededuct_total{application=~\"$application\"}[5m])) by (application)",
+     "legendFormat": "{{application}} prededuct"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 16
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Feed 推送速率",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(feed_push_total{application=~\"$application\"}[5m])) by (application)",
+     "legendFormat": "{{application}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 24
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "MQ 消费速率",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(mq_consume_total{application=~\"$application\"}[5m])) by (application)",
+     "legendFormat": "{{application}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 24
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "DLQ 死信速率",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(myxhs_mq_dlq_total{application=~\"$application\"}[5m])) by (application)",
+     "legendFormat": "{{application}} dlq"
+    },
+    {
+     "expr": "sum(rate(myxhs_local_message_dead_letter_count{application=~\"$application\"}[5m])) by (application)",
+     "legendFormat": "{{application}} local"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 32
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "订单创建延迟 P99",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "histogram_quantile(0.99, sum(rate(orders_create_latency_seconds_bucket{application=~\"$application\"}[5m])) by (le))",
+     "legendFormat": "P99"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 32
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "库存预扣延迟 P99",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "histogram_quantile(0.99, sum(rate(inventory_prededuct_latency_seconds_bucket{application=~\"$application\"}[5m])) by (le))",
+     "legendFormat": "P99"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 40
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Feed 推送延迟 P99",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "histogram_quantile(0.99, sum(rate(feed_push_latency_seconds_bucket{application=~\"$application\"}[5m])) by (le))",
+     "legendFormat": "P99"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 40
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "MQ 消费速率 by topic",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(mq_consume_total{application=~\"$application\"}[5m])) by (topic)",
+     "legendFormat": "{{topic}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 48
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "MQ 消费速率 by result",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(mq_consume_total{application=~\"$application\"}[5m])) by (result)",
+     "legendFormat": "{{result}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 48
+   }
+  }
+ ],
+ "refresh": "10s",
+ "schemaVersion": 27,
+ "style": "dark",
+ "tags": [
+  "myxhs",
+  "business"
+ ],
+ "templating": {
+  "list": [
+   {
+    "current": {},
+    "datasource": "Prometheus",
+    "definition": "label_values(http_server_requests_seconds_count, application)",
+    "hide": 0,
+    "includeAll": false,
+    "label": "Application",
+    "multi": false,
+    "name": "application",
+    "options": [],
+    "query": {
+     "query": "label_values(http_server_requests_seconds_count, application)",
+     "refId": "Prometheus-application-Variable-Query"
+    },
+    "refresh": 1,
+    "regex": "",
+    "skipUrlSync": false,
+    "sort": 0,
+    "type": "query"
+   }
+  ]
+ },
+ "time": {
+  "from": "now-30m",
+  "to": "now"
+ },
+ "timepicker": {},
+ "timezone": "",
+ "title": "业务指标",
+ "uid": "myxhs-biz",
+ "version": 1
+}

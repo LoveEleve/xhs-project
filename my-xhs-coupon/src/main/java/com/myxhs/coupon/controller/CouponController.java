@@ -7,6 +7,7 @@ import com.myxhs.coupon.dto.response.CouponTemplateVO;
 import com.myxhs.coupon.dto.response.UserCouponVO;
 import com.myxhs.coupon.entity.CouponTemplate;
 import com.myxhs.coupon.service.CouponService;
+import jakarta.annotation.PostConstruct;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -39,8 +40,18 @@ public class CouponController {
     @org.springframework.beans.factory.annotation.Value("${myxhs.admin.token}")
     private String adminToken;
 
-    private boolean isInternalCall(String v) { return internalToken != null && !internalToken.isEmpty() && internalToken.equals(v); }
-    private boolean isAdminCall(String v) { return adminToken != null && !adminToken.isEmpty() && adminToken.equals(v); }
+    @PostConstruct
+    public void validateTokens() {
+        if (internalToken == null || internalToken.isBlank()) {
+            throw new IllegalStateException("myxhs.internal.token 未配置，拒绝启动 coupon 服务");
+        }
+        if (adminToken == null || adminToken.isBlank()) {
+            throw new IllegalStateException("myxhs.admin.token 未配置，拒绝启动 coupon 服务");
+        }
+    }
+
+    private boolean isInternalCall(String v) { return internalToken.equals(v); }
+    private boolean isAdminCall(String v) { return adminToken.equals(v); }
 
     // ==================== 券模板管理（管理端） ====================
 

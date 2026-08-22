@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
@@ -16,14 +17,14 @@ import org.springframework.stereotype.Component;
  * 此消费者仅消费来自支付模块内部发出的支付结果消息。
  * </p>
  * <p>
- * 注意：此消费者属于支付服务模块，消费的是支付服务自己发出的 MQ 消息。
- * 但实际业务中，订单服务也会订阅 PAY_RESULT_TOPIC 来更新订单状态。
- * 这里保留此消费者主要是为了记录日志和补偿处理。
+ * 注意：支付成功的正式业务通知链已经切到 Feign 同步 + 支付侧补偿任务。
+ * 该消费者默认关闭，只有在明确要把 PAY_RESULT_TOPIC 作为支付侧自消费补偿链时才启用。
  * </p>
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(name = "myxhs.payment.mq.pay-result-consumer.enabled", havingValue = "true")
 @RocketMQMessageListener(
         topic = "PAY_RESULT_TOPIC",
         consumerGroup = "payment-pay-result-consumer-group",
@@ -44,7 +45,9 @@ public class PayResultConsumer implements RocketMQListener<MessageExt> {
             }
             String body = new String(bodyBytes, java.nio.charset.StandardCharsets.UTF_8);
             log.info("[支付结果消费] 收到消息: {}", body);
-            // 此处可做补偿逻辑：如支付成功但订单未更新，可主动通知订单服务
+            // 注意：当前支付结果通知走 Feign 同步路径（notifyPaySuccess），
+            // 此 MQ 消费者暂未实现业务逻辑，仅作为预留/日志记录。
+            // 如需 MQ 补偿，需在此处补全 notifyPaySuccess 调用。
         } catch (Exception e) {
             log.error("[支付结果消费] 消费失败: msgId={}", msg.getMsgId(), e);
             throw new RuntimeException("支付结果消费失败", e);

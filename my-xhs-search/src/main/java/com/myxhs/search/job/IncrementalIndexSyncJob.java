@@ -96,15 +96,14 @@ public class IncrementalIndexSyncJob {
      * </p>
      */
     private int compensateFailedNotes() {
-        Set<String> noteIds = stringRedisTemplate.opsForSet()
-                .distinctRandomMembers(FAILED_NOTE_KEY, MAX_BATCH);
+        // 使用 SPOP 原子弹出，替代 distinctRandomMembers + 循环 remove 的两步非原子操作
+        // （多实例并发补偿时，原实现两个实例可能读到同一批 ID 后重复补偿）
+        java.util.List<String> noteIds = stringRedisTemplate.opsForSet()
+                .pop(FAILED_NOTE_KEY, MAX_BATCH);
 
         if (noteIds == null || noteIds.isEmpty()) {
             return 0;
         }
-
-        // 从 Redis Set 中移除（SPOP 等效）
-        noteIds.forEach(id -> stringRedisTemplate.opsForSet().remove(FAILED_NOTE_KEY, id));
 
         List<Long> ids = new ArrayList<>();
         for (String s : noteIds) {
@@ -149,14 +148,12 @@ public class IncrementalIndexSyncJob {
      * 补偿失败的商品索引
      */
     private int compensateFailedProducts() {
-        Set<String> spuIds = stringRedisTemplate.opsForSet()
-                .distinctRandomMembers(FAILED_PRODUCT_KEY, MAX_BATCH);
+        java.util.List<String> spuIds = stringRedisTemplate.opsForSet()
+                .pop(FAILED_PRODUCT_KEY, MAX_BATCH);
 
         if (spuIds == null || spuIds.isEmpty()) {
             return 0;
         }
-
-        spuIds.forEach(id -> stringRedisTemplate.opsForSet().remove(FAILED_PRODUCT_KEY, id));
 
         List<Long> ids = new ArrayList<>();
         for (String s : spuIds) {

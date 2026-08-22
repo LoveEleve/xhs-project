@@ -13,6 +13,7 @@ import com.myxhs.product.enums.ProductStatus;
 import com.myxhs.product.service.CategoryService;
 import com.myxhs.product.service.SkuService;
 import com.myxhs.product.service.SpuService;
+import jakarta.annotation.PostConstruct;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -47,8 +48,18 @@ public class ProductController {
     @org.springframework.beans.factory.annotation.Value("${myxhs.internal.token}")
     private String internalToken;
 
-    private boolean isAdminCall(String v) { return adminToken != null && !adminToken.isEmpty() && adminToken.equals(v); }
-    private boolean isInternalCall(String v) { return internalToken != null && !internalToken.isEmpty() && internalToken.equals(v); }
+    @PostConstruct
+    public void validateTokens() {
+        if (adminToken == null || adminToken.isBlank()) {
+            throw new IllegalStateException("myxhs.admin.token 未配置，拒绝启动 product 服务");
+        }
+        if (internalToken == null || internalToken.isBlank()) {
+            throw new IllegalStateException("myxhs.internal.token 未配置，拒绝启动 product 服务");
+        }
+    }
+
+    private boolean isAdminCall(String v) { return adminToken.equals(v); }
+    private boolean isInternalCall(String v) { return internalToken.equals(v); }
 
     // ==================== SPU 接口 ====================
 

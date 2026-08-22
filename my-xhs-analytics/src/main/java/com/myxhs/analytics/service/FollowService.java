@@ -340,18 +340,25 @@ public class FollowService {
     public List<Long> getCommonFollowing(Long userId, Long targetUserId) {
         String myKey = RedisKeyConstants.FOLLOW_LIST + userId;
         String targetKey = RedisKeyConstants.FOLLOW_LIST + targetUserId;
+        String tempKey = RedisKeyConstants.FOLLOW_LIST + "common:" + userId + ":" + targetUserId + ":" + UUID.randomUUID();
 
-        // 【m19】使用 ZINTER 服务端求交集，返回完整交集后客户端 limit——大V注意内存
-        Set<String> common = stringRedisTemplate.opsForZSet()
-                .intersect(myKey, targetKey);
-        if (common == null || common.isEmpty()) {
-            return Collections.emptyList();
+        try {
+            Long stored = stringRedisTemplate.opsForZSet().intersectAndStore(myKey, targetKey, tempKey);
+            if (stored == null || stored == 0) {
+                return Collections.emptyList();
+            }
+            stringRedisTemplate.expire(tempKey, java.time.Duration.ofSeconds(30));
+
+            Set<String> common = stringRedisTemplate.opsForZSet().range(tempKey, 0, MAX_COMMON_FOLLOW_FETCH - 1);
+            if (common == null || common.isEmpty()) {
+                return Collections.emptyList();
+            }
+            return common.stream()
+                    .map(Long::valueOf)
+                    .collect(Collectors.toList());
+        } finally {
+            stringRedisTemplate.delete(tempKey);
         }
-
-        return common.stream()
-                .map(Long::valueOf)
-                .limit(MAX_COMMON_FOLLOW_FETCH)
-                .collect(Collectors.toList());
     }
 
     // ==================== 查询关注关系 ====================

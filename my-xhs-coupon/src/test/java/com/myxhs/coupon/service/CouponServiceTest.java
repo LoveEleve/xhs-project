@@ -25,6 +25,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -62,6 +63,8 @@ class CouponServiceTest {
     @Mock
     private ValueOperations<String, String> valueOperations;
     @Mock
+    private SetOperations<String, String> setOperations;
+    @Mock
     private DefaultRedisScript<Long> claimCouponScript;
     @Mock
     private DefaultRedisScript<Long> returnCouponScript;
@@ -81,6 +84,7 @@ class CouponServiceTest {
         objectMapper.registerModule(new JavaTimeModule());
         List<CouponValidator> validators = Collections.singletonList(couponValidator);
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
         couponOutboxMapper = mock(CouponOutboxMapper.class);
         couponService = new CouponService(
                 stringRedisTemplate, rocketMQTemplate,
@@ -148,6 +152,25 @@ class CouponServiceTest {
     }
 
     @Test
+    @DisplayName("领券 - MQ异常时保留Outbox供补发")
+    void claimCouponKeepsOutboxWhenMqSendFails() {
+        when(valueOperations.get(startsWith("myxhs:coupon:template:"))).thenReturn(null);
+        when(templateMapper.selectById(TEMPLATE_ID)).thenReturn(buildTemplate());
+        when(stringRedisTemplate.execute(eq(claimCouponScript), anyList(), anyString())).thenReturn(1L);
+        when(rocketMQTemplate.syncSend(eq("COUPON_CLAIM_TOPIC"), any(Message.class), eq(3000L)))
+                .thenThrow(new RuntimeException("mq timeout"));
+
+        ClaimCouponRequest request = new ClaimCouponRequest();
+        request.setTemplateId(TEMPLATE_ID);
+
+        assertThatThrownBy(() -> couponService.claimCoupon(USER_ID, request))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("领券失败");
+
+        verify(couponOutboxMapper, never()).deleteByClaimNo(anyString());
+    }
+
+    @Test
     @DisplayName("领券 - 重复领取抛异常")
     void claimDuplicatePrevention() {
         when(valueOperations.get(startsWith("myxhs:coupon:template:"))).thenReturn(null);
@@ -164,6 +187,36 @@ class CouponServiceTest {
         assertThatThrownBy(() -> couponService.claimCoupon(USER_ID, request))
                 .isInstanceOf(BizException.class)
                 .hasMessageContaining("已达限领上限");
+    }
+
+    @Test
+    @DisplayName("退券 - 补偿消息发送失败时写入兜底集合")
+    void returnCoupon_afterCommitRedisFailureAndRepairSendFailure_writesFallbackSet() {
+        UserCoupon userCoupon = new UserCoupon();
+        userCoupon.setId(12L);
+        userCoupon.setUserId(USER_ID);
+        userCoupon.setCouponId(TEMPLATE_ID);
+        when(userCouponMapper.selectById(12L)).thenReturn(userCoupon);
+        when(userCouponMapper.returnCoupon(12L, 9002L)).thenReturn(1);
+        when(templateMapper.incrementRemainCount(TEMPLATE_ID)).thenReturn(1);
+        when(stringRedisTemplate.execute(eq(returnCouponScript), anyList())).thenThrow(new RuntimeException("redis down"));
+        when(rocketMQTemplate.syncSend(eq("COUPON_RETURN_REDIS_REPAIR_TOPIC"), any(Message.class), eq(3000L)))
+                .thenThrow(new RuntimeException("mq down"));
+
+        ReturnCouponRequest request = new ReturnCouponRequest();
+        request.setUserCouponId(12L);
+        request.setOrderId(9002L);
+
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            couponService.returnCoupon(USER_ID, request);
+            org.springframework.transaction.support.TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(org.springframework.transaction.support.TransactionSynchronization::afterCommit);
+        } finally {
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+        }
+
+        verify(setOperations).add("myxhs:coupon:return:repair:pending", TEMPLATE_ID + ":" + USER_ID);
     }
 
     @Test

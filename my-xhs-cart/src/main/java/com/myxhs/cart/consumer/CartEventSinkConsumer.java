@@ -63,8 +63,8 @@ public class CartEventSinkConsumer implements RocketMQListener<MessageExt> {
             String body = new String(msg.getBody(), StandardCharsets.UTF_8);
             CartSyncEvent event = objectMapper.readValue(body, CartSyncEvent.class);
 
-            // 脏消息防御：action/userId 为 null 时跳过（与 CartSyncConsumer 同策略）
-            if (event.getAction() == null || event.getUserId() == null) {
+            // 脏消息防御：action/userId/timestamp 为 null 时跳过（与主消费者保持一致的防御语义）
+            if (event.getAction() == null || event.getUserId() == null || event.getTimestamp() == null) {
                 log.warn("[购物车事件] 脏消息跳过: msgId={}", msgId);
                 idempotentHelper.removeMark(BIZ_TYPE, msgId);
                 return;

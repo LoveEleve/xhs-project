@@ -36,9 +36,12 @@ public class CouponOutboxSenderJob {
     private final RocketMQTemplate rocketMQTemplate;
     private final ObjectMapper objectMapper;
     private final RedissonClient redissonClient;
+    private final org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
+    private final CouponService couponService;
 
     private static final String LOCK_KEY = "myxhs:lock:job:coupon:outbox";
     private static final String COUPON_CLAIM_TOPIC = "COUPON_CLAIM_TOPIC";
+    private static final String RETURN_REPAIR_FALLBACK_KEY = "myxhs:coupon:return:repair:pending";
     private static final int BATCH_SIZE = 200;
 
     @Scheduled(fixedRate = 5000)
@@ -77,12 +80,40 @@ public class CouponOutboxSenderJob {
                             userId, templateId, claimNo, e);
                 }
             }
+            replayReturnRepairFallback();
         } catch (Exception e) {
             log.error("[CouponOutbox] 扫描异常", e);
         } finally {
             if (acquired && lock.isHeldByCurrentThread()) {
                 lock.unlock();
             }
+        }
+    }
+
+    private void replayReturnRepairFallback() {
+        try {
+            java.util.Set<String> pending = stringRedisTemplate.opsForSet().members(RETURN_REPAIR_FALLBACK_KEY);
+            if (pending == null || pending.isEmpty()) {
+                return;
+            }
+            for (String member : pending) {
+                String[] parts = member.split(":", 2);
+                if (parts.length != 2) {
+                    stringRedisTemplate.opsForSet().remove(RETURN_REPAIR_FALLBACK_KEY, member);
+                    continue;
+                }
+                try {
+                    Long templateId = Long.valueOf(parts[0]);
+                    Long userId = Long.valueOf(parts[1]);
+                    couponService.repairReturnCouponRedis(userId, templateId);
+                    stringRedisTemplate.opsForSet().remove(RETURN_REPAIR_FALLBACK_KEY, member);
+                    log.info("[CouponOutbox] 退券Redis兜底重放成功: {}", member);
+                } catch (Exception e) {
+                    log.warn("[CouponOutbox] 退券Redis兜底重放失败: {}", member, e);
+                }
+            }
+        } catch (Exception e) {
+            log.error("[CouponOutbox] 退券Redis兜底扫描异常", e);
         }
     }
 }

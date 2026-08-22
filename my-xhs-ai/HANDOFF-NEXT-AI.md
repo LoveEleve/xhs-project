@@ -93,10 +93,12 @@
 而是日常高频使用能力不够全：
 
 ### P0（最该先补）
-1. requestId / traceId 请求流转能力
-2. code search / code navigation
-3. git history / blame / 变更解释
-4. 知识问答主路径稳定化（尤其主卡选择 / 路由优先级）
+1. requestId / traceId 请求流转能力（已进入“最后命中服务优先 + 主类/方法/最近改动解释”阶段）
+2. code search / code navigation（已从类级升级到方法级）
+3. git history / blame / 变更解释（已从文件级升级到方法附近 blame）
+4. 知识问答主路径稳定化（主路径已收敛，剩余是长期规则治理）
+
+已修复的真实阻塞：Gateway `BodyCacheFilter` 的 `switchIfEmpty` 重入导致 POST 请求重复进入、HMAC nonce 重复和 trace 污染。故障卡见 `knowledge/failure/gateway-body-cache-reentry.yaml`。
 
 ### P1（系统体验增强）
 5. 知识问答 ↔ 运行态诊断双向联动
@@ -139,6 +141,8 @@
 - state-map
 - async-event-map
 - 第一批 code cards
+- `CodeSearchResult` 结构化返回（topHit / hits）
+- 方法级字段：`methodHint` / `diagnosisTriplet` / `methodBlameSummary` / `methodSnippet`
 
 ### 知识问答主路径
 - `SYSTEM_KNOWLEDGE` / `CODE_STRUCTURE` 已接入
@@ -149,30 +153,30 @@
   - 三级扣减
   - 事务消息为什么必须存在
   - 哪个 topic / consumer / class / job 负责什么
+  - 最近谁改过这个类/方法
+  - 应优先检查哪个文件/方法/最近提交
 
 ---
 
 ## 六、当前最该继续做什么
 
-### 第一优先级
-> **requestId / traceId 请求流转能力**
+### 第一优先级（P1）
+> **知识问答 ↔ 运行态诊断双向联动**
 
-原因：
-- 使用频率最高
-- 和现有日志、trace、知识层、code maps 都能直接结合
-- 最能把系统从“强原型”推进到“工作台”
+P0 已基本完成：
+- `requestId/traceId` 已能返回 `最后命中服务 -> 主类 -> 方法 -> 最近提交 -> 方法级 blame -> 方法级源码片段`
+- `code search / code navigation` 已能返回 `topHit/hits + owner/recentCommits/changeExplanation`
+- `git history / blame / 变更解释` 已落到方法附近，不再只是文件级
+- 知识问答主路径已收敛到 `CODE_STRUCTURE -> code-map 主路径 -> cards fallback`
 
-### 为什么它现在最值钱
-因为现在项目已经会：
-- 查 5xx
-- 查 DLQ
-- 讲架构
-- 讲代码结构
+真实样本已验：
+- trace：`5304dc5a8afb4741b8bc74cee49c3980`
+- trace run：`run_f3433b191f2c`（三联建议） / `run_b29ad6e18937`（最后命中服务优先） / `run_95b8a751b45d`（method-level blame）
+- code search run：`run_a40fbf029c8f`（`InventoryService.preDeduct()` 方法块）
 
-但还不够会：
-- “给一个 requestId，帮我把请求大概经过哪些服务、卡在哪一层、哪段代码更可疑”
-
-这就是下一阶段最该补的能力。
+现在最值钱的不再是继续补单点能力，而是把两条链路接起来：
+- 运行态诊断结果里，允许继续追问“这个方法负责什么 / 为什么这样设计”
+- 知识问答结果里，允许继续追问“这个类最近在哪条真实请求里最可疑”
 
 ---
 

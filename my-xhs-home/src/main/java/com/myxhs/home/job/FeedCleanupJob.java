@@ -55,8 +55,8 @@ public class FeedCleanupJob {
         String pattern = RedisKeyConstants.FEED_INBOX + "*";
         try (Cursor<String> cursor = stringRedisTemplate.scan(ScanOptions.scanOptions()
                 .match(pattern).count(100).build())) {
-            while (cursor.hasNext()) {
             int count = 0;
+            while (cursor.hasNext()) {
                 String key = cursor.next();
 
                 // 1. 删除过期数据
@@ -85,8 +85,8 @@ public class FeedCleanupJob {
         String outboxPattern = RedisKeyConstants.FEED_OUTBOX + "*";
         try (Cursor<String> cursor = stringRedisTemplate.scan(ScanOptions.scanOptions()
                 .match(outboxPattern).count(100).build())) {
-            while (cursor.hasNext()) {
             int count = 0;
+            while (cursor.hasNext()) {
                 String key = cursor.next();
                 Long removed = stringRedisTemplate.opsForZSet()
                         .removeRangeByScore(key, 0, cutoffTime);

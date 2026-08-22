@@ -2,6 +2,7 @@ package com.myxhs.cart.feign;
 
 import feign.RequestInterceptor;
 import feign.RequestTemplate;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 
@@ -17,6 +18,13 @@ public class InternalCallFeignConfig {
 
     @Value("${myxhs.internal.token:}")
     private String internalToken;
+
+    @PostConstruct
+    public void validateInternalToken() {
+        if (internalToken == null || internalToken.isBlank()) {
+            throw new IllegalStateException("myxhs.internal.token 未配置，拒绝启动 cart 服务");
+        }
+    }
 
     @Bean
     public RequestInterceptor internalCallInterceptor() {

@@ -1,0 +1,26 @@
+version: 1
+cases:
+  - id: trace_clean_order_payment
+    traceId: 5304dc5a8afb4741b8bc74cee49c3980
+    source: remote-es
+    expectedVerdict: complete
+    expectedVerificationStatus: evidence_sufficient
+    expectedServices: [my-xhs-gateway, my-xhs-order, my-xhs-payment]
+  - id: trace_single_order_error
+    traceId: f0d7831997f5442ebacebcb7d2aed1d3
+    source: remote-es
+    expectedVerdict: uncertain
+    expectedVerificationStatus: hypothesis_only
+    expectedServices: [my-xhs-order]
+  - id: trace_gateway_anomaly
+    traceId: a429df1005fa43c48d156bd16564deff
+    source: remote-es
+    expectedVerdict: uncertain
+    expectedVerificationStatus: hypothesis_only
+    expectedServices: [my-xhs-gateway, my-xhs-order, my-xhs-payment]
+  - id: trace_no_match
+    traceId: 00000000000000000000000000000000
+    source: remote-es
+    expectedVerdict: uncertain
+    expectedVerificationStatus: missing_evidence
+    expectedServices: []

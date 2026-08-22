@@ -33,23 +33,25 @@ public interface CommentMapper extends BaseMapper<Comment> {
     List<Map<String, Object>> batchCountByParentIds(@Param("parentIds") List<Long> parentIds);
 
     /**
-     * O-Comment-4 修复（2026-08-13）：每根评论取前 N 条子评论（窗口函数按 parent 分区）
+     * O-Comment-4 修复（2026-08-13）：每根评论取前 N 条子评论（MySQL 5.7+ 兼容）
      * <p>
      * 旧实现：全局 LIMIT rootIds.size()*maxChildPerParent + ORDER BY id——
      * 当本页根评论的子评论总数超过该上限时，后序根评论的子评论被整体截断（children 空/childCount=0）。
-     * 新实现：ROW_NUMBER() OVER (PARTITION BY parent_id ORDER BY id) 每根独立取前 maxChildPerParent 条，无全局截断。
+     * 兼容实现：相关子查询统计同 parent_id 下 id <= 当前行的记录数，等价实现“每根前 N 条”，
+     * 避免依赖 MySQL 8 的 ROW_NUMBER() 窗口函数。
      * </p>
      */
     @Select("<script>" +
-            "SELECT id, note_id, user_id, parent_id, reply_to_id, content, like_count, deleted, created_at, updated_at FROM (" +
-            "  SELECT id, note_id, user_id, parent_id, reply_to_id, content, like_count, deleted, created_at, updated_at, " +
-            "         ROW_NUMBER() OVER (PARTITION BY parent_id ORDER BY id) AS rn " +
-            "  FROM t_comment " +
-            "  WHERE parent_id IN " +
-            "  <foreach collection='parentIds' item='id' open='(' close=')' separator=','>#{id}</foreach> " +
-            "  AND deleted = 0" +
-            ") sub WHERE rn &lt;= #{maxPerParent} " +
-            "ORDER BY id" +
+            "SELECT c.id, c.note_id, c.user_id, c.parent_id, c.reply_to_id, c.content, c.like_count, c.deleted, c.created_at, c.updated_at " +
+            "FROM t_comment c " +
+            "WHERE c.parent_id IN " +
+            "<foreach collection='parentIds' item='id' open='(' close=')' separator=','>#{id}</foreach> " +
+            "AND c.deleted = 0 " +
+            "AND (" +
+            "  SELECT COUNT(1) FROM t_comment c2 " +
+            "  WHERE c2.parent_id = c.parent_id AND c2.deleted = 0 AND c2.id &lt;= c.id" +
+            ") &lt;= #{maxPerParent} " +
+            "ORDER BY c.id" +
             "</script>")
     List<Comment> selectTopChildrenByParentIds(@Param("parentIds") List<Long> parentIds,
                                                @Param("maxPerParent") int maxPerParent);

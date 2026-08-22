@@ -20,6 +20,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -98,5 +99,17 @@ class CategoryServiceTest {
         assertThat(tree.get(0).getId()).isEqualTo(1L);
         assertThat(tree.get(0).getName()).isEqualTo("数码");
         assertThat(tree.get(0).getChildren()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("空分类树不写缓存")
+    void emptyTreeShouldNotBeCached() {
+        when(redisOperator.get("myxhs:product:category:tree")).thenReturn(null);
+        when(categoryMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(List.of());
+
+        List<CategoryTreeVO> tree = categoryService.getCategoryTree();
+
+        assertThat(tree).isEmpty();
+        verify(redisOperator, never()).set(any(), any(), anyLong(), any());
     }
 }

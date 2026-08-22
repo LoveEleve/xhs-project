@@ -32,7 +32,8 @@ public class CouponReturnRedisRepairConsumer implements RocketMQListener<Message
             CouponService.CouponReturnRedisRepairEvent event = JSON.parseObject(body,
                     CouponService.CouponReturnRedisRepairEvent.class);
             if (event == null || event.templateId() == null || event.userId() == null) {
-                throw new IllegalStateException("退券Redis补偿消息缺少必要字段");
+                log.warn("[优惠券] 退券Redis补偿脏消息跳过: msgId={}", msg.getMsgId());
+                return;
             }
             couponService.repairReturnCouponRedis(event.userId(), event.templateId());
             log.info("[优惠券] 退券Redis补偿成功: userId={}, templateId={}", event.userId(), event.templateId());

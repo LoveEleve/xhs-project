@@ -168,10 +168,12 @@ public class UnreadCountService {
      */
     public void forceSetUnread(Long userId, int total, Map<Integer, Integer> typeCountMap) {
         stringRedisTemplate.opsForValue().set(UNREAD_TOTAL_KEY + userId, String.valueOf(total));
+        String typeKey = UNREAD_TYPE_KEY + userId;
+        stringRedisTemplate.delete(typeKey);
         if (typeCountMap != null && !typeCountMap.isEmpty()) {
             Map<String, String> hashMap = new HashMap<>();
             typeCountMap.forEach((type, count) -> hashMap.put(String.valueOf(type), String.valueOf(count)));
-            stringRedisTemplate.opsForHash().putAll(UNREAD_TYPE_KEY + userId, hashMap);
+            stringRedisTemplate.opsForHash().putAll(typeKey, hashMap);
         }
     }
 }

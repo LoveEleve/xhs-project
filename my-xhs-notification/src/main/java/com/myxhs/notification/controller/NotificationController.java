@@ -10,6 +10,7 @@ import com.myxhs.notification.dto.UnreadCountVO;
 import com.myxhs.notification.service.NotificationService;
 import com.myxhs.notification.service.SseTicketService;
 import com.myxhs.notification.sse.SseEmitterManager;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -137,7 +138,14 @@ public class NotificationController {
     @org.springframework.beans.factory.annotation.Value("${myxhs.admin.token}")
     private String adminToken;
 
+    @PostConstruct
+    public void validateAdminToken() {
+        if (adminToken == null || adminToken.isBlank()) {
+            throw new IllegalStateException("myxhs.admin.token 未配置，拒绝启动 notification 服务");
+        }
+    }
+
     private boolean isAdminCall(String v) {
-        return adminToken != null && !adminToken.isEmpty() && adminToken.equals(v);
+        return adminToken.equals(v);
     }
 }

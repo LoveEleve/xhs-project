@@ -108,7 +108,17 @@ public class NoteIndexSyncConsumer implements RocketMQListener<MessageExt> {
             }
             throw new RuntimeException("笔记索引同步失败（可重试）", e);
         } catch (Exception e) {
-            log.error("[笔记索引同步] 不可重试异常，跳过: msgId={}", msg.getMsgId(), e);
+            Long noteId = currentNoteId.get();
+            log.error("[笔记索引同步] 处理异常，记录失败索引待增量补偿: noteId={}, msgId={}", noteId, msg.getMsgId(), e);
+            if (noteId != null && stringRedisTemplate != null) {
+                try {
+                    stringRedisTemplate.opsForSet().add("myxhs:es:sync:failed:note", String.valueOf(noteId));
+                    stringRedisTemplate.expire("myxhs:es:sync:failed:note", Duration.ofHours(1));
+                } catch (Exception redisEx) {
+                    log.warn("[笔记索引同步] 记录失败 noteId 到 Redis 失败: noteId={}", noteId, redisEx);
+                }
+            }
+            throw new RuntimeException("笔记索引同步失败（可重试）", e);
         } finally {
             MqTraceHelper.clearTraceId();
         }

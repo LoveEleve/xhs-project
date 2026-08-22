@@ -68,6 +68,7 @@ public class InventoryService {
     private final DefaultRedisScript<Long> releaseScript;
     private final DefaultRedisScript<Long> confirmScript;
     private final BusinessMetrics businessMetrics;
+    private final org.redisson.api.RedissonClient redissonClient;
 
     @Value("${inventory.bucket.default-count:2}")
     private int defaultBucketCount;
@@ -149,47 +150,57 @@ public class InventoryService {
         int totalStock = request.getTotalStock();
         int bucketCount = request.getBucketCount() != null ? request.getBucketCount() : defaultBucketCount;
 
-        // 幂等检查：使用 SETNX 原子操作（比 hasKey + set 两步更安全）
-        // 如果 totalKey 已存在，setIfAbsent 返回 false，保证并发初始化只有一个成功
         String totalKey = totalKey(skuId);
-        Boolean setSuccess = stringRedisTemplate.opsForValue().setIfAbsent(totalKey, String.valueOf(totalStock));
-        if (Boolean.FALSE.equals(setSuccess)) {
-            throw new BizException(ResultCode.PARAM_INVALID, "库存已初始化，如需重新初始化请先清除");
+        String bucketCountKey = bucketCountKey(skuId);
+        String initLockKey = "inventory:init:lock:" + skuId;
+        Boolean locked = stringRedisTemplate.opsForValue()
+                .setIfAbsent(initLockKey, "1", java.time.Duration.ofSeconds(30));
+        if (!Boolean.TRUE.equals(locked)) {
+            throw new BizException(ResultCode.PARAM_INVALID, "库存初始化中，请稍后重试");
         }
+        try {
+            // 若 total 和 bucketCount 都存在，视为已完整初始化；仅 total 存在则属于半初始化残留，继续自愈补齐。
+            if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(totalKey))
+                    && Boolean.TRUE.equals(stringRedisTemplate.hasKey(bucketCountKey))) {
+                throw new BizException(ResultCode.PARAM_INVALID, "库存已初始化，如需重新初始化请先清除");
+            }
 
-        // 1. 确保 MySQL 中有库存记录
-        Inventory inventory = inventoryMapper.selectOne(
-                new LambdaQueryWrapper<Inventory>().eq(Inventory::getSkuId, skuId));
-        if (inventory == null) {
-            // 自动创建库存记录
-            inventory = new Inventory();
-            inventory.setSkuId(skuId);
-            inventory.setAvailableStock(totalStock);
-            inventory.setLockedStock(0);
-            inventoryMapper.insert(inventory);
-            log.info("[库存] 自动创建MySQL记录: skuId={}, stock={}", skuId, totalStock);
-        } else {
-            // 以请求的 totalStock 为准更新 MySQL
-            inventory.setAvailableStock(totalStock);
-            inventory.setLockedStock(0);
-            inventoryMapper.updateById(inventory);
+            // 1. 确保 MySQL 中有库存记录
+            Inventory inventory = inventoryMapper.selectOne(
+                    new LambdaQueryWrapper<Inventory>().eq(Inventory::getSkuId, skuId));
+            if (inventory == null) {
+                // 自动创建库存记录
+                inventory = new Inventory();
+                inventory.setSkuId(skuId);
+                inventory.setAvailableStock(totalStock);
+                inventory.setLockedStock(0);
+                inventoryMapper.insert(inventory);
+                log.info("[库存] 自动创建MySQL记录: skuId={}, stock={}", skuId, totalStock);
+            } else {
+                // 以请求的 totalStock 为准更新 MySQL
+                inventory.setAvailableStock(totalStock);
+                inventory.setLockedStock(0);
+                inventoryMapper.updateById(inventory);
+            }
+
+            // 2. 均匀分配到 N 个桶
+            int perBucket = totalStock / bucketCount;
+            int remainder = totalStock % bucketCount;
+
+            for (int i = 0; i < bucketCount; i++) {
+                int bucketStock = perBucket + (i == 0 ? remainder : 0);
+                stringRedisTemplate.opsForValue().set(bucketKey(skuId, i), String.valueOf(bucketStock));
+            }
+
+            // 3. 设置总库存和桶数（最后写 total/bucketCount，避免半初始化时被误判为完整）
+            stringRedisTemplate.opsForValue().set(totalKey, String.valueOf(totalStock));
+            stringRedisTemplate.opsForValue().set(bucketCountKey, String.valueOf(bucketCount));
+
+            log.info("[库存] 初始化完成: skuId={}, total={}, buckets={}, perBucket={}, remainder={}",
+                    skuId, totalStock, bucketCount, perBucket, remainder);
+        } finally {
+            stringRedisTemplate.delete(initLockKey);
         }
-
-        // 2. 均匀分配到 N 个桶
-        int perBucket = totalStock / bucketCount;
-        int remainder = totalStock % bucketCount;
-
-        for (int i = 0; i < bucketCount; i++) {
-            int bucketStock = perBucket + (i == 0 ? remainder : 0);
-            stringRedisTemplate.opsForValue().set(bucketKey(skuId, i), String.valueOf(bucketStock));
-        }
-
-        // 3. 设置总库存和桶数
-        stringRedisTemplate.opsForValue().set(totalKey, String.valueOf(totalStock));
-        stringRedisTemplate.opsForValue().set(bucketCountKey(skuId), String.valueOf(bucketCount));
-
-        log.info("[库存] 初始化完成: skuId={}, total={}, buckets={}, perBucket={}, remainder={}",
-                skuId, totalStock, bucketCount, perBucket, remainder);
     }
 
     // ==================== 预扣减 ====================
@@ -602,23 +613,12 @@ public class InventoryService {
             } else {
                 log.error("[库存] MQ发送状态异常: action={}, orderId={}, skuId={}, status={}",
                         action, orderId, skuId, sendResult.getSendStatus());
-                // 发送失败且调用方将回滚 Redis：取消 outbox 行，
-                // 防止 Job 补发已回滚事件 → MySQL 扣了 Redis 没扣（幻影 locked）
-                if (!"CONFIRM".equals(action)) {
-                    inventoryMapper.cancelOutboxEvent(eventId);
-                }
+                // 保留未发送 Outbox，交由 InventoryOutboxSenderJob 补发。
                 return false;
             }
         } catch (Exception e) {
             log.error("[库存] MQ发送异常: orderId={}, skuId={}, action={}", orderId, skuId, action, e);
-            // 同上：异常路径也取消 outbox（若 insertOutboxEvent 本身失败则此调用无影响）
-            try {
-                if (!"CONFIRM".equals(action)) {
-                    inventoryMapper.cancelOutboxEvent(eventId);
-                }
-            } catch (Exception cancelEx) {
-                log.error("[库存] 取消Outbox失败: orderId={}, skuId={}", orderId, skuId, cancelEx);
-            }
+            // 保留未发送 Outbox，交由 InventoryOutboxSenderJob 补发。
             return false;
         }
     }
@@ -634,7 +634,11 @@ public class InventoryService {
     boolean skuExists(Long skuId) {
         try {
             com.myxhs.common.response.R<com.myxhs.inventory.feign.ProductFeignClient.SkuDTO> response = productFeignClient.getSkuDetail(skuId);
-            return response != null && response.isSuccess() && response.getData() != null;
+            if (response == null || !response.isSuccess() || response.getData() == null) {
+                return false;
+            }
+            com.myxhs.inventory.feign.ProductFeignClient.SkuDTO sku = response.getData();
+            return sku.getStatus() != null && sku.getStatus() == 1;
         } catch (Exception e) {
             log.warn("[库存] SKU存在性校验失败: skuId={}", skuId, e);
             return true;
@@ -643,12 +647,13 @@ public class InventoryService {
 
     private boolean rebuildStockFromDb(Long skuId) {
         String lockKey = "inventory:rebuild:lock:" + skuId;
-        Boolean locked = stringRedisTemplate.opsForValue()
-                .setIfAbsent(lockKey, "1", java.time.Duration.ofSeconds(10));
-        if (!Boolean.TRUE.equals(locked)) {
-            return false; // 其他线程重建中，本线程失败（MQ 重试会再进来）
-        }
+        org.redisson.api.RLock lock = redissonClient.getLock(lockKey);
+        boolean locked = false;
         try {
+            locked = lock.tryLock(0, 30, java.util.concurrent.TimeUnit.SECONDS);
+            if (!locked) {
+                return false; // 其他线程重建中，本线程失败（MQ 重试会再进来）
+            }
             // 双检查：可能已被其他线程重建
             if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(bucketCountKey(skuId)))) {
                 return true;
@@ -671,8 +676,14 @@ public class InventoryService {
             stringRedisTemplate.opsForValue().set(bucketCountKey(skuId), String.valueOf(bucketCount));
             log.info("[库存] 自愈重建完成: skuId={}, total={}, buckets={}", skuId, total, bucketCount);
             return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("[库存] 自愈重建获取锁被中断: skuId={}", skuId);
+            return false;
         } finally {
-            stringRedisTemplate.delete(lockKey);
+            if (locked && lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
         }
     }
 

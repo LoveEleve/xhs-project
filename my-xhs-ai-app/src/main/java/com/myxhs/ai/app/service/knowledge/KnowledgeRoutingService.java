@@ -30,6 +30,10 @@ public class KnowledgeRoutingService {
         return classifier.classify(question) != null;
     }
 
+    public boolean isCodeStructure(String question) {
+        return classifier.classify(question) == KnowledgeQuestionType.CODE_STRUCTURE;
+    }
+
     public String answer(String question) {
         KnowledgeQuestionType type = classifier.classify(question);
         if (type == null) {

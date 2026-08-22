@@ -6,6 +6,7 @@ import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -22,8 +23,10 @@ import java.util.concurrent.TimeUnit;
  * <p>
  * 分布式安全保证：
  * 1. Redisson 分布式锁保证多实例部署时只有一个实例执行（防止重复扫描浪费资源）
- * 2. release.lua 脚本原子回退保证与用户主动释放不会双重回退
- * </p>
+     * 2. release.lua 脚本原子回退保证与用户主动释放不会双重回退
+     * 3. Redis 回退成功后，RELEASE 事件同步发 MQ 并保留 Outbox，避免 MySQL locked_stock 永久掉队
+     * </p>
+
  * <p>
  * 为什么需要主动扫描？
  * Redis Key 过期是惰性删除 + 定期删除，不保证精确过期。
@@ -41,6 +44,7 @@ public class PreDeductTimeoutJob {
     private final RedissonClient redissonClient;
     private final org.apache.rocketmq.spring.core.RocketMQTemplate rocketMQTemplate;
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
+    private final com.myxhs.inventory.mapper.InventoryMapper inventoryMapper;
 
     private static final String PREDEDUCT_KEY_PREFIX = "inventory:prededuct:";
     private static final String PREDEDUCT_INDEX_KEY = "inventory:prededuct:index";
@@ -205,31 +209,32 @@ public class PreDeductTimeoutJob {
      * 发送 RELEASE 事件到 MQ，解锁 MySQL locked_stock（与 order 服务取消订单的释放链路一致）
      */
     private void sendReleaseEvent(Long orderId, Long skuId, int quantity) {
+        long eventId = com.baomidou.mybatisplus.core.toolkit.IdWorker.getId();
+        long eventTime = System.currentTimeMillis();
         try {
+            inventoryMapper.insertOutboxEvent(eventId, orderId, skuId, quantity, "RELEASE");
             com.myxhs.inventory.dto.event.InventoryDeductEvent event =
                     com.myxhs.inventory.dto.event.InventoryDeductEvent.builder()
+                            .outboxId(eventId)
                             .orderId(orderId)
                             .skuId(skuId)
                             .quantity(quantity)
                             .action("RELEASE")
-                            .eventTime(System.currentTimeMillis())
+                            .eventTime(eventTime)
                             .build();
-            rocketMQTemplate.asyncSend("INVENTORY_TOPIC:RELEASE",
-                    org.springframework.messaging.support.MessageBuilder.withPayload(
-                            objectMapper.writeValueAsString(event)).build(),
-                    new org.apache.rocketmq.client.producer.SendCallback() {
-                        @Override
-                        public void onSuccess(org.apache.rocketmq.client.producer.SendResult sendResult) {
-                            log.debug("[预扣超时] RELEASE事件发送成功: orderId={}, skuId={}", orderId, skuId);
-                        }
-                        @Override
-                        public void onException(Throwable e) {
-                            log.error("[预扣超时] RELEASE事件发送失败(MySQL locked等待对账修复): orderId={}, skuId={}",
-                                    orderId, skuId, e);
-                        }
-                    });
+            org.apache.rocketmq.client.producer.SendResult sendResult = rocketMQTemplate.syncSend(
+                    "INVENTORY_TOPIC:RELEASE",
+                    MessageBuilder.withPayload(objectMapper.writeValueAsString(event)).build(),
+                    3000);
+            if (sendResult.getSendStatus() == org.apache.rocketmq.client.producer.SendStatus.SEND_OK) {
+                inventoryMapper.markOutboxSent(eventId);
+                log.debug("[预扣超时] RELEASE事件发送成功: orderId={}, skuId={}", orderId, skuId);
+            } else {
+                log.error("[预扣超时] RELEASE事件发送状态异常(等待Outbox补发): orderId={}, skuId={}, status={}",
+                        orderId, skuId, sendResult.getSendStatus());
+            }
         } catch (Exception e) {
-            log.error("[预扣超时] RELEASE事件序列化失败: orderId={}, skuId={}", orderId, skuId, e);
+            log.error("[预扣超时] RELEASE事件发送失败(等待Outbox补发): orderId={}, skuId={}", orderId, skuId, e);
         }
     }
 }

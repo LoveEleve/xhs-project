@@ -168,7 +168,7 @@ class HitlApprovalTest {
     private static com.myxhs.ai.tools.DlqRedeliverAccess fakeDlq(String result) {
         return new com.myxhs.ai.tools.DlqRedeliverAccess() {
             @Override public String redeliver(String msgId, String consumerGroup) { return result; }
-            @Override public String queryDlqMessages(String consumerGroup) { return "{\"status\":\"ok\",\"count\":0}"; }
+            public String queryDlqMessages(String consumerGroup) { return "{\"status\":\"ok\",\"count\":0}"; }
         };
     }
 

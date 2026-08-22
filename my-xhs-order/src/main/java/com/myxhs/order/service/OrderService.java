@@ -73,6 +73,7 @@ public class OrderService {
     private static final String IDEMPOTENT_KEY_PREFIX = "myxhs:order:idempotent:";
     private static final String CREATE_LOCK_PREFIX = "myxhs:order:create:lock:";
     private static final String ORDER_CLOSE_TOPIC = "ORDER_CLOSE_TOPIC";
+    private static final String ORDER_COMPENSATION_FALLBACK_KEY = "myxhs:order:compensation:pending";
 
     /** 【O2修复】异步补偿/联动任务线程池（MDC 感知，替代 CompletableFuture.runAsync 的 commonPool 丢 traceId） */
     private static final java.util.concurrent.ExecutorService ORDER_ASYNC_EXECUTOR =
@@ -224,12 +225,22 @@ public class OrderService {
 
             // 发送事务消息（半消息）
             // RocketMQ 收到半消息后回调 OrderTransactionListener.executeLocalTransaction()
-            SendResult sendResult = rocketMQTemplate.sendMessageInTransaction(
-                    ORDER_TRANSACTION_TOPIC, msg, context);
+            SendResult sendResult;
+            try {
+                sendResult = rocketMQTemplate.sendMessageInTransaction(
+                        ORDER_TRANSACTION_TOPIC, msg, context);
+            } catch (Exception e) {
+                stringRedisTemplate.delete(idempotentKey);
+                log.error("[订单] 事务消息发送失败: topic={}, producerGroup={}, orderNo={}, userId={}, exType={}, exMsg={}",
+                        ORDER_TRANSACTION_TOPIC, "order-producer-group", orderNo, userId,
+                        e.getClass().getName(), e.getMessage(), e);
+                throw new BizException(ResultCode.INTERNAL_ERROR, "下单失败: send message Exception");
+            }
 
             if (sendResult.getSendStatus() != SendStatus.SEND_OK) {
-                // 半消息发送失败，释放幂等键允许重试
                 stringRedisTemplate.delete(idempotentKey);
+                log.error("[订单] 事务消息发送结果异常: topic={}, producerGroup={}, orderNo={}, userId={}, sendStatus={}",
+                        ORDER_TRANSACTION_TOPIC, "order-producer-group", orderNo, userId, sendResult.getSendStatus());
                 throw new BizException(ResultCode.INTERNAL_ERROR, "下单失败: 消息发送异常");
             }
 
@@ -594,8 +605,14 @@ public class OrderService {
                     3000);
             log.info("[订单] 补偿消息已发送: action={}, orderId={}", action, orderId);
         } catch (Exception e) {
-            // MQ 也发送失败，只能依赖定时任务扫描订单状态来补偿
-            log.error("[订单] 补偿消息发送失败，依赖定时任务兜底: action={}, orderId={}", action, orderId, e);
+            // MQ 也发送失败，写入本地兜底集合，供定时任务重放补偿消息
+            log.error("[订单] 补偿消息发送失败，写入本地兜底集合: action={}, orderId={}", action, orderId, e);
+            try {
+                String member = action + ":" + orderId + ":" + userId + ":" + System.currentTimeMillis();
+                stringRedisTemplate.opsForSet().add(ORDER_COMPENSATION_FALLBACK_KEY, member);
+            } catch (Exception ex) {
+                log.error("[订单] 本地补偿兜底集合写入失败: action={}, orderId={}", action, orderId, ex);
+            }
         }
     }
 
@@ -1192,14 +1209,17 @@ public class OrderService {
         // 通过映射表反查 userId（分库分表后 selectById 无法路由）
         OrderNoMapping mapping = orderNoMappingRepository.selectByOrderId(orderId);
         if (mapping == null) {
-            throw new BizException(ResultCode.ORDER_NOT_FOUND);
+            return null;
         }
         Order order = orderMapper.selectOne(
                 new LambdaQueryWrapper<Order>()
                         .eq(Order::getUserId, mapping.getUserId())
                         .eq(Order::getId, orderId));
         if (order == null) {
-            throw new BizException(ResultCode.ORDER_NOT_FOUND);
+            return null;
+        }
+        if (order.getStatus() != 0) {
+            return null;
         }
         return order.getPayAmount();
     }

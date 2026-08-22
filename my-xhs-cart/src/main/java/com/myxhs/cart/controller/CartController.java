@@ -9,6 +9,7 @@ import com.myxhs.cart.job.CartReconcileJob;
 import com.myxhs.cart.service.CartService;
 import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
+import jakarta.annotation.PostConstruct;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -140,8 +141,15 @@ public class CartController {
     @org.springframework.beans.factory.annotation.Value("${myxhs.admin.token}")
     private String adminToken;
 
+    @PostConstruct
+    public void validateAdminToken() {
+        if (adminToken == null || adminToken.isBlank()) {
+            throw new IllegalStateException("myxhs.admin.token 未配置，拒绝启动 cart 服务");
+        }
+    }
+
     private boolean isAdminCall(String headerValue) {
-        return adminToken != null && !adminToken.isEmpty() && adminToken.equals(headerValue);
+        return adminToken.equals(headerValue);
     }
 
     /** 全量对账专用线程池（单线程串行执行，避免阻塞 ForkJoinPool.commonPool 影响全 JVM） */

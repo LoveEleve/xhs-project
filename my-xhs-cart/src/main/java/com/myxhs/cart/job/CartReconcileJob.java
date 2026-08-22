@@ -48,9 +48,11 @@ public class CartReconcileJob {
     private static final String KEY_PREFIX = "myxhs:cart:{";
     private static final String ITEMS_KEY_SUFFIX = "}:items";
     private static final String CHECKED_KEY_SUFFIX = "}:checked";
+    private static final String CLEARED_KEY_SUFFIX = "}:cleared";
 
     private static String itemsKey(Long userId) { return KEY_PREFIX + userId + ITEMS_KEY_SUFFIX; }
     private static String checkedKey(Long userId) { return KEY_PREFIX + userId + CHECKED_KEY_SUFFIX; }
+    private static String clearedMarkerKey(Long userId) { return KEY_PREFIX + userId + CLEARED_KEY_SUFFIX; }
 
     /**
      * 购物车对账修复（XXL-Job Handler）
@@ -143,9 +145,10 @@ public class CartReconcileJob {
         // 保守策略：key 不存在时跳过场景3。代价是丢失 CLEAR 事件时的陈旧 MySQL 行残留，
         // 但读取以 Redis 为准所以陈旧行对用户不可见，仅占用存储。
         Boolean keyExists = stringRedisTemplate.hasKey(itemsKey);
-        boolean skipDeleteScenario = !Boolean.TRUE.equals(keyExists);
+        boolean cleared = Boolean.TRUE.equals(stringRedisTemplate.hasKey(clearedMarkerKey(userId)));
+        boolean skipDeleteScenario = !Boolean.TRUE.equals(keyExists) && !cleared;
         if (skipDeleteScenario && !mysqlItems.isEmpty()) {
-            log.warn("[购物车对账] itemsKey不存在, 跳过删除场景(防Redis故障时误删MySQL兜底): userId={}, mysqlItems={}",
+            log.warn("[购物车对账] itemsKey不存在且无cleared标记, 跳过删除场景(防Redis故障时误删MySQL兜底): userId={}, mysqlItems={}",
                     userId, mysqlItems.size());
         }
 

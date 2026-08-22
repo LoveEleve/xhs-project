@@ -66,24 +66,26 @@ public class ReadWriteRoutingInterceptor implements Interceptor {
     }
 
     private boolean isReadMethod(Invocation invocation) {
-        String methodName = invocation.getMethod().getName();
-        if ("query".equals(methodName)) {
-            return true;
-        }
-        if ("update".equals(methodName)) {
-            // update 方法也可能是 SELECT 的变体（如 MyBatis-Plus select 走 Executor.update 的很少）
-            // 兜底：解析 BoundSql 前缀
-            try {
-                Object[] args = invocation.getArgs();
-                MappedStatement ms = (MappedStatement) args[0];
-                Object parameter = args[1];
-                BoundSql boundSql = ms.getBoundSql(parameter);
-                return ReadWriteRoutingDataSource.isReadOperation(boundSql.getSql());
-            } catch (Exception e) {
+        try {
+            Object[] args = invocation.getArgs();
+            MappedStatement ms = (MappedStatement) args[0];
+            Object parameter = args[1];
+            BoundSql boundSql = ms.getBoundSql(parameter);
+            String sql = boundSql.getSql();
+            if (sql == null) {
                 return false;
             }
+            String normalized = sql.replaceAll("/\\*.*?\\*/", " ")
+                    .replaceAll("--.*?(\\r?\\n|$)", " ")
+                    .trim()
+                    .toUpperCase();
+            if (normalized.contains("FOR UPDATE")) {
+                return false;
+            }
+            return ReadWriteRoutingDataSource.isReadOperation(sql);
+        } catch (Exception e) {
+            return false;
         }
-        return false;
     }
 
     @Override

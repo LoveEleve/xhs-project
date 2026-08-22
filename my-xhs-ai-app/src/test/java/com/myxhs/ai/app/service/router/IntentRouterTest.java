@@ -85,6 +85,13 @@ class IntentRouterTest {
     }
 
     @Test
+    void codeFollowup问题_走CodeStructure而不是Agent() {
+        assertEquals(Intent.CODE_STRUCTURE, router.classify("为什么优先看 InventoryService.preDeduct()？"));
+        assertEquals(Intent.CODE_STRUCTURE, router.classify("inventory 这个方法 preDeduct() 负责什么？"));
+        assertEquals(Intent.CODE_STRUCTURE, router.classify("OrderService.createOrder() 最近谁改过？"));
+    }
+
+    @Test
     void 规则模糊有LLM兜底时按LLM路由() {
         // "看看订单总额" 含领域词"订单"→ 确定性 METRIC；用纯模糊输入验证 LLM 兜底
         IntentRouter r = new IntentRouter(new FakeLlm(Intent.METRIC_ORDER_VOLUME));

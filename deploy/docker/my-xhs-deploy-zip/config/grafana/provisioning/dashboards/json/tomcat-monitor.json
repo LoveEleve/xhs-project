@@ -1,0 +1,250 @@
+{
+ "annotations": {
+  "list": [
+   {
+    "builtIn": 1,
+    "datasource": "-- Grafana --",
+    "enable": true,
+    "hide": true,
+    "iconColor": "rgba(0, 211, 255, 1)",
+    "name": "Annotations & Alerts",
+    "type": "dashboard"
+   }
+  ]
+ },
+ "editable": true,
+ "gnetId": null,
+ "graphTooltip": 0,
+ "id": null,
+ "links": [],
+ "panels": [
+  {
+   "type": "timeseries",
+   "title": "Tomcat 线程(当前/繁忙/上限)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "tomcat_threads_current_threads{application=~\"$application\"}",
+     "legendFormat": "{{application}} current"
+    },
+    {
+     "expr": "tomcat_threads_busy_threads{application=~\"$application\"}",
+     "legendFormat": "{{application}} busy"
+    },
+    {
+     "expr": "tomcat_threads_config_max_threads{application=~\"$application\"}",
+     "legendFormat": "{{application}} max"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 0
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Tomcat 线程使用率",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "tomcat_threads_busy_threads{application=~\"$application\"} / tomcat_threads_config_max_threads{application=~\"$application\"} * 100",
+     "legendFormat": "{{application}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 0
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Tomcat 活跃连接(当前/上限)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "tomcat_connections_current_connections{application=~\"$application\"}",
+     "legendFormat": "{{application}} current"
+    },
+    {
+     "expr": "tomcat_connections_config_max_connections{application=~\"$application\"}",
+     "legendFormat": "{{application}} max"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 8
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Tomcat 请求速率(QPS)",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "sum(rate(tomcat_global_request_seconds_count{application=~\"$application\"}[1m])) by (application)",
+     "legendFormat": "{{application}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "reqps",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 12,
+    "y": 8
+   }
+  },
+  {
+   "type": "timeseries",
+   "title": "Tomcat Servlet 错误累计",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+   },
+   "targets": [
+    {
+     "expr": "tomcat_servlet_error_total{application=~\"$application\"}",
+     "legendFormat": "{{application}}"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "short",
+     "custom": {
+      "drawStyle": "line",
+      "fillOpacity": 0
+     }
+    }
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list"
+    }
+   },
+   "gridPos": {
+    "h": 8,
+    "w": 12,
+    "x": 0,
+    "y": 16
+   }
+  }
+ ],
+ "refresh": "10s",
+ "schemaVersion": 27,
+ "style": "dark",
+ "tags": [
+  "myxhs",
+  "tomcat",
+  "hikaricp",
+  "pool"
+ ],
+ "templating": {
+  "list": [
+   {
+    "name": "application",
+    "type": "query",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "PBFA97CFB590B2093"
+    },
+    "query": "label_values(tomcat_threads_current_threads, application)",
+    "includeAll": true,
+    "allValue": ".*",
+    "current": {
+     "selected": true,
+     "text": [
+      "All"
+     ],
+     "value": [
+      "$__all"
+     ]
+    },
+    "refresh": 1,
+    "multi": true,
+    "sort": 1
+   }
+  ]
+ },
+ "time": {
+  "from": "now-30m",
+  "to": "now"
+ },
+ "timepicker": {},
+ "timezone": "",
+ "title": "Tomcat 监控",
+ "uid": "myxhs-tomcat-hikari",
+ "version": 1,
+ "description": "Tomcat 线程/连接(mbeanregistry 已开启) + HikariCP 连接池监控"
+}

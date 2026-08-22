@@ -17,6 +17,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.List;
@@ -39,13 +41,15 @@ class SkuServiceTest {
     private IdGeneratorUtil idGeneratorUtil;
 
     private SkuService skuService;
+    private ObjectMapper objectMapper;
 
     private static final Long SPU_ID = 10001L;
     private static final Long SKU_ID = 20001L;
 
     @BeforeEach
     void setUp() {
-        skuService = new SkuService(skuMapper, spuMapper, spuService, idGeneratorUtil);
+        objectMapper = new ObjectMapper();
+        skuService = new SkuService(skuMapper, spuMapper, spuService, idGeneratorUtil, objectMapper);
     }
 
     @Test
@@ -113,6 +117,13 @@ class SkuServiceTest {
     @Test
     @DisplayName("按SPU查询SKU列表成功")
     void getSkuListBySpuIdSuccess() {
+        Spu spu = new Spu();
+        spu.setId(SPU_ID);
+        spu.setStatus(1);
+        spu.setImages("[\"img1\"]");
+        when(spuMapper.selectById(SPU_ID)).thenReturn(spu);
+        when(spuMapper.selectBatchIds(any())).thenReturn(List.of(spu));
+
         Sku sku1 = new Sku();
         sku1.setId(20001L);
         sku1.setSpuId(SPU_ID);
@@ -137,5 +148,20 @@ class SkuServiceTest {
         assertThat(list).hasSize(2);
         assertThat(list.get(0).getName()).isEqualTo("SKU-1");
         assertThat(list.get(1).getName()).isEqualTo("SKU-2");
+        assertThat(list.get(0).getSpuStatus()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("SPU下架时不返回SKU列表")
+    void getSkuListBySpuIdReturnsEmptyWhenSpuOffShelf() {
+        Spu spu = new Spu();
+        spu.setId(SPU_ID);
+        spu.setStatus(0);
+        when(spuMapper.selectById(SPU_ID)).thenReturn(spu);
+
+        List<SkuVO> list = skuService.listSkusBySpuId(SPU_ID);
+
+        assertThat(list).isEmpty();
+        verify(skuMapper, never()).selectList(any(LambdaQueryWrapper.class));
     }
 }

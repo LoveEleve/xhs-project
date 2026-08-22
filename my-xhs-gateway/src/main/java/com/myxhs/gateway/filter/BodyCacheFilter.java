@@ -59,16 +59,17 @@ public class BodyCacheFilter implements GlobalFilter, Ordered {
         return DataBufferUtils.join(request.getBody())
                 .onErrorResume(ex -> {
                     log.warn("[BodyCache] 请求体读取异常，按空body降级: {}", ex.getMessage());
-                    exchange.getAttributes().put(CACHED_BODY_ATTR, new byte[0]);
-                    return Mono.empty();
+                    return Mono.just(exchange.getResponse().bufferFactory().wrap(new byte[0]));
                 })
                 .map(dataBuffer -> {
                     byte[] bytes = new byte[dataBuffer.readableByteCount()];
                     dataBuffer.read(bytes);
                     DataBufferUtils.release(dataBuffer);
-                    if (bytes.length > MAX_BODY_BYTES) {
-                        bytes = new byte[0]; // 超限按空 body 处理（签名校验会失败，防内存打爆）
-                    }
+if (bytes.length > MAX_BODY_BYTES) {
+                    log.warn("[BodyCache] 请求体超限({} > {}), 按空body处理: method={}, uri={}",
+                            bytes.length, MAX_BODY_BYTES, request.getMethod(), request.getURI());
+                    bytes = new byte[0];
+                }
                     return bytes;
                 })
                 .flatMap(bytes -> {
@@ -81,8 +82,7 @@ public class BodyCacheFilter implements GlobalFilter, Ordered {
                         }
                     };
                     return chain.filter(exchange.mutate().request(mutated).build());
-                })
-                .switchIfEmpty(Mono.defer(() -> chain.filter(exchange)));
+                });
     }
 
     @Override

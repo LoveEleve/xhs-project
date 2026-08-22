@@ -57,15 +57,14 @@ public class ImWebSocketHandler extends TextWebSocketHandler {
 
         // 踢掉旧连接（同一用户只允许一个 WebSocket 连接）
         WebSocketSession oldSession = sessions.put(userId, session);
+
+        // 先注册新路由，再关闭旧连接。旧连接 afterConnectionClosed 中 remove(userId, oldSession) 失败后不会再误删新路由。
+        onlineRouteService.registerRoute(userId);
+
         if (oldSession != null && oldSession.isOpen()) {
-            // 先注销旧连接路由，防止 afterConnectionClosed 异步事件误删新连接路由
-            onlineRouteService.unregisterRoute(userId);
             log.info("[IM] 踢掉旧连接: userId={}, oldSessionId={}", userId, oldSession.getId());
             closeQuietly(oldSession, new CloseStatus(4001, "新设备登录，当前连接已断开"));
         }
-
-        // 注册在线路由（Redis）
-        onlineRouteService.registerRoute(userId);
 
         // 推送离线消息
         chatService.pushOfflineMessages(userId, session);
@@ -177,10 +176,14 @@ public class ImWebSocketHandler extends TextWebSocketHandler {
     private void handlePing(Long userId, WebSocketSession session) {
         sendPong(session);
         // 续期 Redis 路由 TTL（防止路由过期导致消息被存为离线）
-        try {
-            onlineRouteService.renewRoute(userId);
-        } catch (Exception e) {
-            log.warn("[IM] 路由续期失败: userId={}", userId);
+        // 只续期本实例确认还有效的 session，避免 GC 停顿/网络分区后路由过期再恢复时
+        // 本地 session 还在但路由已丢失，导致消息被跨实例转发或存离线
+        if (sessions.containsKey(userId) && session.isOpen()) {
+            try {
+                onlineRouteService.renewRoute(userId);
+            } catch (Exception e) {
+                log.warn("[IM] 路由续期失败: userId={}", userId);
+            }
         }
     }
 
