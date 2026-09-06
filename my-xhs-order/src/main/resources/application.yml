@@ -38,12 +38,12 @@ spring:
   data:
     redis:
       # Redis 密码 — Nacos shared-configs(my-xhs-common.yaml) 优先，本地为 fallback
-      host: 21.130.247.89
+      host: 192.168.0.142
       password: "Xhs@2026#Redis"
       port: 6379
       sentinel:
         master: mymaster
-        nodes: 21.130.247.89:26379
+        nodes: 192.168.0.142:26379
       business:
         port: 6379
       cache:
@@ -58,13 +58,13 @@ spring:
     nacos:
       discovery:
         enabled: true
-        server-addr: 21.130.247.89:18848
+        server-addr: 192.168.0.142:18848
         namespace: my-xhs
         metadata:
           zone: ${MYXHS_ZONE:defaultZone}
       config:
         enabled: true
-        server-addr: 21.130.247.89:18848
+        server-addr: 192.168.0.142:18848
         import-check:
           enabled: false
         file-extension: yaml
@@ -87,7 +87,7 @@ spring:
     # Sentinel 配置（轻量模式，暂不连接 Dashboard）
     sentinel:
       transport:
-        dashboard: 21.130.247.89:8858
+        dashboard: 192.168.0.142:8858
         port: 8733
       # 取消懒加载，应用启动时即初始化 Sentinel
       eager: true
@@ -121,7 +121,7 @@ mybatis-plus:
 
 # RocketMQ 配置
 rocketmq:
-  name-server: 21.130.247.89:9876
+  name-server: 192.168.0.142:9876
   producer:
     group: order-producer-group
     send-message-timeout: 3000
@@ -137,7 +137,7 @@ pay:
   type: remote
   # 支付数据源（payment 表在独立库，不走分片）
   datasource:
-    url: jdbc:mysql://21.130.247.89:3306/my_xhs_payment?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
+    url: jdbc:mysql://192.168.0.142:3306/my_xhs_payment?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
     username: root
     password: "Xhs@2026#MySQL"
 
@@ -145,7 +145,7 @@ pay:
 order:
   mapping:
     datasource:
-      url: jdbc:mysql://21.130.247.89:3306/my_xhs_order?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
+      url: jdbc:mysql://192.168.0.142:3306/my_xhs_order?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&cachePrepStmts=true&prepStmtCacheSize=250&prepStmtCacheSqlLimit=2048&useServerPrepStmts=true
       username: root
       password: "Xhs@2026#MySQL"
 
@@ -154,7 +154,7 @@ xxl:
   job:
     enabled: true
     admin:
-      addresses: http://21.130.247.89:18080/xxl-job-admin
+      addresses: http://192.168.0.142:18080/xxl-job-admin
     accessToken: my-xhs-xxl-job-token-2026
     executor:
       appname: my-xhs-order

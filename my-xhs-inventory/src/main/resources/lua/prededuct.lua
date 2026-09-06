@@ -20,8 +20,8 @@
 -- ARGV[3] = quantity (扣减数量)
 -- ARGV[4] = bucketCount (分桶数)
 -- ARGV[5] = userId (备用)
--- ARGV[6] = expireSeconds (预扣记录过期时间)
--- ARGV[7] = routeBucket (T-073: Java 侧精确取模桶号; Lua 双精度对 >2^53 ID 取模失真恒偏)
+-- ARGV[6] = routeBucket (T-073: Java 侧精确取模桶号; Lua 双精度对 >2^53 ID 取模失真恒偏)
+-- ARGV[7] = expireSeconds (预扣记录过期时间)
 --
 -- 返回值：
 --   1  : 扣减成功

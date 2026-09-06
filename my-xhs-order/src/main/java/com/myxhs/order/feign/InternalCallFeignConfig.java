@@ -15,8 +15,15 @@ import org.springframework.context.annotation.Bean;
  */
 public class InternalCallFeignConfig {
 
-    @Value("${myxhs.internal.token:my-xhs-internal-token-2026}")
+    @Value("${myxhs.internal.token:}")
     private String internalToken;
+
+    @jakarta.annotation.PostConstruct
+    public void validateInternalToken() {
+        if (internalToken == null || internalToken.isBlank()) {
+            throw new IllegalStateException("myxhs.internal.token 未配置，拒绝启动 order 服务");
+        }
+    }
 
     @Bean
     public RequestInterceptor internalCallInterceptor() {

@@ -2,7 +2,7 @@ package com.myxhs.common.tcc;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -20,11 +20,23 @@ import org.springframework.stereotype.Component;
  */
 @Slf4j
 @Component
-@ConditionalOnBean(JdbcTemplate.class)
 @RequiredArgsConstructor
 public class TccFenceService {
 
-    private final JdbcTemplate jdbcTemplate;
+    /**
+     * 懒解析：@ConditionalOnBean(JdbcTemplate.class) 在组件扫描期评估，
+     * 此时 @Configuration 的 @Bean 方法尚未注册，条件恒为 false（Spring 已知陷阱）。
+     * 改为运行时解析，无 JdbcTemplate 时在使用处 fail-closed。
+     */
+    private final ObjectProvider<JdbcTemplate> jdbcTemplateProvider;
+
+    private JdbcTemplate jdbc() {
+        JdbcTemplate template = jdbcTemplateProvider.getIfAvailable();
+        if (template == null) {
+            throw new IllegalStateException("JdbcTemplate 不可用，TCC Fence 无法工作，请检查数据源配置");
+        }
+        return template;
+    }
 
     /** Try 阶段结果 */
     public enum TryFenceResult {
@@ -61,7 +73,7 @@ public class TccFenceService {
      */
     public TryFenceResult tryFence(String xid, Long branchId, String actionName) {
         try {
-            jdbcTemplate.update(
+            jdbc().update(
                 "INSERT INTO t_tcc_fence (xid, branch_id, action_name, status) VALUES (?, ?, ?, 1)",
                 xid, branchId, actionName
             );
@@ -69,7 +81,7 @@ public class TccFenceService {
             return TryFenceResult.FIRST;
         } catch (DuplicateKeyException e) {
             // 已存在记录，查询状态
-            Integer status = jdbcTemplate.queryForObject(
+            Integer status = jdbc().queryForObject(
                 "SELECT status FROM t_tcc_fence WHERE xid = ? AND branch_id = ?",
                 Integer.class, xid, branchId
             );
@@ -88,7 +100,7 @@ public class TccFenceService {
      * Confirm 阶段：更新 Fence 状态为已确认（仅允许从 Try 状态转换）
      */
     public ConfirmFenceResult confirmFence(String xid, Long branchId) {
-        Integer currentStatus = jdbcTemplate.queryForObject(
+        Integer currentStatus = jdbc().queryForObject(
             "SELECT status FROM t_tcc_fence WHERE xid = ? AND branch_id = ?",
             Integer.class, xid, branchId
         );
@@ -105,7 +117,7 @@ public class TccFenceService {
             return ConfirmFenceResult.REJECTED;
         }
         // status=1（Try），执行状态转换（乐观锁防并发双 Confirm）
-        int affected = jdbcTemplate.update(
+        int affected = jdbc().update(
             "UPDATE t_tcc_fence SET status = 2 WHERE xid = ? AND branch_id = ? AND status = 1",
             xid, branchId
         );
@@ -124,7 +136,7 @@ public class TccFenceService {
      */
     public CancelFenceResult cancelFence(String xid, Long branchId, String actionName) {
         try {
-            jdbcTemplate.update(
+            jdbc().update(
                 "INSERT INTO t_tcc_fence (xid, branch_id, action_name, status) VALUES (?, ?, ?, 3)",
                 xid, branchId, actionName
             );
@@ -132,7 +144,7 @@ public class TccFenceService {
             log.debug("[TCC Fence] Cancel 空回滚(Try未执行,跳过业务): xid={}, branchId={}", xid, branchId);
             return CancelFenceResult.SKIP;
         } catch (DuplicateKeyException e) {
-            Integer currentStatus = jdbcTemplate.queryForObject(
+            Integer currentStatus = jdbc().queryForObject(
                 "SELECT status FROM t_tcc_fence WHERE xid = ? AND branch_id = ?",
                 Integer.class, xid, branchId
             );
@@ -149,7 +161,7 @@ public class TccFenceService {
                 return CancelFenceResult.REJECTED_CONFIRMED;
             }
             // status=1（Try），执行状态转换（乐观锁防并发双 Cancel）
-            int affected = jdbcTemplate.update(
+            int affected = jdbc().update(
                 "UPDATE t_tcc_fence SET status = 3 WHERE xid = ? AND branch_id = ? AND status = 1",
                 xid, branchId
             );

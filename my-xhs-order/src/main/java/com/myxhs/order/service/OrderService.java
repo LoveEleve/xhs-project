@@ -58,6 +58,7 @@ public class OrderService {
     private final OrderMapper orderMapper;
     private final OrderItemMapper orderItemMapper;
     private final OrderSnapshotMapper snapshotMapper;
+    private final LocalMessageMapper localMessageMapper;
     private final OrderNoMappingRepository orderNoMappingRepository;
     private final OrderTransactionService transactionService; // 独立事务服务
     private final OrderEventService orderEventService; // Event Sourcing
@@ -251,6 +252,14 @@ public class OrderService {
                 throw new BizException(ResultCode.INTERNAL_ERROR, "下单失败: 本地事务回滚");
             }
 
+            // 5.2 标记本地消息已由事务消息投递，避免 LocalMessageRetryJob 30s 后再补发一次（双投）。
+            //     事务消息 COMMIT 后 broker 会投递并重试至成功；本地消息表仅作回查与异常兜底。
+            try {
+                localMessageMapper.markSuccessByTransactionId(orderNo, userId);
+            } catch (Exception e) {
+                log.warn("[订单] 标记本地消息已投递失败(Job 可能重复补发，靠消费者幂等兜底): orderNo={}", orderNo, e);
+            }
+
             // 5.5 核销优惠券（P0-A：下单创建订单时占用券，防止同一张券被复用导致资损）
             //     核销在订单提交后同步执行并绑定 orderId；coupon 侧 markUsed 为乐观锁(WHERE status=0)，
             //     天然幂等 + 归属校验。核销失败则取消订单，保证"打了折扣的订单必有已核销的券"。
@@ -268,6 +277,14 @@ public class OrderService {
                         stringRedisTemplate.delete(idempotentKey);
                         throw new BizException(ResultCode.COUPON_NOT_AVAILABLE,
                                 "优惠券核销失败，订单已取消，请重新下单");
+                    }
+                    // N-7 一致性观测：useCoupon 返回的实际折扣若与下单时 getCouponDiscount 计算结果不一致，
+                    // 说明两次调用间模板被变更；记录告警供人工核对（订单金额以 getCouponDiscount 为权威）。
+                    if (useResp.getData() != null
+                            && discountAmount != null
+                            && useResp.getData().compareTo(discountAmount) != 0) {
+                        log.warn("[订单] 用券实际折扣与下单折扣不一致(模板可能已变更): orderId={}, couponId={}, 下单折扣={}, 核销折扣={}",
+                                context.getOrderId(), request.getCouponId(), discountAmount, useResp.getData());
                     }
                 } catch (BizException be) {
                     if (ResultCode.COUPON_NOT_AVAILABLE.getCode() == be.getCode()) {
@@ -306,7 +323,7 @@ public class OrderService {
             // 8. 记录订单快照 —— 失败不影响下单
             takeSnapshot(context.getOrderId(), userId, "CREATED");
 
-            // 9. 异步写入订单号映射表（解决非分片键查询路由问题）
+            // 9. 写入订单号映射表（解决非分片键查询路由问题；同步执行，失败依赖 RepairJob 补录）
             saveOrderNoMapping(orderNo, userId, context.getOrderId());
 
             log.info("[订单] 创建成功(事务消息): userId={}, orderNo={}, payAmount={}",
@@ -694,7 +711,7 @@ public class OrderService {
      * @return true=更新成功, false=订单已不是待付款状态
      */
     public boolean onPaymentSuccess(Long orderId, Long userId) {
-        // 分库分表后 markPaid 需要 userId 作为分片键路由
+        // 分库分表后状态更新需要 userId 作为分片键路由
         if (userId == null) {
             OrderNoMapping mapping = orderNoMappingRepository.selectByOrderId(orderId);
             if (mapping == null) {
@@ -719,14 +736,29 @@ public class OrderService {
         }
 
         // Event Sourcing: 追加支付事件并更新状态
+        boolean statusUpdated = false;
         try {
             orderEventService.appendEvent(order, OrderEventService.EVENT_PAID,
                     Map.of("paidTime", LocalDateTime.now().toString()));
+            statusUpdated = true;
             orderMapper.setPaidAt(orderId, userId);
         } catch (IllegalStateException | IllegalArgumentException e) {
             // 并发: 关单/取消先赢→支付已成功(钱已扣)但订单状态已变
             // 不抛异常: 抛异常→payment侧误判通知失败→P0-6无限重试
             log.error("[订单] 支付回调竞态(订单状态已变): orderId={}, status={}", orderId, order.getStatus(), e);
+            return false;
+        } catch (org.springframework.dao.DataAccessException e) {
+            // SQL 异常：可能 setPaidAt/事件落库瞬时失败，但状态可能已改为已支付。
+            // 不向上抛 500（否则 payment 侧误判失败并自动退款已支付订单）。
+            // 若状态已更新则返回 true 并记录，paid_at/事件由对账兜底；若状态未更新则返回 false。
+            if (statusUpdated) {
+                log.error("[订单] 支付已成功但 paid_at/事件 SQL 失败(对账兜底): orderId={}", orderId, e);
+                confirmInventoryDeduct(orderId, order.getOrderNo(), userId);
+                takeSnapshot(orderId, userId, "PAID");
+                stringRedisTemplate.delete("myxhs:order:info:" + orderId);
+                return true;
+            }
+            log.error("[订单] 支付事件 SQL 失败且状态未更新: orderId={}", orderId, e);
             return false;
         }
 
@@ -748,19 +780,30 @@ public class OrderService {
      */
     private void confirmInventoryDeduct(Long orderId, String orderNo, Long userId) {
         java.util.concurrent.CompletableFuture.runAsync(() -> {
-            try {
-                long pseudoOrderId = derivePseudoOrderId(orderNo);
-                Map<String, Object> request = Map.of("orderId", pseudoOrderId);
-                R<Void> result = inventoryFeignClient.confirmDeduct(request);
-                if (result == null || !result.isSuccess()) {
-                    log.error("[订单] 确认库存扣减失败，依赖对账兜底: orderId={}, result={}", orderId, result);
-                } else {
-                    log.info("[订单] 确认库存扣减成功: orderId={}", orderId);
-                }
-            } catch (Exception e) {
-                log.error("[订单] 确认库存扣减异常，依赖对账兜底: orderId={}", orderId, e);
-            }
+            confirmInventoryDeductSync(orderId, orderNo, userId);
         }, ORDER_ASYNC_EXECUTOR);
+    }
+
+    /**
+     * 同步确认库存扣减（退款前调用）。
+     * <p>
+     * 确保预扣记录被清理：confirm 成功后 Redis 删除预扣 Hash、MySQL 减 locked；
+     * 若预扣记录已清理则 no-op（幂等）。失败仅记录，退款仍继续，库存回补依赖对账兜底。
+     * </p>
+     */
+    private void confirmInventoryDeductSync(Long orderId, String orderNo, Long userId) {
+        try {
+            long pseudoOrderId = derivePseudoOrderId(orderNo);
+            Map<String, Object> request = Map.of("orderId", pseudoOrderId);
+            R<Void> result = inventoryFeignClient.confirmDeduct(request);
+            if (result == null || !result.isSuccess()) {
+                log.error("[订单] 退款前确认库存扣减失败，依赖对账兜底: orderId={}, result={}", orderId, result);
+            } else {
+                log.info("[订单] 退款前确认库存扣减成功: orderId={}", orderId);
+            }
+        } catch (Exception e) {
+            log.error("[订单] 退款前确认库存扣减异常，依赖对账兜底: orderId={}", orderId, e);
+        }
     }
 
     // ==================== 超时关单 ====================
@@ -996,16 +1039,21 @@ public class OrderService {
         if (request.getCouponId() == null) {
             return BigDecimal.ZERO;
         }
+        R<BigDecimal> result;
         try {
-            R<BigDecimal> result = couponFeignClient.getCouponDiscount(
+            result = couponFeignClient.getCouponDiscount(
                     userId, request.getCouponId(), totalAmount);
-            if (result != null && result.isSuccess() && result.getData() != null) {
-                return result.getData();
-            }
         } catch (Exception e) {
-            log.warn("[订单] 查询券折扣失败(降级为0): couponId={}", request.getCouponId(), e);
+            log.error("[订单] 查询券折扣异常，拒绝下单(避免券被核销但按全价付款): couponId={}",
+                    request.getCouponId(), e);
+            throw new BizException(ResultCode.COUPON_NOT_AVAILABLE, "优惠券折扣查询失败，请稍后重试");
         }
-        return BigDecimal.ZERO;
+        if (result == null || !result.isSuccess()) {
+            log.error("[订单] 查询券折扣失败，拒绝下单(避免券被核销但按全价付款): couponId={}, resp={}",
+                    request.getCouponId(), result);
+            throw new BizException(ResultCode.COUPON_NOT_AVAILABLE, "优惠券折扣查询失败，请稍后重试");
+        }
+        return result.getData() != null ? result.getData() : BigDecimal.ZERO;
     }
 
     private OrderVO buildOrderVO(Order order) {
@@ -1128,8 +1176,11 @@ public class OrderService {
         orderEventService.appendEvent(order, OrderEventService.EVENT_REFUNDED,
                 Map.of("refundTime", LocalDateTime.now().toString()));
 
-        // 4. 释放库存（预扣阶段无记录则无操作）+ T-071 退款回补（confirm 已清预扣记录 → 独立 refund-restore 语义）
-        releaseInventory(orderId, order.getOrderNo(), userId);
+        // 4. 退款前先同步确认库存扣减：确保预扣记录被清理，
+        //    避免「releaseInventory 回补 + refundRestore 回补」双通道叠加造成库存虚增，
+        //    也避免预扣记录残留被 PreDeductTimeoutJob/对账二次回补。
+        confirmInventoryDeductSync(orderId, order.getOrderNo(), userId);
+        // T-071 退款回补库存（confirm 清理预扣记录后，仅此一条回补通道，refund-restore 幂等）
         restoreStockOnRefund(orderId, userId);
 
         // 5. 退还优惠券

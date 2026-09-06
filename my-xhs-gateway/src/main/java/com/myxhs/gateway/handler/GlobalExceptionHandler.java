@@ -109,26 +109,21 @@ public class GlobalExceptionHandler implements ErrorWebExceptionHandler {
      * 根据异常类型确定 HTTP 状态码
      */
     private HttpStatus determineHttpStatus(Throwable ex) {
-        // 连接超时 / 连接拒绝 → 503
-        if (ex instanceof java.net.ConnectException) {
-            return HttpStatus.SERVICE_UNAVAILABLE;
+        Throwable current = ex;
+        while (current != null) {
+            if (current instanceof java.net.ConnectException) {
+                return HttpStatus.SERVICE_UNAVAILABLE;
+            }
+            if (current instanceof io.netty.channel.ConnectTimeoutException
+                    || current instanceof java.util.concurrent.TimeoutException) {
+                return HttpStatus.GATEWAY_TIMEOUT;
+            }
+            if (current instanceof org.springframework.cloud.gateway.support.NotFoundException
+                    || current instanceof org.springframework.web.reactive.resource.NoResourceFoundException) {
+                return HttpStatus.NOT_FOUND;
+            }
+            current = current.getCause();
         }
-        if (ex instanceof java.util.concurrent.TimeoutException) {
-            return HttpStatus.GATEWAY_TIMEOUT;
-        }
-        if (ex instanceof io.netty.channel.ConnectTimeoutException) {
-            return HttpStatus.GATEWAY_TIMEOUT;
-        }
-        // Spring Cloud Gateway 路由相关异常
-        if (ex instanceof org.springframework.cloud.gateway.support.NotFoundException) {
-            return HttpStatus.NOT_FOUND;
-        }
-        // T-059（2026-08-14）：未知路径/静态资源未命中（WebFlux 版 NoResourceFoundException）
-        // 未映射时落默认 500 → 扫描/探测流量污染 5xx 指标；应返回 404
-        if (ex instanceof org.springframework.web.reactive.resource.NoResourceFoundException) {
-            return HttpStatus.NOT_FOUND;
-        }
-        // 默认 500
         return HttpStatus.INTERNAL_SERVER_ERROR;
     }
 

@@ -613,12 +613,16 @@ public class InventoryService {
             } else {
                 log.error("[库存] MQ发送状态异常: action={}, orderId={}, skuId={}, status={}",
                         action, orderId, skuId, sendResult.getSendStatus());
-                // 保留未发送 Outbox，交由 InventoryOutboxSenderJob 补发。
+                if ("PRE_DEDUCT".equals(action)) {
+                    inventoryMapper.cancelOutboxEvent(eventId);
+                }
                 return false;
             }
         } catch (Exception e) {
             log.error("[库存] MQ发送异常: orderId={}, skuId={}, action={}", orderId, skuId, action, e);
-            // 保留未发送 Outbox，交由 InventoryOutboxSenderJob 补发。
+            if ("PRE_DEDUCT".equals(action)) {
+                inventoryMapper.cancelOutboxEvent(eventId);
+            }
             return false;
         }
     }

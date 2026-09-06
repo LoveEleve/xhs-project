@@ -106,7 +106,12 @@ public class HmacSignatureFilter implements GlobalFilter, Ordered {
         ServerHttpRequest request = exchange.getRequest();
         String path = request.getURI().getPath();
 
-        // 1. HMAC 白名单路径跳过签名校验（公开接口不需要签名）
+        // 1. HMAC 默认降级为可选增强：关闭时直接跳过整条签名链路
+        if (!authProperties.isHmacEnabled()) {
+            return chain.filter(exchange);
+        }
+
+        // 2. HMAC 白名单路径跳过签名校验（公开接口不需要签名）
         // 判断逻辑：检查路径是否在 hmacWhiteList 中
         // - 白名单内的路径（如登录/注册/公开读接口）不需要签名，直接放行
         // - 非白名单路径必须携带完整的签名 Header（X-Timestamp + X-Nonce + X-Signature）

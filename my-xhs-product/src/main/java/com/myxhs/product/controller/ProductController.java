@@ -4,6 +4,7 @@ import com.myxhs.common.annotation.Idempotent;
 import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.PageResult;
 import com.myxhs.common.response.R;
+import com.myxhs.common.web.AccessTokenGuard;
 import com.myxhs.common.response.ResultCode;
 import com.myxhs.product.dto.request.SkuCreateRequest;
 import com.myxhs.product.dto.request.SpuCreateRequest;
@@ -39,27 +40,13 @@ public class ProductController {
     private final SpuService spuService;
     private final SkuService skuService;
     private final CategoryService categoryService;
-
-    /** 管理接口令牌（配置化管理，不再硬编码） */
-    @org.springframework.beans.factory.annotation.Value("${myxhs.admin.token}")
-    private String adminToken;
-
-    /** 内部服务调用令牌（配置化管理，不再硬编码） */
-    @org.springframework.beans.factory.annotation.Value("${myxhs.internal.token}")
-    private String internalToken;
+    private final AccessTokenGuard accessTokenGuard;
 
     @PostConstruct
     public void validateTokens() {
-        if (adminToken == null || adminToken.isBlank()) {
-            throw new IllegalStateException("myxhs.admin.token 未配置，拒绝启动 product 服务");
-        }
-        if (internalToken == null || internalToken.isBlank()) {
-            throw new IllegalStateException("myxhs.internal.token 未配置，拒绝启动 product 服务");
-        }
+        accessTokenGuard.requireAdminTokenConfigured("product");
+        accessTokenGuard.requireInternalTokenConfigured("product");
     }
-
-    private boolean isAdminCall(String v) { return adminToken.equals(v); }
-    private boolean isInternalCall(String v) { return internalToken.equals(v); }
 
     // ==================== SPU 接口 ====================
 
@@ -73,7 +60,7 @@ public class ProductController {
             @RequestHeader("X-User-Id") Long userId,
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall,
             @Valid @RequestBody SpuCreateRequest request) {
-        if (!isAdminCall(adminCall)) {
+        if (!accessTokenGuard.isAdminCall(adminCall)) {
             return R.fail(403, "仅限管理员操作");
         }
         // TODO: 权限控制 — t_spu 表当前无 creatorUserId 字段，暂不做所有权校验，仅记录日志
@@ -92,7 +79,7 @@ public class ProductController {
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall,
             @PathVariable Long spuId,
             @RequestBody @Valid SpuUpdateRequest request) {
-        if (!isAdminCall(adminCall)) {
+        if (!accessTokenGuard.isAdminCall(adminCall)) {
             return R.fail(403, "仅限管理员操作");
         }
         spuService.updateSpu(spuId, request);
@@ -145,7 +132,7 @@ public class ProductController {
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall,
             @PathVariable Long spuId,
             @RequestParam Integer status) {
-        if (!isAdminCall(adminCall)) {
+        if (!accessTokenGuard.isAdminCall(adminCall)) {
             return R.fail(403, "仅限管理员操作");
         }
         // Controller 层校验，避免无效值穿透到 Service 层抛 500
@@ -168,7 +155,7 @@ public class ProductController {
             @RequestHeader("X-User-Id") Long userId,
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall,
             @Valid @RequestBody SkuCreateRequest request) {
-        if (!isAdminCall(adminCall)) {
+        if (!accessTokenGuard.isAdminCall(adminCall)) {
             return R.fail(403, "仅限管理员操作");
         }
         Long skuId = skuService.createSku(request);
@@ -190,7 +177,7 @@ public class ProductController {
     public R<List<SkuVO>> batchGetSkuDetails(
             @RequestParam("skuIds") List<Long> skuIds,
             @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!isInternalCall(internalCall)) {
+        if (!accessTokenGuard.isInternalCall(internalCall)) {
             return R.fail(403, "仅限内部服务调用");
         }
         // 限制批量查询数量，防止 WHERE id IN(...) 超大列表打挂 DB

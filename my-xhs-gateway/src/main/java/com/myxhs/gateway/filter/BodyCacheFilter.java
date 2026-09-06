@@ -61,18 +61,16 @@ public class BodyCacheFilter implements GlobalFilter, Ordered {
                     log.warn("[BodyCache] 请求体读取异常，按空body降级: {}", ex.getMessage());
                     return Mono.just(exchange.getResponse().bufferFactory().wrap(new byte[0]));
                 })
-                .map(dataBuffer -> {
+                .flatMap(dataBuffer -> {
                     byte[] bytes = new byte[dataBuffer.readableByteCount()];
                     dataBuffer.read(bytes);
                     DataBufferUtils.release(dataBuffer);
-if (bytes.length > MAX_BODY_BYTES) {
-                    log.warn("[BodyCache] 请求体超限({} > {}), 按空body处理: method={}, uri={}",
-                            bytes.length, MAX_BODY_BYTES, request.getMethod(), request.getURI());
-                    bytes = new byte[0];
-                }
-                    return bytes;
-                })
-                .flatMap(bytes -> {
+                                        if (bytes.length > MAX_BODY_BYTES) {
+                        log.warn("[BodyCache] 请求体超限({} > {}): method={}, uri={}",
+                                bytes.length, MAX_BODY_BYTES, request.getMethod(), request.getURI());
+                        exchange.getResponse().setStatusCode(org.springframework.http.HttpStatus.PAYLOAD_TOO_LARGE);
+                        return exchange.getResponse().setComplete();
+                    }
                     exchange.getAttributes().put(CACHED_BODY_ATTR, bytes);
                     ServerHttpRequest mutated = new ServerHttpRequestDecorator(request) {
                         @Override

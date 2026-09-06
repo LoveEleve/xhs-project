@@ -219,15 +219,23 @@ public class RateLimitFilter implements GlobalFilter, Ordered {
         Map<String, Object> metadata = rd.getMetadata();
         if (metadata != null && metadata.containsKey("rate-limit-qps")) {
             Object val = metadata.get("rate-limit-qps");
+            int qps;
             if (val instanceof Number) {
-                return ((Number) val).intValue();
+                qps = ((Number) val).intValue();
+            } else {
+                try {
+                    qps = Integer.parseInt(String.valueOf(val));
+                } catch (NumberFormatException ignored) {
+                    log.warn("[Gateway-Sentinel] route={} 的 rate-limit-qps 值非法: {}，使用默认值 {}",
+                            rd.getId(), val, DEFAULT_QPS);
+                    return DEFAULT_QPS;
+                }
             }
-            try {
-                return Integer.parseInt(String.valueOf(val));
-            } catch (NumberFormatException ignored) {
-                log.warn("[Gateway-Sentinel] route={} 的 rate-limit-qps 值非法: {}，使用默认值 {}",
-                        rd.getId(), val, DEFAULT_QPS);
+            if (qps > 0) {
+                return qps;
             }
+            log.warn("[Gateway-Sentinel] route={} 的 rate-limit-qps 必须大于0: {}，使用默认值 {}",
+                    rd.getId(), val, DEFAULT_QPS);
         }
         return DEFAULT_QPS;
     }

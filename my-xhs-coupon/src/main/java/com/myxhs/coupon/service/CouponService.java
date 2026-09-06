@@ -235,8 +235,8 @@ public class CouponService {
             case -1 -> throw new BizException(ResultCode.COUPON_SOLD_OUT);
             case -2 -> throw new BizException(ResultCode.COUPON_ALREADY_RECEIVED, "已达限领上限");
             case -3 -> {
-                // 券库存未初始化，尝试从 MySQL 初始化
-                initStockFromDb(template);
+                // 券库存未初始化，尝试从 MySQL 实时初始化
+                initStockFromDb(templateId);
                 // 重试一次（T-121：重试结果按语义分派——-2 限领应返回 30013 而非 30014 售罄）
                 result = stringRedisTemplate.execute(
                         claimCouponScript,
@@ -519,13 +519,22 @@ public class CouponService {
     }
 
     /**
-     * 从 MySQL 初始化 Redis 库存（券库存未初始化时的兜底）
+     * 从 MySQL 实时初始化 Redis 库存（券库存未初始化时的兜底）
+     * <p>
+     * 必须读 DB 实时 remain_count，不能复用缓存模板的 remainCount：
+     * 模板缓存 TTL 1800s，若期间已领大量券，缓存值会明显落后于实际，导致 Redis 库存按旧值重置 → 瞬时超发敞口。
+     * </p>
      */
-    private void initStockFromDb(CouponTemplate template) {
-        String stockKey = stockKey(template.getId());
-        stringRedisTemplate.opsForValue().setIfAbsent(stockKey, String.valueOf(template.getRemainCount()));
+    private void initStockFromDb(Long templateId) {
+        CouponTemplate fresh = templateMapper.selectById(templateId);
+        if (fresh == null || fresh.getDeleted() != null && fresh.getDeleted() == 1) {
+            log.warn("[优惠券] 从DB初始化Redis库存失败(模板不存在): templateId={}", templateId);
+            return;
+        }
+        String stockKey = stockKey(templateId);
+        stringRedisTemplate.opsForValue().setIfAbsent(stockKey, String.valueOf(fresh.getRemainCount()));
         log.info("[优惠券] 从DB初始化Redis库存: templateId={}, stock={}",
-                template.getId(), template.getRemainCount());
+                templateId, fresh.getRemainCount());
     }
 
     /**

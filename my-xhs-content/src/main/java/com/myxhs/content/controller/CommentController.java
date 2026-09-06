@@ -4,6 +4,7 @@ import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.PageResult;
 import com.myxhs.common.response.R;
 import com.myxhs.common.response.ResultCode;
+import com.myxhs.common.web.AccessTokenGuard;
 import com.myxhs.content.dto.request.CommentCreateRequest;
 import com.myxhs.content.dto.response.CommentVO;
 import com.myxhs.content.service.CommentService;
@@ -28,6 +29,7 @@ import java.util.Map;
 public class CommentController {
 
     private final CommentService commentService;
+    private final AccessTokenGuard accessTokenGuard;
 
     /**
      * 发表评论
@@ -126,7 +128,7 @@ public class CommentController {
     public R<Map<String, Object>> internalCommentInfo(
             @PathVariable("commentId") Long commentId,
             @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!isInternalCall(internalCall)) {
+        if (!accessTokenGuard.isInternalCall(internalCall)) {
             return R.fail(401, "内部调用令牌无效");
         }
         com.myxhs.content.entity.Comment c = commentService.getById(commentId);
@@ -136,10 +138,4 @@ public class CommentController {
         return R.ok(Map.of("commentId", c.getId(), "userId", c.getUserId(), "noteId", c.getNoteId()));
     }
 
-    @org.springframework.beans.factory.annotation.Value("${myxhs.internal.token:}")
-    private String internalToken;
-
-    private boolean isInternalCall(String headerValue) {
-        return internalToken != null && !internalToken.isEmpty() && internalToken.equals(headerValue);
-    }
 }

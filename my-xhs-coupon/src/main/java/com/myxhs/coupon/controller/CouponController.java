@@ -2,6 +2,7 @@ package com.myxhs.coupon.controller;
 
 import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
+import com.myxhs.common.web.AccessTokenGuard;
 import com.myxhs.coupon.dto.request.*;
 import com.myxhs.coupon.dto.response.CouponTemplateVO;
 import com.myxhs.coupon.dto.response.UserCouponVO;
@@ -31,27 +32,13 @@ import java.util.stream.Collectors;
 public class CouponController {
 
     private final CouponService couponService;
-
-    /** 内部服务调用令牌（配置化管理，不再硬编码） */
-    @org.springframework.beans.factory.annotation.Value("${myxhs.internal.token}")
-    private String internalToken;
-
-    /** 管理接口令牌（配置化管理，不再硬编码） */
-    @org.springframework.beans.factory.annotation.Value("${myxhs.admin.token}")
-    private String adminToken;
+    private final AccessTokenGuard accessTokenGuard;
 
     @PostConstruct
     public void validateTokens() {
-        if (internalToken == null || internalToken.isBlank()) {
-            throw new IllegalStateException("myxhs.internal.token 未配置，拒绝启动 coupon 服务");
-        }
-        if (adminToken == null || adminToken.isBlank()) {
-            throw new IllegalStateException("myxhs.admin.token 未配置，拒绝启动 coupon 服务");
-        }
+        accessTokenGuard.requireInternalTokenConfigured("coupon");
+        accessTokenGuard.requireAdminTokenConfigured("coupon");
     }
-
-    private boolean isInternalCall(String v) { return internalToken.equals(v); }
-    private boolean isAdminCall(String v) { return adminToken.equals(v); }
 
     // ==================== 券模板管理（管理端） ====================
 
@@ -68,7 +55,7 @@ public class CouponController {
     public R<CouponTemplateVO> createTemplate(
             @Valid @RequestBody CreateTemplateRequest request,
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
-        if (!isAdminCall(adminCall)) return R.fail(403, "无权访问管理接口");
+        if (!accessTokenGuard.isAdminCall(adminCall)) return R.fail(403, "无权访问管理接口");
         return R.ok(toTemplateVO(couponService.createTemplate(request)));
     }
 
@@ -79,7 +66,7 @@ public class CouponController {
     public R<Void> updateTemplateStatus(
             @Positive @PathVariable Long id, @NotNull @RequestParam Integer status,
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
-        if (!isAdminCall(adminCall)) return R.fail(403, "无权访问管理接口");
+        if (!accessTokenGuard.isAdminCall(adminCall)) return R.fail(403, "无权访问管理接口");
         couponService.updateTemplateStatus(id, status);
         return R.ok();
     }
@@ -151,7 +138,7 @@ public class CouponController {
             @RequestParam java.math.BigDecimal orderAmount,
             @RequestHeader("X-User-Id") Long userId,
             @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!isInternalCall(internalCall)) return R.fail(403, "仅限内部服务调用");
+        if (!accessTokenGuard.isInternalCall(internalCall)) return R.fail(403, "仅限内部服务调用");
         return R.ok(couponService.getCouponDiscount(userId, id, orderAmount));
     }
 
@@ -163,7 +150,7 @@ public class CouponController {
             @RequestHeader("X-User-Id") Long userId,
             @Valid @RequestBody UseCouponRequest request,
             @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!isInternalCall(internalCall)) return R.fail(403, "仅限内部服务调用");
+        if (!accessTokenGuard.isInternalCall(internalCall)) return R.fail(403, "仅限内部服务调用");
         java.math.BigDecimal discount = couponService.useCoupon(userId, request);
         return R.ok(discount);
     }
@@ -176,7 +163,7 @@ public class CouponController {
             @RequestHeader("X-User-Id") Long userId,
             @Valid @RequestBody ReturnCouponRequest request,
             @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!isInternalCall(internalCall)) return R.fail(403, "仅限内部服务调用");
+        if (!accessTokenGuard.isInternalCall(internalCall)) return R.fail(403, "仅限内部服务调用");
         couponService.returnCoupon(userId, request);
         return R.ok();
     }

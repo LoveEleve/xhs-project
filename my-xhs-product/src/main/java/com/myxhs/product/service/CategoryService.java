@@ -13,6 +13,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -105,10 +107,11 @@ public class CategoryService {
      * 递归构建子分类列表（带深度保护防循环引用 StackOverflow）
      */
     private List<CategoryTreeVO> buildChildren(Map<Long, List<Category>> parentMap, Long parentId) {
-        return buildChildren(parentMap, parentId, 0);
+        return buildChildren(parentMap, parentId, 0, new HashSet<>());
     }
 
-    private List<CategoryTreeVO> buildChildren(Map<Long, List<Category>> parentMap, Long parentId, int depth) {
+    private List<CategoryTreeVO> buildChildren(Map<Long, List<Category>> parentMap, Long parentId,
+                                               int depth, Set<Long> path) {
         if (depth >= MAX_DEPTH) {
             log.warn("[分类] 递归深度达到上限 {}, 停止构建, parentId={}", MAX_DEPTH, parentId);
             return Collections.emptyList();
@@ -120,6 +123,10 @@ public class CategoryService {
 
         List<CategoryTreeVO> result = new ArrayList<>();
         for (Category category : children) {
+            if (!path.add(category.getId())) {
+                log.warn("[分类] 检测到 parentId 环路，停止当前分支, categoryId={}", category.getId());
+                continue;
+            }
             CategoryTreeVO vo = new CategoryTreeVO();
             vo.setId(category.getId());
             vo.setName(category.getName());
@@ -127,8 +134,9 @@ public class CategoryService {
             vo.setLevel(category.getLevel());
             vo.setSort(category.getSort());
             vo.setIcon(category.getIcon());
-            vo.setChildren(buildChildren(parentMap, category.getId(), depth + 1));
+            vo.setChildren(buildChildren(parentMap, category.getId(), depth + 1, path));
             result.add(vo);
+            path.remove(category.getId());
         }
         return result;
     }

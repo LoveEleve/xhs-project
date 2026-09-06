@@ -3,6 +3,7 @@ package com.myxhs.inventory;
 import org.mybatis.spring.annotation.MapperScan;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.openfeign.EnableFeignClients;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
@@ -23,6 +24,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @SpringBootApplication
 @ComponentScan(basePackages = {"com.myxhs.inventory", "com.myxhs.common"})
 @MapperScan("com.myxhs.inventory.mapper")
+@EnableFeignClients(basePackages = "com.myxhs.inventory.feign")
 @EnableScheduling
 public class InventoryApplication {
     public static void main(String[] args) {

@@ -113,13 +113,15 @@ public class NoteService {
 
         LocalMessage localMsg = new LocalMessage();
         localMsg.setTopic("FEED_TOPIC");
-        localMsg.setBody(toJson(event));  // localMsgId 此时为 null，补偿 job 读取时补丁
+        localMsg.setBody("{}");
         localMsg.setStatus(0); // 待发送
         localMsg.setRetryCount(0);
         localMsg.setCreatedAt(java.time.LocalDateTime.now());
         localMessageMapper.insert(localMsg);
 
-        event.setLocalMsgId(localMsg.getId()); // 传递 localMsgId 用于推送进度跟踪
+        event.setLocalMsgId(localMsg.getId());
+        localMsg.setBody(toJson(event));
+        localMessageMapper.updateById(localMsg);
 
         final Long localMsgId = localMsg.getId();
 
@@ -443,13 +445,15 @@ public class NoteService {
 
         LocalMessage localMsg = new LocalMessage();
         localMsg.setTopic("FEED_TOPIC");
-        localMsg.setBody(toJson(draftEvent));
+        localMsg.setBody("{}");
         localMsg.setStatus(0);
         localMsg.setRetryCount(0);
         localMsg.setCreatedAt(java.time.LocalDateTime.now());
         localMessageMapper.insert(localMsg);
 
-        draftEvent.setLocalMsgId(localMsg.getId());  // 对齐 publishNote：传递 localMsgId
+        draftEvent.setLocalMsgId(localMsg.getId());
+        localMsg.setBody(toJson(draftEvent));
+        localMessageMapper.updateById(localMsg);
 
         final Long draftLocalMsgId = localMsg.getId();
 

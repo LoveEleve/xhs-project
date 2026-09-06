@@ -129,7 +129,7 @@ public interface InventoryMapper extends BaseMapper<Inventory> {
      */
     @org.apache.ibatis.annotations.Insert("INSERT INTO t_inventory_outbox (id, order_id, sku_id, quantity, action, status, created_at) " +
             "VALUES (#{eventId}, #{orderId}, #{skuId}, #{quantity}, #{action}, 0, NOW()) " +
-            "ON DUPLICATE KEY UPDATE quantity = VALUES(quantity), status = 0, created_at = NOW()")
+            "ON DUPLICATE KEY UPDATE quantity = VALUES(quantity), action = VALUES(action), status = 0, created_at = NOW()")
     int insertOutboxEvent(@Param("eventId") Long eventId, @Param("orderId") Long orderId, @Param("skuId") Long skuId,
             @Param("quantity") int quantity, @Param("action") String action);
 

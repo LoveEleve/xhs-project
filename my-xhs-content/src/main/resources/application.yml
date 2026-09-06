@@ -41,13 +41,13 @@ spring:
       - org.springframework.boot.autoconfigure.jmx.JmxAutoConfiguration
   data:
     redis:
-      host: 21.130.247.89
+      host: 192.168.0.142
       # Redis 密码 — Nacos shared-configs(my-xhs-common.yaml) 优先，本地为 fallback
       password: "Xhs@2026#Redis"
       port: 6379
       sentinel:
         master: mymaster
-        nodes: 21.130.247.89:26379
+        nodes: 192.168.0.142:26379
       business:
         port: 6379
       cache:
@@ -62,13 +62,13 @@ spring:
     nacos:
       discovery:
         enabled: true
-        server-addr: 21.130.247.89:18848
+        server-addr: 192.168.0.142:18848
         namespace: my-xhs
         metadata:
           zone: ${MYXHS_ZONE:defaultZone}
       config:
         enabled: true
-        server-addr: 21.130.247.89:18848
+        server-addr: 192.168.0.142:18848
         import-check:
           enabled: false
         file-extension: yaml
@@ -78,7 +78,7 @@ spring:
             refresh: true
     sentinel:
       transport:
-        dashboard: 21.130.247.89:8858
+        dashboard: 192.168.0.142:8858
         port: 8722
       eager: true
     openfeign:
@@ -117,7 +117,7 @@ mybatis-plus:
 
 # RocketMQ 配置
 rocketmq:
-  name-server: 21.130.247.89:9876
+  name-server: 192.168.0.142:9876
   producer:
     group: content-producer-group
     send-message-timeout: 3000
@@ -127,7 +127,7 @@ storage:
   type: local
   local:
     path: /data/uploads
-    url-prefix: http://21.214.97.212:19002/uploads
+    url-prefix: http://192.168.0.142:19002/uploads
 
 # Actuator 健康检查 + 指标暴露
 management:

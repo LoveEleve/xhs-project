@@ -282,6 +282,10 @@ public class SpuService {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
+                if (spuBloomFilter == null) {
+                    log.warn("[布隆过滤器] 未初始化，跳过新增 SPU ID: {}", newSpuId);
+                    return;
+                }
                 spuBloomFilter.add(newSpuId);
                 log.debug("[布隆过滤器] 新增 SPU ID: {}", newSpuId);
             }
@@ -341,7 +345,10 @@ public class SpuService {
             // update(null, wrapper) 不触发 BaseEntity 的 MetaObjectHandler 自动填充，
             // 需显式设置 updatedAt（INSERT_UPDATE 策略）
             updateWrapper.set(Spu::getUpdatedAt, java.time.LocalDateTime.now());
-            spuMapper.update(null, updateWrapper);
+            int affected = spuMapper.update(null, updateWrapper);
+            if (affected == 0) {
+                throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
+            }
 
             // 4. 事务提交后删除缓存(延迟双删: 立即删 + 1s后二次删, 防并发异步重建回填旧值)
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -382,7 +389,10 @@ public class SpuService {
                 .eq(Spu::getId, spuId)
                 .set(Spu::getStatus, status)
                 .set(Spu::getUpdatedAt, java.time.LocalDateTime.now());
-        spuMapper.update(null, updateWrapper);
+        int affected = spuMapper.update(null, updateWrapper);
+        if (affected == 0) {
+            throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
+        }
 
         // 事务提交后删除缓存
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {

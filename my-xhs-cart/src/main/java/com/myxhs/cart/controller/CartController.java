@@ -9,6 +9,7 @@ import com.myxhs.cart.job.CartReconcileJob;
 import com.myxhs.cart.service.CartService;
 import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
+import com.myxhs.common.web.AccessTokenGuard;
 import jakarta.annotation.PostConstruct;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -30,6 +31,7 @@ public class CartController {
 
     private final CartService cartService;
     private final CartReconcileJob cartReconcileJob;
+    private final AccessTokenGuard accessTokenGuard;
 
     /**
      * 加入购物车
@@ -137,19 +139,9 @@ public class CartController {
 
     // ==================== 管理接口 ====================
 
-    /** 管理接口令牌（配置化管理，不再硬编码） */
-    @org.springframework.beans.factory.annotation.Value("${myxhs.admin.token}")
-    private String adminToken;
-
     @PostConstruct
     public void validateAdminToken() {
-        if (adminToken == null || adminToken.isBlank()) {
-            throw new IllegalStateException("myxhs.admin.token 未配置，拒绝启动 cart 服务");
-        }
-    }
-
-    private boolean isAdminCall(String headerValue) {
-        return adminToken.equals(headerValue);
+        accessTokenGuard.requireAdminTokenConfigured("cart");
     }
 
     /** 全量对账专用线程池（单线程串行执行，避免阻塞 ForkJoinPool.commonPool 影响全 JVM） */
@@ -170,7 +162,7 @@ public class CartController {
             prefix = "myxhs:cart:reconcile", message = "对账操作过于频繁，每分钟最多2次")
     public R<String> reconcile(
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
-        if (!isAdminCall(adminCall)) {
+        if (!accessTokenGuard.isAdminCall(adminCall)) {
             return R.fail(403, "无权访问管理接口");
         }
         // C-06: 异步执行避免阻塞 Tomcat 线程（全量对账可能耗时较长）；
@@ -193,7 +185,7 @@ public class CartController {
     public R<String> reconcileUser(
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall,
             @RequestParam Long userId) {
-        if (!isAdminCall(adminCall)) {
+        if (!accessTokenGuard.isAdminCall(adminCall)) {
             return R.fail(403, "无权访问管理接口");
         }
         int repaired = cartReconcileJob.reconcileUser(userId);

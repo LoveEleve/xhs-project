@@ -56,9 +56,6 @@ public class TrafficColoringFilter implements GlobalFilter, Ordered {
 
         // 2. 灰度标记（客户端指定 → 直接使用；否则默认 stable）
         String grayTag = request.getHeaders().getFirst(GRAY_TAG_HEADER);
-        if (!StringUtils.hasText(grayTag)) {
-            grayTag = "stable";
-        }
 
         // 3. API 版本（客户端指定 → 透传；否则默认 v1）
         String apiVersion = request.getHeaders().getFirst(API_VERSION_HEADER);
@@ -102,7 +99,11 @@ public class TrafficColoringFilter implements GlobalFilter, Ordered {
         ServerHttpRequest mutatedRequest = request.mutate()
                 .headers(headers -> {
                     headers.set(TRACE_ID_HEADER, finalTraceId);
-                    headers.set(GRAY_TAG_HEADER, finalGrayTag);
+                    if (StringUtils.hasText(finalGrayTag)) {
+                        headers.set(GRAY_TAG_HEADER, finalGrayTag);
+                    } else {
+                        headers.remove(GRAY_TAG_HEADER);
+                    }
                     headers.set(API_VERSION_HEADER, finalApiVersion);
                     headers.set(AB_GROUP_HEADER, finalAbGroup);
                     headers.set(PRESSURE_TEST_HEADER, finalPressureTest);

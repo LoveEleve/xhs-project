@@ -53,12 +53,13 @@ public class OrderCompensationConsumer implements RocketMQListener<MessageExt> {
     @Override
     public void onMessage(MessageExt msg) {
         MqTraceHelper.restoreTraceId(msg);
+        CompensationMessage cm = null;
+        Long userId = null;
         try {
             String msgId = msg.getMsgId();
             String body = new String(msg.getBody(), StandardCharsets.UTF_8);
 
             // 解析补偿消息
-            CompensationMessage cm;
             try {
                 cm = JSON.parseObject(body, CompensationMessage.class);
             } catch (Exception e) {
@@ -90,7 +91,6 @@ public class OrderCompensationConsumer implements RocketMQListener<MessageExt> {
             }
 
             // 获取 userId（通过映射表反查，分库分表路由需要）
-            Long userId = null;
             String userIdStr = msg.getUserProperty("userId");
             if (userIdStr != null) {
                 try {
@@ -128,9 +128,33 @@ public class OrderCompensationConsumer implements RocketMQListener<MessageExt> {
         } catch (Exception e) {
             log.error("[补偿] 关单补偿失败: msgId={}, reconsumeTimes={}",
                     msg.getMsgId(), msg.getReconsumeTimes(), e);
+            // 接近重试上限时写入 Redis 兜底集合，由 OrderCloseJob 每分钟重放，
+            // 避免进 DLQ 后无消费者导致库存/优惠券永久泄漏。
+            if (msg.getReconsumeTimes() >= 2) {
+                writeCompensationFallback(cm, userId);
+            }
             throw new RuntimeException("关单补偿失败", e); // 触发 RocketMQ 重试
         } finally {
             MqTraceHelper.clearTraceId();
+        }
+    }
+
+    private static final String ORDER_COMPENSATION_FALLBACK_KEY = "myxhs:order:compensation:pending";
+
+    private void writeCompensationFallback(CompensationMessage cm, Long userId) {
+        try {
+            if (cm == null || cm.getOrderId() == null) {
+                return;
+            }
+            String action = cm.getAction() == null ? "CLOSE_ORDER" : cm.getAction();
+            if (userId == null) {
+                return;
+            }
+            String member = action + ":" + cm.getOrderId() + ":" + userId;
+            stringRedisTemplate.opsForSet().add(ORDER_COMPENSATION_FALLBACK_KEY, member);
+            log.warn("[补偿] 补偿失败已达重试上限，写入Redis兜底集合: {}", member);
+        } catch (Exception e) {
+            log.error("[补偿] 写入Redis兜底集合失败: orderId={}, userId={}", cm != null ? cm.getOrderId() : null, userId, e);
         }
     }
 }

@@ -24,6 +24,14 @@ public class AuthProperties {
     private String secret;
 
     /**
+     * HMAC 总开关。
+     * <p>
+     * 默认关闭：外部用户主路径仅保留 JWT，HMAC 降级为可选增强。
+     * 如需恢复高敏接口签名校验，可在配置中显式开启。
+     */
+    private boolean hmacEnabled = false;
+
+    /**
      * HMAC-SHA256 签名密钥（用于防篡改+防重放校验）
      * <p>
      * 与 JWT 密钥分离，职责不同：

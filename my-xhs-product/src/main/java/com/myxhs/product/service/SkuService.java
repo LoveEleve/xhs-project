@@ -51,7 +51,7 @@ public class SkuService {
     public Long createSku(SkuCreateRequest request) {
         // 校验 SPU 是否存在
         Spu spu = spuMapper.selectById(request.getSpuId());
-        if (spu == null) {
+        if (spu == null || spu.getStatus() == null || spu.getStatus() != ProductStatus.ON_SHELF.getCode()) {
             throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
         }
 
@@ -85,10 +85,14 @@ public class SkuService {
      */
     public SkuVO getSkuDetail(Long skuId) {
         Sku sku = skuMapper.selectById(skuId);
-        if (sku == null) {
+        if (sku == null || sku.getStatus() == null || sku.getStatus() != ProductStatus.ON_SHELF.getCode()) {
             throw new BizException(ResultCode.SKU_NOT_FOUND);
         }
-        return toSkuVO(sku);
+        Spu spu = spuMapper.selectById(sku.getSpuId());
+        if (spu == null || spu.getStatus() == null || spu.getStatus() != ProductStatus.ON_SHELF.getCode()) {
+            throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
+        }
+        return toSkuVO(sku, resolveSpuImage(sku.getSpuId()), spu.getStatus());
     }
 
     /**

@@ -2,6 +2,7 @@ package com.myxhs.inventory.controller;
 
 import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
+import com.myxhs.common.web.AccessTokenGuard;
 import com.myxhs.inventory.dto.request.ConfirmDeductRequest;
 import com.myxhs.inventory.dto.request.InventoryInitRequest;
 import com.myxhs.inventory.dto.request.PreDeductRequest;
@@ -34,30 +35,16 @@ public class InventoryController {
     private final InventoryService inventoryService;
     private final InventoryTccService inventoryTccService;
     private final InventoryReconcileJob inventoryReconcileJob;
+    private final AccessTokenGuard accessTokenGuard;
 
     @Value("${inventory.bucket.default-count:2}")
     private int defaultBucketCount;
 
-    /** 管理接口令牌（配置化管理，不再硬编码） */
-    @org.springframework.beans.factory.annotation.Value("${myxhs.admin.token}")
-    private String adminToken;
-
-    /** 内部服务调用令牌（配置化管理，不再硬编码） */
-    @org.springframework.beans.factory.annotation.Value("${myxhs.internal.token}")
-    private String internalToken;
-
     @PostConstruct
     public void validateTokens() {
-        if (internalToken == null || internalToken.isBlank()) {
-            throw new IllegalStateException("myxhs.internal.token 未配置，拒绝启动 inventory 服务");
-        }
-        if (adminToken == null || adminToken.isBlank()) {
-            throw new IllegalStateException("myxhs.admin.token 未配置，拒绝启动 inventory 服务");
-        }
+        accessTokenGuard.requireInternalTokenConfigured("inventory");
+        accessTokenGuard.requireAdminTokenConfigured("inventory");
     }
-
-    private boolean isInternalCall(String v) { return internalToken.equals(v); }
-    private boolean isAdminCall(String v) { return adminToken.equals(v); }
 
     /**
      * 库存初始化（DB → Redis 分桶）
@@ -70,7 +57,7 @@ public class InventoryController {
     public R<Void> initStock(
             @Valid @RequestBody InventoryInitRequest request,
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
-        if (!isAdminCall(adminCall)) return R.fail(403, "无权访问管理接口");
+        if (!accessTokenGuard.isAdminCall(adminCall)) return R.fail(403, "无权访问管理接口");
         inventoryService.initStock(request);
         return R.ok();
     }
@@ -82,7 +69,7 @@ public class InventoryController {
     public R<Void> preDeduct(
             @Valid @RequestBody PreDeductRequest request,
             @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!isInternalCall(internalCall)) return R.fail(403, "仅限内部服务调用");
+        if (!accessTokenGuard.isInternalCall(internalCall)) return R.fail(403, "仅限内部服务调用");
         inventoryService.preDeduct(request);
         return R.ok();
     }
@@ -94,7 +81,7 @@ public class InventoryController {
     public R<Void> confirmDeduct(
             @Valid @RequestBody ConfirmDeductRequest request,
             @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!isInternalCall(internalCall)) return R.fail(403, "仅限内部服务调用");
+        if (!accessTokenGuard.isInternalCall(internalCall)) return R.fail(403, "仅限内部服务调用");
         inventoryService.confirmDeduct(request);
         return R.ok();
     }
@@ -106,7 +93,7 @@ public class InventoryController {
     public R<Void> releaseStock(
             @Valid @RequestBody ReleaseStockRequest request,
             @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!isInternalCall(internalCall)) return R.fail(403, "仅限内部服务调用");
+        if (!accessTokenGuard.isInternalCall(internalCall)) return R.fail(403, "仅限内部服务调用");
         inventoryService.releaseStock(request);
         return R.ok();
     }
@@ -119,7 +106,7 @@ public class InventoryController {
     public R<Void> refundRestore(
             @Valid @RequestBody com.myxhs.inventory.dto.request.RefundRestoreRequest request,
             @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!isInternalCall(internalCall)) return R.fail(403, "仅限内部服务调用");
+        if (!accessTokenGuard.isInternalCall(internalCall)) return R.fail(403, "仅限内部服务调用");
         inventoryService.refundRestore(request);
         return R.ok();
     }
@@ -136,7 +123,7 @@ public class InventoryController {
     public R<Void> reinitStock(
             @Valid @RequestBody ReinitRequest request,
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
-        if (!isAdminCall(adminCall)) return R.fail(403, "无权访问管理接口");
+        if (!accessTokenGuard.isAdminCall(adminCall)) return R.fail(403, "无权访问管理接口");
         int bucketCount = request.getBucketCount() != null ? request.getBucketCount() : defaultBucketCount;
         inventoryService.reinitStock(request.getSkuId(), bucketCount);
         return R.ok();
@@ -160,7 +147,7 @@ public class InventoryController {
             message = "对账操作过于频繁，每分钟最多2次")
     public R<Integer> reconcile(
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
-        if (!isAdminCall(adminCall)) {
+        if (!accessTokenGuard.isAdminCall(adminCall)) {
             return R.fail(403, "无权访问管理接口");
         }
         int repairCount = inventoryReconcileJob.doReconcile();
@@ -179,7 +166,7 @@ public class InventoryController {
     @PostMapping("/tcc/try")
     public R<Boolean> tccTryDeduct(@Valid @RequestBody TccDeductRequest request,
             @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!isInternalCall(internalCall)) {
+        if (!accessTokenGuard.isInternalCall(internalCall)) {
             return R.fail(403, "仅限内部服务调用");
         }
         try {
@@ -201,7 +188,7 @@ public class InventoryController {
     @PostMapping("/tcc/confirm")
     public R<Void> tccConfirmDeduct(@Valid @RequestBody TccDeductRequest request,
             @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!isInternalCall(internalCall)) {
+        if (!accessTokenGuard.isInternalCall(internalCall)) {
             return R.fail(403, "仅限内部服务调用");
         }
         inventoryTccService.confirmDeductStock(
@@ -219,7 +206,7 @@ public class InventoryController {
     @PostMapping("/tcc/cancel")
     public R<Void> tccCancelDeduct(@Valid @RequestBody TccDeductRequest request,
             @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!isInternalCall(internalCall)) {
+        if (!accessTokenGuard.isInternalCall(internalCall)) {
             return R.fail(403, "仅限内部服务调用");
         }
         inventoryTccService.cancelDeductStock(

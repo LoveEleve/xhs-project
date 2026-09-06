@@ -3,6 +3,7 @@ package com.myxhs.order.controller;
 import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
 import com.myxhs.common.response.ResultCode;
+import com.myxhs.common.web.AccessTokenGuard;
 import com.myxhs.order.dto.request.DeliverRequest;
 import com.myxhs.order.dto.request.OrderCreateRequest;
 import com.myxhs.order.dto.request.PayRequest;
@@ -32,6 +33,7 @@ import java.util.List;
 public class OrderController {
 
     private final OrderService orderService;
+    private final AccessTokenGuard accessTokenGuard;
     /**
      * MockPayService 可选注入：仅在 pay.type=mock（默认）时存在。
      * 用 ObjectProvider 避免 pay.type=remote 时强依赖导致启动失败。
@@ -174,13 +176,6 @@ public class OrderController {
 
     // ==================== 支付服务回调接口 ====================
 
-    /** 内部服务调用令牌（配置化管理，不再硬编码） */
-    @org.springframework.beans.factory.annotation.Value("${myxhs.internal.token}")
-    private String internalToken;
-
-    private boolean isInternalCall(String headerValue) {
-        return internalToken != null && !internalToken.isEmpty() && internalToken.equals(headerValue);
-    }
 
     /**
      * 支付成功回调（仅允许内部支付服务调用）
@@ -189,7 +184,7 @@ public class OrderController {
     public R<Void> notifyPaySuccess(@RequestParam("orderId") Long orderId,
                                     @RequestParam("tradeNo") String tradeNo,
                                     @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!isInternalCall(internalCall)) {
+        if (!accessTokenGuard.isInternalCall(internalCall)) {
             log.warn("[订单回调] 非内部调用被拒绝: pay-success, orderId={}", orderId);
             return R.fail(403, "仅允许内部服务调用");
         }
@@ -213,7 +208,7 @@ public class OrderController {
     @PostMapping("/pay-fail")
     public R<Void> notifyPayFail(@RequestParam("orderId") Long orderId,
                                   @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!isInternalCall(internalCall)) {
+        if (!accessTokenGuard.isInternalCall(internalCall)) {
             log.warn("[订单回调] 非内部调用被拒绝: pay-fail, orderId={}", orderId);
             return R.fail(403, "仅允许内部服务调用");
         }
@@ -240,7 +235,7 @@ public class OrderController {
     public R<Void> notifyRefundSuccess(@RequestParam("orderId") Long orderId,
                                        @RequestParam("refundNo") String refundNo,
                                        @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!isInternalCall(internalCall)) {
+        if (!accessTokenGuard.isInternalCall(internalCall)) {
             log.warn("[订单回调] 非内部调用被拒绝: refund-success, orderId={}", orderId);
             return R.fail(403, "仅允许内部服务调用");
         }
@@ -260,7 +255,7 @@ public class OrderController {
     public R<Void> notifyRefundFail(@RequestParam("orderId") Long orderId,
                                     @RequestParam("refundNo") String refundNo,
                                     @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!isInternalCall(internalCall)) {
+        if (!accessTokenGuard.isInternalCall(internalCall)) {
             log.warn("[订单回调] 非内部调用被拒绝: refund-fail, orderId={}", orderId);
             return R.fail(403, "仅允许内部服务调用");
         }
@@ -275,7 +270,7 @@ public class OrderController {
     public R<BigDecimal> getOrderPayAmount(
             @RequestParam("orderId") Long orderId,
             @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!isInternalCall(internalCall)) return R.fail(403, "仅限内部服务调用");
+        if (!accessTokenGuard.isInternalCall(internalCall)) return R.fail(403, "仅限内部服务调用");
         BigDecimal payAmount = orderService.getOrderPayAmount(orderId);
         return R.ok(payAmount);
     }
@@ -287,7 +282,7 @@ public class OrderController {
     public R<Integer> getOrderStatus(
             @RequestParam("orderId") Long orderId,
             @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!isInternalCall(internalCall)) return R.fail(403, "仅限内部服务调用");
+        if (!accessTokenGuard.isInternalCall(internalCall)) return R.fail(403, "仅限内部服务调用");
         return R.ok(orderService.getOrderStatus(orderId));
     }
 }

@@ -536,7 +536,12 @@ public class UserService {
      */
     public Set<Object> getBlockList(Long userId) {
         String blockKey = RedisKeyConstants.USER_BLOCK_LIST + userId;
-        return new java.util.HashSet<>(stringRedisTemplate.opsForSet().members(blockKey));
+        Set<String> members = stringRedisTemplate.opsForSet().members(blockKey);
+        Set<Object> result = new java.util.HashSet<>();
+        if (members != null) {
+            result.addAll(members);
+        }
+        return result;
     }
 
     /**

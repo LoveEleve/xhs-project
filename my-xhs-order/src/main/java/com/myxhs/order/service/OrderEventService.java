@@ -65,7 +65,8 @@ public class OrderEventService {
             return;
         }
 
-        OrderEvent lastEvent = orderEventMapper.findLastByOrderId(order.getId());
+        // 带 user_id 精确路由分片，避免 findLastByOrderId 全分片广播
+        OrderEvent lastEvent = orderEventMapper.findLastByOrderIdAndUserId(order.getId(), order.getUserId());
         int nextSeq = (lastEvent == null) ? 1 : lastEvent.getEventSeq() + 1;
 
         // 幂等检查：检查是否已存在相同的事件记录（同一 event_seq 防重）

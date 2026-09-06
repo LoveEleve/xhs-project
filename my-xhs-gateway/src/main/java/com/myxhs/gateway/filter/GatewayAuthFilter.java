@@ -135,6 +135,7 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
         ServerHttpRequest mutatedRequest = exchange.getRequest().mutate()
                 .headers(h -> {
                     h.set(USER_ID_HEADER, uid);
+                    h.remove(USER_ROLE_HEADER);
                     if (role != null && !role.isBlank()) {
                         h.set(USER_ROLE_HEADER, role);
                     }

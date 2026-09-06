@@ -38,33 +38,6 @@ public interface OrderMapper extends BaseMapper<Order> {
     int setCompletedAt(@Param("id") Long id, @Param("userId") Long userId);
 
     /**
-     * 标记已支付（乐观锁 + 分片键路由）
-     */
-    @Update("UPDATE t_order SET status = 1, paid_at = #{paidAt}, updated_at = NOW() " +
-            "WHERE id = #{id} AND user_id = #{userId} AND status = 0 AND deleted = 0")
-    int markPaid(@Param("id") Long id, @Param("userId") Long userId,
-                 @Param("paidAt") LocalDateTime paidAt);
-
-    /**
-     * 标记已完成（乐观锁 + 分片键路由）
-     */
-    @Update("UPDATE t_order SET status = 3, completed_at = #{completedAt}, updated_at = NOW() " +
-            "WHERE id = #{id} AND user_id = #{userId} AND status = 2 AND deleted = 0")
-    int markCompleted(@Param("id") Long id, @Param("userId") Long userId,
-                      @Param("completedAt") LocalDateTime completedAt);
-
-    /**
-     * 标记已退款（乐观锁 + 分片键路由）
-     * <p>
-     * 只有"已支付(status=1)"的订单才能退款。
-     * 由支付服务退款成功后通过 Feign 回调触发。
-     * </p>
-     */
-    @Update("UPDATE t_order SET status = 5, updated_at = NOW() " +
-            "WHERE id = #{id} AND user_id = #{userId} AND status = 1 AND deleted = 0")
-    int markRefunded(@Param("id") Long id, @Param("userId") Long userId);
-
-    /**
      * 通用乐观锁状态更新（Event Sourcing 使用）
      * 只有当前状态匹配时才执行更新，防止并发覆盖
      * @param id 订单 ID

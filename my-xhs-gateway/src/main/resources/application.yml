@@ -38,7 +38,7 @@ spring:
       # Nacos 服务发现（Gateway 需要通过 Nacos 发现下游微服务实例）
       discovery:
         enabled: true
-        server-addr: 21.130.247.89:18848
+        server-addr: 192.168.0.142:18848
         namespace: my-xhs
         group: DEFAULT_GROUP
         metadata:
@@ -46,7 +46,7 @@ spring:
       # Nacos 配置中心（敏感配置、动态开关等）
       config:
         enabled: true
-        server-addr: 21.130.247.89:18848
+        server-addr: 192.168.0.142:18848
         namespace: my-xhs
         import-check:
         shared-configs:
@@ -72,8 +72,8 @@ spring:
       #       lock-timeout-ms: 3000  # 分布式锁超时
       # Sentinel 控制台配置（当前未部署控制台，仅使用限流规则）
       transport:
-        dashboard: 21.130.247.89:8858
-        client-ip: 21.214.97.212
+        dashboard: 192.168.0.142:8858
+        client-ip: 192.168.0.142
         port: 8719
       # 取消懒加载，启动时立即初始化 Sentinel
       eager: true
@@ -259,7 +259,7 @@ spring:
       port: 6379
       sentinel:
         master: mymaster
-        nodes: 21.130.247.89:26379
+        nodes: 192.168.0.142:26379
       business:
         port: 6379
       cache:
@@ -283,7 +283,9 @@ gateway:
   auth:
     # JWT 签名密钥（必须与 my-xhs-user 的 jwt.secret 保持一致）
     # 优先从 Nacos 读取，本地值为 fallback
-    secret: "MyXhs@2026#JwtSecretKey!ForTokenSign"
+    secret: ${JWT_SECRET:MyXhs@2026#JwtSecretKey!ForTokenSign}
+    # HMAC 总开关：默认关闭，JWT 为外部用户唯一主路径；如需高敏接口增强可显式开启
+    hmac-enabled: false
     # HMAC-SHA256 签名密钥（用于防篡改+防重放校验，与 JWT 密钥分离）
     # 优先从 Nacos 读取，本地值为 fallback
     hmac-secret: myxhs-hmac-secret-key-2024

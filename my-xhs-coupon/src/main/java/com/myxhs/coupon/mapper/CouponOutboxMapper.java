@@ -39,10 +39,4 @@ public interface CouponOutboxMapper {
      */
     @Update("UPDATE t_coupon_outbox SET status = 1 WHERE claim_no = #{claimNo}")
     int markOutboxSent(@Param("claimNo") String claimNo);
-
-    /**
-     * MQ 发送失败时删除 Outbox 记录（防 Job 补发与 Redis 回滚冲突导致超发）
-     */
-    @Delete("DELETE FROM t_coupon_outbox WHERE claim_no = #{claimNo}")
-    int deleteByClaimNo(@Param("claimNo") String claimNo);
 }

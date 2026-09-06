@@ -13,6 +13,9 @@ public interface OrderEventMapper extends BaseMapper<OrderEvent> {
     @Select("SELECT * FROM t_order_event WHERE order_id = #{orderId} ORDER BY event_seq ASC")
     List<OrderEvent> findByOrderId(@Param("orderId") Long orderId);
 
+    @Select("SELECT * FROM t_order_event WHERE order_id = #{orderId} AND user_id = #{userId} ORDER BY event_seq DESC LIMIT 1")
+    OrderEvent findLastByOrderIdAndUserId(@Param("orderId") Long orderId, @Param("userId") Long userId);
+
     @Select("SELECT * FROM t_order_event WHERE order_id = #{orderId} ORDER BY event_seq DESC LIMIT 1")
     OrderEvent findLastByOrderId(@Param("orderId") Long orderId);
 

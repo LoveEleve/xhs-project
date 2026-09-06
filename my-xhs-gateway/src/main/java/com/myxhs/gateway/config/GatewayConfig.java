@@ -4,7 +4,6 @@ import com.alibaba.csp.sentinel.adapter.gateway.common.rule.GatewayFlowRule;
 import com.alibaba.csp.sentinel.datasource.Converter;
 import com.alibaba.cloud.sentinel.datasource.converter.JsonConverter;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.myxhs.gateway.filter.GatewayAuthFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;

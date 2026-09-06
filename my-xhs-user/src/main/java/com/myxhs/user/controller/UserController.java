@@ -3,6 +3,7 @@ package com.myxhs.user.controller;
 import lombok.extern.slf4j.Slf4j;
 
 import com.myxhs.common.response.R;
+import com.myxhs.common.web.AccessTokenGuard;
 import com.myxhs.user.dto.request.ChangePasswordRequest;
 import com.myxhs.user.dto.request.UpdateUserRequest;
 import com.myxhs.user.dto.response.UserInfoResponse;
@@ -28,18 +29,7 @@ import java.util.Set;
 public class UserController {
 
     private final UserService userService;
-
-    /** T-013: 内部端点令牌（X-Internal-Call，fail-closed） */
-    @org.springframework.beans.factory.annotation.Value("${myxhs.internal.token:}")
-    private String internalToken;
-
-    /** T-122: 管理端点令牌（X-Admin-Call，对照 product/coupon 管理端点模式） */
-    @org.springframework.beans.factory.annotation.Value("${myxhs.admin.token:}")
-    private String adminToken;
-
-    private boolean isAdminCall(String v) {
-        return adminToken != null && !adminToken.isEmpty() && adminToken.equals(v);
-    }
+    private final AccessTokenGuard accessTokenGuard;
 
     /**
      * T-122（2026-08-16）：管理员删除用户
@@ -51,7 +41,7 @@ public class UserController {
     @DeleteMapping("/internal/delete/{userId}")
     public R<Void> deleteUser(@PathVariable Long userId,
                               @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
-        if (!isAdminCall(adminCall)) {
+        if (!accessTokenGuard.isAdminCall(adminCall)) {
             return R.fail(403, "无权访问管理接口");
         }
         userService.deleteUser(userId);
@@ -81,7 +71,7 @@ public class UserController {
     @GetMapping("/internal/exists/{userId}")
     public R<Boolean> internalUserExists(@PathVariable Long userId,
                                          @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (internalToken == null || internalToken.isEmpty() || !internalToken.equals(internalCall)) {
+        if (!accessTokenGuard.isInternalCall(internalCall)) {
             return R.fail(401, "内部调用令牌无效");
         }
         return R.ok(userService.userExists(userId));
@@ -93,7 +83,7 @@ public class UserController {
     @GetMapping("/internal/info/{userId}")
     public R<UserPublicInfoResponse> internalUserInfo(@PathVariable Long userId,
                                                       @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (internalToken == null || internalToken.isEmpty() || !internalToken.equals(internalCall)) {
+        if (!accessTokenGuard.isInternalCall(internalCall)) {
             return R.fail(401, "内部调用令牌无效");
         }
         return R.ok(userService.getUserPublicInfo(userId));

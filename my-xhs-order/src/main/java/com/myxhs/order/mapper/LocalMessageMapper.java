@@ -12,25 +12,16 @@ import java.util.List;
 @Mapper
 public interface LocalMessageMapper extends BaseMapper<LocalMessage> {
 
-    /** 查询待处理/失败的消息（定时任务补发）
-     *  时间窗口保护：只扫描 60 秒前创建的消息，避免与事务消息 Commit 过程冲突 */
-    @Select("SELECT * FROM t_local_message WHERE status IN (0, 2) " +
-            "AND retry_count < 3 AND created_at < DATE_SUB(NOW(), INTERVAL 60 SECOND) " +
-            "ORDER BY created_at ASC LIMIT #{limit}")
-    List<LocalMessage> selectPendingMessages(@Param("limit") int limit);
-
     /** 标记消息成功 */
     @Update("UPDATE t_local_message SET status = 1, updated_at = NOW() WHERE id = #{id}")
     int markSuccess(@Param("id") Long id);
 
-    /** 标记消息失败并增加重试次数 */
-    @Update("UPDATE t_local_message SET status = 2, retry_count = retry_count + 1, updated_at = NOW() " +
-            "WHERE id = #{id}")
-    int markFailed(@Param("id") Long id);
-
-    /** 标记为死信（重试次数超限） */
-    @Update("UPDATE t_local_message SET status = 3, updated_at = NOW() WHERE id = #{id}")
-    int markDead(@Param("id") Long id);
+    /** 按事务ID+分片键标记已投递（事务消息 COMMIT 后调用，避免 LocalMessageRetryJob 重复补发）
+     *  带 user_id 精确路由分片，避免 ShardingSphere 广播 */
+    @Update("UPDATE t_local_message SET status = 1, updated_at = NOW() " +
+            "WHERE transaction_id = #{transactionId} AND user_id = #{userId} AND status = 0")
+    int markSuccessByTransactionId(@Param("transactionId") String transactionId,
+                                   @Param("userId") Long userId);
 
     /** T-072（2026-08-14）：补发失败重试/死信状态更新——按 id 广播更新（不碰分片键 user_id，
      *  原 updateById 全字段更新含 user_id 触发 ShardingSphere "can not update sharding value"） */
