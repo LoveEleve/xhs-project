@@ -16,6 +16,7 @@ import com.myxhs.content.filter.DFAFilter;
 import com.myxhs.content.mapper.CommentMapper;
 import com.myxhs.content.mapper.LocalMessageMapper;
 import com.myxhs.content.mapper.NoteMapper;
+import com.myxhs.content.mapper.NoteEventMapper;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -74,6 +75,8 @@ class NoteServiceTest {
     private StringRedisTemplate stringRedisTemplate;
     @Mock
     private CommentMapper commentMapper;
+    @Mock
+    private NoteEventMapper noteEventMapper;
 
     private ObjectMapper objectMapper;
     private NoteService noteService;
@@ -87,7 +90,7 @@ class NoteServiceTest {
         objectMapper.registerModule(new JavaTimeModule());
         noteService = new NoteService(
                 noteMapper, commentMapper, localMessageMapper, dfaFilter, idGeneratorUtil,
-                cacheHelper, objectMapper, rocketMQTemplate, businessMetrics
+                cacheHelper, objectMapper, rocketMQTemplate, businessMetrics, noteEventMapper
         );
     }
 

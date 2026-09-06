@@ -6,7 +6,7 @@ spring:
     name: my-xhs-ai-mcp
   # 只读账号 myxhs_ai_ro（SELECT），密码走环境变量，不落库
   datasource:
-    url: ${MYXHS_DB_URL:jdbc:mysql://21.130.247.89:3306/my_xhs_order_0?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai}
+    url: ${MYXHS_DB_URL:jdbc:mysql://192.168.0.142:3306/my_xhs_order_0?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai}
     username: ${MYXHS_DB_USER:myxhs_ai_ro}
     password: ${MYXHS_DB_PASSWORD:}
     hikari:

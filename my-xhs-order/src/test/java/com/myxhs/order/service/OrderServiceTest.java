@@ -67,6 +67,8 @@ class OrderServiceTest {
     @Mock
     private OrderSnapshotMapper snapshotMapper;
     @Mock
+    private LocalMessageMapper localMessageMapper;
+    @Mock
     private OrderNoMappingRepository orderNoMappingRepository;
     @Mock
     private OrderTransactionService transactionService;
@@ -101,7 +103,7 @@ class OrderServiceTest {
         objectMapper.registerModule(new JavaTimeModule());
         // 使用构造函数注入 mock 对象（Lombok @RequiredArgsConstructor 生成）
         orderService = new OrderService(
-                orderMapper, orderItemMapper, snapshotMapper,
+                orderMapper, orderItemMapper, snapshotMapper, localMessageMapper,
                 orderNoMappingRepository, transactionService,
                 orderEventService,
                 rocketMQTemplate, stringRedisTemplate, objectMapper,
@@ -538,9 +540,8 @@ class OrderServiceTest {
     void getOrderPayAmount_notFound() {
         when(orderNoMappingRepository.selectByOrderId(ORDER_ID)).thenReturn(null);
 
-        assertThatThrownBy(() -> orderService.getOrderPayAmount(ORDER_ID))
-                .isInstanceOf(BizException.class)
-                .hasMessageContaining(ResultCode.ORDER_NOT_FOUND.getMessage());
+        // 订单不存在时返回 null，供支付侧理解为不可支付，而非抛异常（与 getOrderStatus 语义一致）
+        assertThat(orderService.getOrderPayAmount(ORDER_ID)).isNull();
     }
 
     // ==================== 辅助方法 ====================

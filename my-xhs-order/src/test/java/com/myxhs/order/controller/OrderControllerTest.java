@@ -56,6 +56,8 @@ class OrderControllerTest {
 
     @Mock
     private PaymentFeignClient paymentFeignClient;
+    @Mock
+    private com.myxhs.common.web.AccessTokenGuard accessTokenGuard;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -65,7 +67,7 @@ class OrderControllerTest {
 
     @BeforeEach
     void setUp() {
-        OrderController controller = new OrderController(orderService,
+        OrderController controller = new OrderController(orderService, accessTokenGuard,
                 new org.springframework.beans.factory.ObjectProvider<MockPayService>() {
                     @Override public MockPayService getObject() { return mockPayService; }
                     @Override public MockPayService getObject(Object... args) { return mockPayService; }
@@ -76,7 +78,8 @@ class OrderControllerTest {
                 }, paymentFeignClient);
         // 设置 pay.type=mock（默认行为）
         ReflectionTestUtils.setField(controller, "payType", "mock");
-        ReflectionTestUtils.setField(controller, "internalToken", "test-token");
+        // 内部回调端点使用 AccessTokenGuard.isInternalCall，放行测试请求
+        when(accessTokenGuard.isInternalCall(any())).thenReturn(true);
 
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new GlobalExceptionHandler())

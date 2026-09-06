@@ -19,7 +19,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.redisson.api.RedissonClient;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -56,6 +59,12 @@ class AuthServiceTest {
     private CacheHelper cacheHelper;
     @Mock
     private PasswordEncoder passwordEncoder;
+    @Mock
+    private StringRedisTemplate stringRedisTemplate;
+    @Mock
+    private ValueOperations<String, String> valueOperations;
+    @Mock
+    private TransactionTemplate transactionTemplate;
 
     private UserService userService;
     private CaptchaService realCaptchaService;
@@ -70,9 +79,12 @@ class AuthServiceTest {
     void setUp() {
         userService = new UserService(
                 userMapper, tokenService, captchaService,
-                redisOperator, redissonClient, cacheHelper, passwordEncoder
+                redisOperator, redissonClient, stringRedisTemplate,
+                cacheHelper, passwordEncoder, transactionTemplate
         );
-        realCaptchaService = new CaptchaService(redisOperator);
+        when(redisOperator.getStringRedisTemplate()).thenReturn(stringRedisTemplate);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        realCaptchaService = new CaptchaService(redisOperator, stringRedisTemplate);
     }
 
     // ==================== 登录测试 ====================
@@ -95,10 +107,10 @@ class AuthServiceTest {
                 .accessToken("access-token-xxx")
                 .refreshToken("refresh-token-xxx")
                 .build();
-        when(tokenService.generateTokenPair(USER_ID)).thenReturn(expectedToken);
+        when(tokenService.generateTokenPair(USER_ID, null)).thenReturn(expectedToken);
 
         // When
-        TokenResponse result = userService.login(request);
+        TokenResponse result = userService.login(request, "127.0.0.1");
 
         // Then
         assertThat(result).isNotNull();
@@ -121,7 +133,7 @@ class AuthServiceTest {
         when(redisOperator.increment(anyString())).thenReturn(1L);
 
         // When & Then
-        assertThatThrownBy(() -> userService.login(request))
+        assertThatThrownBy(() -> userService.login(request, "127.0.0.1"))
                 .isInstanceOf(BizException.class)
                 .hasMessageContaining("用户名或密码错误");
     }
@@ -138,7 +150,7 @@ class AuthServiceTest {
         when(redisOperator.increment(anyString())).thenReturn(1L);
 
         // When & Then
-        assertThatThrownBy(() -> userService.login(request))
+        assertThatThrownBy(() -> userService.login(request, "127.0.0.1"))
                 .isInstanceOf(BizException.class)
                 .hasMessageContaining("用户名或密码错误");
     }
@@ -149,7 +161,8 @@ class AuthServiceTest {
     @DisplayName("验证码生成 - 返回非空的 captchaKey 和 captchaImage")
     void captchaGeneration() {
         // Given
-        doNothing().when(redisOperator)
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        doNothing().when(valueOperations)
                 .set(anyString(), anyString(), anyLong(), any());
 
         // When
@@ -170,8 +183,7 @@ class AuthServiceTest {
         String validCode = "B7KT";
         String redisKey = "myxhs:user:captcha:" + validKey;
 
-        when(redisOperator.get(redisKey)).thenReturn(validCode);
-        when(redisOperator.delete(redisKey)).thenReturn(true);
+        when(valueOperations.getAndDelete(redisKey)).thenReturn(validCode);
 
         // When & Then: 正确验证码应无异常
         realCaptchaService.verifyCaptcha(validKey, validCode);
@@ -181,8 +193,7 @@ class AuthServiceTest {
         String wrongCode = "XXXX";
         String wrongRedisKey = "myxhs:user:captcha:" + wrongKey;
 
-        when(redisOperator.get(wrongRedisKey)).thenReturn("B7KT");
-        when(redisOperator.delete(wrongRedisKey)).thenReturn(true);
+        when(valueOperations.getAndDelete(wrongRedisKey)).thenReturn("B7KT");
 
         // When & Then: 错误验证码应抛出异常
         assertThatThrownBy(() -> realCaptchaService.verifyCaptcha(wrongKey, wrongCode))

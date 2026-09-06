@@ -71,6 +71,7 @@ class SkuServiceTest {
             Spu spu = new Spu();
             spu.setId(SPU_ID);
             spu.setName("测试SPU");
+            spu.setStatus(1);
             when(spuMapper.selectById(SPU_ID)).thenReturn(spu);
             when(idGeneratorUtil.nextId()).thenReturn(SKU_ID);
             when(skuMapper.insert(any(Sku.class))).thenReturn(1);
@@ -104,6 +105,11 @@ class SkuServiceTest {
         sku.setStock(100);
         sku.setSpecs("{\"颜色\":\"红色\"}");
         sku.setStatus(1);
+        Spu spu = new Spu();
+        spu.setId(SPU_ID);
+        spu.setStatus(1);
+        spu.setImages("[\"img1\"]");
+        when(spuMapper.selectById(SPU_ID)).thenReturn(spu);
         when(skuMapper.selectById(SKU_ID)).thenReturn(sku);
 
         SkuVO vo = skuService.getSkuDetail(SKU_ID);

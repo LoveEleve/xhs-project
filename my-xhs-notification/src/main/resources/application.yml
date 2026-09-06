@@ -38,13 +38,13 @@ spring:
       - org.springframework.boot.autoconfigure.jmx.JmxAutoConfiguration
   data:
     redis:
-      host: 21.130.247.89
+      host: 192.168.0.142
       # Redis 密码 — Nacos shared-configs(my-xhs-common.yaml) 优先，本地为 fallback
       password: "Xhs@2026#Redis"
       port: 6379
       sentinel:
         master: mymaster
-        nodes: 21.130.247.89:26379
+        nodes: 192.168.0.142:26379
       business:
         port: 6379
       cache:
@@ -59,13 +59,13 @@ spring:
     nacos:
       discovery:
         enabled: true
-        server-addr: 21.130.247.89:18848
+        server-addr: 192.168.0.142:18848
         namespace: my-xhs
         metadata:
           zone: ${MYXHS_ZONE:defaultZone}
       config:
         enabled: true
-        server-addr: 21.130.247.89:18848
+        server-addr: 192.168.0.142:18848
         import-check:
           enabled: false
         file-extension: yaml
@@ -75,7 +75,7 @@ spring:
             refresh: true
     sentinel:
       transport:
-        dashboard: 21.130.247.89:8858
+        dashboard: 192.168.0.142:8858
         port: 8731
       eager: true
     openfeign:
@@ -103,7 +103,7 @@ spring:
 
 # RocketMQ 配置
 rocketmq:
-  name-server: 21.130.247.89:9876
+  name-server: 192.168.0.142:9876
   consumer:
     group: notification-consumer-group
   producer:
@@ -123,7 +123,7 @@ mybatis-plus:
 
 # Redisson 配置
 redisson:
-  address: redis://21.130.247.89:6379
+  address: redis://192.168.0.142:6379
   # 【Nacos 配置】Redisson 密码已迁移至 Nacos Config（my-xhs-redis.yaml），本地值为 fallback
   password: "Xhs@2026#Redis"
 
@@ -133,7 +133,7 @@ xxl:
   job:
     enabled: true
     admin:
-      addresses: http://21.130.247.89:18080/xxl-job-admin
+      addresses: http://192.168.0.142:18080/xxl-job-admin
     accessToken: ${XXL_JOB_TOKEN:my-xhs-xxl-job-token-2026}
     executor:
       appname: my-xhs-notification

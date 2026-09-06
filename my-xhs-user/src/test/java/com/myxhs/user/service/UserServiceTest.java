@@ -21,7 +21,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.redisson.api.RedissonClient;
+import org.springframework.data.redis.core.SetOperations;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -56,6 +59,12 @@ class UserServiceTest {
     private CacheHelper cacheHelper;
     @Mock
     private PasswordEncoder passwordEncoder;
+    @Mock
+    private StringRedisTemplate stringRedisTemplate;
+    @Mock
+    private SetOperations<String, String> setOperations;
+    @Mock
+    private TransactionTemplate transactionTemplate;
 
     private UserService userService;
 
@@ -69,7 +78,8 @@ class UserServiceTest {
 
         userService = new UserService(
                 userMapper, tokenService, captchaService,
-                redisOperator, redissonClient, cacheHelper, passwordEncoder
+                redisOperator, redissonClient, stringRedisTemplate,
+                cacheHelper, passwordEncoder, transactionTemplate
         );
     }
 
@@ -142,14 +152,15 @@ class UserServiceTest {
     @DisplayName("屏蔽用户 - 屏蔽成功，验证 Redis SADD 调用")
     void blockUserSuccess() {
         // Given
-        when(redisOperator.sAdd(anyString(), any())).thenReturn(1L);
+        when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
+        when(setOperations.add(anyString(), any())).thenReturn(1L);
 
         // When
         assertThatCode(() -> userService.blockUser(USER_ID, TARGET_USER_ID))
                 .doesNotThrowAnyException();
 
         // Then
-        verify(redisOperator).sAdd(anyString(), (Object[]) any());
+        verify(setOperations).add(anyString(), any());
     }
 
     @Test

@@ -45,3 +45,5 @@ logs/
 # CodeBuddy local settings
 .codebuddy/
 skywalking-agent*/
+.secrets/
+deploy/docker/my-xhs-deploy-zip/backup_20260824_201502/

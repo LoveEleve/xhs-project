@@ -167,7 +167,8 @@ class CouponServiceTest {
                 .isInstanceOf(BizException.class)
                 .hasMessageContaining("领券失败");
 
-        verify(couponOutboxMapper, never()).deleteByClaimNo(anyString());
+        // MQ 失败时保留 Outbox 记录，交由补发任务兜底
+        verify(couponOutboxMapper).insertOutboxEvent(anyLong(), eq(USER_ID), eq(TEMPLATE_ID), anyString());
     }
 
     @Test

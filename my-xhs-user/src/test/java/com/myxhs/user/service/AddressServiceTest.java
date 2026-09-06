@@ -130,13 +130,18 @@ class AddressServiceTest {
 
     @Test
     @DisplayName("删除地址 - 逻辑删除，验证 deleted=1")
-    void deleteAddressSuccess() {
+    void deleteAddressSuccess() throws InterruptedException {
         // Given
         UserAddress address = buildAddress();
         address.setIsDefault(0);
         when(userAddressMapper.selectById(ADDRESS_ID)).thenReturn(address);
         when(userAddressMapper.deleteById(ADDRESS_ID)).thenReturn(1);
         when(redisOperator.delete(anyString())).thenReturn(true);
+
+        when(redissonClient.getLock(anyString())).thenReturn(rLock);
+        when(rLock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).thenReturn(true);
+        when(rLock.isHeldByCurrentThread()).thenReturn(true);
+        doNothing().when(rLock).unlock();
 
         // When
         assertThatCode(() -> userAddressService.deleteAddress(USER_ID, ADDRESS_ID))
@@ -150,7 +155,7 @@ class AddressServiceTest {
 
     @Test
     @DisplayName("设置默认地址 - setDefault 成功")
-    void setDefaultAddressSuccess() {
+    void setDefaultAddressSuccess() throws InterruptedException {
         // Given
         UserAddress address = buildAddress();
         address.setIsDefault(0);
@@ -158,6 +163,10 @@ class AddressServiceTest {
         when(userAddressMapper.update(isNull(), any(LambdaUpdateWrapper.class))).thenReturn(1);
         when(userAddressMapper.updateById(any(UserAddress.class))).thenReturn(1);
         doNothing().when(redisOperator).set(anyString(), any(), anyLong(), any(TimeUnit.class));
+        when(redissonClient.getLock(anyString())).thenReturn(rLock);
+        when(rLock.tryLock(anyLong(), anyLong(), any(TimeUnit.class))).thenReturn(true);
+        when(rLock.isHeldByCurrentThread()).thenReturn(true);
+        doNothing().when(rLock).unlock();
 
         // When
         assertThatCode(() -> userAddressService.setDefaultAddress(USER_ID, ADDRESS_ID))

@@ -29,6 +29,7 @@ import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.redisson.api.RedissonClient;
 import org.springframework.messaging.Message;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -68,6 +69,8 @@ class InventoryServiceTest {
     @Mock
     private HotSkuDetector hotSkuDetector;
     @Mock
+    private RedissonClient redissonClient;
+    @Mock
     private ValueOperations<String, String> valueOperations;
     @Mock
     private HashOperations<String, Object, Object> hashOperations;
@@ -85,7 +88,7 @@ class InventoryServiceTest {
         objectMapper.registerModule(new JavaTimeModule());
         inventoryService = new InventoryService(
                 stringRedisTemplate, rocketMQTemplate, inventoryMapper, objectMapper,
-                preDeductScript, releaseScript, confirmScript, businessMetrics, hotSkuDetector,
+                preDeductScript, releaseScript, confirmScript, businessMetrics, redissonClient, hotSkuDetector,
                 mock(com.myxhs.inventory.feign.ProductFeignClient.class)
         );
         // 注入 @Value 字段（非 final，不在 Lombok 构造函数中）
@@ -105,7 +108,7 @@ class InventoryServiceTest {
     void initStockSuccess() {
         // SETNX 幂等检查成功
         when(valueOperations.setIfAbsent(
-                eq("inventory:{10001}:total"), eq("100")))
+                eq("inventory:init:lock:10001"), eq("1"), any(java.time.Duration.class)))
                 .thenReturn(true);
         // MySQL 中无已有记录
         when(inventoryMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
@@ -117,8 +120,8 @@ class InventoryServiceTest {
 
         inventoryService.initStock(request);
 
-        // 验证 setIfAbsent 被调用（幂等检查）
-        verify(valueOperations).setIfAbsent(eq("inventory:{10001}:total"), eq("100"));
+        // 验证初始化锁被调用
+        verify(valueOperations).setIfAbsent(eq("inventory:init:lock:10001"), eq("1"), any(java.time.Duration.class));
         // 验证分桶写入：100 / 2 = 50
         verify(valueOperations).set(eq("inventory:{10001}:bucket:0"), eq("50"));
         verify(valueOperations).set(eq("inventory:{10001}:bucket:1"), eq("50"));
@@ -132,10 +135,12 @@ class InventoryServiceTest {
     @Test
     @DisplayName("库存初始化 - 重复初始化不会加倍库存，应抛出异常")
     void initStockDuplicatePrevention() {
-        // SETNX 返回 false，表示已初始化
+        // 获得初始化锁后，两个完整初始化标记均存在
         when(valueOperations.setIfAbsent(
-                eq("inventory:{10001}:total"), anyString()))
-                .thenReturn(false);
+                eq("inventory:init:lock:10001"), eq("1"), any(java.time.Duration.class)))
+                .thenReturn(true);
+        when(stringRedisTemplate.hasKey("inventory:{10001}:total")).thenReturn(true);
+        when(stringRedisTemplate.hasKey("inventory:bucket:count:{10001}")).thenReturn(true);
 
         InventoryInitRequest request = new InventoryInitRequest();
         request.setSkuId(SKU_ID);
@@ -145,8 +150,8 @@ class InventoryServiceTest {
                 .isInstanceOf(BizException.class)
                 .hasMessageContaining("库存已初始化");
 
-        // 验证根因：setIfAbsent 返回 false 即抛出异常
-        verify(valueOperations).setIfAbsent(eq("inventory:{10001}:total"), eq("100"));
+        // 验证已初始化标记阻止重复初始化
+        verify(valueOperations).setIfAbsent(eq("inventory:init:lock:10001"), eq("1"), any(java.time.Duration.class));
         // 不应进入后续的 MySQL 和分桶操作
         verify(inventoryMapper, never()).selectOne(any(LambdaQueryWrapper.class));
     }

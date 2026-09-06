@@ -4,10 +4,10 @@ server:
 spring:
   application:
     name: my-xhs-ai-app
-  # 指标工具读 my-xhs 真实 MySQL（云主机 21.130.247.89:3306，见部署包）
+  # 指标工具读 my-xhs 真实 MySQL（云主机 192.168.0.142:3306，见部署包）
   # 安全（D2 Gate）：只读账号 myxhs_ai_ro（GRANT SELECT），密码走环境变量，不落库
   datasource:
-    url: ${MYXHS_DB_URL:jdbc:mysql://21.130.247.89:3306/my_xhs_order_0?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai}
+    url: ${MYXHS_DB_URL:jdbc:mysql://192.168.0.142:3306/my_xhs_order_0?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai}
     username: ${MYXHS_DB_USER:myxhs_ai_ro}
     password: ${MYXHS_DB_PASSWORD:}
     hikari:
@@ -15,7 +15,7 @@ spring:
 
   # M5 Run Store：AI 自有库（my_xhs_ai，写账号 myxhs_ai_rw，与业务只读账号物理隔离）
   ai-datasource:
-    url: ${MYXHS_AI_DB_URL:jdbc:mysql://21.130.247.89:3306/my_xhs_ai?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai}
+    url: ${MYXHS_AI_DB_URL:jdbc:mysql://192.168.0.142:3306/my_xhs_ai?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai}
     username: ${MYXHS_AI_DB_USER:myxhs_ai_rw}
     password: ${MYXHS_AI_DB_PASSWORD:}
     hikari:
@@ -62,7 +62,7 @@ myxhs:
       # M14 bad case 回流文件（cwd 相对；jar 部署配绝对路径）
       badcase-file: src/main/resources/eval/cases-badcases.yaml
     rag:
-      es-url: ${MYXHS_ES_URL:http://21.130.247.89:19200}
+      es-url: ${MYXHS_ES_URL:http://192.168.0.142:19200}
       es-user: ${MYXHS_ES_USER:elastic}
       es-pass: ${MYXHS_ES_PASS:}
     trace-search:
@@ -75,7 +75,7 @@ myxhs:
     hitl:
       dlq-redeliver:
         # M11 HITL：DLQ 管理通道 URL（RocketMQ Dashboard）；未配置 → dlq.redeliver / mq.dlq_query 返回 ERROR
-        url: ${MYXHS_AI_DLQ_REDIVER_URL:http://21.130.247.89:18081}
+        url: ${MYXHS_AI_DLQ_REDIVER_URL:http://192.168.0.142:18081}
     log-search:
       # M9-1 受控日志检索白名单（service=日志文件绝对路径；不在白名单的服务一律拒绝）
       files: ${MYXHS_LOG_SEARCH_FILES:}
