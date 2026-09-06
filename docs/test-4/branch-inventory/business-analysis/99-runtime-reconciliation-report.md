@@ -47,7 +47,25 @@ MQ即时兜底: 支付成功Feign+MQUU(幂等共存) ✓
 - Mock 支付渠道：order→payment 服务链路已真实走通（pay/refund/回调/对账），仅渠道资金入账为模拟
 - 测试数据（5 订单/2 退款/2 笔记/1 券）保留，可复用后续联调
 
+## 第一轮补测（2026-09-06 第二轮全模块接口冒烟）
+
+对 user/content/product/cart/inventory/coupon/social(analytics/counter) 全部核心接口实测，
+额外发现并修复 2 类问题：
+
+| # | 问题 | 影响 | 修复 |
+|---|------|------|------|
+| 12 | gateway BodyCacheFilter 对无 body 的 POST/PUT/DELETE 空响应 | block 拉黑/取消、logout 等无 body 写接口经 gateway 挂起（HTTP 200 空 body） | `DataBufferUtils.join` 后 `defaultIfEmpty`，已修并验证 |
+| 13 | TransactionConfig 类级 @ConditionalOnBean 时序 bug（二轮迭代） | ① 类级条件评估过早→读写分离服务未加载事务管理器，所有 @Transactional 静默无效 ② 去掉后 home（无 DataSource 纯 Redis/MQ 服务）启动失败 | 条件移至 @Bean 方法级：有 DataSource 创建事务管理器、无则跳过；15 服务全量验证 |
+
+**构建流程教训**：并行 `mvn -am package` 存在本地仓库竞争，部分服务内嵌 common 为旧版
+（事务修复未生效）。必须**串行 clean package** 且先 `mvn install my-xhs-common` 与根 pom。
+
+补测通过（未发现问题）：注册登录、地址 CRUD、block、个人信息、发布/删除笔记、评论增删查、
+点赞/取消/计数(SOCIAL_TOPIC→counter)、收藏/取消、关注/取关/关系、SPU/SKU 创建、类目树、
+购物车增删改查/数量/合并、领券核销退券、库存预扣确认。
+
 ## 经验
 
-运行态复核发现了源码分析 + 单测无法覆盖的问题：topic/job/schema/启动时序/跨模块消息契约。
+运行态复核发现了源码分析 + 单测无法覆盖的问题：topic/job/schema/启动时序/跨模块消息契约/
+无 body 请求/gateway 响应体/构建并行 race。
 此后模块分析文档的「待运行确认」项应尽快实测闭环，而非依赖「应有兜底」的假设。
