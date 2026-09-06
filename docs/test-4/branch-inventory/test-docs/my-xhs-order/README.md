@@ -9,38 +9,41 @@
 
 ## L1 业务
 
-- 下单创建、参数校验、幂等
-- 支付成功/失败/退款回调
-- 发货、确认收货、取消、关单
-- 订单详情、列表、订单号反查
-- 优惠券折扣计算与核销
+- ✅ 下单创建
+- ✅ 参数校验（quantity=0/缺幂等键拒绝；**addressId无效拒绝【实测发现修复】**）
+- ✅ 幂等（同 bizIdentifier 40201 请勿重复下单）
+- ✅ 支付成功/失败/退款回调（pay-success/pay-fail/refund-success 全实测）
+- ✅ 发货、确认收货、取消、关单（0→1→2→3、取消0→4、超时关单4）
+- ✅ 订单详情、列表、订单号反查
+- ✅ 优惠券折扣计算与核销（满300减50 2999-50=2949）
 
 ## L2 数据
 
-- 分片 t_order/order_item/local_message/snapshot/event
-- 映射表 t_order_no_mapping 反查
-- 独立 payment 库
-- ORDER_TRANSACTION/CLOSE/COMPENSATION topic
-- 本地消息表补发与重试/DLQ
+- ✅ 分片路由（user_id=10001 → my_xhs_order_1.t_order_0 一致）
+- ✅ 映射表 t_order_no_mapping 反查（order_id/user_id/order_no 正确）
+- ✅ 独立 payment 库
+- ✅ ORDER_TRANSACTION/CLOSE/COMPENSATION topic（已创建+消费验证）
+- ✅ 本地消息表补发（status改0→LocalMessageRetryJob 补发成功=1）
+- ⚠️ DLQ（maxReconsumeTimes 耗尽进 DLQ 未造场景实测）
 
 ## L3 质量
 
-- 下单幂等与用户锁
-- 状态机并发（乐观锁）
-- 事务消息回查/半消息
-- 关单双通道（延时+Job）
-- 补偿 MQ/Redis set/Job 重放
-- 券折扣静默降级
-- 库存预扣与释放/退款回补
-- 支付重复回调
-- 分片路由与非分片键查询
+- ✅ 下单幂等与用户锁（幂等✅；用户锁并发未专门压测）
+- ✅ 状态机乐观锁（支付重复回调 30009 不改状态）
+- ⚠️ 事务消息回查/半消息（broker 回查机制未直接触发验证）
+- ✅ 关单双通道（orderCloseJob ✅；RocketMQ 延时30min 未等真实触发）
+- ⚠️ 补偿 MQ/Redis set/Job 重放（本地消息补发✅；compensation DLQ 兜底未造场景）
+- ✅ 券折扣静默降级（已修复验证）
+- ✅ 库存预扣与释放/退款回补（120→118/2→0，退款回120）
+- ✅ 支付重复回调（乐观锁幂等）
+- ✅ 分片路由与非分片键查询
 
 ## L4 可观测性
 
-- 订单创建/支付/退款/关单指标
-- 本地消息积压、死信、补偿重放
-- TraceId 跨 Order 与 6 个 Feign/MQ
-- actuator/prometheus、SkyWalking、bucket 待启动验证
+- ⚠️ 指标（prometheus 端点待验证）
+- ⚠️ 本地消息积压/死信（DLQ 未造场景）
+- ⚠️ TraceId 跨链路（日志有 traceId，未端到端断言）
+- ✅ actuator health
 
 ## 已修复（本轮）
 - 死代码 Mapper 方法删除（markPaid/markCompleted/markRefunded/selectPendingMessages/markFailed/markDead）
@@ -56,4 +59,4 @@
 - 本地消息重复投递（N-2）、事件全分片广播（N-3）、useCoupon 折扣丢弃（N-7）
 - 预扣竞态（D1，inventory 超时恢复兜底）
 - 映射修复全表扫描（有意设计，注释已声明）、列表无分页、广播 LIMIT pushdown
-- 运行级验证可基于已启动的 order 与 broker 执行
+- 运行级验证已按 L1-L4 矩阵执行（见上），✅ 项为实测通过，⚠️ 项待专门场景
