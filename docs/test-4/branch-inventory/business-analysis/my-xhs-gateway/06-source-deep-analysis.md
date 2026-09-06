@@ -389,6 +389,7 @@ Nacos Discovery 负责实例发现，LoadBalancer 负责实例选择。服务注
 | 未注册的 `CachingFilteringWebHandler` 死代码 | 删除 `handler/CachingFilteringWebHandler.java` | 已确认无引用；gateway 编译成功 |
 | 非法/零/负数 Sentinel QPS 缺少保护 | `RateLimitFilter.java:218-232` | 已改为仅接受正数，非法值回退默认 QPS |
 | 异常 cause 被包装时无法映射 503/504/404 | `GlobalExceptionHandler.java:111-132` | 已沿 cause 链识别连接、超时和路由异常 |
+| **无 body 的 POST/PUT/DELETE 空响应（运行态复核 T-130）** | `BodyCacheFilter.java:59` | `DataBufferUtils.join(空Flux)` 返回 empty Mono → `flatMap` 不执行 → 请求链挂起、空响应（实测 POST /api/user/block 无 body 空响应）；加 `defaultIfEmpty(空buffer)` 后 block/取消/列表全部正常 |
 
 ### 本轮明确不接入
 
