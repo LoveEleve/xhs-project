@@ -1,6 +1,7 @@
 package com.myxhs.search.controller;
 
 import com.myxhs.common.response.R;
+import com.myxhs.common.web.AccessTokenGuard;
 import com.myxhs.search.dto.BehaviorRequest;
 import com.myxhs.search.dto.RecommendFeedVO;
 import com.myxhs.search.job.RecommendComputeJob;
@@ -32,15 +33,11 @@ public class RecommendController {
 
     private final RecommendService recommendService;
     private final RecommendComputeJob recommendComputeJob;
+    private final AccessTokenGuard accessTokenGuard;
 
     @Qualifier("recallExecutor")
     private final ExecutorService recallExecutor;
 
-    /** 管理接口令牌（配置化管理，不再硬编码） */
-    @org.springframework.beans.factory.annotation.Value("${myxhs.admin.token}")
-    private String adminToken;
-
-    private boolean isAdminCall(String v) { return adminToken != null && !adminToken.isEmpty() && adminToken.equals(v); }
 
     /**
      * 个性化推荐 Feed（发现页）
@@ -95,7 +92,7 @@ public class RecommendController {
     @PostMapping("/compute")
     public R<String> triggerCompute(
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
-        if (!isAdminCall(adminCall)) return R.fail(403, "无权访问管理接口");
+        if (!accessTokenGuard.isAdminCall(adminCall)) return R.fail(403, "无权访问管理接口");
         recommendComputeJob.extractFeatures();
         recommendComputeJob.computeItemCFMatrix();
         recommendComputeJob.refreshHotPool();

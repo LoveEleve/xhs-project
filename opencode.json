@@ -1,5 +1,21 @@
 {
   "$schema": "https://opencode.ai/config.json",
+  "model": "yx-1/v4 flash",
+  "small_model": "yx-1/v4 flash",
+  "permission": {
+    "edit": "allow",
+    "bash": "allow",
+    "read": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "list": "allow",
+    "todowrite": "allow",
+    "webfetch": "allow",
+    "websearch": "allow"
+  },
+  "skills": {
+    "paths": [".opencode/skills"]
+  },
   "provider": {
     "deepseek": {
       "npm": "@ai-sdk/openai-compatible",
@@ -16,6 +32,70 @@
           "limit": { "context": 1000000, "output": 65536 },
           "variants": { "high": {}, "max": {}, "minimal": {} }
         }
+      }
+    },
+    "yx-1": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "yx-1",
+      "options": {
+        "baseURL": "https://aibh.cc/v1",
+        "apiKey": "sk-6d64c792cb58dc47cdabf7017099b0200584e74aca93172a"
+      },
+      "models": {
+        "v4 flash": { "name": "v4 flash", "tool_call": true },
+        "v4 pro": { "name": "v4 pro", "tool_call": true },
+        "gpt-5.6-sol": { "name": "GPT-5.6-sol", "tool_call": true },
+        "GPT-5.6-sol（Max）": { "name": "GPT-5.6-sol (Max)", "tool_call": true },
+        "V4 flash（Max）": { "name": "V4 flash (Max)", "tool_call": true },
+        "V4 pro（Max）": { "name": "V4 pro (Max)", "tool_call": true }
+      }
+    },
+    "siyu-1": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "siyu-1",
+      "options": {
+        "baseURL": "https://siyu.site/v1",
+        "apiKey": "sk-5962b5cd824f17f10d23b05f2c8a77d493ad69b57d405ae20031d1139e472b1f"
+      },
+      "models": {
+        "deepseek-v4-flash": { "name": "deepseek-v4-flash", "tool_call": true },
+        "deepseek-v4-pro": { "name": "deepseek-v4-pro", "tool_call": true }
+      }
+    },
+    "yx-old": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "yx-old",
+      "options": {
+        "baseURL": "https://openapi.xyxmh.cn/v1",
+        "apiKey": "sk-c08d5894f5599364e2bc419009f94893bc38f91f30cbaecf"
+      },
+      "models": {
+        "deepseek-v4-pro": { "name": "deepseek-v4-pro", "tool_call": true },
+        "deepseek-v4-flash": { "name": "deepseek-v4-flash", "tool_call": true }
+      }
+    },
+    "siyu-2": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "siyu-2",
+      "options": {
+        "baseURL": "https://siyu.site/v1",
+        "apiKey": "sk-059242c2769634f4e35ed9c6149faa3762dd271f7988c500bf279ababbb027e8"
+      },
+      "models": {
+        "deepseek-v4-flash": { "name": "deepseek-v4-flash", "tool_call": true },
+        "deepseek-v4-pro": { "name": "deepseek-v4-pro", "tool_call": true }
+      }
+    },
+    "siyu-all": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "siyu-all",
+      "options": {
+        "baseURL": "https://siyu.site/v1",
+        "apiKey": "sk-07ba02e7c88fa9fb0d455e6059aae16ae1c4ed26cf756b0f7baa13537caa6bf0"
+      },
+      "models": {
+        "deepseek-v4-flash": { "name": "deepseek-v4-flash", "tool_call": true },
+        "deepseek-v4-pro": { "name": "deepseek-v4-pro", "tool_call": true }
       }
     }
   },

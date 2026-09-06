@@ -1,6 +1,7 @@
 package com.myxhs.search.controller;
 
 import com.myxhs.common.response.R;
+import com.myxhs.common.web.AccessTokenGuard;
 import com.myxhs.search.dto.*;
 import com.myxhs.search.job.IndexRebuildJob;
 import com.myxhs.search.service.*;
@@ -34,6 +35,7 @@ public class SearchController {
     private final SearchHistoryService searchHistoryService;
     private final HotSearchService hotSearchService;
     private final IndexRebuildJob indexRebuildJob;
+    private final AccessTokenGuard accessTokenGuard;
 
     @Qualifier("recallExecutor")
     private final ExecutorService searchExecutor;
@@ -115,13 +117,6 @@ public class SearchController {
         return R.ok();
     }
 
-    /** 管理接口令牌（配置化管理，不再硬编码） */
-    @org.springframework.beans.factory.annotation.Value("${myxhs.admin.token}")
-    private String adminToken;
-
-    private boolean isAdminCall(String headerValue) {
-        return adminToken != null && !adminToken.isEmpty() && adminToken.equals(headerValue);
-    }
 
     /**
      * 手动触发全量索引重建（管理员接口）
@@ -129,7 +124,7 @@ public class SearchController {
     @PostMapping("/index/rebuild")
     public R<String> rebuildIndex(@RequestHeader("X-User-Id") Long userId,
                                   @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
-        if (!isAdminCall(adminCall)) {
+        if (!accessTokenGuard.isAdminCall(adminCall)) {
             return R.fail(403, "仅管理员可执行此操作");
         }
         indexRebuildJob.manualRebuild();
@@ -164,7 +159,7 @@ public class SearchController {
     @PutMapping("/hot/pin")
     public R<Void> pinKeyword(@RequestParam String keyword,
                               @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
-        if (!isAdminCall(adminCall)) {
+        if (!accessTokenGuard.isAdminCall(adminCall)) {
             return R.fail(403, "仅管理员可执行此操作");
         }
         hotSearchService.pinKeyword(keyword);
@@ -177,7 +172,7 @@ public class SearchController {
     @DeleteMapping("/hot/pin")
     public R<Void> unpinKeyword(@RequestParam String keyword,
                                 @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
-        if (!isAdminCall(adminCall)) {
+        if (!accessTokenGuard.isAdminCall(adminCall)) {
             return R.fail(403, "仅管理员可执行此操作");
         }
         hotSearchService.unpinKeyword(keyword);
@@ -190,7 +185,7 @@ public class SearchController {
     @PutMapping("/hot/block")
     public R<Void> blockKeyword(@RequestParam String keyword,
                                 @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
-        if (!isAdminCall(adminCall)) {
+        if (!accessTokenGuard.isAdminCall(adminCall)) {
             return R.fail(403, "仅管理员可执行此操作");
         }
         hotSearchService.blockKeyword(keyword);
@@ -203,7 +198,7 @@ public class SearchController {
     @DeleteMapping("/hot/block")
     public R<Void> unblockKeyword(@RequestParam String keyword,
                                   @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
-        if (!isAdminCall(adminCall)) {
+        if (!accessTokenGuard.isAdminCall(adminCall)) {
             return R.fail(403, "仅管理员可执行此操作");
         }
         hotSearchService.unblockKeyword(keyword);

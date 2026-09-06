@@ -2,6 +2,7 @@ package com.myxhs.counter.controller;
 
 import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
+import com.myxhs.common.web.AccessTokenGuard;
 import com.myxhs.counter.dto.CounterBatchRequest;
 import com.myxhs.counter.service.CounterService;
 import lombok.RequiredArgsConstructor;
@@ -25,14 +26,7 @@ import java.util.Map;
 public class CounterController {
 
     private final CounterService counterService;
-
-    /** 管理接口令牌（配置化管理，不再硬编码） */
-    @org.springframework.beans.factory.annotation.Value("${myxhs.admin.token}")
-    private String adminToken;
-
-    private boolean isAdminCall(String headerValue) {
-        return adminToken != null && !adminToken.isEmpty() && adminToken.equals(headerValue);
-    }
+    private final AccessTokenGuard accessTokenGuard;
 
     /**
      * 查询单个计数（公开）
@@ -73,7 +67,7 @@ public class CounterController {
             message = "对账修复请求过于频繁，每分钟最多 2 次")
     public R<Integer> reconcile(
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
-        if (!isAdminCall(adminCall)) {
+        if (!accessTokenGuard.isAdminCall(adminCall)) {
             return R.fail(403, "无权访问管理接口");
         }
         int fixedCount = counterService.reconcile();

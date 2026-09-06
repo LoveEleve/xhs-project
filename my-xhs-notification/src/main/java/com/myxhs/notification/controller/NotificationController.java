@@ -5,6 +5,7 @@ import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.exception.BizException;
 import com.myxhs.common.response.R;
 import com.myxhs.common.response.ResultCode;
+import com.myxhs.common.web.AccessTokenGuard;
 import com.myxhs.notification.dto.NotificationVO;
 import com.myxhs.notification.dto.UnreadCountVO;
 import com.myxhs.notification.service.NotificationService;
@@ -32,6 +33,7 @@ public class NotificationController {
     private final NotificationService notificationService;
     private final SseTicketService sseTicketService;
     private final SseEmitterManager sseEmitterManager;
+    private final AccessTokenGuard accessTokenGuard;
 
     // ==================== SSE 连接 ====================
 
@@ -130,22 +132,12 @@ public class NotificationController {
     @GetMapping("/sse/online-count")
     public R<Map<String, Object>> getOnlineCount(
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
-        if (!isAdminCall(adminCall)) return R.fail(403, "无权访问管理接口");
+        if (!accessTokenGuard.isAdminCall(adminCall)) return R.fail(403, "无权访问管理接口");
         return R.ok(Map.of("onlineCount", sseEmitterManager.getOnlineCount()));
     }
 
-    /** 管理接口令牌（配置化管理，不再硬编码） */
-    @org.springframework.beans.factory.annotation.Value("${myxhs.admin.token}")
-    private String adminToken;
-
     @PostConstruct
     public void validateAdminToken() {
-        if (adminToken == null || adminToken.isBlank()) {
-            throw new IllegalStateException("myxhs.admin.token 未配置，拒绝启动 notification 服务");
-        }
-    }
-
-    private boolean isAdminCall(String v) {
-        return adminToken.equals(v);
+        accessTokenGuard.requireAdminTokenConfigured("notification");
     }
 }

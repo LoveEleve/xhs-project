@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
 import com.myxhs.common.util.JwtUtil;
+import com.myxhs.common.web.AccessTokenGuard;
 import com.myxhs.im.dto.ConversationVO;
 import com.myxhs.im.dto.ImMessageVO;
 import com.myxhs.im.entity.ChatMessage;
@@ -43,6 +44,7 @@ public class ImController {
     private final ChatService chatService;
     private final ImWebSocketHandler webSocketHandler;
     private final OnlineRouteService onlineRouteService;
+    private final AccessTokenGuard accessTokenGuard;
 
     @org.springframework.beans.factory.annotation.Value("${jwt.secret:${IM_JWT_SECRET:}}")
     private String jwtSecret;
@@ -158,17 +160,10 @@ public class ImController {
     @GetMapping("/online-count")
     public R<Map<String, Object>> getOnlineCount(
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
-        if (!isAdminCall(adminCall)) return R.fail(403, "无权访问管理接口");
+        if (!accessTokenGuard.isAdminCall(adminCall)) return R.fail(403, "无权访问管理接口");
         return R.ok(Map.of(
                 "localOnline", webSocketHandler.getOnlineCount(),
                 "serverId", onlineRouteService.getServerId()));
     }
 
-    /** 管理接口令牌（配置化管理，不再硬编码） */
-    @org.springframework.beans.factory.annotation.Value("${myxhs.admin.token}")
-    private String adminToken;
-
-    private boolean isAdminCall(String v) {
-        return adminToken != null && !adminToken.isEmpty() && adminToken.equals(v);
-    }
 }

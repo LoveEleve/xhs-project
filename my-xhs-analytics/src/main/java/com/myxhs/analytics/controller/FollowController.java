@@ -4,6 +4,7 @@ import com.myxhs.analytics.dto.response.FollowVO;
 import com.myxhs.analytics.service.FollowService;
 import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
+import com.myxhs.common.web.AccessTokenGuard;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import jakarta.validation.constraints.Min;
@@ -25,6 +26,7 @@ import java.util.Map;
 public class FollowController {
 
     private final FollowService followService;
+    private final AccessTokenGuard accessTokenGuard;
 
     /**
      * 关注用户
@@ -149,20 +151,11 @@ public class FollowController {
     public R<String> repairCounter(
             @PathVariable Long userId,
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
-        if (!isAdminCall(adminCall)) {
+        if (!accessTokenGuard.isAdminCall(adminCall)) {
             return R.fail(403, "无权访问管理接口");
         }
         String result = followService.repairUserCounters(userId);
         return R.ok(result);
     }
 
-    // ==================== 管理接口鉴权 ====================
-
-    @org.springframework.beans.factory.annotation.Value("${management.admin-token}")
-    private String adminToken;
-
-    private boolean isAdminCall(String headerValue) {
-        // fail-closed：token 未配置（空）时永远拒绝，防止空 Header 绕过
-        return adminToken != null && !adminToken.isEmpty() && adminToken.equals(headerValue);
-    }
 }

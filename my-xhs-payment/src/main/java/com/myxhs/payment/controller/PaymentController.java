@@ -3,6 +3,7 @@ package com.myxhs.payment.controller;
 import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
 import com.myxhs.common.response.ResultCode;
+import com.myxhs.common.web.AccessTokenGuard;
 import com.myxhs.payment.dto.request.PayCreateRequest;
 import com.myxhs.payment.dto.request.RefundRequest;
 import com.myxhs.payment.dto.response.PaymentVO;
@@ -32,26 +33,13 @@ import org.springframework.web.bind.annotation.*;
 public class PaymentController {
 
     private final PaymentService paymentService;
+    private final AccessTokenGuard accessTokenGuard;
 
-    /** 内部调用令牌（配置化管理，不再硬编码；生产环境应为第三方签名验签） */
-    @org.springframework.beans.factory.annotation.Value("${myxhs.internal.token}")
-    private String internalToken;
     @PostConstruct
     public void validateTokens() {
-        if (internalToken == null || internalToken.isBlank()) {
-            throw new IllegalStateException("myxhs.internal.token 未配置，拒绝启动 payment 服务");
-        }
-        if (adminToken == null || adminToken.isBlank()) {
-            throw new IllegalStateException("myxhs.admin.token 未配置，拒绝启动 payment 服务");
-        }
+        accessTokenGuard.requireInternalTokenConfigured("payment");
+        accessTokenGuard.requireAdminTokenConfigured("payment");
     }
-
-    private boolean isInternalCall(String v) { return internalToken.equals(v); }
-
-    /** 管理接口令牌（配置化管理，不再硬编码） */
-    @org.springframework.beans.factory.annotation.Value("${myxhs.admin.token}")
-    private String adminToken;
-    private boolean isAdminCall(String v) { return adminToken.equals(v); }
 
     /**
      * 发起支付
@@ -63,7 +51,7 @@ public class PaymentController {
                             @RequestHeader("X-User-Id") Long userId,
                             @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
         // 仅允许内部调用（order服务 Feign）或有 admin 权限的调用
-        if (!isInternalCall(internalCall)) {
+        if (!accessTokenGuard.isInternalCall(internalCall)) {
             log.warn("[支付] 非内部调用被拒绝: userId={}, orderId={}", userId, request.getOrderId());
             return R.fail(403, "支付请通过订单服务发起");
         }
@@ -84,7 +72,7 @@ public class PaymentController {
     public String payCallback(@PathVariable Integer payType,
                               @RequestBody String callbackData,
                               @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!isInternalCall(internalCall)) {
+        if (!accessTokenGuard.isInternalCall(internalCall)) {
             log.warn("[支付回调] 非内部调用被拒绝: payType={}", payType);
             return "fail";
         }
@@ -123,7 +111,7 @@ public class PaymentController {
     public R<Void> refund(@Valid @RequestBody RefundRequest request,
                           @RequestHeader("X-User-Id") Long userId,
                           @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!isInternalCall(internalCall)) {
+        if (!accessTokenGuard.isInternalCall(internalCall)) {
             log.warn("[退款] 非内部调用被拒绝: userId={}, paymentId={}", userId, request.getPaymentId());
             return R.fail(403, "退款请通过订单服务发起");
         }
@@ -138,7 +126,7 @@ public class PaymentController {
     public String refundCallback(@PathVariable Integer payType,
                                  @RequestBody String callbackData,
                                  @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!isInternalCall(internalCall)) {
+        if (!accessTokenGuard.isInternalCall(internalCall)) {
             log.warn("[退款回调] 非内部调用被拒绝: payType={}", payType);
             return "fail";
         }
@@ -163,7 +151,7 @@ public class PaymentController {
     public R<PaymentVO> getPaymentStatus(@PathVariable Long orderId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId,
             @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!isInternalCall(internalCall)) {
+        if (!accessTokenGuard.isInternalCall(internalCall)) {
             log.warn("[支付状态] 非内部调用被拒绝: orderId={}", orderId);
             return R.fail(403, "仅限内部服务调用");
         }

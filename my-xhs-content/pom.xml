@@ -89,12 +89,6 @@
             <version>${project.version}</version>
         </dependency>
 
-        <!-- Content API Module -->
-        <dependency>
-            <groupId>com.myxhs</groupId>
-            <artifactId>my-xhs-content-api</artifactId>
-            <version>${project.version}</version>
-        </dependency>
 
         <!-- Lombok -->
         <dependency>
