@@ -56,11 +56,16 @@ public class BodyCacheFilter implements GlobalFilter, Ordered {
         }
 
         // T-020: body 读取异常按空 body 降级（签名校验会 403，避免 500/连接异常）
+        // T-130 修复（2026-09-06 运行态复核）：无 body 的 POST/PUT/DELETE（如 block/logout）
+        // 时 request.getBody() 是空 Flux，DataBufferUtils.join 返回 empty Mono，
+        // flatMap 不执行 -> 请求链既不继续也不完成 -> 空响应。
+        // defaultIfEmpty 提供空 body 使链路正常继续。
         return DataBufferUtils.join(request.getBody())
                 .onErrorResume(ex -> {
                     log.warn("[BodyCache] 请求体读取异常，按空body降级: {}", ex.getMessage());
                     return Mono.just(exchange.getResponse().bufferFactory().wrap(new byte[0]));
                 })
+                .defaultIfEmpty(exchange.getResponse().bufferFactory().wrap(new byte[0]))
                 .flatMap(dataBuffer -> {
                     byte[] bytes = new byte[dataBuffer.readableByteCount()];
                     dataBuffer.read(bytes);
