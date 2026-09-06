@@ -110,6 +110,16 @@ class OrderServiceTest {
                 inventoryFeignClient, couponFeignClient, productFeignClient, userFeignClient,
                 businessMetrics
         );
+
+        // resolveAddressSnapshot 需返回有效地址，否则下单测试会抛 ADDRESS_NOT_FOUND
+        com.myxhs.order.dto.UserAddressDTO address = new com.myxhs.order.dto.UserAddressDTO();
+        address.setReceiverName("张三");
+        address.setReceiverPhone("13800138001");
+        address.setProvince("广东省");
+        address.setCity("深圳市");
+        address.setDistrict("南山区");
+        address.setDetailAddress("科技园路1号");
+        when(userFeignClient.getAddress(anyLong(), anyLong())).thenReturn(R.ok(address));
     }
 
     // ==================== 创建订单 ====================

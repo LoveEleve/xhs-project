@@ -378,17 +378,21 @@ public class OrderService {
         try {
             R<UserAddressDTO> resp = userFeignClient.getAddress(userId, addressId);
             if (resp == null || !resp.isSuccess() || resp.getData() == null) {
+                // 收货地址是下单硬需求：addressId 必填（@NotNull），
+                // 获取失败/地址不存在必须拒绝下单——否则产生无地址订单（无法收货）。
                 log.warn("[订单] 获取收货地址失败, userId={}, addressId={}, msg={}", userId, addressId,
                         resp != null ? resp.getMessage() : "null");
-                return "{\"name\":\"\",\"phone\":\"\",\"address\":\"\"}";
+                throw new BizException(ResultCode.ADDRESS_NOT_FOUND, "收货地址不存在，请重新选择");
             }
             UserAddressDTO a = resp.getData();
             String full = nvl(a.getProvince()) + nvl(a.getCity()) + nvl(a.getDistrict()) + nvl(a.getDetailAddress());
             return "{\"name\":\"" + esc(a.getReceiverName()) + "\",\"phone\":\"" + esc(a.getReceiverPhone())
                     + "\",\"address\":\"" + esc(full) + "\"}";
+        } catch (BizException be) {
+            throw be;
         } catch (Exception e) {
             log.warn("[订单] 获取收货地址异常, userId={}, addressId={}", userId, addressId, e);
-            return "{\"name\":\"\",\"phone\":\"\",\"address\":\"\"}";
+            throw new BizException(ResultCode.INTERNAL_ERROR, "获取收货地址失败，请稍后重试");
         }
     }
 
