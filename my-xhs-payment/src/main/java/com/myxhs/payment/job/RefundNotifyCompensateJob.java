@@ -140,7 +140,7 @@ public class RefundNotifyCompensateJob {
                     } else {
                         log.error("[补偿任务] 订单服务返回异常: orderId={}, code={}", refund.orderId, code);
                     }
-incrementRetryCount(countKey);
+                    incrementRetryCount(countKey);
                     continue;
                 }
 
@@ -167,7 +167,7 @@ incrementRetryCount(countKey);
                     // 通知失败：可能是订单已不是已支付状态，或订单服务暂时不可用
                     log.warn("[补偿任务] 退款订单 {} 通知失败: {}", refund.orderId,
                             notifyResult != null ? notifyResult.getMessage() : "null response");
-incrementRetryCount(countKey);
+                    incrementRetryCount(countKey);
                 }
             } catch (Exception e) {
                 log.error("[补偿任务] 处理退款订单 {} 补偿异常", refund.orderId, e);
@@ -181,7 +181,7 @@ incrementRetryCount(countKey);
                         log.warn("[退款补偿] Redis计数非法值: orderId={}, value={}", refund.orderId, countStr);
                     }
                 }
-incrementRetryCount(countKey);
+                incrementRetryCount(countKey);
             }
         }
 

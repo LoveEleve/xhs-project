@@ -6,7 +6,6 @@ import com.myxhs.common.metrics.BusinessMetrics;
 import com.myxhs.common.response.R;
 import com.myxhs.common.response.ResultCode;
 import com.myxhs.common.trace.MqTraceHelper;
-import com.myxhs.payment.config.PaymentConfig;
 import com.myxhs.payment.dto.request.PayCreateRequest;
 import com.myxhs.payment.dto.request.RefundRequest;
 import com.myxhs.payment.dto.response.PaymentVO;
@@ -71,7 +70,6 @@ public class PaymentService {
     private final RedissonClient redissonClient;
     private final Map<Integer, PayChannelStrategy> payChannelStrategyMap;
     private final com.myxhs.payment.simulator.PayCallbackSimulator callbackSimulator;
-    private final DefaultRedisScript<Long> paymentTimeoutScript;
     private final OrderFeignClient orderFeignClient;
     private final IdGeneratorUtil idGeneratorUtil;
     private final BusinessMetrics businessMetrics;
@@ -336,7 +334,8 @@ public class PaymentService {
         // 更新 Redis 支付状态缓存（P2-4: 永久 key 无界 → 7 天 TTL，防重窗口内足够，订单状态由 DB 兜底）
         stringRedisTemplate.opsForValue().set("myxhs:payment:status:" + orderId, "1", java.time.Duration.ofDays(7));
 
-        // 删除幂等键（支付完成后允许该订单再次支付，如退款后重新支付）
+        // 删除"支付中"幂等键。注意：退款后订单状态为 3（已退款），P1-1 支付前回查会拒绝非待付款订单，
+        // 因此本订单不会再次支付（重新支付需用户重新下单），此删除仅为清理 Redis 残留标记。
         stringRedisTemplate.delete(PAYING_KEY_PREFIX + orderId);
 
         log.info("[支付成功] orderId={}, paymentNo={}, tradeNo={}", orderId, paymentNo, tradeNo);
@@ -350,16 +349,17 @@ public class PaymentService {
         // P1-1：若订单明确返回业务失败（已取消/已支付，非瞬态503）→ 自动退款，避免钱货两空
         // 只有在订单接受后才发 MQ，否则 MQ 已发但退款后订单消费者可能误处理。
         boolean businessRejected = false;
-        boolean feignFailed = false;
         try {
             R<Void> nr = orderFeignClient.notifyPaySuccess(orderId, tradeNo);
             businessRejected = (nr != null && !nr.isSuccess()
                     && nr.getCode() != ResultCode.SERVICE_UNAVAILABLE.getCode());
         } catch (Exception e) {
-            feignFailed = true;
-            log.error("[支付成功] 通知订单服务失败(订单MQ消费者会兜底): orderId={}, tradeNo={}", orderId, tradeNo, e);
+            // 注意：PAY_RESULT_TOPIC 当前无消费端（order 侧支付结果走 Feign 同步），
+            // 真正兜底是 XXL-Job paymentNotifyCompensateJob（扫描 status=1 超窗未收敛的支付单重发通知）
+            log.error("[支付成功] 通知订单服务失败(兜底依赖 paymentNotifyCompensateJob): orderId={}, tradeNo={}", orderId, tradeNo, e);
         }
-        // 订单接收成功或 Feign 临时故障（503）时都发 MQ 兜底；业务拒绝时不发 MQ 避免退款后乱序
+        // 订单接收成功或 Feign 临时故障（503）时都发 MQ（预留，当前无消费端，正式兜底为 XXL-Job 补偿）；
+        // 业务拒绝时不发 MQ 避免退款后乱序
         if (!businessRejected) {
             sendPayResultMq(orderId, userId, true, tradeNo);
         }

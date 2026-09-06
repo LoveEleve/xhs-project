@@ -24,7 +24,6 @@ import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
-import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.messaging.Message;
@@ -60,8 +59,6 @@ class PaymentServiceTest {
     @Mock
     private Map<Integer, PayChannelStrategy> payChannelStrategyMap;
     @Mock
-    private DefaultRedisScript<Long> paymentTimeoutScript;
-    @Mock
     private OrderFeignClient orderFeignClient;
     @Mock
     private IdGeneratorUtil idGeneratorUtil;
@@ -75,6 +72,8 @@ class PaymentServiceTest {
     private PayChannelStrategy mockStrategy;
     @Mock
     private com.myxhs.payment.simulator.PayCallbackSimulator callbackSimulator;
+    @Mock
+    private com.myxhs.payment.mapper.PaymentEventMapper paymentEventMapper;
 
     private ObjectMapper objectMapper;
     private PaymentService paymentService;
@@ -97,11 +96,11 @@ class PaymentServiceTest {
                 redissonClient,
                 payChannelStrategyMap,
                 callbackSimulator,
-                paymentTimeoutScript,
                 orderFeignClient,
                 idGeneratorUtil,
                 businessMetrics,
-                objectMapper
+                objectMapper,
+                paymentEventMapper
         );
 
         // 设置 stringRedisTemplate 的 ValueOperations
@@ -138,6 +137,9 @@ class PaymentServiceTest {
         // 设置 Feign 调用
         when(orderFeignClient.notifyPaySuccess(anyLong(), anyString()))
                 .thenReturn(R.ok());
+        // P1-1：支付前回查订单状态，默认订单待付款(0)允许支付
+        when(orderFeignClient.getOrderStatus(anyLong()))
+                .thenReturn(R.ok(0));
     }
 
     // ==================== 支付相关测试 ====================

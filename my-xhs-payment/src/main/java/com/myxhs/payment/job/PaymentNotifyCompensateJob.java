@@ -72,7 +72,7 @@ public class PaymentNotifyCompensateJob {
         log.info("[补偿任务] 支付成功通知补偿开始");
         try {
             int compensated = doCompensate();
-            String msg = String.format("补偿完成: 扫描=%d, 重新通知=%d", compensated, compensated);
+            String msg = String.format("补偿完成: 重新通知=%d", compensated);
             XxlJobHelper.handleSuccess(msg);
         } catch (Exception e) {
             log.error("[补偿任务] 支付成功通知补偿异常", e);
@@ -149,7 +149,7 @@ public class PaymentNotifyCompensateJob {
                         } else {
                             log.warn("[补偿任务] 订单 {} 通知失败: {}", orderId,
                                     notifyResult != null ? notifyResult.getMessage() : "null response");
-incrementRetryCount(countKey);
+                            incrementRetryCount(countKey);
                         }
                     } else {
                         // 订单已不是待支付（已支付/已取消/已关闭等），无需补偿
@@ -159,7 +159,7 @@ incrementRetryCount(countKey);
                 } else if (payAmountResult == null || payAmountResult.getCode() == 503) {
                     // 订单服务不可达，稍后重试
                     log.warn("[补偿任务] 订单服务不可达，跳过订单 {}", orderId);
-incrementRetryCount(countKey);
+                    incrementRetryCount(countKey);
                 } else {
                     // 订单服务返回其他错误（如订单已删除），无需补偿
                     log.debug("[补偿任务] 订单 {} 查询返回错误(code={})，无需补偿", orderId,
@@ -178,7 +178,7 @@ incrementRetryCount(countKey);
                         log.warn("[补偿任务] Redis计数非法值: orderId={}, value={}", orderId, countStr);
                     }
                 }
-incrementRetryCount(countKey);
+                incrementRetryCount(countKey);
             }
         }
 
