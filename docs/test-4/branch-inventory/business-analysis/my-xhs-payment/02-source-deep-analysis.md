@@ -106,12 +106,15 @@ T-077 修复：order 无 REFUND_RESULT_TOPIC 消费者，全额退款补 Feign �
 
 ### 运行态修复（全局）
 7. **XXL-Job 调度全缺失**：xxl_job_group/xxl_job_info 均为空，10 个 executor 在线但无任务 → 生成全量初始化脚本（19 个任务）执行并验证，orderCloseJob/paymentTimeoutCheckJob/localMessageRetryJob/paymentNotifyCompensateJob 等已按 cron 正常执行（handle_code=200）
+8. **RocketMQ 业务 topic 全缺失**：namesrv 上仅 INVENTORY_TOPIC，其余 17 个业务 topic（PAY_RESULT/REFUND_RESULT/ORDER_*/COUPON_* 等）均未创建（broker autoCreateTopicEnable=false），所有 MQ 发送报 "No route info" 失败 → 全量创建 18 个 topic，固化 init-rocketmq-topics.sh
+9. **支付/退款结果 MQ 即时兜底补齐**：新增 order 侧 `PayResultConsumer`（PAY_RESULT_TOPIC）与 `RefundResultConsumer`（REFUND_RESULT_TOPIC），Feign 失败时 MQ 即时兜底，与 XXL-Job 补偿形成双保险；端到端验证 SEND_OK + 消费成功
+10. **RefundNotifyCompensateJob 部分退款误全额（资损 Bug）**：原扫描所有 status=1 退款单（含部分退款）并 notifyRefundSuccess → order 误判全额退款（释放全部库存+退券+订单置已退款）→ 改为 JOIN t_payment 且仅补偿 status=3（已全额退款）的支付单
 
-### 待评估（有兜底/设计权衡）
-- P-1 MQ 兜底断链：Feign 失败时发 PAY_RESULT_TOPIC 无消费端。真实兜底为 XXL-Job paymentNotifyCompensateJob（已恢复运行），MQ 消息滞留无害。可选：启用预留消费者或删发送。
-- P-2 超时支付单不通知订单：checkPaymentTimeout 只置 t_payment=2，不通知 order；订单靠自身关单兜底（orderCloseJob 每分钟）。两方超时窗口 30min 基本同步，可接受。
-- P-3 双重检查用 statusKey：已退款(3)订单无法再次支付，与 P1-1 回查（非待付款拒绝）语义一致，属设计一致而非 bug。
-- P-4 模拟器回调无解锁：SETNX 锁 30s 自然过期，失败保留 pending key 下轮重试，可接受。
+### 待评估（有兜底/设计权衡，逐条论证）
+- P-2 超时支付单不通知订单：checkPaymentTimeout 只置 t_payment=2，不通知 order。**结论：可接受**。支付超时(30min)与订单关单超时(30min)窗口基本同步，orderCloseJob 每分钟兜底关单；极端窗口内（支付标失败但订单未关）用户无法支付，下一轮 orderCloseJob 即收敛。真实终态一致。
+- P-3 双重检查用 statusKey（已退款=3 拒绝再次支付）：**结论：设计一致非 bug**。已退款订单订单侧状态为 5(已退款)，P1-1 回查（仅待付款可支付）必然拒绝，statusKey 拒绝与 P1-1 语义一致；重新支付需用户重新下单。
+- P-4 模拟器回调无显式解锁：SETNX 锁 30s 自然过期，失败保留 pending key 下轮重试（pending TTL 24h/5min）。**结论：可接受**。回调为 Mock 模拟通道，有重试窗口兜底。
+- P-5 退款失败/关闭不 Feign 通知 order（notifyRefundFail 为预留空实现）：**结论：可接受**。退款失败订单保持已支付是正确终态（钱未退）；order 侧空实现无业务动作；payment 侧退款单置失败/关闭 + 事件流水 + MQ（REFUND_FAIL 现由 RefundResultConsumer 记录日志）构成可观测。如需用户感知退款失败，属产品层提示，非资金一致性问题。
 
 ## 8. 风险与测试重点
 

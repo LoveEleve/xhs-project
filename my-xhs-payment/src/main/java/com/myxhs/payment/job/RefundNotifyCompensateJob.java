@@ -78,11 +78,15 @@ public class RefundNotifyCompensateJob {
     private int doCompensate() {
         LocalDateTime threshold = LocalDateTime.now().minusMinutes(COMPENSATE_DELAY_MINUTES);
 
-        // 查询退款成功且超过补偿窗口的记录
+        // 查询"全额退款"且超过补偿窗口的退款记录。
+        // 只补偿 t_payment.status=3（累计退款已≥支付金额）的退款单：
+        // 部分退款(status=1 保持已支付)不得触发订单全额退款（释放全部库存+退券），否则资损。
         List<RefundRecord> refunds = paymentJdbcTemplate.query(
-                "SELECT order_id, refund_no FROM t_refund " +
-                        "WHERE status = 1 AND deleted = 0 AND success_at < ? " +
-                        "ORDER BY success_at ASC LIMIT ?",
+                "SELECT r.order_id, r.refund_no FROM t_refund r " +
+                        "JOIN t_payment p ON r.payment_id = p.id " +
+                        "WHERE r.status = 1 AND r.deleted = 0 AND p.status = 3 AND p.deleted = 0 " +
+                        "AND r.success_at < ? " +
+                        "ORDER BY r.success_at ASC LIMIT ?",
                 (rs, rowNum) -> new RefundRecord(
                         rs.getLong("order_id"),
                         rs.getString("refund_no")
