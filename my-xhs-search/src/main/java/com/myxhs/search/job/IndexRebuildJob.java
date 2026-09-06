@@ -299,7 +299,14 @@ public class IndexRebuildJob {
 
             for (Map<String, Object> product : products) {
                 Long spuId = ((Number) product.get("id")).longValue();
-                Map<String, Object> doc = productIndexDocumentBuilder.build(product, Map.of());
+                Map<String, Object> doc;
+                try {
+                    doc = productIndexDocumentBuilder.build(product, Map.of());
+                } catch (Exception e) {
+                    log.warn("[ES重建] 商品文档构建失败, 跳过该SPU: spuId={}, reason={}",
+                            spuId, e.getMessage());
+                    continue;
+                }
 
                 bulkBuilder.operations(op -> op
                         .index(idx -> idx

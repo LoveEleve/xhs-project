@@ -4,6 +4,9 @@ import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.json.jackson.JacksonJsonpMapper;
 import co.elastic.clients.transport.ElasticsearchTransport;
 import co.elastic.clients.transport.rest_client.RestClientTransport;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.apache.http.HttpHost;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
@@ -82,7 +85,13 @@ public class ElasticsearchConfig {
 
     @Bean
     public ElasticsearchTransport elasticsearchTransport(RestClient restClient) {
-        return new RestClientTransport(restClient, new JacksonJsonpMapper());
+        // T-131 修复（运行态复核）：默认 JacksonJsonpMapper 未注册 JavaTimeModule，
+        // 文档含 LocalDateTime（如 createdAt）时序列化抛 InvalidDefinitionException，
+        // 导致商品增量/重建索引任务持续失败（实测 成功=0/3）。
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(new JavaTimeModule());
+        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        return new RestClientTransport(restClient, new JacksonJsonpMapper(mapper));
     }
 
     @Bean

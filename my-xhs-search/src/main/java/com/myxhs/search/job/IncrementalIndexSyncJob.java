@@ -289,8 +289,17 @@ public class IncrementalIndexSyncJob {
 
             for (Map<String, Object> product : products) {
                 Long spuId = ((Number) product.get("id")).longValue();
-                Map<String, Object> doc = productIndexDocumentBuilder.build(product, Map.of());
-
+                Map<String, Object> doc;
+                try {
+                    doc = productIndexDocumentBuilder.build(product, Map.of());
+                } catch (Exception e) {
+                    // 单条 SPU 数据不完整（如无 SKU 且无 min_price）不应阻塞整个批次索引：
+                    // 记录并跳过该 SPU，其余商品正常索引（脏数据不阻塞增量任务）。
+                    log.warn("[ES增量补偿] 商品文档构建失败, 跳过该SPU: spuId={}, reason={}",
+                            spuId, e.getMessage());
+                    stringRedisTemplate.opsForSet().add(FAILED_PRODUCT_KEY, String.valueOf(spuId));
+                    continue;
+                }
                 bulkBuilder.operations(op -> op
                         .index(idx -> idx
                                 .index(productIndexName)
