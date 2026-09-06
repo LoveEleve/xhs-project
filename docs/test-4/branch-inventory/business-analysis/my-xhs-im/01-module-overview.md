@@ -30,9 +30,8 @@ ACK/已读/typing 状态同步
 - 离线消息补偿：上线批量拉取
 
 ## 6. 运行态验证
-- **未全面实测**（WebSocket 连接/握手/消息路由需 WS 客户端）
-- 服务 UP、/api/im/online-count 公开端点白名单确认、health 正常
-- 中间件就绪：无 IM 专属 topic（路由走 Redis 订阅）
+- **已实测**：REST 全通（ticket 签发/会话/历史/未读/已读 200）；WS 握手鉴权 fail-closed（无 ticket im 日志"缺少 ticket 参数"拒绝，合法 ticket 101）
+- 消息路由/持久化/离线消息需双端 WS 客户端真实收发，未断言
 
 ## 7. 鉴权基础
 - REST 接口需 JWT；WS 握手 ticket 两步鉴权；online-count 公开
@@ -45,4 +44,4 @@ ACK/已读/typing 状态同步
 ## 9. 覆盖对账
 - WebSocket 层/ChatService/路由机制结构已读；持久化细节标注
 - Mapper/Entity 简单类未逐行
-- **运行态未全面实测**（需 WS 客户端场景）
+- **运行态已实测**（REST 全通 + WS 握手鉴权 fail-closed；消息路由待双端 WS 客户端）

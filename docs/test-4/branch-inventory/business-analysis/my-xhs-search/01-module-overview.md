@@ -30,9 +30,8 @@ GET /api/search/hot + POST /api/search/hot/record → 热搜(Redis)
 - LikeCountSync 同步点赞数到索引
 
 ## 6. 运行态验证
-- **未全面实测**（ES 索引内容/搜索需真实索引数据）
-- 服务 UP、topic 已创建、3 个 XXL-Job 已注册、consumer group 在线
-- 依赖 ES 容器健康（中间件 28 容器 healthy）
+- **已实测**：note_index 4 文档（Canal 索引同步正常）+ 笔记搜索高亮匹配；product_index 0→5 文档 + 商品搜索（连衣裙高亮）；增量任务修复后"商品=3"成功
+- 推荐（特征/热池/ItemCF）需行为数据量支撑，未验证推荐质量
 
 ## 7. 鉴权基础
 - 搜索/推荐公开读（gateway 白名单或 JWT）；index/rebuild 管理端点需 X-Admin-Call
@@ -45,4 +44,4 @@ GET /api/search/hot + POST /api/search/hot/record → 热搜(Redis)
 ## 9. 覆盖对账
 - Controller/Consumer/索引同步/推荐结构已读；ES query 细节标注
 - 推荐算法（ItemCF）实现标注
-- **运行态未全面实测**（需真实索引数据驱动搜索/推荐）
+- **运行态已实测**（索引同步/搜索/增量任务修复闭环；推荐质量待行为数据）

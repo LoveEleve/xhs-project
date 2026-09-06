@@ -30,9 +30,8 @@ SSE: NotificationController /sse(ticket鉴权) → SseEmitter 保持连接，跨
 - 未读数对账：UnreadReconcileJob（XXL-Job 每 10 分钟）
 
 ## 6. 运行态验证
-- **未触发真实通知链路**（未发 NOTIFICATION_TOPIC 测试消息）
-- 中间件就绪：NOTIFICATION_TOPIC 已创建、consumer group 在线（DLQ 监控可见）、SSE 端点白名单确认
-- 待后续真实行为事件触发验证
+- **已实测**：发 NOTIFICATION_TOPIC（模拟点赞）→ 消费 → t_notification 落库 → 模板渲染"点赞通知" → 未读数=1 → 标记已读归零
+- SSE 实时推送需在线 SSE 连接（isOnline 才推送），未用真实 SSE 客户端断言
 
 ## 7. 鉴权基础
 - /api/notification/sse 走 ticket 鉴权（白名单，EventSource 无 header）
@@ -46,4 +45,4 @@ SSE: NotificationController /sse(ticket鉴权) → SseEmitter 保持连接，跨
 ## 9. 覆盖对账
 - Consumer/SSE 机制/Service 结构已读（核心链路）；NotificationAggregator 聚合细节标注
 - Mapper/DTO 简单类未逐行
-- **运行态未全面实测**（通知链路待行为事件触发）
+- **运行态已实测**（消费/落库/模板/未读/已读闭环；SSE 推送待真实 SSE 连接）

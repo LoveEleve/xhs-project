@@ -56,6 +56,7 @@ MQ即时兜底: 支付成功Feign+MQUU(幂等共存) ✓
 |---|------|------|------|
 | 12 | gateway BodyCacheFilter 对无 body 的 POST/PUT/DELETE 空响应 | block 拉黑/取消、logout 等无 body 写接口经 gateway 挂起（HTTP 200 空 body） | `DataBufferUtils.join` 后 `defaultIfEmpty`，已修并验证 |
 | 13 | TransactionConfig 类级 @ConditionalOnBean 时序 bug（二轮迭代） | ① 类级条件评估过早→读写分离服务未加载事务管理器，所有 @Transactional 静默无效 ② 去掉后 home（无 DataSource 纯 Redis/MQ 服务）启动失败 | 条件移至 @Bean 方法级：有 DataSource 创建事务管理器、无则跳过；15 服务全量验证 |
+| 14 | search ES 索引任务 LocalDateTime 序列化失败 + 单条脏 SPU 阻塞批次 | 商品增量/重建索引持续失败（成功=0/3）；无 SKU 的 SPU 中断整个批次 | ElasticsearchConfig 注册 JavaTimeModule；IncrementalIndexSyncJob/IndexRebuildJob 单条 try-catch 跳过；清理 3 个污染 SPU。product_index 0→5 文档，商品搜索高亮匹配 |
 
 **构建流程教训**：并行 `mvn -am package` 存在本地仓库竞争，部分服务内嵌 common 为旧版
 （事务修复未生效）。必须**串行 clean package** 且先 `mvn install my-xhs-common` 与根 pom。
@@ -63,6 +64,12 @@ MQ即时兜底: 支付成功Feign+MQUU(幂等共存) ✓
 补测通过（未发现问题）：注册登录、地址 CRUD、block、个人信息、发布/删除笔记、评论增删查、
 点赞/取消/计数(SOCIAL_TOPIC→counter)、收藏/取消、关注/取关/关系、SPU/SKU 创建、类目树、
 购物车增删改查/数量/合并、领券核销退券、库存预扣确认。
+
+第二轮补测（im/notification/search 运行态实测）：
+- notification：NOTIFICATION_TOPIC 消费→t_notification 落库→模板渲染"点赞通知"→未读=1→标记已读归零 ✅
+- search：note_index 4 文档（Canal 同步正常）+ 笔记搜索高亮匹配；product_index 0→5（修复后增量任务商品=3）✅
+- im：REST（ticket 签发/会话/历史/未读/已读）全 200；WS 握手鉴权 fail-closed（无 ticket im 拒绝，日志"缺少 ticket 参数"）✅
+- 全链路最终回归：下单→预扣→支付→确认→发布→Feed 推送→点赞→计数→搜索→通知 全部通过，15 服务 UP
 
 ## 经验
 
