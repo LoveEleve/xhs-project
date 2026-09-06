@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS t_user (
     email        VARCHAR(128) DEFAULT NULL COMMENT '邮箱',
     signature    VARCHAR(256) DEFAULT NULL COMMENT '个性签名',
     status       TINYINT      NOT NULL DEFAULT 1 COMMENT '状态：0-禁用 1-正常',
+    role         VARCHAR(32)  DEFAULT NULL COMMENT '角色：OPERATOR/TECH（读入JWT claim，gateway注入X-User-Role）',
     deleted      TINYINT      NOT NULL DEFAULT 0 COMMENT '逻辑删除',
     created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
@@ -397,6 +398,19 @@ CREATE TABLE IF NOT EXISTS t_sku (
     INDEX idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商品SKU表';
 
+CREATE TABLE IF NOT EXISTS t_product_behavior (
+    id             BIGINT   NOT NULL COMMENT 'ID',
+    user_id        BIGINT   NOT NULL COMMENT '用户ID',
+    spu_id         BIGINT   NOT NULL COMMENT 'SPU ID',
+    sku_id         BIGINT   DEFAULT NULL COMMENT 'SKU ID',
+    behavior_type  TINYINT  NOT NULL COMMENT '行为类型：1-浏览 2-收藏 3-加购',
+    event_time     DATETIME DEFAULT NULL COMMENT '事件时间',
+    created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (id),
+    INDEX idx_user_id (user_id),
+    INDEX idx_spu_id (spu_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商品行为流水(append-only)';
+
 -- 购物车服务
 CREATE DATABASE IF NOT EXISTS my_xhs_cart DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE my_xhs_cart;
@@ -413,6 +427,21 @@ CREATE TABLE IF NOT EXISTS t_cart_item (
     UNIQUE INDEX uk_user_sku (user_id, sku_id),
     INDEX idx_user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='购物车项表';
+
+CREATE TABLE IF NOT EXISTS t_cart_event (
+    id           BIGINT       NOT NULL COMMENT 'ID',
+    user_id      BIGINT       NOT NULL COMMENT '用户ID',
+    sku_id       BIGINT       NOT NULL COMMENT 'SKU ID',
+    action       VARCHAR(32)  NOT NULL COMMENT 'ADD/UPDATE/REMOVE/MERGE/CLEAR',
+    quantity     INT          DEFAULT 1 COMMENT '数量',
+    checked      TINYINT      DEFAULT 1 COMMENT '是否选中：0-否 1-是',
+    event_time   DATETIME     DEFAULT NULL COMMENT '事件时间',
+    msg_id       VARCHAR(64)  DEFAULT NULL COMMENT 'MQ消息ID',
+    created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (id),
+    INDEX idx_user_id (user_id),
+    INDEX idx_sku_id (sku_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='购物车事件流水(append-only)';
 
 -- 优惠券服务
 CREATE DATABASE IF NOT EXISTS my_xhs_coupon DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -483,6 +512,20 @@ CREATE TABLE IF NOT EXISTS t_local_message (
     INDEX idx_push_status (push_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='本地消息表(Feed可靠性保障)';
 
+CREATE TABLE IF NOT EXISTS t_note_event (
+    id            BIGINT       NOT NULL COMMENT 'ID',
+    note_id       BIGINT       NOT NULL COMMENT '笔记ID',
+    user_id       BIGINT       NOT NULL COMMENT '用户ID',
+    event_type    VARCHAR(32)  NOT NULL COMMENT '事件类型：PUBLISH/DELETE/UPDATE/COMMENT/LIKE',
+    status        TINYINT      DEFAULT 0 COMMENT '笔记状态',
+    audit_status  TINYINT      DEFAULT 0 COMMENT '审核状态',
+    event_time    DATETIME     DEFAULT NULL COMMENT '事件时间',
+    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (id),
+    INDEX idx_note_id (note_id),
+    INDEX idx_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='笔记事件流水(append-only)';
+
 -- =====================================================================
 -- 四、订单 + 支付（原 MySQL-Order :13308）— 分库分表保留
 -- =====================================================================
@@ -546,6 +589,21 @@ CREATE TABLE IF NOT EXISTS t_refund (
     INDEX idx_user_id (user_id),
     INDEX idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='退款单表';
+
+CREATE TABLE IF NOT EXISTS t_payment_event (
+    id           BIGINT       NOT NULL COMMENT 'ID',
+    payment_no   VARCHAR(64)  NOT NULL COMMENT '支付流水号',
+    order_id     BIGINT       NOT NULL COMMENT '订单ID',
+    user_id      BIGINT       NOT NULL COMMENT '用户ID',
+    event_type   VARCHAR(32)  NOT NULL COMMENT '事件类型：CREATE/PAY_SUCCESS/PAY_FAIL/REFUND/TIMEOUT',
+    error_code   VARCHAR(64)  DEFAULT NULL COMMENT '失败原因码',
+    error_msg    VARCHAR(255) DEFAULT NULL COMMENT '失败原因/备注',
+    event_time   DATETIME     DEFAULT NULL COMMENT '事件时间',
+    created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (id),
+    INDEX idx_payment_no (payment_no),
+    INDEX idx_order_id (order_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='支付事件流水(append-only)';
 
 -- ==================== 分片数据库 0 ====================
 CREATE DATABASE IF NOT EXISTS my_xhs_order_0 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
