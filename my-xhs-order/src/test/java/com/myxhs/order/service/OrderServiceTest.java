@@ -503,6 +503,27 @@ class OrderServiceTest {
     }
 
     @Test
+    @DisplayName("退款成功 - 已完成(收货后)状态退款收敛")
+    void onRefundSuccess_completed() {
+        OrderNoMapping mapping = new OrderNoMapping();
+        mapping.setOrderId(ORDER_ID);
+        mapping.setUserId(USER_ID);
+        when(orderNoMappingRepository.selectByOrderId(ORDER_ID)).thenReturn(mapping);
+        Order order = buildOrder();
+        order.setStatus(3); // 已完成
+        when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(order);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(Collections.emptyList());
+        doNothing().when(orderEventService).appendEvent(eq(order), eq(OrderEventService.EVENT_REFUNDED), anyMap());
+        when(inventoryFeignClient.releaseStock(anyMap())).thenReturn(R.ok());
+        when(snapshotMapper.insert((OrderSnapshot) any())).thenReturn(1);
+        when(stringRedisTemplate.delete(startsWith("myxhs:order:info:"))).thenReturn(true);
+
+        assertThat(orderService.onRefundSuccess(ORDER_ID)).isTrue();
+        verify(orderEventService).appendEvent(eq(order), eq(OrderEventService.EVENT_REFUNDED), anyMap());
+    }
+
+    @Test
     @DisplayName("退款成功 - 已退款状态幂等成功")
     void onRefundSuccess_alreadyRefunded() {
         OrderNoMapping mapping = new OrderNoMapping();

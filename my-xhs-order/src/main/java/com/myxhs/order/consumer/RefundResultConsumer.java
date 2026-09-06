@@ -53,8 +53,14 @@ public class RefundResultConsumer implements RocketMQListener<MessageExt> {
                 log.warn("[退款结果消费] 消息体缺少orderId: msgId={}", msg.getMsgId());
                 return;
             }
-            Long orderId = ((Number) map.get("orderId")).longValue();
+            // JacksonConfig 全局 Long→String（防 JS 精度丢失），orderId 可能是字符串形态
+            Long orderId = toLong(map.get("orderId"));
             boolean success = Boolean.TRUE.equals(map.get("success"));
+
+            if (orderId == null) {
+                log.warn("[退款结果消费] orderId 非法: msgId={}", msg.getMsgId());
+                return;
+            }
 
             if (success) {
                 boolean updated = orderService.onRefundSuccess(orderId);
@@ -72,6 +78,21 @@ public class RefundResultConsumer implements RocketMQListener<MessageExt> {
             throw new RuntimeException("退款结果消费失败", e);
         } finally {
             MqTraceHelper.clearTraceId();
+        }
+    }
+
+    /** 兼容数字/字符串形式的 Long 解析（JacksonConfig 全局 Long→String 序列化） */
+    private Long toLong(Object v) {
+        if (v == null) {
+            return null;
+        }
+        if (v instanceof Number n) {
+            return n.longValue();
+        }
+        try {
+            return Long.parseLong(v.toString());
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 }

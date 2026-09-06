@@ -68,10 +68,14 @@ public class OrderCompensationConsumer implements RocketMQListener<MessageExt> {
                 cm = new CompensationMessage();
                 var rawMap = JSON.parseObject(body, java.util.Map.class);
                 if (rawMap != null && rawMap.containsKey("orderId")) {
-                    cm.setOrderId(((Number) rawMap.get("orderId")).longValue());
-                    cm.setAction((String) rawMap.get("action"));
-                    cm.setTimestamp(rawMap.get("timestamp") != null
-                            ? ((Number) rawMap.get("timestamp")).longValue() : System.currentTimeMillis());
+                    // JacksonConfig 全局 Long→String，orderId 可能是字符串，兼容解析
+                    Long orderId = toLong(rawMap.get("orderId"));
+                    if (orderId != null) {
+                        cm.setOrderId(orderId);
+                        cm.setAction((String) rawMap.get("action"));
+                        Long ts = toLong(rawMap.get("timestamp"));
+                        cm.setTimestamp(ts != null ? ts : System.currentTimeMillis());
+                    }
                 }
             }
 
@@ -140,6 +144,21 @@ public class OrderCompensationConsumer implements RocketMQListener<MessageExt> {
     }
 
     private static final String ORDER_COMPENSATION_FALLBACK_KEY = "myxhs:order:compensation:pending";
+
+    /** 兼容数字/字符串形式的 Long 解析（JacksonConfig 全局 Long→String 序列化） */
+    private Long toLong(Object v) {
+        if (v == null) {
+            return null;
+        }
+        if (v instanceof Number n) {
+            return n.longValue();
+        }
+        try {
+            return Long.parseLong(v.toString());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
 
     private void writeCompensationFallback(CompensationMessage cm, Long userId) {
         try {

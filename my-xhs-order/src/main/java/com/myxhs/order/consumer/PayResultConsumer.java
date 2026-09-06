@@ -52,9 +52,15 @@ public class PayResultConsumer implements RocketMQListener<MessageExt> {
                 log.warn("[支付结果消费] 消息体缺少orderId: msgId={}", msg.getMsgId());
                 return;
             }
-            Long orderId = ((Number) map.get("orderId")).longValue();
-            Long userId = map.get("userId") != null ? ((Number) map.get("userId")).longValue() : null;
+            // JacksonConfig 全局 Long→String（防 JS 精度丢失），orderId/userId 可能是字符串形态
+            Long orderId = toLong(map.get("orderId"));
+            Long userId = toLong(map.get("userId"));
             boolean success = Boolean.TRUE.equals(map.get("success"));
+
+            if (orderId == null) {
+                log.warn("[支付结果消费] orderId 非法: msgId={}", msg.getMsgId());
+                return;
+            }
 
             if (success) {
                 boolean updated = orderService.onPaymentSuccess(orderId, userId);
@@ -71,6 +77,21 @@ public class PayResultConsumer implements RocketMQListener<MessageExt> {
             throw new RuntimeException("支付结果消费失败", e);
         } finally {
             MqTraceHelper.clearTraceId();
+        }
+    }
+
+    /** 兼容数字/字符串形式的 Long 解析（JacksonConfig 全局 Long→String 序列化） */
+    private Long toLong(Object v) {
+        if (v == null) {
+            return null;
+        }
+        if (v instanceof Number n) {
+            return n.longValue();
+        }
+        try {
+            return Long.parseLong(v.toString());
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 }

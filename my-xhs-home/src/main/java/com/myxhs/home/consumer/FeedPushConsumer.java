@@ -76,11 +76,15 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
                         noteIdObj, authorIdObj, publishTimeObj);
                 return;
             }
-            Long noteId = ((Number) noteIdObj).longValue();
-            Long authorId = ((Number) authorIdObj).longValue();
-            Long publishTime = ((Number) publishTimeObj).longValue();
-            Long localMsgId = event.get("localMsgId") != null
-                    ? ((Number) event.get("localMsgId")).longValue() : null;
+            Long noteId = toLong(noteIdObj);
+            Long authorId = toLong(authorIdObj);
+            Long publishTime = toLong(publishTimeObj);
+            Long localMsgId = toLong(event.get("localMsgId"));
+            if (noteId == null || authorId == null || publishTime == null) {
+                log.warn("[Feed推送] 消息字段非法(非数字id): noteId={}, authorId={}, publishTime={}",
+                        noteIdObj, authorIdObj, publishTimeObj);
+                return;
+            }
 
             // T-126（2026-08-16）：已删标记检查——NOTE_DELETE 与 FEED_TOPIC 消息乱序/重复投递时，
             // 笔记已删除但推送消息晚到（MQ 重试/补偿重投）会把已删笔记重新写入 outbox/收件箱；
@@ -255,5 +259,20 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
         // 缓存结果（10 分钟 TTL，缩短缓存不一致窗口）
         stringRedisTemplate.opsForValue().set(bigVKey, isBigV ? "1" : "0", Duration.ofMinutes(10));
         return isBigV;
+    }
+
+    /** 兼容数字/字符串形式的 Long 解析（JacksonConfig 全局 Long→String 序列化） */
+    private static Long toLong(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number n) {
+            return n.longValue();
+        }
+        try {
+            return Long.parseLong(value.toString());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 }

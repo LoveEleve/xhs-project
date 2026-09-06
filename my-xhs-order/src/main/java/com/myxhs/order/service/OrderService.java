@@ -1167,8 +1167,10 @@ public class OrderService {
             log.warn("[订单] 退款回调但订单不存在: orderId={}, userId={}", orderId, userId);
             return false;
         }
-        if (order.getStatus() != 1) {
-            log.warn("[订单] 退款回调但订单状态不是已支付: orderId={}", orderId);
+        if (order.getStatus() != 1 && order.getStatus() != 3) {
+            // 仅 1(已支付)/3(已完成) 可退款收敛到 5；已完成订单确认收货后发起退款同样需释放库存/退券。
+            // 5(已退款) 幂等返回 true；0(待付款)/2(已发货)/4(已取消) 不允许退款。
+            log.warn("[订单] 退款回调但订单状态不允许退款: orderId={}, status={}", orderId, order.getStatus());
             return order.getStatus() == 5;
         }
 

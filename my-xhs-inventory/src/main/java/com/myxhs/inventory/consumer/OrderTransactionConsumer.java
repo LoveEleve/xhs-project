@@ -61,18 +61,24 @@ public class OrderTransactionConsumer implements RocketMQListener<MessageExt> {
         MqTraceHelper.restoreTraceId(msg);
         try {
             String body = new String(msg.getBody(), StandardCharsets.UTF_8);
+            if (log.isDebugEnabled()) {
+                log.debug("[库存-事务消费] 收到消息体: msgId={}, body={}", msg.getMsgId(), body);
+            }
             JsonNode payload = objectMapper.readTree(body);
 
             JsonNode orderNoNode = payload.get("orderNo");
             JsonNode userIdNode = payload.get("userId");
             JsonNode skuItems = payload.get("skuItems");
             if (orderNoNode == null || orderNoNode.isNull() || orderNoNode.asText().isBlank()
-                    || userIdNode == null || userIdNode.isNull() || !userIdNode.canConvertToLong()
+                    || userIdNode == null || userIdNode.isNull()
                     || skuItems == null || !skuItems.isArray() || skuItems.isEmpty()) {
+                log.warn("[库存-事务消费] 消息体字段缺失: msgId={}, body={}", msg.getMsgId(), body);
                 throw new IllegalArgumentException("订单事务消息缺少关键字段(orderNo/userId/skuItems)");
             }
             String orderNo = orderNoNode.asText();
-            Long userId = userIdNode.asLong();
+            // JacksonConfig 全局把 Long 序列化为 String（防 JS 精度丢失），userId 可能是字符串形式，
+            // 用 resolveLong 兼容数字/字符串两种形态。
+            Long userId = resolveLong(userIdNode, "userId");
 
             // 消费者层面幂等校验：msgId 级别去重，避免 rebalance 时部分 SKU 永久跳过
             // 使用 msgId 而非 orderNo：orderNo 在循环内部分成功时会导致 rebalance 后新实例跳过
@@ -98,15 +104,11 @@ public class OrderTransactionConsumer implements RocketMQListener<MessageExt> {
             }
 
             for (JsonNode item : skuItems) {
-                JsonNode skuIdNode = item.get("skuId");
-                JsonNode quantityNode = item.get("quantity");
-                if (skuIdNode == null || !skuIdNode.canConvertToLong()
-                        || quantityNode == null || !quantityNode.canConvertToInt()
-                        || quantityNode.asInt() <= 0) {
-                    throw new IllegalArgumentException("订单事务消息 skuItems 字段异常");
+                Long skuId = resolveLong(item.get("skuId"), "skuId");
+                Integer quantity = resolveInt(item.get("quantity"), "quantity");
+                if (quantity <= 0) {
+                    throw new IllegalArgumentException("订单事务消息 skuItems 字段异常(quantity<=0)");
                 }
-                Long skuId = skuIdNode.asLong();
-                int quantity = quantityNode.asInt();
 
                 PreDeductRequest preDeductRequest = new PreDeductRequest();
                 preDeductRequest.setOrderId(pseudoOrderId);
@@ -148,5 +150,48 @@ public class OrderTransactionConsumer implements RocketMQListener<MessageExt> {
         } finally {
             MqTraceHelper.clearTraceId();
         }
+    }
+
+    /**
+     * 兼容数字/字符串形式的 Long 字段解析。
+     * <p>JacksonConfig 全局把 Long 序列化为 String（防前端 JS 精度丢失），
+     * MQ body 中的 id 字段可能是 "10001"（字符串）而非 10001（数字）。
+     * canConvertToLong() 对字符串节点返回 false，必须手动解析。</p>
+     */
+    private Long resolveLong(JsonNode node, String fieldName) {
+        if (node == null || node.isNull() || node.isMissingNode()) {
+            throw new IllegalArgumentException("订单事务消息缺少关键字段(" + fieldName + ")");
+        }
+        if (node.isNumber()) {
+            return node.asLong();
+        }
+        if (node.isTextual()) {
+            try {
+                return Long.parseLong(node.asText().trim());
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("订单事务消息字段非法(" + fieldName + ")=" + node.asText());
+            }
+        }
+        throw new IllegalArgumentException("订单事务消息字段非法(" + fieldName + ")");
+    }
+
+    /**
+     * 兼容数字/字符串形式的 Integer 字段解析。
+     */
+    private Integer resolveInt(JsonNode node, String fieldName) {
+        if (node == null || node.isNull() || node.isMissingNode()) {
+            throw new IllegalArgumentException("订单事务消息缺少关键字段(" + fieldName + ")");
+        }
+        if (node.isNumber()) {
+            return node.asInt();
+        }
+        if (node.isTextual()) {
+            try {
+                return Integer.parseInt(node.asText().trim());
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("订单事务消息字段非法(" + fieldName + ")=" + node.asText());
+            }
+        }
+        throw new IllegalArgumentException("订单事务消息字段非法(" + fieldName + ")");
     }
 }
