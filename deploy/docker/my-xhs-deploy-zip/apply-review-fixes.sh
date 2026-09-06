@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# A 类修复部署 + 复验脚本（中间件机 ${HOST_IP} 执行）
+# A 类修复部署 + 复验脚本（中间件机 192.168.0.142 执行）
 # 覆盖: A-1 t_item_feature 建表 / A-3 Dashboard 登录 / A-4 canal→MQ 链路 / A-5 xxl 超时
 #       A-6 SW 采样率确认 / A-7 Grafana 数据源确认
 # 用法: bash apply-review-fixes.sh [COMPOSE_DIR]

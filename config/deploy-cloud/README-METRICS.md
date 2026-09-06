@@ -6,7 +6,13 @@
          mkdir -p /data/rocketmq-textfile
          crontab -e 加: */5 * * * * /usr/local/bin/rocketmq-metrics.sh
    node-exporter 已在 compose 挂载 /data/rocketmq-textfile 并启用 textfile 收集器。
-   指标: rocketmq_broker_*(运行时长/磁盘/写入读取TPS)、rocketmq_consumer_*(lag/tps)、topic 数。
+   指标:
+     - rocketmq_broker_* (运行时长/磁盘/写入读取TPS)
+     - rocketmq_consumer_* (lag/tps)
+     - rocketmq_topics_count / rocketmq_dlq_topics / rocketmq_retry_topics
+     - rocketmq_up (三类采集全部成功才为 1)
+     - rocketmq_scrape_success{step=*} / rocketmq_scrape_timestamp_seconds
+   说明: `rocketmq_up` 已按分步骤成功/失败收敛, 避免 mqadmin 失败时仍误报 up=1。
 
 2. MySQL 从库复制监控: mysqld-exporter-slave(9105, 连 3307)采集 slave_status,
    Prometheus job 'mysql-slave' 已配置。

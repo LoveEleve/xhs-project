@@ -8,23 +8,23 @@
 -- ---------- 1) 补建缺失执行器组（order/cart/coupon/home/search） ----------
 -- 端口与各服务 application.yml 实测一致（9991/9993/9995/9994/9997）
 INSERT INTO xxl_job.xxl_job_group (app_name, title, address_type, address_list, update_time)
-SELECT 'my-xhs-order', 'order 执行器', 0, '${MICROSERVICE_IP}:9991', NOW()
+SELECT 'my-xhs-order', 'order 执行器', 0, '192.168.0.142:9991', NOW()
 WHERE NOT EXISTS (SELECT 1 FROM xxl_job.xxl_job_group WHERE app_name='my-xhs-order');
 
 INSERT INTO xxl_job.xxl_job_group (app_name, title, address_type, address_list, update_time)
-SELECT 'my-xhs-cart', 'cart 执行器', 0, '${MICROSERVICE_IP}:9993', NOW()
+SELECT 'my-xhs-cart', 'cart 执行器', 0, '192.168.0.142:9993', NOW()
 WHERE NOT EXISTS (SELECT 1 FROM xxl_job.xxl_job_group WHERE app_name='my-xhs-cart');
 
 INSERT INTO xxl_job.xxl_job_group (app_name, title, address_type, address_list, update_time)
-SELECT 'my-xhs-coupon', 'coupon 执行器', 0, '${MICROSERVICE_IP}:9995', NOW()
+SELECT 'my-xhs-coupon', 'coupon 执行器', 0, '192.168.0.142:9995', NOW()
 WHERE NOT EXISTS (SELECT 1 FROM xxl_job.xxl_job_group WHERE app_name='my-xhs-coupon');
 
 INSERT INTO xxl_job.xxl_job_group (app_name, title, address_type, address_list, update_time)
-SELECT 'my-xhs-home', 'home 执行器', 0, '${MICROSERVICE_IP}:9994', NOW()
+SELECT 'my-xhs-home', 'home 执行器', 0, '192.168.0.142:9994', NOW()
 WHERE NOT EXISTS (SELECT 1 FROM xxl_job.xxl_job_group WHERE app_name='my-xhs-home');
 
 INSERT INTO xxl_job.xxl_job_group (app_name, title, address_type, address_list, update_time)
-SELECT 'my-xhs-search', 'search 执行器', 0, '${MICROSERVICE_IP}:9997', NOW()
+SELECT 'my-xhs-search', 'search 执行器', 0, '192.168.0.142:9997', NOW()
 WHERE NOT EXISTS (SELECT 1 FROM xxl_job.xxl_job_group WHERE app_name='my-xhs-search');
 
 -- ---------- 2) 修正挂在 sample 组(NULL 地址)的任务 → 正确组 ----------

@@ -2,7 +2,6 @@
 # 部署后导入 Nacos：命名空间 my-xhs / DEFAULT_GROUP / dataId=my-xhs-gateway.yaml
 # 【安全待办 P-D1】密钥明文存储于 Nacos，开启 Nacos 鉴权后建议环境变量化
 gateway:
-  jwt:
-    secret: MyXhs@2026#JwtSecretKey!ForTokenSign
-  hmac:
-    secret: myxhs-hmac-secret-key-2024
+  auth:
+    secret: ${JWT_SECRET:MyXhs@2026#JwtSecretKey!ForTokenSign}
+    hmac-secret: myxhs-hmac-secret-key-2024

@@ -1,5 +1,3 @@
-version: '3.8'
-
 # ========================================================================
 # MyXHS 精简版 Docker Compose（单机部署 — 22容器）
 #
@@ -86,16 +84,16 @@ version: '3.8'
 #
 # ============================= 部署注意事项 ================================
 #
-#   0. **必须先运行 setup-ip.sh** 替换所有 ${HOST_IP} 占位符为实际 IP：
+#   0. **必须先运行 setup-ip.sh** 替换所有 192.168.0.142 占位符为实际 IP：
 #        bash setup-ip.sh <中间件机IP>
-#        docker-compose.yml 中的 ${HOST_IP} 由 docker-compose 引擎解析
-#        broker.conf/sentinel.conf/prometheus.yml 中的 ${HOST_IP} 由 setup-ip.sh sed 替换
-#        不运行 setup-ip.sh 直接 docker compose up 会导致 broker.conf 中 ${HOST_IP} 无法解析
+#        docker-compose.yml 中的 192.168.0.142 由 docker-compose 引擎解析
+#        broker.conf/sentinel.conf/prometheus.yml 中的 192.168.0.142 由 setup-ip.sh sed 替换
+#        不运行 setup-ip.sh 直接 docker compose up 会导致 broker.conf 中 192.168.0.142 无法解析
 #
-#   1. NACOS_SERVER_IP 已改为占位符 ${HOST_IP}，部署前需运行 setup-ip.sh 替换
-#   2. Redis Sentinel sentinel.conf 已改为占位符 ${HOST_IP}，部署前需运行 setup-ip.sh 替换
-#   3. JDK 依赖: /opt/kona-jdk17 (324MB) 和 /opt/kona-jdk8 (223MB)
-#   4. Canal 自定义镜像: docker save my-xhs-canal-server:v1.1.7-squashed
+#   1. NACOS_SERVER_IP 已改为占位符 192.168.0.142，部署前需运行 setup-ip.sh 替换
+#   2. Redis Sentinel sentinel.conf 已改为占位符 192.168.0.142，部署前需运行 setup-ip.sh 替换
+#   3. JDK 依赖: Canal 需宿主机提供 JDK 8(当前约定 /opt/openjdk8)
+#   4. Canal 使用官方镜像 canal/canal-server:v1.1.7
 #   5. MySQL 主从重建时 Slave 不应跑 init-all.sql，应从 Master dump 同步
 #   6. Nacos 需挂载 mysql-connector.jar 到 /home/nacos/plugins/mysql/
 #   7. Filebeat 挂载 /logs:/logs，需确保宿主机 /logs 目录存在
@@ -224,7 +222,7 @@ services:
       redis-server
       --port 6379 --bind 0.0.0.0 --requirepass Xhs@2026#Redis
       --masterauth Xhs@2026#Redis
-      --replica-announce-ip ${HOST_IP}
+      --replica-announce-ip 192.168.0.142
       --replica-announce-port 6379
       --appendonly yes --appendfsync everysec
       --maxmemory 512mb --maxmemory-policy noeviction
@@ -253,7 +251,7 @@ services:
       --port 6380 --bind 0.0.0.0 --requirepass Xhs@2026#Redis
       --masterauth Xhs@2026#Redis
       --replicaof 127.0.0.1 6379
-      --replica-announce-ip ${HOST_IP}
+      --replica-announce-ip 192.168.0.142
       --replica-announce-port 6380
       --appendonly yes --appendfsync everysec
       --maxmemory 512mb --maxmemory-policy noeviction
@@ -313,9 +311,6 @@ services:
       # FIX: 显式覆盖 MaxDirectMemorySize，避免 runserver.sh 按宿主机物理内存
       #      算出过大的直接内存（实测默认 8G），超过容器 limit 触发 cgroup OOM
       JAVA_OPT_EXT: "-server -Xms128m -Xmx256m -Xmn64m -XX:MaxDirectMemorySize=128m"
-      JAVA_HOME: /opt/kona-jdk17
-    volumes:
-      - /opt/kona-jdk17:/opt/kona-jdk17:ro
     deploy:
       resources:
         limits: { cpus: '0.5', memory: 640m }
@@ -343,7 +338,6 @@ services:
       #        runbroker.sh 在 JAVA_OPT_EXT 之前已设置这些参数，靠 JVM
       #        "后者覆盖前者" 规则生效
       JAVA_OPT_EXT: "-server -Xms256m -Xmx512m -Xmn128m -XX:MaxDirectMemorySize=256m"
-      JAVA_HOME: /opt/kona-jdk17
     deploy:
       resources:
         # FIX-2: 内存从 768m 提升到 2g
@@ -361,7 +355,6 @@ services:
       start_period: 90s
     volumes:
       - ./config/rocketmq/broker.conf:/home/rocketmq/rocketmq-5.1.4/conf/broker.conf
-      - /opt/kona-jdk17:/opt/kona-jdk17:ro
       - mq-broker-logs:/home/rocketmq/logs
       - mq-broker-store:/home/rocketmq/store
     depends_on:
@@ -370,7 +363,7 @@ services:
     restart: always
 
   rocketmq-dashboard:
-    image: apacherocketmq/rocketmq-dashboard:latest
+    image: apacherocketmq/rocketmq-dashboard@sha256:ce78506bd6fe01095bf1b37c954625e363ba5afae5d1539b77f395785d445e33
     container_name: my-xhs-rocketmq-dashboard
     network_mode: host
     environment:
@@ -474,16 +467,16 @@ services:
   # ==========================================
 
   canal:
-    image: my-xhs-canal-server:v1.1.7-squashed
+    image: canal/canal-server:v1.1.7
     container_name: my-xhs-canal
     network_mode: host
     entrypoint: ["/alidata/bin/main.sh"]
     command: ["/home/admin/app.sh"]
     environment:
       TZ: Asia/Shanghai
-      JAVA_HOME: /opt/kona-jdk8
+      JAVA_HOME: /opt/openjdk8
       JAVA_OPTS: "-Xms256m -Xmx512m -Xmn128m -XX:SurvivorRatio=2 -XX:MaxTenuringThreshold=15 -XX:+DisableExplicitGC -XX:MaxDirectMemorySize=256m"
-      PATH: /opt/kona-jdk8/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      PATH: /opt/openjdk8/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     deploy:
       resources:
         limits: { cpus: '0.5', memory: 1024m }
@@ -493,7 +486,7 @@ services:
       - ./config/canal/conf/note_instance/instance.properties:/home/admin/canal-server/conf/note_instance/instance.properties
       - ./config/canal/conf/product_instance/instance.properties:/home/admin/canal-server/conf/product_instance/instance.properties
       - ./config/canal/conf/inventory_instance/instance.properties:/home/admin/canal-server/conf/inventory_instance/instance.properties
-      - /opt/kona-jdk8:/opt/kona-jdk8:ro
+      - /opt/openjdk8:/opt/openjdk8:ro
       - canal-data:/home/admin/canal-server/logs
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f CanalLauncher || exit 1"]
@@ -520,16 +513,14 @@ services:
       TZ: Asia/Shanghai
       MODE: standalone
       NACOS_APPLICATION_PORT: 18848
-      NACOS_SERVER_IP: ${HOST_IP}  # 迁移时需改为新宿主机实际 IP
+      NACOS_SERVER_IP: 192.168.0.142  # 迁移时需改为新宿主机实际 IP
       SPRING_DATASOURCE_PLATFORM: mysql
       MYSQL_SERVICE_HOST: 127.0.0.1
       MYSQL_SERVICE_PORT: 3306
       MYSQL_SERVICE_DB_NAME: nacos_config
       MYSQL_SERVICE_USER: root
       MYSQL_SERVICE_PASSWORD: Xhs@2026#MySQL
-      JAVA_HOME: /opt/kona-jdk17
     volumes:
-      - /opt/kona-jdk17:/opt/kona-jdk17:ro
       - ./config/mysql-connector.jar:/home/nacos/plugins/mysql/mysql-connector.jar
     deploy:
       resources:
@@ -557,9 +548,6 @@ services:
     environment:
       TZ: Asia/Shanghai
       SERVER_PORT: 8858
-      JAVA_HOME: /opt/kona-jdk17
-    volumes:
-      - /opt/kona-jdk17:/opt/kona-jdk17:ro
     deploy:
       resources:
         # FIX: 内存从 256m 提升到 512m（Spring Boot + Netty 至少需要 400m）
@@ -590,9 +578,6 @@ services:
         --server.port=18080
         --xxl.job.accessToken=my-xhs-xxl-job-token-2026
         --xxl.job.i18n=zh_CN
-      JAVA_HOME: /opt/kona-jdk17
-    volumes:
-      - /opt/kona-jdk17:/opt/kona-jdk17:ro
     deploy:
       resources:
         limits: { cpus: '0.5', memory: 1024m }
@@ -629,9 +614,7 @@ services:
       SW_TELEMETRY_PROMETHEUS_PORT: 1234
       # FIX: 堆从 1024m 降到 768m，留更多空间给 gRPC/Netty 直接内存
       JAVA_OPTS: "-Xms512m -Xmx768m -XX:MaxDirectMemorySize=256m"
-      JAVA_HOME: /opt/kona-jdk17
     volumes:
-      - /opt/kona-jdk17:/opt/kona-jdk17:ro
       - ./config/skywalking:/skywalking/config:ro
     deploy:
       resources:
@@ -790,7 +773,6 @@ services:
     command:
       - --web.listen-address=:9105
       - --collect.slave_status
-      - --collect.innodb_status
     deploy:
       resources:
         limits: { cpus: '0.1', memory: 128m }
@@ -968,13 +950,39 @@ services:
     restart: always
 
   # ==========================================
-  # Filebeat — 日志采集 → Logstash :15045
+  # Filebeat — 标准 ELK 日志采集 (/logs/*.json → Logstash :15045)
+  # ==========================================
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.19.19
+    container_name: my-xhs-filebeat
+    network_mode: host
+    user: root
+    environment:
+      TZ: Asia/Shanghai
+    command: ["filebeat", "run", "-e", "--strict.perms=false", "-c", "/usr/share/filebeat/filebeat.yml"]
+    volumes:
+      - ./config/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /logs:/logs:ro
+    depends_on:
+      logstash:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f filebeat || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: always
+
   kibana:
     image: docker.elastic.co/kibana/kibana:8.19.19
     container_name: my-xhs-kibana
     network_mode: host
     environment:
       XPACK_SECURITY_ENCRYPTIONKEY: 4f6b2d9a-7c1e-4f8a-9b3d-1a2b3c4d5e6f  # P-D16 固定，防重启 session 失效
+      XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY: 7a4c9c2e-5f1d-4b2e-8a73-9e1f2a3b4c5d
+      XPACK_REPORTING_ENCRYPTIONKEY: 8b5d0a1f-6c2e-4d7a-9f31-0a2b3c4d5e6f
       MONITORING_UI_CONTAINER_ELASTICSEARCH_ENABLED: "false"  # P-D27 host 网络下关闭容器监控
       TZ: Asia/Shanghai
       SERVER_PORT: 15601

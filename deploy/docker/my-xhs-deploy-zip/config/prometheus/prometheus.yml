@@ -30,93 +30,93 @@ scrape_configs:
     scrape_interval: 10s
     static_configs:
       # 网关服务
-      - targets: ['${MICROSERVICE_IP}:19000']
+      - targets: ['192.168.0.142:19000']
         labels:
           service: 'my-xhs-gateway'
       # 用户服务
-      - targets: ['${MICROSERVICE_IP}:19001']
+      - targets: ['192.168.0.142:19001']
         labels:
           service: 'my-xhs-user'
       # 内容服务
-      - targets: ['${MICROSERVICE_IP}:19002']
+      - targets: ['192.168.0.142:19002']
         labels:
           service: 'my-xhs-content'
       # 互动分析服务
-      - targets: ['${MICROSERVICE_IP}:19003']
+      - targets: ['192.168.0.142:19003']
         labels:
           service: 'my-xhs-analytics'
       # 计数服务
-      - targets: ['${MICROSERVICE_IP}:19004']
+      - targets: ['192.168.0.142:19004']
         labels:
           service: 'my-xhs-counter'
       # 商品服务
-      - targets: ['${MICROSERVICE_IP}:19006']
+      - targets: ['192.168.0.142:19006']
         labels:
           service: 'my-xhs-product'
       # 购物车服务
-      - targets: ['${MICROSERVICE_IP}:19008']
+      - targets: ['192.168.0.142:19008']
         labels:
           service: 'my-xhs-cart'
       # 库存服务
-      - targets: ['${MICROSERVICE_IP}:19009']
+      - targets: ['192.168.0.142:19009']
         labels:
           service: 'my-xhs-inventory'
       # 优惠券服务
-      - targets: ['${MICROSERVICE_IP}:19010']
+      - targets: ['192.168.0.142:19010']
         labels:
           service: 'my-xhs-coupon'
       # 订单服务
-      - targets: ['${MICROSERVICE_IP}:19011']
+      - targets: ['192.168.0.142:19011']
         labels:
           service: 'my-xhs-order'
       # 支付服务
-      - targets: ['${MICROSERVICE_IP}:19012']
+      - targets: ['192.168.0.142:19012']
         labels:
           service: 'my-xhs-payment'
       # 通知服务
-      - targets: ['${MICROSERVICE_IP}:19013']
+      - targets: ['192.168.0.142:19013']
         labels:
           service: 'my-xhs-notification'
       # IM 服务
-      - targets: ['${MICROSERVICE_IP}:19014']
+      - targets: ['192.168.0.142:19014']
         labels:
           service: 'my-xhs-im'
       # 首页聚合服务
-      - targets: ['${MICROSERVICE_IP}:19015']
+      - targets: ['192.168.0.142:19015']
         labels:
           service: 'my-xhs-home'
       # 搜索服务
-      - targets: ['${MICROSERVICE_IP}:19016']
+      - targets: ['192.168.0.142:19016']
         labels:
           service: 'my-xhs-search'
 
   # ==================== Prometheus 自身 ====================
   - job_name: 'prometheus'
     static_configs:
-      - targets: ['${HOST_IP}:19090']
+      - targets: ['192.168.0.142:19090']
 
   # ==================== SkyWalking OAP（P-T3） ====================
   - job_name: 'skywalking-oap'
     metrics_path: '/metrics'
     scrape_interval: 15s
     static_configs:
-      - targets: ['${HOST_IP}:1234']
+      - targets: ['192.168.0.142:1234']
 
   # ==================== 中间件 Exporter（P-D4 补全） ====================
   - job_name: 'redis'
     static_configs:
-      - targets: ['${HOST_IP}:9151']
+      - targets: ['192.168.0.142:9151']
 
   - job_name: 'elasticsearch'
     static_configs:
-      - targets: ['${HOST_IP}:9114']
+      - targets: ['192.168.0.142:9114']
 
   - job_name: 'mysql'
     static_configs:
-      - targets: ['${HOST_IP}:9104']
+      - targets: ['192.168.0.142:9104']
   - job_name: 'mysql-slave'
     static_configs:
-      - targets: ['${HOST_IP}:9105']
+      - targets: ['192.168.0.142:9105']
 
   # ==================== Canal（自带 prometheus 端点 11112） ====================
   - job_name: 'canal'
@@ -127,9 +127,9 @@ scrape_configs:
     metrics_path: '/metrics'
     scrape_interval: 15s
     static_configs:
-      - targets: ['${HOST_IP}:11112']
+      - targets: ['192.168.0.142:11112']
 
   # ==================== 宿主机（node_exporter） ====================
   - job_name: 'node'
     static_configs:
-      - targets: ['${HOST_IP}:9100']
+      - targets: ['192.168.0.142:9100']

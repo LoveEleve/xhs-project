@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS t_inventory_outbox (
     status      TINYINT     NOT NULL DEFAULT 0 COMMENT '0-待发送 1-已发送',
     created_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (id),
-    UNIQUE INDEX uk_order_sku (order_id, sku_id),
+    UNIQUE INDEX uk_order_sku_action (order_id, sku_id, action),
     INDEX idx_status_created (status, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='库存事件Outbox表';
 
@@ -70,6 +70,14 @@ CREATE TABLE IF NOT EXISTS t_inventory_compensation (
     PRIMARY KEY (id),
     INDEX idx_status_retry_created (status, retry_count, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='库存回滚补偿表';
+
+-- 预扣幂等表（MySQL 兜底，防 Redis key 丢失后重复扣减）
+CREATE TABLE IF NOT EXISTS t_inventory_prededuct_idem (
+    order_id   BIGINT   NOT NULL COMMENT '预扣orderId(pseudoOrderId)',
+    sku_id     BIGINT   NOT NULL COMMENT 'SKU ID',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '首次预扣时间',
+    PRIMARY KEY (order_id, sku_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='预扣幂等表';
 
 -- Canal 同步账号
 CREATE USER IF NOT EXISTS 'canal'@'%' IDENTIFIED BY 'Canal@2026#Sync';

@@ -1,14 +1,14 @@
 -- ============================================
 -- my-xhs curl 测试前置数据初始化脚本
 -- 生成时间: 2026-07-10
--- 数据库主机: ${HOST_IP}
+-- 数据库主机: 192.168.0.142
 -- 密码: Xhs@2026#MySQL
 -- 
 -- 执行方式:
---   mysql -h ${HOST_IP} -u root -p'Xhs@2026#MySQL' < sql/test-data-init.sql
+--   mysql -h 192.168.0.142 -u root -p'Xhs@2026#MySQL' < sql/test-data-init.sql
 -- 
 -- 或分实例执行:
---   mysql -h ${HOST_IP} -P 13306 -u root -p'Xhs@2026#MySQL' < sql/test-data-init.sql
+--   mysql -h 192.168.0.142 -P 13306 -u root -p'Xhs@2026#MySQL' < sql/test-data-init.sql
 -- ============================================
 
 -- ============================================

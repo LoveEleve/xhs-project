@@ -102,3 +102,94 @@ v2 common 重启后标签自然出现。试验机已预备 by topic/by result �
 | C2 | 容器构成 | filebeat 移除、27 容器一致 | ✓ |
 
 **对方待办**: ①zip 删 broker-slave.conf(已由本地完成) ②试验机自查裸名实例(已自查: 本机无残留) ③同步最新配置(已完成)
+
+---
+
+## D. 本地 2026-08-24 静态复核结论(未启动服务)
+
+> 范围: `/data/workspace/xhs-project/deploy/docker/my-xhs-deploy-zip` + `config/docker-compose.yml` + `docs/test-2/3` + `pom.xml`。
+> 验证层级: **L0/L1**(静态/语义), **未做 L2 运行态启动验证**。
+
+### D1. 已确认的版本基线(当前应采用)
+- **应用依赖基线**(以根 `pom.xml` 为准): Java 17 / Spring Boot 3.2.5 / Spring Cloud 2023.0.3 /
+  RocketMQ broker 5.1.4 + `rocketmq-spring-boot-starter` 2.3.0 / Nacos client 2.3.0 /
+  Sentinel 1.8.8 / SkyWalking 9.7.0 / XXL-Job 2.4.2 / MySQL Connector 8.0.33。
+- **中间件部署基线**(以当前 deploy compose 为准):
+  - MySQL `8.0`
+  - Redis `7-alpine`
+  - RocketMQ `apache/rocketmq:5.1.4`
+  - Nacos `nacos/nacos-server:v2.3.2`
+  - Sentinel `bladex/sentinel-dashboard:1.8.8`
+  - XXL-Job `xuxueli/xxl-job-admin:2.4.2`
+  - SkyWalking `9.7.0`
+  - 业务 ES `8.19.19`
+  - SkyWalking ES `8.12.2`
+  - Grafana `10.2.3`
+  - Prometheus `v2.48.1`
+  - Logstash/Kibana `8.19.19`
+  - Canal `my-xhs-canal-server:v1.1.7-squashed`
+- **拓扑基线**: 当前 compose 定义 **27 个服务**(非旧文档中的 22/25), 且全部 `network_mode: host`。
+
+### D2. 新发现问题(需处理)
+1. **当前解压目录曾缺少 `config/mysql-connector.jar`(已补齐)**。
+   - 2026-08-24 已从 `deploy/docker/my-xhs-deploy-ai-package-20260821-fixed.zip` 补回当前解压目录。
+   - 当前文件已存在, 大小 `2475087` bytes。
+2. **`rocketmq-dashboard:latest` 不可复现, 必须固定(已处理)**。
+   - 当前生产快照中已验证运行镜像 digest 为:
+     `apacherocketmq/rocketmq-dashboard@sha256:ce78506bd6fe01095bf1b37c954625e363ba5afae5d1539b77f395785d445e33`。
+   - 2026-08-24 本地已将当前部署目录 compose 改为固定 digest。
+3. **Compose v2 之前缺失(已安装)**。
+   - 2026-08-24 已安装 `docker compose` v2, 当前版本 `2.40.3`。
+4. **JDK 挂载策略需要按组件重新收敛, 不是全部都必须 Kona**。
+   - RocketMQ 5.1.4 官方镜像自带 JDK 8;
+   - Nacos 2.3.2 镜像自带 OpenJDK 8;
+   - SkyWalking OAP 9.7.0 镜像自带 JDK 11;
+   - **仅 Canal 1.1.7 已有运行态证据表明与 JDK 17 不兼容**, 仍需 JDK 8。
+   - 2026-08-24 本地已从 compose 中移除 RocketMQ/Nacos/Sentinel/XXL/SkyWalking 的 `kona-jdk17` 挂载与环境变量,
+     当前仅保留 Canal 的 JDK 8 挂载。
+   - 后续若进一步去 Kona, 只需为 Canal 单独提供通用 OpenJDK 8 路径即可。
+5. **RocketMQ Prometheus 插件路线不可用, 继续保留 textfile 方案**。
+   - `metricsExporterType=PROM` 在 5.1.4 官方镜像上无效;
+   - `rocketmq-exporter` 与 5.1.4 兼容性不稳定/已被文档否决;
+   - 当前正确方案仍是 `config/deploy-cloud/rocketmq-metrics.sh` + node-exporter textfile。
+6. **运行态修正(2026-08-24)**: `mysqld-exporter-slave` 在 `prom/mysqld-exporter:v0.15.1` 下不支持 `--collect.innodb_status`,
+   已从 compose 中移除该 flag, 保留 `--collect.slave_status` 以满足从库复制监控。
+6. **部署文档存在历史口径, 不能直接照抄 test-1 早期示例**。
+   - `docs/test-1/infrastructure/04-infrastructure-and-deployment.md` 中有 Nacos 3.0.0 / XXL-Job 3.0 /
+     旧 Redis/Sentinel 拓扑等示例, 不应作为当前部署基线。
+   - 当前有效入口以 `docs/test-2/README.md` 指定的 `HANDOFF-TASK4.md` / `HANDOFF-TASK5.md` /
+     `review-production-config.md` / `config/deploy-cloud/DEPLOY-README.md` 为准。
+
+### D3. RocketMQ / 监控专项结论
+- Broker 与客户端版本继续保持现状对齐: Broker 5.1.4 + `rocketmq-spring-boot-starter` 2.3.0。
+- Dashboard 只解决运维查看/死信重投, **不承担 Prometheus 指标采集**。
+- RocketMQ 中间件指标继续采用:
+  - `config/deploy-cloud/rocketmq-metrics.sh`
+  - 宿主机目录 `/data/rocketmq-textfile`
+  - node-exporter textfile collector
+  - cron 定时采集
+- 后续若做运行态增强, 需补一条 L2 校验: `rocketmq_up` 不能在 `mqadmin` 失败时仍长期为 1。
+
+### D4. 下一步执行顺序(建议)
+1. 准备 Canal 的通用 JDK 8 路径 `/opt/openjdk8`。
+2. 再继续做不启动服务的 compose/config 二轮复核; 通过后才进入首次中间件启动。
+
+### D5. 二轮静态复核补充(2026-08-24)
+- **Canal 的 JDK 8 依赖仍是首启前置(已准备)**。
+  - 2026-08-24 已将 compose 收敛为仅依赖 Canal 的通用 JDK8 路径: `/opt/openjdk8`;
+  - 当前本机该路径已就绪, `java -version` = `1.8.0_492`。
+- **Canal 自定义镜像依赖已消除**。
+  - 2026-08-24 已确认官方 `canal/canal-server:v1.1.7` 的入口与当前 compose 兼容:
+    `[/alidata/bin/main.sh] + [/home/admin/app.sh]`;
+  - 因此当前不再依赖 `my-xhs-canal-server:v1.1.7-squashed`。
+- **宿主机目录前置仍未就绪**。
+  - `/data/rocketmq-textfile` 当前不存在: 会影响 node-exporter textfile 采集 RocketMQ 指标;
+  - `/logs` 当前不存在: 该目录在现版 compose 中不再直接挂 filebeat, 但若后续恢复日志采集脚本/旧说明, 需避免混淆。
+- **Dashboard digest 仅已固定在 compose, 本机尚未拉取镜像**。
+  - 当前 `apacherocketmq/rocketmq-dashboard@sha256:ce78506bd6fe01095bf1b37c954625e363ba5afae5d1539b77f395785d445e33`
+    还未存在于本机镜像缓存中, 首次启动时会拉取。
+- **当前首次启动前的最小前置清单**:
+  1. 准备 Canal JDK8 路径(保留 `/opt/kona-jdk8` 或改为明确的 OpenJDK8 路径);
+  2. 创建 `/data/rocketmq-textfile`;
+  3. 确认镜像拉取源已可用(当前 Docker 已可拉 `hello-world` 与 `canal/canal-server:v1.1.7`, 但其余大镜像仍属首次实战验证范围);
+  4. 再进入首次 `docker compose up -d`。

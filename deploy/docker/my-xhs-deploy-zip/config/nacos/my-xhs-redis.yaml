@@ -1,10 +1,10 @@
 # Redis 连接配置（从生产 Nacos my-xhs 命名空间导出，2026-08-12）
 # 部署后导入 Nacos：命名空间 my-xhs / DEFAULT_GROUP / dataId=my-xhs-redis.yaml
-# 注意：host 需与云主机实际 IP 一致（建议绑定 EIP 后保持 ${HOST_IP} 或改为新 IP）
+# 注意：host 需与云主机实际 IP 一致（建议绑定 EIP 后保持 192.168.0.142 或改为新 IP）
 spring:
   data:
     redis:
-      host: ${HOST_IP}
+      host: 192.168.0.142
       password: Xhs@2026#Redis
       port: 6379
       business:

@@ -1,7 +1,7 @@
 apiVersion: 1
 datasources:
   # A-7 确认: grafana 与 prometheus 均为 host 网络同机部署, 127.0.0.1:19090 当前可用;
-  # 若 Grafana 迁移/跨机, 需改为 Prometheus 实际地址(如 http://${HOST_IP}:19090)
+  # 若 Grafana 迁移/跨机, 需改为 Prometheus 实际地址(如 http://192.168.0.142:19090)
   - name: Prometheus
     type: prometheus
     access: proxy

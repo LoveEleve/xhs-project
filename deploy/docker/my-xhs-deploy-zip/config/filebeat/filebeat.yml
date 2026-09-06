@@ -1,0 +1,22 @@
+filebeat.inputs:
+  - type: filestream
+    id: myxhs-json-logs
+    enabled: true
+    paths:
+      - /logs/*.json
+    parsers:
+      - ndjson:
+          overwrite_keys: true
+          add_error_key: true
+
+processors:
+  - add_fields:
+      target: ''
+      fields:
+        log_source: filebeat
+
+output.logstash:
+  hosts: ["127.0.0.1:15045"]
+
+logging.level: info
+logging.to_files: false

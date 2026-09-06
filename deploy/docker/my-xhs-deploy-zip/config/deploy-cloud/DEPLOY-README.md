@@ -18,16 +18,11 @@
 ## 二、云主机前置准备
 
 1. **Docker + Compose**：`curl -fsSL https://get.docker.com | sh`；`systemctl enable docker`
-2. **JDK**：compose 挂载 `/opt/kona-jdk17` 与 `/opt/kona-jdk8`（RocketMQ/Nacos/Canal 用）——从本机或腾讯云镜像安装到 `/opt/`：
+2. **JDK**：当前 compose 仅要求 **Canal** 挂载宿主机 JDK 8，约定路径 `/opt/openjdk8`：
    ```bash
-   ls /opt/kona-jdk17 /opt/kona-jdk8   # 必须存在，否则容器起不来
+   ls /opt/openjdk8   # 必须存在，否则 Canal 起不来
    ```
-3. **Canal 自定义镜像**（不在公共仓库）：中间件机导出后随包上传：
-   ```bash
-   docker save my-xhs-canal-server:v1.1.7-squashed -o canal-image.tar
-   # 云主机：
-   docker load -i canal-image.tar
-   ```
+3. **Canal 官方镜像**：当前使用 `canal/canal-server:v1.1.7`，无需再准备自定义 squashed 镜像。
 4. **EIP（弹性公网 IP）**：**必须**（见第四节）。绑定到云主机，确保关机重启后公网 IP 不变。
 5. 内存建议 ≥24GB（容器峰值 ~9GB + 预留）；磁盘 ≥100GB（日志/ES/MySQL）。
 

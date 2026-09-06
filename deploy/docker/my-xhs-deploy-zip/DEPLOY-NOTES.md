@@ -11,7 +11,7 @@
 3. **覆盖升级保留数据**: 卷名跟随 compose 项目名(目录名), 项目名不变则卷复用、
    数据保留; MySQL initdb 脚本只在空卷时执行, 不会重跑 init-all.sql。
 4. **前置检查**: `systemctl enable docker`(本机原为 disabled, 开机不自启)、
-   JDK(/opt/kona-jdk8、17)、canal 镜像已 load、compose v2。
+   Canal 用宿主机 JDK8(`/opt/openjdk8`)、compose v2。
 5. **compose 校验坑**: `depends_on` 下若写成 `rocketmq-broker:` 空映射会报
    "must be a mapping" —— 必须带 `condition: service_started`。
 
