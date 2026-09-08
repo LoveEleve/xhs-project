@@ -9,13 +9,13 @@
 | CT-L1-03 | 笔记详情 | GET /note/detail/{id} | 详情+缓存 | ✅ |
 | CT-L1-04 | 批量详情 | POST /batch-detail | 多笔记 | ✅ |
 | CT-L1-05 | 用户笔记列表 | GET /note/user/{uid} | 分页 | ✅ |
-| CT-L1-06 | 我的笔记 | GET /note/my | 本人笔记 | ⬜ |
+| CT-L1-06 | 我的笔记 | GET /note/my | 本人笔记 | ✅ 200 |
 | CT-L1-07 | 删除笔记 | DELETE /note/{id} | 软删+索引清理 | ✅ |
-| CT-L1-08 | 分享 | POST /note/{id}/share | 分享 | ⬜ |
+| CT-L1-08 | 分享 | POST /note/{id}/share | 已发布分享+计数 | ✅ 草稿20001拒/已发布200 |
 | CT-L1-09 | 评论创建 | POST /api/comment | t_comment+计数 | ✅ |
 | CT-L1-10 | 子评论/回复 | POST comment(parentId) | 层级 | ✅ 200+children列表 |
 | CT-L1-11 | 评论列表/子列表 | GET /list,/children,/page | 分页 | ✅ |
-| CT-L1-12 | 评论删除 | DELETE /comment/{id} | 软删+计数-1 | ⬜ |
+| CT-L1-12 | 评论删除 | DELETE /comment/{id} | 软删deleted=1 | ✅ |
 | CT-L1-13 | 评论计数 | GET /count/{noteId} | 计数 | ✅ |
 | CT-L1-14 | 敏感词拦截 | 含敏感词发布 | 拒绝 | ⬜ |
 
