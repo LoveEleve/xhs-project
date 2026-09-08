@@ -10,7 +10,8 @@
 | C-L1-04 | 取消点赞-1 | analytics unlike → counter | count 回落 | ✅ |
 | C-L1-05 | 收藏计数+1 | analytics favorite → counter countType=2 | count=1 | ✅ |
 | C-L1-06 | 关注/粉丝计数 | follow → counter 双向 | following/follower 各+1 | ✅ |
-| C-L1-07 | 评论计数 | content comment → counter countType=3 | count 更新 | ⬜ |
+| C-L1-07 | 评论计数 | content comment → counter countType=3 | count 更新 | ✅ 评论后 countType=3=2 |
+| C-L1-08 | 批量查询返回结构 | batch-get 多 countType | like/collect/comment/view 正确 | ✅ {"like":"0","collect":"1","comment":"2","view":"1"} |
 
 ## L2 数据
 
