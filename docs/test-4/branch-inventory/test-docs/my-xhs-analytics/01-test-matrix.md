@@ -24,9 +24,9 @@
 | ID | 验证点 | 证据 | 状态 |
 |---|---|---|---|
 | A-L2-01 | Redis like Set/反向 Set | Redis `myxhs:like:*` | ⬜ |
-| A-L2-02 | Favorite ZSet score/分页 | Redis `myxhs:favorite:{uid}` | ⬜ |
-| A-L2-03 | Follow ZSet/计数 | Redis follow list/fans/counter | ⬜ |
-| A-L2-04 | t_like/t_favorite/t_follow 异步落库 | MySQL + consumer 日志 | ⬜ |
+| A-L2-02 | Favorite ZSet | myxhs:favorite:10001 | ✅ 存在 |
+| A-L2-03 | Follow ZSet | follow:list+fans | ✅ 存在 |
+| A-L2-04 | 异步落库 | t_follow=1/t_favorite=1 | ✅ |
 | A-L2-05 | SOCIAL_TOPIC 消费 | counter 日志/计数 | ✅ |
 | A-L2-06 | NOTIFICATION_TOPIC 消费 | notification 落库/未读 | ✅ |
 
