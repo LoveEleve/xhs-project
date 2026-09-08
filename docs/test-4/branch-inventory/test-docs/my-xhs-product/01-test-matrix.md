@@ -9,8 +9,8 @@
 | PR-L1-03 | SPU 详情 | GET /spu/{id} | 详情 | ✅ |
 | PR-L1-04 | SPU 列表 | GET /spu/list | 分页 | ✅ |
 | PR-L1-05 | SKU 详情 | GET /sku/{id} | 详情 | ✅ |
-| PR-L1-06 | SKU 批量 | GET /sku/batch?skuIds= | 批量(内部接口403外部) | ⚠️ 内部Feign专用 |
-| PR-L1-07 | SPU 上下架 | PUT /spu/{id}/status | 200状态变更 | ✅ |
+| PR-L1-06 | SKU 批量 | GET /sku/batch?skuIds= | 内部调用(403公开拒绝) | ✅ 仅内部 |
+| PR-L1-07 | SPU 上下架 | PUT /spu/{id}/status | 状态变更 | ✅ 200/详情status |
 | PR-L1-08 | 分类树 | GET /category/tree | 三级分类 | ✅ |
 | PR-L1-09 | 分类环路校验 | 创建成环分类 | 拒绝 | ⬜ |
 | PR-L1-10 | 更新 SPU | PUT /spu/{id} | 200更新 | ✅ |
