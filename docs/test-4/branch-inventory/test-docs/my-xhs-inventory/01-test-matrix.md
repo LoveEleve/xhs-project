@@ -1,0 +1,49 @@
+# my-xhs-inventory 测试用例矩阵（L1-L4）
+
+## L1 业务
+
+| ID | 用例 | 请求/数据 | 预期 | 状态 |
+|---|---|---|---|---|
+| INV-L1-01 | 初始化库存 | POST /api/inventory/init {skuId,available} | Redis 分桶 + MySQL 初始化 | ⬜ |
+| INV-L1-02 | 重复初始化幂等 | 同 sku 二次 init | 不重复/提示已初始化 | ⬜ |
+| INV-L1-03 | 预扣库存 | preDeduct | available-locked，Redis 桶+Outbox | ✅ |
+| INV-L1-04 | 确认扣减 | confirmDeduct | locked→0，Outbox CONFIRM | ✅ |
+| INV-L1-05 | 释放库存 | releaseStock | available+，清预扣 | ✅ |
+| INV-L1-06 | 退款回补 | refundRestore | available+ | ✅ |
+| INV-L1-07 | 超卖防护 | 超量 preDeduct | 拒绝 | ⬜ |
+| INV-L1-08 | 查库存 | GET /api/inventory/stock/{skuId} | available/locked/freezing | ✅ |
+| INV-L1-09 | 扩容/reinit | resize/reinit | 分桶数变化不丢库存 | ⬜ |
+
+## L2 数据
+
+| ID | 验证点 | 证据 | 状态 |
+|---|---|---|---|
+| INV-L2-01 | Redis 分桶 total/bucket | Redis inventory key | ✅ |
+| INV-L2-02 | 预扣记录 Hash/ZSet | prededuct idem | ✅ |
+| INV-L2-03 | Outbox 表 | PRE_DEDUCT/CONFIRM 独立行 | ✅ |
+| INV-L2-04 | t_inventory 状态 | available/locked/freezing | ✅ |
+| INV-L2-05 | TCC Fence 表 | t_tcc_fence/freeze_detail | ⬜ |
+
+## L3 质量
+
+| ID | 用例 | 预期 | 状态 |
+|---|---|---|---|
+| INV-L3-01 | 预扣超时恢复 | PreDeductTimeoutJob 释放 | ✅ |
+| INV-L3-02 | MQ 失败回滚 | 预扣消息失败 Redis/Outbox 一致 | ⬜ |
+| INV-L3-03 | TCC Try/Confirm/Cancel | 幂等+fence | ⬜ |
+| INV-L3-04 | 对账修复 | reconcile 修正漂移 | ⬜ |
+| INV-L3-05 | 并发预扣 | 多请求不超卖 | ⬜ |
+| INV-L3-06 | 扩容窗口保护 | resize 时 confirm/release 延迟 | ⬜ |
+| INV-L3-07 | 多 SKU 部分成功 | 一 SKU 失败不影响其他 | ⬜ |
+
+## L4 可观测
+
+| ID | 验证点 | 状态 |
+|---|---|---|
+| INV-L4-01 | Outbox 积压/失败指标 | ⬜ |
+| INV-L4-02 | 预扣超时/对账日志 | ✅ |
+| INV-L4-03 | TraceId 跨 Order/Inventory | ✅ |
+
+## 已实测（运行态复核）
+- INV-L1-03/04/05/06/08、L2-01/03/04、L3-01 ✅
+- 超卖防护/重复初始化/TCC/并发预扣/扩容窗口/对账修复 待专项
