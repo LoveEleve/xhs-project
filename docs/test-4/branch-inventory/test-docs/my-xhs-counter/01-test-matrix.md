@@ -18,8 +18,8 @@
 | ID | 验证点 | 证据 | 状态 |
 |---|---|---|---|
 | C-L2-01 | Redis counter key 结构 | `myxhs:counter:{type}:{id}:{ct}` | ✅ |
-| C-L2-02 | dedup key 生命周期 | `myxhs:counter:dedup:{msgId}` 写入/过期 | ⬜ |
-| C-L2-03 | like set SCARD | `myxhs:like:set:*` | ⬜ |
+| C-L2-02 | dedup key | 存在+TTL6564s≈2h | ✅ |
+| C-L2-03 | like set SCARD | 点赞后=1 | ✅ |
 | C-L2-04 | t_counter Buffer 刷盘 | MySQL count_value 与 Redis 一致 | ✅ |
 | C-L2-05 | counter key 30天 TTL | TTL=2591386s≈30d | ✅ |
 
