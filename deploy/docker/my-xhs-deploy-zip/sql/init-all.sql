@@ -86,22 +86,6 @@ ON DUPLICATE KEY UPDATE description = VALUES(description);
 CREATE DATABASE IF NOT EXISTS my_xhs_analytics DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE my_xhs_analytics;
 
-CREATE TABLE IF NOT EXISTS t_user_behavior (
-    id            BIGINT   NOT NULL COMMENT 'ID',
-    user_id       BIGINT   NOT NULL COMMENT '用户ID',
-    note_id       BIGINT   NOT NULL COMMENT '笔记ID',
-    behavior_type TINYINT  NOT NULL COMMENT '行为类型：1-浏览 2-点赞 3-收藏 4-评论 5-分享 6-搜索',
-    duration      INT      DEFAULT NULL COMMENT '停留时长（秒），仅浏览行为',
-    deleted       TINYINT  NOT NULL DEFAULT 0 COMMENT '逻辑删除',
-    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    PRIMARY KEY (id),
-    INDEX idx_user_id (user_id),
-    INDEX idx_note_id (note_id),
-    INDEX idx_behavior_type (behavior_type),
-    INDEX idx_created_at (created_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户行为记录表';
-
 CREATE TABLE IF NOT EXISTS t_follow (
     id              BIGINT   NOT NULL COMMENT 'ID',
     user_id         BIGINT   NOT NULL COMMENT '用户ID',
@@ -257,6 +241,22 @@ CREATE TABLE IF NOT EXISTS t_chat_user_relation (
 -- 内容服务
 CREATE DATABASE IF NOT EXISTS my_xhs_content DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE my_xhs_content;
+
+CREATE TABLE IF NOT EXISTS t_user_behavior (
+    id            BIGINT   NOT NULL COMMENT 'ID',
+    user_id       BIGINT   NOT NULL COMMENT '用户ID',
+    note_id       BIGINT   NOT NULL COMMENT '笔记ID',
+    behavior_type TINYINT  NOT NULL COMMENT '行为类型：1-曝光 2-点击 3-点赞 4-收藏 5-评论 6-分享 7-停留（对齐 BehaviorRequest 枚举）',
+    duration      INT      DEFAULT NULL COMMENT '停留时长（秒），仅行为类型=7 有效',
+    deleted       TINYINT  NOT NULL DEFAULT 0 COMMENT '逻辑删除',
+    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (id),
+    INDEX idx_user_id (user_id),
+    INDEX idx_note_id (note_id),
+    INDEX idx_behavior_type (behavior_type),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户行为记录表（search 数据源=content 库）';
 
 CREATE TABLE IF NOT EXISTS t_note (
     id            BIGINT       NOT NULL COMMENT 'ID',
