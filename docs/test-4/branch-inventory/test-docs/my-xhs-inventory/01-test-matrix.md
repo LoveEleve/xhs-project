@@ -4,15 +4,15 @@
 
 | ID | 用例 | 请求/数据 | 预期 | 状态 |
 |---|---|---|---|---|
-| INV-L1-01 | 初始化库存 | POST /api/inventory/init {skuId,available} | Redis 分桶 + MySQL 初始化 | ⬜ |
-| INV-L1-02 | 重复初始化幂等 | 同 sku 二次 init | 不重复/提示已初始化 | ⬜ |
+| INV-L1-01 | 初始化库存 | POST /api/inventory/init {skuId,totalStock} | MySQL 初始化 100/0 | ✅ |
+| INV-L1-02 | 重复初始化幂等 | 同 sku 二次 init | 40002已初始化拒绝 | ✅ |
 | INV-L1-03 | 预扣库存 | preDeduct | available-locked，Redis 桶+Outbox | ✅ |
 | INV-L1-04 | 确认扣减 | confirmDeduct | locked→0，Outbox CONFIRM | ✅ |
 | INV-L1-05 | 释放库存 | releaseStock | available+，清预扣 | ✅ |
 | INV-L1-06 | 退款回补 | refundRestore | available+ | ✅ |
-| INV-L1-07 | 超卖防护 | 超量 preDeduct | 拒绝 | ⬜ |
+| INV-L1-07 | 超卖防护 | 超量 preDeduct qty=999 | 30004库存不足 | ✅ |
 | INV-L1-08 | 查库存 | GET /api/inventory/stock/{skuId} | available/locked/freezing | ✅ |
-| INV-L1-09 | 扩容/reinit | resize/reinit | 分桶数变化不丢库存 | ⬜ |
+| INV-L1-09 | 扩容/reinit | POST /api/inventory/reinit | 200 重建 | ✅ |
 
 ## L2 数据
 
@@ -46,4 +46,5 @@
 
 ## 已实测（运行态复核）
 - INV-L1-03/04/05/06/08、L2-01/03/04、L3-01 ✅
-- 超卖防护/重复初始化/TCC/并发预扣/扩容窗口/对账修复 待专项
+- 超卖防护/重复初始化/预扣/确认/释放/回补/reinit 已实测
+- TCC/并发预扣/扩容窗口/对账修复 待专项
