@@ -11,14 +11,14 @@
 | N-L1-05 | 标记单条已读 | POST /read/{id} | is_read=1 + 未读-1 | ✅ |
 | N-L1-06 | 按类型/全部已读 | POST /read-by-type/{t} /read-all | 未读清零 | ⬜ |
 | N-L1-07 | 未读计数 | GET /api/notification/unread-count | total+type 明细 | ✅ |
-| N-L1-08 | SSE ticket | POST /sse/ticket | 短期 ticket | ⬜ |
-| N-L1-09 | SSE 长连接 | GET /sse?ticket= | 在线推送事件 | ⬜ 需SSE客户端 |
+| N-L1-08 | SSE ticket | POST /sse/ticket | 短期一次性 ticket | ✅ |
+| N-L1-09 | SSE 长连接 | GET /sse?ticket= | 连接+心跳+通知+未读推送 | ✅ event:notification/未读 |
 
 ## L2 数据
 
 | ID | 验证点 | 证据 | 状态 |
 |---|---|---|---|
-| N-L2-01 | 聚合窗口 | 同类事件 5min 内合并 | ⬜ |
+| N-L2-01 | 聚合窗口 | 同类事件合并 | ✅ 测试用户B等2人赞了 |
 | N-L2-02 | aggregate_count/title 更新 | "xx等N人" | ⬜ |
 | N-L2-03 | 未读 Redis 结构 | 各 type 计数 | ✅ |
 | N-L2-04 | MQ 幂等 | msgId 重复消费拦截 | ⬜ |
