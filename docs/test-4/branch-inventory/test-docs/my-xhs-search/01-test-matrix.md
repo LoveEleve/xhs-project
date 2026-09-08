@@ -29,7 +29,7 @@
 | S-L3-01 | 脏 SPU 不阻塞批次 | 无 SKU SPU | 跳过其余正常索引 | ✅ 修复 |
 | S-L3-02 | ES 版本防乱序 | 旧消息低版本 | 不覆盖 | ⬜ |
 | S-L3-03 | 高亮/相关性 | 关键词命中 | 返回正确 | ✅ |
-| S-L3-04 | 推荐质量 | 行为数据 | 推荐相关 | ⬜ 需行为量 |
+| S-L3-04 | 推荐行为落库 | behavior→RECOMMEND_BEHAVIOR_TOPIC→t_user_behavior | ✅ 修复归属库后落库 |
 | S-L3-05 | LocalDateTime 索引 | createdAt 序列化 | 不抛异常 | ✅ 修复 |
 
 ## L4 可观测
