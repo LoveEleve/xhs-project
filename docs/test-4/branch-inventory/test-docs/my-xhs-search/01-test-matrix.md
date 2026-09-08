@@ -20,7 +20,7 @@
 | S-L2-02 | product_index 同步 | 商品→ES 文档 | ✅ 5文档 |
 | S-L2-03 | 版本控制 | 乱序不覆盖新数据 | ⬜ |
 | S-L2-04 | 增量补偿 Job | IncrementalIndexSyncJob | ✅ 商品=3 |
-| S-L2-05 | 索引重建 | POST /index/rebuild | ⬜ |
+| S-L2-05 | 索引重建 | POST /index/rebuild | ✅ 重建17条 note9/product9 |
 
 ## L3 质量
 
