@@ -111,6 +111,12 @@ public class GlobalExceptionHandler implements ErrorWebExceptionHandler {
     private HttpStatus determineHttpStatus(Throwable ex) {
         Throwable current = ex;
         while (current != null) {
+            // T-132 修复（混沌注入验证发现）：下游超时时 gateway 抛 ResponseStatusException(504)，
+            // 其 cause 链不含 ConnectException/TimeoutException 类型（超时被包装），原实现落入 500。
+            // 识别 ResponseStatusException 直接采用其 statusCode，保证 504/404 等语义正确。
+            if (current instanceof org.springframework.web.server.ResponseStatusException rse) {
+                return HttpStatus.resolve(rse.getStatusCode().value());
+            }
             if (current instanceof java.net.ConnectException) {
                 return HttpStatus.SERVICE_UNAVAILABLE;
             }
