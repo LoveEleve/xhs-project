@@ -71,8 +71,43 @@ MQ即时兜底: 支付成功Feign+MQUU(幂等共存) ✓
 - im：REST（ticket 签发/会话/历史/未读/已读）全 200；WS 握手鉴权 fail-closed（无 ticket im 拒绝，日志"缺少 ticket 参数"）✅
 - 全链路最终回归：下单→预扣→支付→确认→发布→Feed 推送→点赞→计数→搜索→通知 全部通过，15 服务 UP
 
+## 第三轮 全模块测试矩阵闭环（2026-09-08）
+
+15 个服务模块补齐 L1-L4 测试用例矩阵（gateway 07、其余 01），核心项实测并标注状态。
+同时为 analytics/counter/home/im/notification/search 补齐 02 深度分析（10 部分）。
+
+### P0 一致性专项实测（资损核心）
+
+| 专项 | 场景 | 结果 |
+|---|---|---|
+| order 事务消息 | 半消息→本地事务→COMMIT→库存预扣 | ✅ 链路通 |
+| order 本地消息补发 | 注入 status=2/retry=5 → Job 补发 | ✅ 成功=1 |
+| inventory 并发预扣 | 20 并发，Redis/MySQL 一致 | ✅ 149→129 不超卖 |
+| inventory 超量预扣 | 5×qty=50 超库存 | ✅ 只扣100 超额拒绝 |
+| coupon 并发领券 | 10 并发，perUserLimit=2 | ✅ remain98→96 限领2 张 30013 |
+| analytics 点赞幂等 | 重复点赞/取消 | ✅ Set-based 不重复/归0 |
+
+### 安全边界确认（非缺陷）
+
+- 内部接口（SKU 批量/支付回调）外部调用 401/403 拒绝
+- `GatewayAuthTrustFilter` 剥离未认证伪造 X-User-Id
+- 管理接口需 X-Admin-Call（fail-closed）
+- order 无效 addressId 拒绝（已修复）
+
+### 跨服务证据链
+
+analytics→counter（计数）、analytics→notification（通知落库）、content→counter（评论计数）、
+content→FEED_TOPIC→home（推送）、product→PRODUCT_INDEX_TOPIC→search（ES 索引）、
+order→payment→inventory→coupon 交易闭环。
+
+### 待专项（P1/P2，需专门客户端/故障注入/压测）
+
+故障注入（Redis/MQ 宕机降级）、DLQ 死信（MQ 持续失败）、事务回查 broker 异常注入、
+TraceId 端到端断言、SSE 实时推送、WS 消息路由、推荐质量（需行为数据量）、限流触发、HMAC 重放。
+
 ## 经验
 
 运行态复核发现了源码分析 + 单测无法覆盖的问题：topic/job/schema/启动时序/跨模块消息契约/
 无 body 请求/gateway 响应体/构建并行 race。
 此后模块分析文档的「待运行确认」项应尽快实测闭环，而非依赖「应有兜底」的假设。
+
