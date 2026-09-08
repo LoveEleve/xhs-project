@@ -9,7 +9,7 @@
 | CA-L1-03 | 删除 | DELETE /{skuId} | 移除+同步 | ✅ |
 | CA-L1-04 | 勾选/全选 | PUT /check /check-all?checked= | checked 状态 | ✅ 勾选200+全选query参数200 |
 | CA-L1-05 | 购物车列表 | GET /list | 有效/失效/勾选/金额 | ✅ |
-| CA-L1-06 | 匿名合并 | POST /merge | 匿名+登录合并 | ⬜ |
+| CA-L1-06 | 匿名合并 | 加购4+merge5 | ✅ 合并含4和5 |
 | CA-L1-07 | 清空 | DELETE /clear | 清空+marker | ✅ 200清空后列表空 |
 | CA-L1-08 | 计数 | GET /count | 商品种类/数量 | ✅ count:2 |
 | CA-L1-09 | 商品失效 | 下架 SKU 加购/展示 | 失效标记 | ⬜ |
