@@ -7,7 +7,7 @@
 | I-L1-01 | 签发 WS ticket | POST /api/im/ws/ticket | JWT(ws_ticket type, 5min) | ✅ |
 | I-L1-02 | 会话列表 | GET /api/im/conversations | 返回会话+未读 | ✅ |
 | I-L1-03 | 历史消息 | GET /api/im/messages/{peerId} | 分页历史 | ✅ |
-| I-L1-04 | 标记已读 | POST /api/im/read/{peerId} | 会话已读，未读清零 | ⬜ |
+| I-L1-04 | 标记已读 | POST /read/10002 | ✅ 200 幂等 |
 | I-L1-05 | 未读计数 | GET /api/im/unread-count | 各会话未读 | ✅ |
 | I-L1-06 | 在线人数 | GET /api/im/online-count | 在线连接数 | ✅ |
 
