@@ -105,6 +105,22 @@ order→payment→inventory→coupon 交易闭环。
 故障注入（Redis/MQ 宕机降级）、DLQ 死信（MQ 持续失败）、事务回查 broker 异常注入、
 TraceId 端到端断言、SSE 实时推送、WS 消息路由、推荐质量（需行为数据量）、限流触发、HMAC 重放。
 
+## 第四轮 专项验证（2026-09-08）
+
+| 专项 | 场景 | 结果 |
+|---|---|---|
+| HMAC 签名/重放 | 临时启用验证后关闭 | ✅ 合法200/缺签403/篡改403/nonce重放403/过期403；默认关闭不影响业务 |
+| 限流压测 | @RateLimit 5/60s | ✅ 同用户第6次40202，Lua滑动窗口精确 |
+| SSE 实时推送 | ticket→长连接→心跳→通知 | ✅ event:notification(聚合"等2人赞了")+unread-count |
+| TraceId 端到端 | 注入X-Trace-Id跨order→MQ→inventory | ✅ 三服务日志同traceId |
+
+### 已闭环项汇总（运行态复核+矩阵+专项）
+
+- 15 类运行态问题修复
+- 15 服务 L1-L4 测试矩阵 + P0 一致性专项（并发/幂等/超卖）
+- HMAC/限流/SSE/TraceId 安全与可观测专项
+- 剩余：WS 消息路由、DLQ 死信、事务回查 broker 注入、推荐质量（需专门环境/客户端/数据量）
+
 ## 经验
 
 运行态复核发现了源码分析 + 单测无法覆盖的问题：topic/job/schema/启动时序/跨模块消息契约/
