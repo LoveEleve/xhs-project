@@ -12,7 +12,7 @@
 | CA-L1-06 | 匿名合并 | 加购4+merge5 | ✅ 合并含4和5 |
 | CA-L1-07 | 清空 | DELETE /clear | 清空+marker | ✅ 200清空后列表空 |
 | CA-L1-08 | 计数 | GET /count | 商品种类/数量 | ✅ count:2 |
-| CA-L1-09 | 商品失效 | 下架 SKU 加购/展示 | 失效标记 | ⬜ |
+| CA-L1-09 | 商品失效 | SPU下架后列表 | ✅ valid=false 商品已下架 |
 
 ## L2 数据
 
