@@ -1,0 +1,43 @@
+# my-xhs-im 测试用例矩阵（L1-L4）
+
+## L1 业务
+
+| ID | 用例 | 请求/数据 | 预期 | 状态 |
+|---|---|---|---|---|
+| I-L1-01 | 签发 WS ticket | POST /api/im/ws/ticket | JWT(ws_ticket type, 5min) | ✅ |
+| I-L1-02 | 会话列表 | GET /api/im/conversations | 返回会话+未读 | ✅ |
+| I-L1-03 | 历史消息 | GET /api/im/messages/{peerId} | 分页历史 | ✅ |
+| I-L1-04 | 标记已读 | POST /api/im/read/{peerId} | 会话已读，未读清零 | ⬜ |
+| I-L1-05 | 未读计数 | GET /api/im/unread-count | 各会话未读 | ✅ |
+| I-L1-06 | 在线人数 | GET /api/im/online-count | 在线连接数 | ✅ |
+
+## L2 数据与消息
+
+| ID | 验证点 | 证据 | 状态 |
+|---|---|---|---|
+| I-L2-01 | ticket JWT type=ws_ticket | ticket 解析 | ✅ |
+| I-L2-02 | WS 握手鉴权边界 | 无/非法 ticket | ✅ 拒绝 |
+| I-L2-03 | 合法 ticket 握手 | 带 ticket 升级 | ✅ 101 |
+| I-L2-04 | 消息持久化 | 双端 WS 收发 → t_chat_message | ⬜ 需双端WS |
+| I-L2-05 | 离线消息 | 收方离线→上线补发 | ⬜ 需双端WS |
+
+## L3 质量
+
+| ID | 用例 | 预期 | 状态 |
+|---|---|---|---|
+| I-L3-01 | 消息幂等 | 重复 msgId | 不重复落库 | ⬜ |
+| I-L3-02 | 已读/未读一致 | read 后未读清零 | ✅ REST层 |
+| I-L3-03 | 跨实例路由 | 双实例同会话 | 经 Redis pub/sub 到达 | ⬜ |
+| I-L3-04 | 一致性哈希 | 同会话固定实例 | 路由稳定 | ⬜ |
+
+## L4 可观测
+
+| ID | 验证点 | 状态 |
+|---|---|---|
+| I-L4-01 | WS 连接数指标 | ⬜ |
+| I-L4-02 | 路由/离线日志 | ⬜ |
+| I-L4-03 | TraceId 跨 WS | ⬜ |
+
+## 已实测
+- I-L1-01/02/03/05/06、I-L2-01/02/03 ✅（REST 全通 + 握手鉴权 fail-closed）
+- 消息收发/离线/跨实例需双端 WebSocket 客户端专项
