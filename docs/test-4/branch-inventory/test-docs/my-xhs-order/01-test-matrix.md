@@ -44,7 +44,7 @@
 |---|---|---|
 | O-L4-01 | actuator health | ✅ |
 | O-L4-02 | 指标/死信/重放 | ⬜ |
-| O-L4-03 | TraceId 跨 Feign/MQ | ⬜ |
+| O-L4-03 | TraceId 跨 Feign/MQ | ✅ 注入X-Trace-Id跨order→MQ→inventory一致 |
 
 ## 已实测
 - L1 全 11 项、L2 全 5 项、L3 多数、L4 部分 ✅
