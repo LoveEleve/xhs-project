@@ -13,7 +13,7 @@
 | CO-L1-07 | 可用券列表 | GET /user/available | 200 未用可用券 | ✅ |
 | CO-L1-08 | 折扣计算 | GET /discount/{id} | 满减/折扣金额 | ✅ |
 | CO-L1-09 | 用户券列表 | GET /user/list | 分页状态 | ✅ |
-| CO-L1-10 | 过期券 | 过 valid_end | 不可用/不可领 | ⬜ |
+| CO-L1-10 | 过期券 | valid_end过去 | ✅ 30015优惠券已过期 |
 
 ## L2 数据
 
