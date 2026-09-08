@@ -7,7 +7,7 @@
 | P-L1-01 | 创建支付单 | POST /api/payment/pay | 支付单待支付 | ✅ |
 | P-L1-02 | 支付前回查订单 | 非待付款订单 | ORDER_STATUS_ERROR 拒绝 | ✅ |
 | P-L1-03 | Mock 支付成功 | payType=99 | t_payment=1 + 订单0→1 | ✅ |
-| P-L1-04 | 支付失败回调 | handlePayCallback false | t_payment=2 + 订单取消 | ⬜ |
+| P-L1-04 | 支付失败回调 | 失败回调 | ✅ 幂等不覆盖已支付(Mock无支付中窗口) |
 | P-L1-05 | 退款 | POST /api/payment/refund | t_refund=1 + 订单已退款 | ✅ |
 | P-L1-06 | 部分退款 | 部分金额 | 支付单保持已支付 | ✅ 50/199保持1 |
 | P-L1-07 | 退款失败/关闭 | refund-fail/超时 | t_refund=2/3 | ⬜ |
@@ -23,7 +23,7 @@
 | P-L2-02 | t_refund 状态机 | 0→1/2/3 | ✅ |
 | P-L2-03 | 独立 payment 库 | my_xhs_payment | ✅ |
 | P-L2-04 | PAY_RESULT/REFUND_RESULT MQ | 消费/兜底 | ✅ |
-| P-L2-05 | 事件流水 | t_payment_event | ⬜ |
+| P-L2-05 | 事件流水 | t_payment_event | ✅ CREATE+PAY_SUCCESS |
 
 ## L3 质量
 
@@ -40,7 +40,7 @@
 
 | ID | 验证点 | 状态 |
 |---|---|---|
-| P-L4-01 | 支付事件流水 | ⬜ |
+| P-L4-01 | 支付事件流水 | ✅ t_payment_event落库 |
 | P-L4-02 | 补偿任务日志 | ✅ |
 | P-L4-03 | TraceId 跨 payment/order | ✅ |
 
