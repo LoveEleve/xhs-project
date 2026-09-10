@@ -34,7 +34,7 @@
 | P-L3-03 | 订单状态回查 | 已取消订单支付 | ✅ 30009不允许支付(P1-1) |
 | P-L3-04 | 补偿 Job | paymentNotifyCompensate | ⬜ |
 | P-L3-05 | 部分退款全额判断 | 累计=金额才置3 | ✅ 50+149累计=199置3/5+回补 |
-| P-L3-06 | 对账 reconcile | 不一致补偿通知 | ⬜ |
+| P-L3-06 | 对账 reconcile | 死代码补Job入口+触发 | ✅ totalRecords=4 inconsistent=0 |
 
 ## L4 可观测
 

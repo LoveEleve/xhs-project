@@ -58,6 +58,7 @@ MQ即时兜底: 支付成功Feign+MQUU(幂等共存) ✓
 | 13 | TransactionConfig 类级 @ConditionalOnBean 时序 bug（二轮迭代） | ① 类级条件评估过早→读写分离服务未加载事务管理器，所有 @Transactional 静默无效 ② 去掉后 home（无 DataSource 纯 Redis/MQ 服务）启动失败 | 条件移至 @Bean 方法级：有 DataSource 创建事务管理器、无则跳过；15 服务全量验证 |
 | 14 | search ES 索引任务 LocalDateTime 序列化失败 + 单条脏 SPU 阻塞批次 | 商品增量/重建索引持续失败（成功=0/3）；无 SKU 的 SPU 中断整个批次 | ElasticsearchConfig 注册 JavaTimeModule；IncrementalIndexSyncJob/IndexRebuildJob 单条 try-catch 跳过；清理 3 个污染 SPU。product_index 0→5 文档，商品搜索高亮匹配 |
 | 15 | order 无效收货地址下单成功（降级空地址） | addressId 必填但获取失败时降级空地址 → 无地址订单（无法收货） | resolveAddressSnapshot 改为抛 ADDRESS_NOT_FOUND 拒绝下单，59 测试全绿 |
+| 17b | payment PaymentService.reconcile() 死代码（无调度入口） | 支付对账逻辑从不执行 | 新增 PaymentReconcileJob(@XxlJob) + 注册；触发验证 totalRecords=4 |
 | 16 | search 推荐行为写库失败（t_user_behavior 归属库错误） | deploy init-all.sql 把 t_user_behavior 建在 my_xhs_analytics 段，但 search 数据源连 my_xhs_content → BadSqlGrammar 表不存在，BehaviorReportConsumer 持续重试，推荐行为无法落库 | 移到 my_xhs_content 段（对齐根目录版+新枚举1-曝光~7-停留）；线上补建表，行为上报成功落库 |
 
 **构建流程教训**：并行 `mvn -am package` 存在本地仓库竞争，部分服务内嵌 common 为旧版
