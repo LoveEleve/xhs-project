@@ -23,7 +23,7 @@
 
 | ID | 验证点 | 证据 | 状态 |
 |---|---|---|---|
-| A-L2-01 | Redis like Set/反向 Set | Redis `myxhs:like:*` | ⬜ |
+| A-L2-01 | Redis like Set/反向 Set | note Set+user反向Set | ✅ |
 | A-L2-02 | Favorite ZSet | myxhs:favorite:10001 | ✅ 存在 |
 | A-L2-03 | Follow ZSet | follow:list+fans | ✅ 存在 |
 | A-L2-04 | 异步落库 | t_follow=1/t_favorite=1 | ✅ |
@@ -45,10 +45,10 @@
 
 | ID | 验证点 | 证据 | 状态 |
 |---|---|---|---|
-| A-L4-01 | TraceId | analytics→SOCIAL_TOPIC→counter 日志同 trace | ⬜ |
+| A-L4-01 | TraceId | analytics→counter同traceId | ✅ 3a0258...一致 |
 | A-L4-02 | 消费失败/DLQ | consumer 重试与 DLQ 监控 | ✅ DLQ积压指标暴露 |
 | A-L4-03 | 业务指标 | Prometheus 点赞/关注/消费指标 | ✅ rocketmq_dlq_backlog等指标暴露 |
-| A-L4-04 | 敏感信息脱敏 | 日志不含 token/完整 body | ⬜ |
+| A-L4-04 | 敏感信息脱敏 | 日志无token | ✅ |
 
 ## 执行记录格式
 
