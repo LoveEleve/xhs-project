@@ -155,3 +155,47 @@ TraceId 端到端断言、SSE 实时推送、WS 消息路由、推荐质量（�
 混沌工程（项目内置 chaos 框架）可真实注入 DELAY/EXCEPTION 暴露正常路径测不到的异常处理缺陷。
 此后模块分析文档的「待运行确认」项应尽快实测闭环，而非依赖「应有兜底」的假设。
 
+## 剩余待测项分类（48 项，需专门环境/构造）
+
+以下项无法在当前单实例环境安全验证，按所需条件分类（诚实标注，不伪称通过）：
+
+### A. 基础设施级故障注入（需 ChaosBlade 或停中间件，风险高）
+- Redis 不可用降级（限流/幂等降级放行、缓存穿透）——停 Redis 触发哨兵切换，影响全局
+- MQ 持续失败/DLQ 死信——需 broker 长时间不可用或消费持续失败
+- inventory MQ 失败回滚（预扣 Redis/Outbox 一致）、扩容窗口保护
+- counter Buffer 刷盘失败重试+对账（需 DB 写入失败）
+- analytics Redis/MQ 故障降级
+
+### B. 并发压测（需压测工具）
+- cart 清空与加购并发、事件乱序（CHECK/DELETE 同毫秒）、对账并发
+- notification 未读并发 mark-read
+- 各服务乐观锁并发竞态
+
+### C. 专门 MQ 消息构造（需带 tag 的 canal/flat 消息）
+- counter MQ 重复消息去重、LIKE/UNLIKE 乱序、懒迁移（消息需 tag 匹配 consumer selectorExpression）
+- search ES 版本防乱序（需 canal 格式消息含 ts/binlog version）
+- coupon 幽灵券（MQ 超时但 broker 已投递）
+
+### D. 双实例/专门客户端
+- notification SSE 跨实例推送（SseCrossInstanceSubscriber）
+- im 跨实例路由（一致性哈希 + Redis pub/sub）、离线消息补发
+- home 大V发件箱（需粉丝数达阈值）、推送失败断点续推
+- 超50项购物车合并放大
+
+### E. 业务数据量
+- 推荐质量（需行为数据量支撑 ItemCF/热池）
+
+### F. 代码逻辑已确认（无直接运行入口或低风险）
+- product 分类环路校验（树构建 visited 保护，无写接口触发）
+- inventory TCC Try/Confirm/Cancel（需 TCC 调用入口）
+- cart 6 个 Lua 原子性（代码审查 + 部分运行验证）
+- admin 白名单 method 边界
+
+### 已安全验证的故障场景（本轮）
+- 停 cart → home 聚合 503（Feign fallback 降级）
+- 停 inventory → order 30004（fail-closed）
+- 停 product → order 50002（fail-closed）
+- 停 MQ broker → order 下单 500（事务消息 fail-closed）
+- chaos DELAY 11s → gateway 504（修复后）
+- chaos EXCEPTION → 聚合异常注入生效
+
