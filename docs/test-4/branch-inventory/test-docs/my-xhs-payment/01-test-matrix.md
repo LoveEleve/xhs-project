@@ -13,7 +13,7 @@
 | P-L1-07 | 退款金额超限 | 退>支付金额 | ✅ 30017超过可退金额 |
 | P-L1-08 | 查询支付状态 | GET /status/{orderId} | 支付单状态 | ✅ |
 | P-L1-09 | 重复支付拦截 | 同订单二次 pay | 幂等拒绝 | ✅ |
-| P-L1-10 | 支付超时 | paymentTimeoutCheckJob | t_payment=2 | ⬜ |
+| P-L1-10 | 支付超时 | 构造超时支付单 | ✅ paymentTimeoutCheckJob标记status=2 |
 
 ## L2 数据
 
