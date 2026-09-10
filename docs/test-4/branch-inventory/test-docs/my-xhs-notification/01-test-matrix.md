@@ -22,7 +22,7 @@
 | N-L2-02 | aggregate_count/title | 同sender5条 | ✅ 等5人赞了 count=5 |
 | N-L2-03 | 未读 Redis 结构 | 各 type 计数 | ✅ |
 | N-L2-04 | MQ 幂等 | msgId 重复消费拦截 | ⬜ |
-| N-L2-05 | ✅ unreadReconcileJob每10min执行200 | 对账修复 | ⬜ |
+| N-L2-05 | 对账修复 | ✅ unreadReconcileJob每10min执行200 |
 
 ## L3 质量
 
