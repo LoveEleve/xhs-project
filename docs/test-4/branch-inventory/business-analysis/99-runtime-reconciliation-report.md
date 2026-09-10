@@ -199,4 +199,6 @@ TraceId 端到端断言、SSE 实时推送、WS 消息路由、推荐质量（�
 - 停 MQ broker → order 下单 500（事务消息 fail-closed）
 - chaos DELAY 11s → gateway 504（修复后）
 - chaos EXCEPTION → 聚合异常注入生效
+- iptables 阻断 Redis 6379 → gateway 鉴权 fail-closed(401) + 业务层请求 hang(客户端超时待优化) + Redis 恢复后自愈
+- ChaosBlade 下载受阻(GitHub超时/OSS镜像404), 改用 iptables 实现宿主机级故障注入
 

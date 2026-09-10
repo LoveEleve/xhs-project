@@ -31,6 +31,7 @@
 | G-L3-04 | 下游超时映射 | 需慢下游 | ⚠️ 待独立环境 |
 | G-L3-05 | 灰度 Header | X-Gray-Tag | ✅ GrayRouteFilter灰度流量路由 |
 | G-L3-06 | 异常 cause 映射 | 连接拒绝/超时 | 正确状态码 | ✅ |
+| G-L3-07 | Redis故障鉴权 | iptables阻断6379 | ✅ gateway鉴权fail-closed 401 |
 
 ## L4 可观测
 
