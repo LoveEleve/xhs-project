@@ -38,6 +38,7 @@
 | O-L3-05 | 券折扣 | 满减核销/退券 | ✅ |
 | O-L3-06 | 库存预扣/回补 | 下单/取消/退款 | ✅ |
 | O-L3-07 | 分片非分片键查询 | 反查/状态 | ✅ |
+| O-L3-08 | MQ broker故障 | 停broker | ✅ 下单500 fail-closed(send message Exception) |
 
 ## L4 可观测
 
