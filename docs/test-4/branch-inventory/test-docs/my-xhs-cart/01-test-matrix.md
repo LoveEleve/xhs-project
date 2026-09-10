@@ -30,7 +30,7 @@
 |---|---|---|---|
 | CA-L3-01 | 清空与加购并发 | 1clear+3add并发 | ✅ 最终Redis/MySQL一致+cleared marker |
 | CA-L3-02 | 事件乱序 | CHECK/DELETE/ADD 同毫秒 | ⬜ |
-| CA-L3-03 | Redis 丢失恢复 | cleared+对账修复 | ⬜ |
+| CA-L3-03 | Redis丢失恢复 | 删Redis后查询 | ✅ 从MySQL恢复items=1 |
 | CA-L3-04 | ✅ cartReconcileJob调度执行200 | 定时+手动 | ⬜ |
 | CA-L3-05 | 超50项合并 | Feign/Lua/MQ 放大 | ⬜ |
 
