@@ -33,7 +33,7 @@
 | CO-L3-02 | 幽灵券 | MQ超时但broker已投递 | 幂等不重复 | ⬜ |
 | CO-L3-03 | 券折扣静默降级 | 折扣查询失败 | 拒绝下单(修复) | ✅ |
 | CO-L3-04 | ✅ couponReconcileJob调度执行200 | reconcile 修正 Redis/MySQL | ⬜ |
-| CO-L3-05 | 限领绕过 | 领→用→退→再领 | perUserLimit 语义 | ⬜ |
+| CO-L3-05 | 限领语义 | 领2张再领30013; 退券释放claimed | ✅ 持有数限领(累计语义待产品确认) |
 
 ## L4 可观测
 
