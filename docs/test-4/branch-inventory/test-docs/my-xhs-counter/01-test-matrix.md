@@ -32,7 +32,7 @@
 | C-L3-03 | LIKE/UNLIKE 乱序 | UNLIKE 先到 LIKE 后到，SCARD 正确 | ⬜ |
 | C-L3-04 | 懒迁移 | counter Set 空 + counter>0 从 analytics 同步 | ⬜ |
 | C-L3-05 | Buffer 刷盘失败 | 重试3次 + 对账兜底 | ⬜ |
-| C-L3-06 | 对账修复 | Redis=0/DB>0 恢复 Redis；DB 漂移修正 | ⬜ |
+| C-L3-06 | 对账修复 | DB漂移2→52 → 修正2 | ✅ data:1 |
 
 ## L4 可观测性
 
