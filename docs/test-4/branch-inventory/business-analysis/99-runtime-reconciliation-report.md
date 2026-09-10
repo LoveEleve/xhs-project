@@ -118,14 +118,40 @@ TraceId 端到端断言、SSE 实时推送、WS 消息路由、推荐质量（�
 
 ### 已闭环项汇总（运行态复核+矩阵+专项）
 
-- 15 类运行态问题修复
+- 17 类运行态问题修复
 - 15 服务 L1-L4 测试矩阵 + P0 一致性专项（并发/幂等/超卖）
 - HMAC/限流/SSE/TraceId 安全与可观测专项
-- 剩余：WS 消息路由、DLQ 死信、事务回查 broker 注入、推荐质量（需专门环境/客户端/数据量）
+- 剩余：DLQ 死信、事务回查 broker 注入、推荐质量（需专门环境/客户端/数据量）
+
+## 第五轮 混沌工程故障注入（2026-09-08）
+
+发现项目 common 内置混沌框架（`common/chaos`：ChaosAutoConfiguration + ChaosInterceptor，
+`chaos.enabled` + `faults` 配置，支持 DELAY/EXCEPTION/RETURN_NULL，按 Service/Controller/Mapper
+方法 AOP 注入）。此前覆盖对账标注"暂不分析"，本轮验证其可用并用于故障注入。
+
+| 注入场景 | 目标 | 结果 |
+|---|---|---|
+| home 聚合异常 | CartAggService.getCartAgg EXCEPTION | ✅ 故障真实注入(聚合500)，关闭恢复200 |
+| gateway 下游超时 | user UserService.getUserInfo DELAY 11s | ✅ 触发 gateway 5s 超时(PT5S) |
+
+### 第 17 个运行态修复（混沌注入暴露）
+
+- **现象**：gateway 下游超时返回 **500** 而非 504
+- **根因**：下游超时抛 `ResponseStatusException(504)`，其 cause 链无 ConnectException/TimeoutException
+  类型（超时被包装），`GlobalExceptionHandler.determineHttpStatus` 未识别 → 落入 500
+- **修复**：识别 `ResponseStatusException` 取其 statusCode
+- **验证**：修复后 gateway 超时返回 `{"code":504,"message":"请求超时，请稍后重试"}`，日志 status=504
+
+### 混沌框架能力与限制
+
+- AOP 切点：`com.myxhs..service/controller/mapper`（不拦截 feign 包；注入 Service 层会绕过 Feign fallback）
+- 注入目标匹配：类名.方法名（SimpleName），支持通配
+- 用途：验证异常映射、超时降级、回滚/补偿、调用方容错
 
 ## 经验
 
 运行态复核发现了源码分析 + 单测无法覆盖的问题：topic/job/schema/启动时序/跨模块消息契约/
-无 body 请求/gateway 响应体/构建并行 race。
+无 body 请求/gateway 响应体/构建并行 race/异常状态码映射。
+混沌工程（项目内置 chaos 框架）可真实注入 DELAY/EXCEPTION 暴露正常路径测不到的异常处理缺陷。
 此后模块分析文档的「待运行确认」项应尽快实测闭环，而非依赖「应有兜底」的假设。
 
