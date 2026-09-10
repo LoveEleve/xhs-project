@@ -2,6 +2,7 @@ package com.myxhs.common.chaos;
 
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -43,6 +44,7 @@ import java.util.Map;
  * </p>
  */
 @Data
+@RefreshScope
 @ConfigurationProperties(prefix = "chaos")
 public class ChaosProperties {
 
