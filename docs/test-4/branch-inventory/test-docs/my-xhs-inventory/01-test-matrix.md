@@ -22,7 +22,7 @@
 | INV-L2-02 | 预扣记录 Hash/ZSet | prededuct idem | ✅ |
 | INV-L2-03 | Outbox 表 | PRE_DEDUCT/CONFIRM 独立行 | ✅ |
 | INV-L2-04 | t_inventory 状态 | available/locked/freezing | ✅ |
-| INV-L2-05 | TCC Fence 表 | t_tcc_fence/freeze_detail | ⬜ |
+| INV-L2-05 | ✅ t_tcc_fence/freeze_detail表结构正确 | t_tcc_fence/freeze_detail | ⬜ |
 
 ## L3 质量
 
