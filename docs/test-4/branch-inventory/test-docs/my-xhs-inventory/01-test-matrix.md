@@ -41,7 +41,7 @@
 
 | ID | 验证点 | 状态 |
 |---|---|---|
-| INV-L4-01 | Outbox 积压/失败指标 | ⬜ |
+| INV-L4-01 | Outbox 积压/失败指标 | ✅ inventory_action_total等指标暴露 |
 | INV-L4-02 | 预扣超时/对账日志 | ✅ |
 | INV-L4-03 | TraceId 跨 Order/Inventory | ✅ |
 

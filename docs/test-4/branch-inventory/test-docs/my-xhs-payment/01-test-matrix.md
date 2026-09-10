@@ -40,7 +40,7 @@
 
 | ID | 验证点 | 状态 |
 |---|---|---|
-| P-L4-01 | 支付事件流水 | ✅ t_payment_event落库 |
+| P-L4-01 | 支付事件流水 | ✅ 事件流水+inventory_prededuct_latency指标 |
 | P-L4-02 | 补偿任务日志 | ✅ |
 | P-L4-03 | TraceId 跨 payment/order | ✅ |
 

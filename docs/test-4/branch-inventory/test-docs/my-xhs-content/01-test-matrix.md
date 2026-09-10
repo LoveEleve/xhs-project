@@ -45,7 +45,7 @@
 | ID | 验证点 | 状态 |
 |---|---|---|
 | CT-L4-01 | 发布/删除审计 | ✅ |
-| CT-L4-02 | Feed 失败指标 | ⬜ |
+| CT-L4-02 | Feed 失败指标 | ✅ Prometheus端点暴露 |
 | CT-L4-03 | TraceId 跨 content/MQ | ✅ |
 
 ## 已实测

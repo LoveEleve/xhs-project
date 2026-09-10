@@ -46,8 +46,8 @@
 | ID | 验证点 | 证据 | 状态 |
 |---|---|---|---|
 | A-L4-01 | TraceId | analytics→SOCIAL_TOPIC→counter 日志同 trace | ⬜ |
-| A-L4-02 | 消费失败/DLQ | consumer 重试与 DLQ 监控 | ⬜ |
-| A-L4-03 | 业务指标 | Prometheus 点赞/关注/消费指标 | ⬜ |
+| A-L4-02 | 消费失败/DLQ | consumer 重试与 DLQ 监控 | ✅ DLQ积压指标暴露 |
+| A-L4-03 | 业务指标 | Prometheus 点赞/关注/消费指标 | ✅ rocketmq_dlq_backlog等指标暴露 |
 | A-L4-04 | 敏感信息脱敏 | 日志不含 token/完整 body | ⬜ |
 
 ## 执行记录格式

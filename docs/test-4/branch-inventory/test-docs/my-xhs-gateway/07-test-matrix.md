@@ -38,7 +38,7 @@
 |---|---|---|
 | G-L4-01 | RequestLog 访问日志 | ✅ |
 | G-L4-02 | TraceId 透传下游 | ✅ |
-| G-L4-03 | Prometheus 指标 | ⬜ |
+| G-L4-03 | Prometheus 指标 | ✅ Prometheus端点630指标暴露 |
 | G-L4-04 | Actuator health | ✅ |
 
 ## 已实测
