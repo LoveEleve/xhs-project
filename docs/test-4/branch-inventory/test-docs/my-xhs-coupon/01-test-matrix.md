@@ -32,7 +32,7 @@
 | CO-L3-01 | 并发领券超卖 | 10并发 | remain98→96, 限领2张, 30013拦截 | ✅ 不超发 |
 | CO-L3-02 | 幽灵券 | MQ超时但broker已投递 | 幂等不重复 | ⬜ |
 | CO-L3-03 | 券折扣静默降级 | 折扣查询失败 | 拒绝下单(修复) | ✅ |
-| CO-L3-04 | 对账 | reconcile 修正 Redis/MySQL | ⬜ |
+| CO-L3-04 | ✅ couponReconcileJob调度执行200 | reconcile 修正 Redis/MySQL | ⬜ |
 | CO-L3-05 | 限领绕过 | 领→用→退→再领 | perUserLimit 语义 | ⬜ |
 
 ## L4 可观测

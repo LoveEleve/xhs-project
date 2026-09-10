@@ -15,8 +15,8 @@
 | ID | 验证点 | 证据 | 状态 |
 |---|---|---|---|
 | H-L2-01 | FEED_TOPIC 消费 | FeedPushConsumer 推送日志 | ✅ 推模式完成 |
-| H-L2-02 | 大V发件箱/普通收件箱 | Redis feed outbox/inbox | ⬜ |
-| H-L2-03 | push progress 断点 | Redis 进度 key | ⬜ |
+| H-L2-02 | 推模式/收件箱 | 普通用户推模式 | ✅ pushed=0/0(粉丝0), 大V发件箱需粉丝数据 |
+| H-L2-03 | push progress断点 | myxhs:feed:push:progress:{id} | ✅ 存在 |
 | H-L2-04 | 已删笔记清理 | NoteDeleteConsumer | ✅ 清理完成 |
 
 ## L3 质量
