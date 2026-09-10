@@ -28,7 +28,7 @@
 
 | ID | 用例 | 预期 | 状态 |
 |---|---|---|---|
-| CA-L3-01 | 清空与加购并发 | marker 保护 | ⬜ |
+| CA-L3-01 | 清空与加购并发 | 1clear+3add并发 | ✅ 最终Redis/MySQL一致+cleared marker |
 | CA-L3-02 | 事件乱序 | CHECK/DELETE/ADD 同毫秒 | ⬜ |
 | CA-L3-03 | Redis 丢失恢复 | cleared+对账修复 | ⬜ |
 | CA-L3-04 | ✅ cartReconcileJob调度执行200 | 定时+手动 | ⬜ |
