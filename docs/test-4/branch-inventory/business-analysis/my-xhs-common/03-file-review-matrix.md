@@ -29,7 +29,8 @@
 | config/MybatisPlusConfig、SentinelBulkheadConfig、WebMvcConfig、AsyncConfig、HttpCacheConfig 等 | 装配类，非核心业务逻辑 |
 | cache/RedisOperator、CacheHelper、CacheEvictMessage | 封装层，运行态 Redis 读写已验证 |
 | health/ApplicationReadinessIndicator、RocketMQHealthIndicator | health 端点 UP 已验证 |
-| aspect/SqlGuardInterceptor、chaos/*、datagen/* | SqlGuard 未深读；chaos/datagen 为工具/实验组件，**明确暂不分析** |
+| aspect/SqlGuardInterceptor、datagen/* | SqlGuard 未深读；datagen 为数据生成工具，**明确暂不分析** |
+| chaos/ChaosAutoConfiguration、ChaosInterceptor、ChaosProperties | ✅ **已深度分析并验证**：DELAY/EXCEPTION/RETURN_NULL 注入，切 service/controller/mapper；修复 ChaosProperties 缺 @RefreshScope（注释失真） |
 
 ## 覆盖结论
 
