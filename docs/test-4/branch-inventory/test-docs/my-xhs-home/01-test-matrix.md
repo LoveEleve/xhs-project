@@ -23,7 +23,7 @@
 
 | ID | 用例 | 预期 | 状态 |
 |---|---|---|---|
-| H-L3-01 | Feign 故障 | 混沌注入CartAggService异常 | ✅ 注入生效聚合500(Feign走fallback降级) |
+| H-L3-01 | Feign故障降级 | 停cart服务 | ✅ 并发阻塞 → 503购物车服务不可用(fallback+DownstreamUnavailable) |
 | H-L3-02 | 并行聚合超时 | 慢下游 | 不阻塞整体，超时降级 | ⬜ |
 | H-L3-03 | 已删笔记乱序 | 删除后标记 | ✅ 已删标记存在+清理完成 |
 | H-L3-04 | 推送失败断点续推 | 部分粉丝失败 | push progress 记录续推 | ⬜ |

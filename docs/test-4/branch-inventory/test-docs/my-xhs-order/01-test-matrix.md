@@ -25,6 +25,7 @@
 | O-L2-03 | 本地消息表 | status/重试 | ✅ |
 | O-L2-04 | 事务消息补发 | LocalMessageRetryJob | ✅ |
 | O-L2-05 | 事件流水 | t_order_event | ✅ |
+| O-L2-06 | 下游故障fail-closed | 停inventory→30004/停product→50002 | ✅ 拒绝下单不跳过校验 |
 
 ## L3 质量
 
