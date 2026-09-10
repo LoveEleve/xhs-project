@@ -22,7 +22,7 @@
 | CO-L2-01 | Redis 库存/限领 | `myxhs:coupon:{id}:stock/claimed` | ✅ |
 | CO-L2-02 | 模板缓存 | 创建后 getTemplateWithCache | ✅ |
 | CO-L2-03 | COUPON_CLAIM_TOPIC 消费 | 领券持久化 | ✅ |
-| CO-L2-04 | Outbox 补发 | t_coupon_outbox | ⬜ |
+| CO-L2-04 | Outbox 补发 | 注入status=0→Job补发 | ✅ 补发成功status=1 |
 | CO-L2-05 | t_user_coupon 状态 | status/used_order_id | ✅ |
 
 ## L3 质量
