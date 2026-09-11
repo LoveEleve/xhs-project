@@ -27,7 +27,7 @@
 
 | ID | 用例 | 预期 | 状态 |
 |---|---|---|---|
-| C-L3-01 | MQ 重复消息去重 | 同 msgId 二次被 dedup Lua 拦截 | ⬜ |
+| C-L3-01 | MQ重复消息去重 同msgId二次被dedup Lua拦截 | ✅ resetOffset回放同物理消息(同offsetMsgId)→去重跳过,计数不变 |
 | C-L3-02 | 归零保护 | count=0 DECR被拦截 | ✅ 日志归零保护触发 |
 | C-L3-03 | LIKE/UNLIKE乱序 | UNLIKE先(懒迁移+SREM)后LIKE(SADD) | ✅ 最终SCARD=2与权威一致 |
 | C-L3-04 | 懒迁移 | 删Set+counter>0后点赞 | ✅ 懒迁移完成members=2 |
