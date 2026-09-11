@@ -122,7 +122,8 @@ TraceId 端到端断言、SSE 实时推送、WS 消息路由、推荐质量（�
 - 17 类运行态问题修复
 - 15 服务 L1-L4 测试矩阵 + P0 一致性专项（并发/幂等/超卖）
 - HMAC/限流/SSE/TraceId 安全与可观测专项
-- 剩余：DLQ 死信、事务回查 broker 注入、推荐质量（需专门环境/客户端/数据量）
+- DLQ 死信链路 ✅ 已闭环（counter 注入异常重试耗尽入 `%DLQ%counter-consumer-group`；本地死信合成行→deadLetterScanJob 重投成功 status 3→1；修复 #21 后积压指标可观测：counter=1/inventory-order=4）
+- 剩余：事务回查 broker 注入、推荐质量（需专门环境/客户端/数据量）
 
 ## 第五轮 混沌工程故障注入（2026-09-08）
 
@@ -193,6 +194,13 @@ TraceId 端到端断言、SSE 实时推送、WS 消息路由、推荐质量（�
 - **修复**：在 ChaosInterceptor 中增加目标对象实现接口 SimpleName 的匹配（如 FollowMapper.insert），补齐继承方法场景
 - **验证**：注入 target=$Proxy144.insert 生效；制造"Redis 双写成功 / MySQL 落库失败"半成功 → followCounterRepairJob 补插 1 条修复，handle_code=200
 - **A-L3-04 实测**：API 200（Redis 权威）、MySQL 行=0、Redis following+fans 存在 → 对账后 MySQL 行=1，三方一致
+
+### 第 21 个运行态修复（DLQ 积压监控盲区）
+
+- **现象**：`%DLQ%counter-consumer-group` 已有 1 条死信（topicStatus 确认），但 Prometheus `rocketmq_dlq_backlog` 恒为 0
+- **根因**：`DlqMetrics.getDlqBacklog` 用 `searchOffset(queue, now)` 与 `maxOffset` 相减，两者对同一队列恒等 → 差值恒 0；topic 不存在时返回 -1
+- **修复**：堆积量 = `maxOffset - minOffset`（DLQ 无消费者，队列内全部消息即积压）
+- **验证**：修复后 gauge `counter-consumer-group=1.0`、`inventory-order-transaction-consumer-group=4.0`，与 topicStatus 一致
 
 ## 经验
 

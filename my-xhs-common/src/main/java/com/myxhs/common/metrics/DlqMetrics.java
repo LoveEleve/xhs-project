@@ -129,10 +129,12 @@ public class DlqMetrics {
             Set<MessageQueue> queues = consumer.fetchSubscribeMessageQueues(dlqTopic);
             long totalBacklog = 0;
             for (MessageQueue queue : queues) {
-                long offset = consumer.searchOffset(queue, System.currentTimeMillis());
+                // DLQ 无消费者组处理，堆积量 = 队列中现有消息数（max - min）
+                // 原实现用 searchOffset(now) 与 maxOffset 相减，两者恒等 → 指标永远为 0（监控盲区）
+                long minOffset = consumer.minOffset(queue);
                 long maxOffset = consumer.maxOffset(queue);
-                if (maxOffset > offset) {
-                    totalBacklog += (maxOffset - offset);
+                if (maxOffset > minOffset) {
+                    totalBacklog += (maxOffset - minOffset);
                 }
             }
             return totalBacklog;
