@@ -32,7 +32,7 @@
 | P-L3-01 | 乐观锁幂等 | 重复回调不改状态 | ✅ |
 | P-L3-02 | 支付重复回调 | 30009订单状态不允许 | ✅ |
 | P-L3-03 | 订单状态回查 | 已取消订单支付 | ✅ 30009不允许支付(P1-1) |
-| P-L3-04 | 补偿 Job | paymentNotifyCompensate | ⬜ |
+| P-L3-04 | 补偿Job paymentNotifyCompensate | ✅ 空跑(scan4/skip已收敛)+强制待支付→通知成功→重通知1条→订单幂等收敛/库存无重扣 |
 | P-L3-05 | 部分退款全额判断 | 累计=金额才置3 | ✅ 50+149累计=199置3/5+回补 |
 | P-L3-06 | 对账 reconcile | 死代码补Job入口+触发 | ✅ totalRecords=4 inconsistent=0 |
 
