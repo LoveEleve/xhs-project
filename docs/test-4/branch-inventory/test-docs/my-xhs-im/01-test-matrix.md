@@ -36,7 +36,7 @@
 |---|---|---|
 | I-L4-01 | WS 连接数指标 | ✅ Prometheus端点暴露 |
 | I-L4-02 | ✅ IM路由订阅日志 |
-| I-L4-03 | TraceId 跨 WS | ⬜ |
+| I-L4-03 | TraceId跨WS | ❌ 未实现(ImMessage/RouteMessage/Handler均无traceId字段或MDC传播, 消息可追溯性依赖msgId) |
 
 ## 已实测
 - I-L1-01/02/03/05/06、I-L2-01/02/03 ✅（REST 全通 + 握手鉴权 fail-closed）
