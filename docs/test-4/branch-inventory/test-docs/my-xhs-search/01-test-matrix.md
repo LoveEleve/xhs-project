@@ -18,7 +18,7 @@
 |---|---|---|---|
 | S-L2-01 | note_index 同步 | 发布笔记→ES 文档 | ✅ 4文档 |
 | S-L2-02 | product_index 同步 | 商品→ES 文档 | ✅ 5文档 |
-| S-L2-03 | 版本控制 | 乱序不覆盖新数据 | ⬜ |
+| S-L2-03 | 版本控制 乱序不覆盖新数据 | ✅ flat消息 es=...001→陈旧...000被拒(version保持)→...002可更新 |
 | S-L2-04 | 增量补偿 Job | IncrementalIndexSyncJob | ✅ 商品=3 |
 | S-L2-05 | 索引重建 | POST /index/rebuild | ✅ 重建17条 note9/product9 |
 
@@ -27,7 +27,7 @@
 | ID | 用例 | 预期 | 状态 |
 |---|---|---|---|
 | S-L3-01 | 脏 SPU 不阻塞批次 | 无 SKU SPU | 跳过其余正常索引 | ✅ 修复 |
-| S-L3-02 | ES 版本防乱序 | 旧消息低版本 | 不覆盖 | ⬜ |
+| S-L3-02 | ES版本防乱序 旧消息低版本不覆盖 | ✅ External版本拒绝低版本+DELETE物理清除 |
 | S-L3-03 | 高亮/相关性 | 关键词命中 | 返回正确 | ✅ |
 | S-L3-04 | 推荐行为落库 | behavior→RECOMMEND_BEHAVIOR_TOPIC→t_user_behavior | ✅ 修复归属库后落库 |
 | S-L3-05 | LocalDateTime 索引 | createdAt 序列化 | 不抛异常 | ✅ 修复 |
