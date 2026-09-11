@@ -41,8 +41,11 @@ public class ChaosInterceptor {
         }
 
         String className = joinPoint.getTarget().getClass().getSimpleName();
+        // MyBatis Mapper 是 JDK 动态代理（getTarget() 为 $ProxyN），需同时用接口声明类型匹配
+        String declaringClassName = joinPoint.getSignature().getDeclaringType().getSimpleName();
         String methodName = joinPoint.getSignature().getName();
         String fullName = className + "." + methodName;
+        String declaringFullName = declaringClassName + "." + methodName;
 
         // 遍历故障配置，查找匹配的故障
         for (var entry : chaosProperties.getFaults().entrySet()) {
@@ -50,7 +53,8 @@ public class ChaosInterceptor {
             if (!fault.isActive()) {
                 continue;
             }
-            if (!matchTarget(fullName, fault.getTarget())) {
+            if (!matchTarget(fullName, fault.getTarget())
+                    && !matchTarget(declaringFullName, fault.getTarget())) {
                 continue;
             }
             // 概率判断

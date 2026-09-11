@@ -213,7 +213,9 @@ public class CounterBuffer implements GracefulShutdownHook {
     /**
      * 重试刷盘（最多 3 次）
      * <p>
-     * 重试仍失败则记录日志，由每天凌晨的对账修复任务兜底。
+     * 重试仍失败则将增量回写缓冲区，由下一个刷盘周期继续重试。
+     * 注意：不能直接丢弃——reconcile() 仅以 DB 已有记录为基准扫描，
+     * “DB 无行但 Redis 有值”的场景不在其覆盖范围内，丢弃会造成增量永久丢失。
      * </p>
      */
     private void retryFlush(List<CounterFlushDTO> batch) {
@@ -227,8 +229,11 @@ public class CounterBuffer implements GracefulShutdownHook {
                 log.error("[Buffer-Trigger] 重试第 {} 次失败: {} 条", i, batch.size(), e);
             }
         }
-        // 重试全部失败，记录日志（对账修复兜底）
-        log.error("[Buffer-Trigger] 重试 {} 次全部失败，等待对账修复。数据: {}", MAX_RETRY,
+        // 重试全部失败：回写缓冲区等待下个周期重试（避免增量永久丢失）
+        for (CounterFlushDTO dto : batch) {
+            add(dto.getTargetType(), dto.getTargetId(), dto.getCountType(), dto.getDelta());
+        }
+        log.error("[Buffer-Trigger] 重试 {} 次全部失败，已回写缓冲待重试。数据: {}", MAX_RETRY,
                 batch.stream().map(dto -> dto.getTargetType() + ":" + dto.getTargetId() + ":" + dto.getCountType() + "=" + dto.getDelta())
                         .collect(Collectors.joining(", ")));
     }

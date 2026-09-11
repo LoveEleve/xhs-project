@@ -31,7 +31,7 @@
 | C-L3-02 | 归零保护 | count=0 DECR被拦截 | ✅ 日志归零保护触发 |
 | C-L3-03 | LIKE/UNLIKE乱序 | UNLIKE先(懒迁移+SREM)后LIKE(SADD) | ✅ 最终SCARD=2与权威一致 |
 | C-L3-04 | 懒迁移 | 删Set+counter>0后点赞 | ✅ 懒迁移完成members=2 |
-| C-L3-05 | Buffer 刷盘失败 | 重试3次 + 对账兜底 | ⬜ |
+| C-L3-05 | Buffer刷盘失败 重试3次+回写缓冲自动补刷 | ✅ rename table注入DB故障→重试3次→已回写缓冲→表恢复自动刷盘成功DB=1 |
 | C-L3-06 | 对账修复 | DB漂移2→52 → 修正2 | ✅ data:1 |
 
 ## L4 可观测性

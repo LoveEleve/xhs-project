@@ -149,6 +149,33 @@ TraceId 端到端断言、SSE 实时推送、WS 消息路由、推荐质量（�
 - 注入目标匹配：类名.方法名（SimpleName），支持通配
 - 用途：验证异常映射、超时降级、回滚/补偿、调用方容错
 
+## 第六轮 二实例与深水区验证（2026-09-11）
+
+第二 im 实例（19024）验证跨实例能力；测试矩阵收口 L3 深水区项。
+
+| 验证项 | 场景 | 结果 |
+|---|---|---|
+| im 跨实例路由 | testuser→im1(19014)、testuser2→im2(19024)，经 gateway 分属不同实例 | ✅ 消息经 Redis pub/sub 跨实例送达 + ACK + 落库 |
+| im 离线消息 | u2 离线时 u1 发送 → u2 上线 | ✅ 收 OFFLINE 事件 count=1 补发 |
+| inventory TCC | /tcc/try /confirm /cancel 直接调用 11 场景 | ✅ 幂等、空回滚、悬挂拒绝、超量拒绝、fence 状态机(1→2/3) |
+| search 版本防乱序 | flat 消息 es=...001→陈旧...000→...002 | ✅ External 版本拒绝低版本(version_conflict)，DELETE 物理清除 |
+| counter 去重 | resetOffsetByTime 回放同一物理消息（同 offsetMsgId） | ✅ Lua dedup 拦截，计数不变 |
+| counter 刷盘失败 | rename table 注入 DB 故障 | ✅ 重试3次→回写缓冲→表恢复后自动补刷 DB=1（修复 #20） |
+
+### 第 19 个运行态修复（混沌框架 mapper 匹配失效）
+
+- **现象**：chaos 配置 target=CounterMapper.batchUpsert 不生效（无"注入异常"日志，DB 写入成功）
+- **根因**：MyBatis Mapper 为 JDK 动态代理，`getTarget().getClass().getSimpleName()` = `$Proxy128`，`..mapper..` 切点配置永不命中
+- **修复**：ChaosInterceptor 同时用 `joinPoint.getSignature().getDeclaringType().getSimpleName()`（接口名）匹配，向后兼容（service/controller 行为不变）
+- **验证**：日志 `注入异常: target=$Proxy128.batchUpsert`，mapper 层混沌注入恢复可用
+
+### 第 20 个运行态修复（Buffer 刷盘最终失败丢增量）
+
+- **现象**：DB 故障时重试 3 次全部失败即丢弃；对账返回 fixed=1 但目标 key 未被修复
+- **根因**：`retryFlush` 注释声称"对账修复兜底"，但 `reconcile()` 以 DB 已有记录为基准扫描，**不覆盖"DB 无行但 Redis 有值"**（CounterService L525 自述），增量永久丢失
+- **修复**：重试全部失败后回写缓冲区（走 `add()`，与并发写安全合并），下个刷盘周期自动重试
+- **验证**：rename table → 发 FAVORITE → "已回写缓冲待重试" → 表恢复 → 下一周期"刷盘成功: 1 条" → DB count=1
+
 ## 经验
 
 运行态复核发现了源码分析 + 单测无法覆盖的问题：topic/job/schema/启动时序/跨模块消息契约/
@@ -156,7 +183,7 @@ TraceId 端到端断言、SSE 实时推送、WS 消息路由、推荐质量（�
 混沌工程（项目内置 chaos 框架）可真实注入 DELAY/EXCEPTION 暴露正常路径测不到的异常处理缺陷。
 此后模块分析文档的「待运行确认」项应尽快实测闭环，而非依赖「应有兜底」的假设。
 
-## 剩余待测项分类（48 项，需专门环境/构造）
+## 剩余待测项分类（历史快照：当时 48 项；当前 13 项，以各模块 01-test-matrix.md 为准）
 
 以下项无法在当前单实例环境安全验证，按所需条件分类（诚实标注，不伪称通过）：
 
