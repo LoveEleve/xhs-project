@@ -30,7 +30,7 @@
 |---|---|---|---|
 | INV-L3-01 | 预扣超时恢复 | PreDeductTimeoutJob 释放 | ✅ |
 | INV-L3-02 | MQ 失败回滚 | 预扣消息失败 Redis/Outbox 一致 | ⬜ |
-| INV-L3-03 | TCC Try/Confirm/Cancel | 幂等+fence | ⬜ |
+| INV-L3-03 | TCC Try/Confirm/Cancel 幂等+fence | ✅ 11场景全过(try/confirm/cancel幂等、空回滚、悬挂拒绝、超量拒绝) |
 | INV-L3-04 | 对账修复 | MySQL158/Redis148 → 对账修复148 | ✅ data:1 |
 | INV-L3-05 | 并发预扣 | 20并发qty=1 | ✅ Redis/MySQL一致不超卖 |
 | INV-L3-06 | 扩容窗口保护 | resize 时 confirm/release 延迟 | ⬜ |
