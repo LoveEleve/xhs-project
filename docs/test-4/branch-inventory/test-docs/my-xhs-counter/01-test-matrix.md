@@ -38,6 +38,6 @@
 
 | ID | 验证点 | 证据 | 状态 |
 |---|---|---|---|
-| C-L4-01 | dedup/归零/对账日志 | consumer/service 日志 | ⬜ |
+| C-L4-01 | dedup/归零/对账日志 | 全链路日志可查 | ✅ |
 | C-L4-02 | 计数指标 | Prometheus | ✅ scheduledFlush等指标暴露 |
-| C-L4-03 | TraceId 跨链路 | analytics→counter 同 trace | ⬜ |
+| C-L4-03 | TraceId跨链路 | analytics→counter同traceId | ✅ 3a0258一致 |

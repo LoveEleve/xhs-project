@@ -21,7 +21,7 @@
 | N-L2-01 | 聚合窗口 | 同类事件合并 | ✅ 测试用户B等2人赞了 |
 | N-L2-02 | aggregate_count/title | 同sender5条 | ✅ 等5人赞了 count=5 |
 | N-L2-03 | 未读 Redis 结构 | 各 type 计数 | ✅ |
-| N-L2-04 | MQ 幂等 | msgId 重复消费拦截 | ⬜ |
+| N-L2-04 | MQ幂等 | MessageIdempotentHelper msgId去重 | ✅ |
 | N-L2-05 | 对账修复 | ✅ unreadReconcileJob每10min执行200 |
 
 ## L3 质量
@@ -39,7 +39,7 @@
 |---|---|---|
 | N-L4-01 | 通知/聚合/未读日志 | ✅ 处理完成 |
 | N-L4-02 | SSE 连接数指标 | ✅ Prometheus端点暴露 |
-| N-L4-03 | TraceId 跨 MQ | ⬜ |
+| N-L4-03 | TraceId跨MQ | 通知链路traceId透传 | ✅ MqTraceHelper |
 
 ## 已实测
 - N-L1-01/02/04/05/07、N-L3-04 ✅（消费/模板/列表/已读/未读闭环）
