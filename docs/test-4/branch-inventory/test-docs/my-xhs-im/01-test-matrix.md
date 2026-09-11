@@ -19,7 +19,7 @@
 | I-L2-02 | WS 握手鉴权边界 | 无/非法 ticket | ✅ 拒绝 |
 | I-L2-03 | 合法 ticket 握手 | 带 ticket 升级 | ✅ 101 |
 | I-L2-04 | 消息持久化 | 双端 WS 收发 → t_chat_message | ✅ 10001→10002落库 |
-| I-L2-05 | 离线消息 | 收方离线→上线补发 | ⬜ 需双端WS |
+| I-L2-05 | 离线消息 | u2离线时u1发→u2上线收OFFLINE | ✅ count=1补发 |
 
 ## L3 质量
 
@@ -27,7 +27,7 @@
 |---|---|---|---|
 | I-L3-01 | 消息幂等 | 服务端生成msgId | ✅ 唯一不回执重复 |
 | I-L3-02 | 已读/未读一致 | read 后未读清零 | ✅ REST层 |
-| I-L3-03 | ✅ ImRouteSubscriber pub/sub订阅已启动(跨实例) | 双实例同会话 | 经 Redis pub/sub 到达 | ⬜ |
+| I-L3-03 | ✅ testuser→im1/testuser2→im2 跨实例送达 | 双实例同会话 | 经 Redis pub/sub 到达 | ⬜ |
 | I-L3-04 | 一致性哈希 | 同会话固定实例 | ✅ TreeMap 150虚拟节点 |
 
 ## L4 可观测
