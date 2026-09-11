@@ -26,7 +26,7 @@
 | H-L3-01 | Feign故障降级 | 停cart服务 | ✅ 并发阻塞 → 503购物车服务不可用(fallback+DownstreamUnavailable) |
 | H-L3-02 | 并行聚合超时 慢下游不阻塞整体超时降级 | ✅ counter注入6s延迟→feed 200/2.04s,日志"第2层聚合超时",层1数据保留/counts降级 |
 | H-L3-03 | 已删笔记乱序 | 删除后标记 | ✅ 已删标记存在+清理完成 |
-| H-L3-04 | 推送失败断点续推 | 部分粉丝失败 | push progress 记录续推 | ⬜ |
+| H-L3-04 | 推送失败断点续推 部分粉丝失败progress记录续推 | ✅ 预置cursor=2→日志"断点续推"→只推剩余粉丝(前2被跳过),progress cursor=502/status=completed |
 
 ## L4 可观测
 
