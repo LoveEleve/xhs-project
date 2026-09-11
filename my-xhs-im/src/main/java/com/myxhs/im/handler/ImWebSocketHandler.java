@@ -87,14 +87,32 @@ public class ImWebSocketHandler extends TextWebSocketHandler {
                 return;
             }
 
-            switch (imMsg.getType().toUpperCase()) {
-                case "CHAT" -> chatService.handleChat(userId, imMsg, session);
-                case "ACK" -> chatService.handleAck(userId, imMsg);
-                case "READ" -> chatService.handleRead(userId, imMsg, session);
-                case "TYPING" -> chatService.handleTyping(userId, imMsg);
-                case "PING" -> handlePing(userId, session);
-                case "LOGOUT" -> closeQuietly(session, CloseStatus.NORMAL);
-                default -> log.warn("[IM] 未知消息类型: userId={}, type={}", userId, imMsg.getType());
+            // 链路追踪：消息内 traceId 优先，其次握手段生成/头带入，最后兜底生成
+            String traceId = imMsg.getTraceId();
+            if (traceId == null || traceId.isBlank()) {
+                Object attr = session.getAttributes().get("traceId");
+                traceId = attr != null ? attr.toString() : null;
+            }
+            if (traceId == null || traceId.isBlank()) {
+                traceId = java.util.UUID.randomUUID().toString().replace("-", "");
+            }
+            session.getAttributes().put("traceId", traceId);
+
+            try {
+                org.slf4j.MDC.put("traceId", traceId);
+                com.myxhs.common.trace.TraceContextHolder.getOrCreate().setTraceId(traceId);
+                switch (imMsg.getType().toUpperCase()) {
+                    case "CHAT" -> chatService.handleChat(userId, imMsg, session);
+                    case "ACK" -> chatService.handleAck(userId, imMsg);
+                    case "READ" -> chatService.handleRead(userId, imMsg, session);
+                    case "TYPING" -> chatService.handleTyping(userId, imMsg);
+                    case "PING" -> handlePing(userId, session);
+                    case "LOGOUT" -> closeQuietly(session, CloseStatus.NORMAL);
+                    default -> log.warn("[IM] 未知消息类型: userId={}, type={}", userId, imMsg.getType());
+                }
+            } finally {
+                org.slf4j.MDC.remove("traceId");
+                com.myxhs.common.trace.TraceContextHolder.clear();
             }
         } catch (Exception e) {
             log.error("[IM] 消息处理异常: userId={}, payload={}", userId, payload, e);

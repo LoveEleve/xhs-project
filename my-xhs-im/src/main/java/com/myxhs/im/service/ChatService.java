@@ -130,10 +130,11 @@ public class ChatService {
 
         // 2. 路由投递
         long timestamp = System.currentTimeMillis();
+        String traceId = currentTraceId(senderSession);
         String chatJson = JSON.toJSONString(Map.of(
                 "ver", 1, "type", "CHAT", "msgId", msgId, "seqNo", seqNo,
                 "from", senderId, "content", content,
-                "msgType", msgType, "timestamp", timestamp));
+                "msgType", msgType, "timestamp", timestamp, "traceId", traceId));
 
         String targetServerId = onlineRouteService.getRoute(receiverId);
         if (targetServerId != null && targetServerId.equals(onlineRouteService.getServerId())) {
@@ -154,6 +155,7 @@ public class ChatService {
                     .content(content)
                     .msgType(msgType)
                     .timestamp(timestamp)
+                    .traceId(traceId)
                     .build();
             try {
                 stringRedisTemplate.convertAndSend("myxhs:im:route:" + targetServerId,
@@ -176,7 +178,9 @@ public class ChatService {
         }
 
         // 4. 发送 ACK 给发送者
-        sendJson(senderSession, Map.of("ver", 1, "type", "ACK", "msgId", msgId, "timestamp", timestamp));
+        sendJson(senderSession, Map.of("ver", 1, "type", "ACK", "msgId", msgId, "timestamp", timestamp, "traceId", traceId));
+        log.info("[IM] CHAT处理完成: msgId={}, senderId={}, receiverId={}, traceId={}",
+                msgId, senderId, receiverId, traceId);
     }
 
     /**
@@ -221,9 +225,11 @@ public class ChatService {
         stringRedisTemplate.opsForHash().put(UNREAD_KEY_PREFIX + userId, String.valueOf(peerId), "0");
 
         // 3. 通知对方"已读"（支持跨实例路由，与聊天消息相同的路由逻辑）
+        String readTraceId = currentTraceId(session);
         String readNotify = JSON.toJSONString(Map.of(
                 "ver", 1, "type", "READ_NOTIFY", "peerId", userId,
-                "msgId", imMsg.getMsgId() != null ? imMsg.getMsgId() : 0));
+                "msgId", imMsg.getMsgId() != null ? imMsg.getMsgId() : 0,
+                "traceId", readTraceId));
 
         String targetServerId = onlineRouteService.getRoute(peerId);
         if (targetServerId != null && targetServerId.equals(onlineRouteService.getServerId())) {
@@ -239,6 +245,7 @@ public class ChatService {
                     .content(readNotify)
                     .msgType(99) // 99=已读回执，ImRouteSubscriber特殊处理
                     .timestamp(System.currentTimeMillis())
+                    .traceId(readTraceId)
                     .build();
             try {
                 stringRedisTemplate.convertAndSend("myxhs:im:route:" + targetServerId,
@@ -257,8 +264,10 @@ public class ChatService {
         Long peerId = imMsg.getPeerId();
         if (peerId == null) return;
 
+        String typingTraceId = currentTraceId(null);
         String typingJson = JSON.toJSONString(Map.of(
-                "ver", 1, "type", "TYPING", "peerId", senderId, "isTyping", true));
+                "ver", 1, "type", "TYPING", "peerId", senderId, "isTyping", true,
+                "traceId", typingTraceId));
 
         String targetServerId = onlineRouteService.getRoute(peerId);
         if (targetServerId == null) {
@@ -278,6 +287,7 @@ public class ChatService {
                     .content(typingJson)
                     .msgType(98) // 98=TYPING 通知
                     .timestamp(System.currentTimeMillis())
+                    .traceId(typingTraceId)
                     .build();
             try {
                 stringRedisTemplate.convertAndSend("myxhs:im:route:" + targetServerId,
@@ -351,7 +361,8 @@ public class ChatService {
         }
 
         String batchJson = JSON.toJSONString(Map.of(
-                "ver", 1, "type", "OFFLINE", "msgs", msgList, "total", msgList.size()));
+                "ver", 1, "type", "OFFLINE", "msgs", msgList, "total", msgList.size(),
+                "traceId", currentTraceId(session)));
 
         try {
             synchronized (session) {
@@ -488,5 +499,22 @@ public class ChatService {
         } catch (IOException e) {
             log.warn("[IM] 发送消息失败: sessionId={}", session.getId());
         }
+    }
+
+    /**
+     * 获取当前链路 traceId：优先 session 握手属性，其次线程上下文，最后兜底生成（保证 Map.of 非空）
+     */
+    private String currentTraceId(WebSocketSession session) {
+        if (session != null) {
+            Object attr = session.getAttributes().get("traceId");
+            if (attr != null && !attr.toString().isBlank()) {
+                return attr.toString();
+            }
+        }
+        String ctxTraceId = com.myxhs.common.trace.TraceContextHolder.getTraceId();
+        if (ctxTraceId != null && !ctxTraceId.isBlank()) {
+            return ctxTraceId;
+        }
+        return java.util.UUID.randomUUID().toString().replace("-", "");
     }
 }

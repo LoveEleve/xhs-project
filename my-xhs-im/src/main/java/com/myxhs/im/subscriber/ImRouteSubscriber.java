@@ -102,38 +102,53 @@ public class ImRouteSubscriber implements MessageListener {
                 return;
             }
 
-            // 构建推送 JSON
-            String pushJson;
-            int msgType = routeMsg.getMsgType() != null ? routeMsg.getMsgType() : 0;
-            if (msgType == 99 || msgType == 98) {
-                // msgType=99(已读回执)/98(TYPING)：content 字段已经是完整 JSON
-                pushJson = routeMsg.getContent();
-            } else {
-                // 普通聊天消息（构建 CHAT JSON，包含 seqNo 保证跨实例消息有序）
-                pushJson = JSON.toJSONString(Map.of(
-                        "ver", 1, "type", "CHAT",
-                        "msgId", routeMsg.getMsgId(),
-                        "seqNo", routeMsg.getSeqNo(),
-                        "from", routeMsg.getSenderId(),
-                        "content", routeMsg.getContent(),
-                        "msgType", msgType,
-                        "timestamp", routeMsg.getTimestamp()));
+            // 链路追踪：跨实例透传 traceId，消费侧注入 MDC 实现两端日志串联
+            String traceId = routeMsg.getTraceId();
+            if (traceId == null || traceId.isBlank()) {
+                traceId = java.util.UUID.randomUUID().toString().replace("-", "");
             }
 
-            boolean pushed = webSocketHandler.pushToUser(routeMsg.getReceiverId(), pushJson);
-            if (pushed) {
-                log.debug("[IM路由] 跨实例推送成功: receiverId={}, msgId={}",
-                        routeMsg.getReceiverId(), routeMsg.getMsgId());
-            } else {
-                // 推送失败，降级：仅普通聊天消息存离线。已读回执/输入状态属于瞬时信号，不进入离线重放。
-                if (routeMsg.getMsgId() != null && msgType != 99 && msgType != 98) {
-                    chatService.storeOfflineMessage(routeMsg.getReceiverId(), routeMsg.getMsgId());
-                    log.info("[IM路由] 用户已离线，降级存离线: receiverId={}, msgId={}, msgType={}",
-                            routeMsg.getReceiverId(), routeMsg.getMsgId(), msgType);
+            try {
+                org.slf4j.MDC.put("traceId", traceId);
+                com.myxhs.common.trace.TraceContextHolder.getOrCreate().setTraceId(traceId);
+
+                // 构建推送 JSON
+                String pushJson;
+                int msgType = routeMsg.getMsgType() != null ? routeMsg.getMsgType() : 0;
+                if (msgType == 99 || msgType == 98) {
+                    // msgType=99(已读回执)/98(TYPING)：content 字段已经是完整 JSON
+                    pushJson = routeMsg.getContent();
                 } else {
-                    log.info("[IM路由] 用户已离线，瞬时信号不存离线: receiverId={}, msgId={}, msgType={}",
-                            routeMsg.getReceiverId(), routeMsg.getMsgId(), msgType);
+                    // 普通聊天消息（构建 CHAT JSON，包含 seqNo 保证跨实例消息有序）
+                    pushJson = JSON.toJSONString(Map.of(
+                            "ver", 1, "type", "CHAT",
+                            "msgId", routeMsg.getMsgId(),
+                            "seqNo", routeMsg.getSeqNo(),
+                            "from", routeMsg.getSenderId(),
+                            "content", routeMsg.getContent(),
+                            "msgType", msgType,
+                            "timestamp", routeMsg.getTimestamp(),
+                            "traceId", traceId));
                 }
+
+                boolean pushed = webSocketHandler.pushToUser(routeMsg.getReceiverId(), pushJson);
+                if (pushed) {
+                    log.info("[IM路由] 跨实例推送成功: receiverId={}, msgId={}, traceId={}",
+                            routeMsg.getReceiverId(), routeMsg.getMsgId(), traceId);
+                } else {
+                    // 推送失败，降级：仅普通聊天消息存离线。已读回执/输入状态属于瞬时信号，不进入离线重放。
+                    if (routeMsg.getMsgId() != null && msgType != 99 && msgType != 98) {
+                        chatService.storeOfflineMessage(routeMsg.getReceiverId(), routeMsg.getMsgId());
+                        log.info("[IM路由] 用户已离线，降级存离线: receiverId={}, msgId={}, msgType={}",
+                                routeMsg.getReceiverId(), routeMsg.getMsgId(), msgType);
+                    } else {
+                        log.info("[IM路由] 用户已离线，瞬时信号不存离线: receiverId={}, msgId={}, msgType={}",
+                                routeMsg.getReceiverId(), routeMsg.getMsgId(), msgType);
+                    }
+                }
+            } finally {
+                org.slf4j.MDC.remove("traceId");
+                com.myxhs.common.trace.TraceContextHolder.clear();
             }
         } catch (Exception e) {
             log.error("[IM路由] Pub/Sub回调异常", e);

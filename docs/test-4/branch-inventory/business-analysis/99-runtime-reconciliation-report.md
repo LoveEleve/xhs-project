@@ -169,6 +169,7 @@ TraceId 端到端断言、SSE 实时推送、WS 消息路由、推荐质量（�
 | home 聚合超时 | chaos 6s 慢下游 | ✅ 200/2s 降级 |
 | home 推送断点续推 | 预置cursor=2 | ✅ 断点跳过已推粉丝 |
 | analytics 关注故障 | chaos follow 异常 | ✅ 500 fail-closed 无幽灵关系 |
+| im TraceId 跨 WS | 双实例直连（19014→19024） | ✅ 已实现（字段+握手+MDC+pub/sub透传），两端日志同一 traceId |
 
 ### 第 19 个运行态修复（混沌框架 mapper 匹配失效）
 

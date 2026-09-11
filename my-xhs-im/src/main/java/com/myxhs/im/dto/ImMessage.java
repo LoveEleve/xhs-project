@@ -34,4 +34,7 @@ public class ImMessage {
 
     /** 消息ID（ACK / READ 时使用） */
     private Long msgId;
+
+    /** 链路追踪ID（可选）：客户端可透传，缺省时使用握手阶段生成/HTTP头带入的值 */
+    private String traceId;
 }

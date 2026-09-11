@@ -54,6 +54,16 @@ public class ImHandshakeInterceptor implements HandshakeInterceptor {
                 }
                 Long userId = Long.valueOf(subject);
                 attributes.put("userId", userId);
+
+                // 链路追踪：优先 HTTP 头 X-Trace-Id，其次 URL 参数 traceId，最后生成
+                String traceId = servletRequest.getServletRequest().getHeader("X-Trace-Id");
+                if (traceId == null || traceId.isBlank()) {
+                    traceId = servletRequest.getServletRequest().getParameter("traceId");
+                }
+                if (traceId == null || traceId.isBlank()) {
+                    traceId = java.util.UUID.randomUUID().toString().replace("-", "");
+                }
+                attributes.put("traceId", traceId);
                 return true;
             } catch (Exception e) {
                 log.warn("[IM握手] ticket 解析失败: {}", e.getMessage());

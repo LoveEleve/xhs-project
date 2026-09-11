@@ -42,4 +42,7 @@ public class RouteMessage {
 
     /** 时间戳 */
     private Long timestamp;
+
+    /** 链路追踪ID（跨实例透传，消费者侧注入 MDC 实现全链路日志串联） */
+    private String traceId;
 }

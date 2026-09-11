@@ -36,7 +36,7 @@
 |---|---|---|
 | I-L4-01 | WS 连接数指标 | ✅ Prometheus端点暴露 |
 | I-L4-02 | ✅ IM路由订阅日志 |
-| I-L4-03 | TraceId跨WS | ❌ 未实现(ImMessage/RouteMessage/Handler均无traceId字段或MDC传播, 消息可追溯性依赖msgId) |
+| I-L4-03 | TraceId跨WS | ✅ 已实现: ImMessage/RouteMessage增加traceId+握手头/参数生成+HANDLER/RouteSubscriber注入MDC;双实例直连验证两端日志同一traceId,ACK/CHAT/OFFLINE均携带 |
 
 ## 已实测
 - I-L1-01/02/03/05/06、I-L2-01/02/03 ✅（REST 全通 + 握手鉴权 fail-closed）
