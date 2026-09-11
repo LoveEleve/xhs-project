@@ -33,7 +33,7 @@
 | INV-L3-03 | TCC Try/Confirm/Cancel 幂等+fence | ✅ 11场景全过(try/confirm/cancel幂等、空回滚、悬挂拒绝、超量拒绝) |
 | INV-L3-04 | 对账修复 | MySQL158/Redis148 → 对账修复148 | ✅ data:1 |
 | INV-L3-05 | 并发预扣 | 20并发qty=1 | ✅ Redis/MySQL一致不超卖 |
-| INV-L3-06 | 扩容窗口保护 | resize 时 confirm/release 延迟 | ⬜ |
+| INV-L3-06 | 扩容窗口保护 resize时confirm/release延迟 | ✅ pause标记: preDeduct延迟消费+confirm延迟(预扣记录保留)+解除后release恢复98/50/48 |
 | INV-L3-07 | 多SKU部分成功 | 2SKU:1成功1库存不足 | ✅ 失败触发重试,已成功SKU幂等不重复 |
 | INV-L3-08 | 超量并发预扣 | 5×qty=50超库存 | ✅ 只扣100不超卖 |
 
