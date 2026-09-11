@@ -53,8 +53,19 @@ public class ChaosInterceptor {
             if (!fault.isActive()) {
                 continue;
             }
-            if (!matchTarget(fullName, fault.getTarget())
-                    && !matchTarget(declaringFullName, fault.getTarget())) {
+            boolean targetMatched = matchTarget(fullName, fault.getTarget())
+                    || matchTarget(declaringFullName, fault.getTarget());
+            if (!targetMatched) {
+                // MyBatis-Plus 继承方法（如 BaseMapper.insert）声明类型为 BaseMapper，
+                // 需再按目标对象实现的接口名匹配（如 FollowMapper.insert）
+                for (Class<?> itf : joinPoint.getTarget().getClass().getInterfaces()) {
+                    if (matchTarget(itf.getSimpleName() + "." + methodName, fault.getTarget())) {
+                        targetMatched = true;
+                        break;
+                    }
+                }
+            }
+            if (!targetMatched) {
                 continue;
             }
             // 概率判断

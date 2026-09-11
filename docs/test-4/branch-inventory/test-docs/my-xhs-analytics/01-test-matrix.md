@@ -37,7 +37,7 @@
 | A-L3-01 | LIKE/UNLIKE 乱序/幂等 | 重复点赞不重复, 取消归0 | ✅ Set-based幂等 |
 | A-L3-02 | MQ 重复消息 | SADD幂等+DB唯一键 | ✅ 重复后仍1 |
 | A-L3-03 | Redis/MQ故障 | 记录降级/回滚；不产生幽灵关系 | ⬜ |
-| A-L3-04 | 关注双步半成功 | 对账可修复 follower 侧 | ⬜ |
+| A-L3-04 | 关注双步半成功 对账可修复follower侧 | ✅ chaos注入FollowMapper.insert→API200但MySQL落库失败(Redis双边存在)→followCounterRepairJob补插1条修复 |
 | A-L3-05 | 拉黑后 follow 拒绝，自身关系不污染 | ✅ 拉黑不自动取关(isFollowing保持) |
 | A-L3-06 | 批量状态上限 | 101个ID | 截断100不OOM | ✅ |
 

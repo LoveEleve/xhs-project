@@ -176,6 +176,13 @@ TraceId 端到端断言、SSE 实时推送、WS 消息路由、推荐质量（�
 - **修复**：重试全部失败后回写缓冲区（走 `add()`，与并发写安全合并），下个刷盘周期自动重试
 - **验证**：rename table → 发 FAVORITE → "已回写缓冲待重试" → 表恢复 → 下一周期"刷盘成功: 1 条" → DB count=1
 
+### 第 19 个修复补充（A-L3-04 实测暴露：继承方法匹配）
+
+- **现象**：target=FollowMapper.insert 不命中（insert 声明在 MyBatis-Plus BaseMapper，declaringType=BaseMapper，getTarget()=$ProxyN）
+- **修复**：在 ChaosInterceptor 中增加目标对象实现接口 SimpleName 的匹配（如 FollowMapper.insert），补齐继承方法场景
+- **验证**：注入 target=$Proxy144.insert 生效；制造"Redis 双写成功 / MySQL 落库失败"半成功 → followCounterRepairJob 补插 1 条修复，handle_code=200
+- **A-L3-04 实测**：API 200（Redis 权威）、MySQL 行=0、Redis following+fans 存在 → 对账后 MySQL 行=1，三方一致
+
 ## 经验
 
 运行态复核发现了源码分析 + 单测无法覆盖的问题：topic/job/schema/启动时序/跨模块消息契约/
