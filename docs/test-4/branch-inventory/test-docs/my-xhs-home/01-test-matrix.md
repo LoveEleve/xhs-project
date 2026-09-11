@@ -34,4 +34,4 @@
 |---|---|---|
 | H-L4-01 | 聚合耗时指标 | ✅ Prometheus端点630指标暴露 |
 | H-L4-02 | 降级触发日志 | ✅ NoteDelete清理日志 |
-| H-L4-03 | TraceId 跨 Feign | ⬜ |
+| H-L4-03 | TraceId跨MQ | content→FEED→home同traceId | ✅ f5d00476一致 |

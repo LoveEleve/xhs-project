@@ -46,7 +46,7 @@
 |---|---|---|
 | CT-L4-01 | 发布/删除审计 | ✅ |
 | CT-L4-02 | Feed 失败指标 | ✅ Prometheus端点暴露 |
-| CT-L4-03 | TraceId 跨 content/MQ | ✅ |
+| CT-L4-03 | TraceId跨MQ | content→FEED→home同traceId | ✅ |
 
 ## 已实测
 - CT-L1-01/03/04/07/09/11/13、L2-01/02/03/04/05、L3-01/04 ✅
