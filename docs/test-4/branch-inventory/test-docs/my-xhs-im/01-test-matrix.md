@@ -27,7 +27,7 @@
 |---|---|---|---|
 | I-L3-01 | 消息幂等 | 服务端生成msgId | ✅ 唯一不回执重复 |
 | I-L3-02 | 已读/未读一致 | read 后未读清零 | ✅ REST层 |
-| I-L3-03 | ✅ testuser→im1/testuser2→im2 跨实例送达 | 双实例同会话 | 经 Redis pub/sub 到达 | ⬜ |
+| I-L3-03 | 双实例同会话经Redis pub/sub到达 | ✅ testuser→im1/testuser2→im2 跨实例送达 |
 | I-L3-04 | 一致性哈希 | 同会话固定实例 | ✅ TreeMap 150虚拟节点 |
 
 ## L4 可观测
