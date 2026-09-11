@@ -165,6 +165,10 @@ TraceId 端到端断言、SSE 实时推送、WS 消息路由、推荐质量（�
 | notification SSE 跨实例 | 双实例 19013/19023 | ✅ SSE连inst1，两实例共同消费，客户端收聚合事件 |
 | inventory MQ失败回滚 | chaos insertOutboxEvent | ✅ Redis回滚一致+恢复重投+幂等防双扣 |
 | payment 通知补偿 | 强制待支付+触发Job | ✅ 通知成功/重通知1条/幂等收敛 |
+| cart 屏障/乱序/原子性 | MQ构造同毫秒事件+10并发加购 | ✅ 屏障跳旧写/同毫秒ADD通过/Redis=10无丢失/对账收敛DB |
+| home 聚合超时 | chaos 6s 慢下游 | ✅ 200/2s 降级 |
+| home 推送断点续推 | 预置cursor=2 | ✅ 断点跳过已推粉丝 |
+| analytics 关注故障 | chaos follow 异常 | ✅ 500 fail-closed 无幽灵关系 |
 
 ### 第 19 个运行态修复（混沌框架 mapper 匹配失效）
 

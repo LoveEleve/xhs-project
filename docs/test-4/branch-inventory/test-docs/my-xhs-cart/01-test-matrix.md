@@ -21,15 +21,15 @@
 | CA-L2-01 | Redis items/checked/sort | 三结构一致 | ✅ |
 | CA-L2-02 | CART_TOPIC 消费 | 同步 MySQL | ✅ |
 | CA-L2-03 | 事件流水 | t_cart_event | ✅ |
-| CA-L2-04 | 清空屏障 | cleared marker | ⬜ |
-| CA-L2-05 | Lua 原子性 | 6 个 Lua | ⬜ |
+| CA-L2-04 | 清空屏障 cleared marker | ✅ MQ构造: CLEAR(T1)屏障后陈旧ADD/DELETE(T1-1000)被跳过,同毫秒ADD(T1)通过 |
+| CA-L2-05 | Lua原子性 6个Lua | ✅ 10并发加购Redis=10无丢失;DB同毫秒乱序C-05保留最大ts→对账修复qty1→10 |
 
 ## L3 质量
 
 | ID | 用例 | 预期 | 状态 |
 |---|---|---|---|
 | CA-L3-01 | 清空与加购并发 | 1clear+3add并发 | ✅ 最终Redis/MySQL一致+cleared marker |
-| CA-L3-02 | 事件乱序 | CHECK/DELETE/ADD 同毫秒 | ⬜ |
+| CA-L3-02 | 事件乱序 CHECK/DELETE/ADD同毫秒 | ✅ 陈旧DELETE/CHECK被屏障+C-05拦截(不覆盖新状态),同毫秒ADD不被屏障丢弃,最终对账收敛 |
 | CA-L3-03 | Redis丢失恢复 | 删Redis后查询 | ✅ 从MySQL恢复items=1 |
 | CA-L3-04 | 定时+手动 | ✅ cartReconcileJob调度执行200 |
 | CA-L3-05 | 超50项合并 | merge 60项 | ✅ 40002上限保护(防放大) |
