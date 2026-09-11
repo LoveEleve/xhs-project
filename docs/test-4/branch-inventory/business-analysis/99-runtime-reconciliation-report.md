@@ -161,6 +161,10 @@ TraceId 端到端断言、SSE 实时推送、WS 消息路由、推荐质量（�
 | search 版本防乱序 | flat 消息 es=...001→陈旧...000→...002 | ✅ External 版本拒绝低版本(version_conflict)，DELETE 物理清除 |
 | counter 去重 | resetOffsetByTime 回放同一物理消息（同 offsetMsgId） | ✅ Lua dedup 拦截，计数不变 |
 | counter 刷盘失败 | rename table 注入 DB 故障 | ✅ 重试3次→回写缓冲→表恢复后自动补刷 DB=1（修复 #20） |
+| coupon 幽灵券 | resetOffset 回放同 msgId | ✅ 幂等忽略，券不重复发放 |
+| notification SSE 跨实例 | 双实例 19013/19023 | ✅ SSE连inst1，两实例共同消费，客户端收聚合事件 |
+| inventory MQ失败回滚 | chaos insertOutboxEvent | ✅ Redis回滚一致+恢复重投+幂等防双扣 |
+| payment 通知补偿 | 强制待支付+触发Job | ✅ 通知成功/重通知1条/幂等收敛 |
 
 ### 第 19 个运行态修复（混沌框架 mapper 匹配失效）
 

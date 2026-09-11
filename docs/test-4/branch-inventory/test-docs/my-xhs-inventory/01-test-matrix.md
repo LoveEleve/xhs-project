@@ -29,7 +29,7 @@
 | ID | 用例 | 预期 | 状态 |
 |---|---|---|---|
 | INV-L3-01 | 预扣超时恢复 | PreDeductTimeoutJob 释放 | ✅ |
-| INV-L3-02 | MQ 失败回滚 | 预扣消息失败 Redis/Outbox 一致 | ⬜ |
+| INV-L3-02 | MQ失败回滚 预扣消息失败Redis/Outbox一致 | ✅ chaos注入insertOutboxEvent→MQ异常→Redis回滚(98/50/48不变),DB不变,占位清除;恢复重投成功扣1,迟到retry被幂等拦截 |
 | INV-L3-03 | TCC Try/Confirm/Cancel 幂等+fence | ✅ 11场景全过(try/confirm/cancel幂等、空回滚、悬挂拒绝、超量拒绝) |
 | INV-L3-04 | 对账修复 | MySQL158/Redis148 → 对账修复148 | ✅ data:1 |
 | INV-L3-05 | 并发预扣 | 20并发qty=1 | ✅ Redis/MySQL一致不超卖 |
