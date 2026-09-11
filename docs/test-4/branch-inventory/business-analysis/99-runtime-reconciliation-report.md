@@ -123,7 +123,8 @@ TraceId 端到端断言、SSE 实时推送、WS 消息路由、推荐质量（�
 - 15 服务 L1-L4 测试矩阵 + P0 一致性专项（并发/幂等/超卖）
 - HMAC/限流/SSE/TraceId 安全与可观测专项
 - DLQ 死信链路 ✅ 已闭环（counter 注入异常重试耗尽入 `%DLQ%counter-consumer-group`；本地死信合成行→deadLetterScanJob 重投成功 status 3→1；修复 #21 后积压指标可观测：counter=1/inventory-order=4）
-- 剩余：事务回查 broker 注入、推荐质量（需专门环境/客户端/数据量）
+- 推荐质量 ✅ 冷启动已闭环（种入 6 用户×3 笔记行为数据 → recommendFeatureJob 特征 2 条 / recommendHotPoolJob 热池 3 条 / recommendItemCFJob 相似对 6 → `/api/recommend/feed` 2 条、`/similar/{noteId}` 2 条 score=0.913）
+- 剩余：事务回查 broker 注入（mqadmin 不支持发送事务半消息，需专用事务消息客户端；发送侧故障 fail-closed 已测）
 
 ## 第五轮 混沌工程故障注入（2026-09-08）
 
