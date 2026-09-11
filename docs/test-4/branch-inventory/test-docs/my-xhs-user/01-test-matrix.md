@@ -39,7 +39,7 @@
 | ID | 验证点 | 状态 |
 |---|---|---|
 | U-L4-01 | 登录/注册审计日志 | ✅ |
-| U-L4-02 | ✅ captcha/login HTTP指标暴露 | ⬜ |
+| U-L4-02 | ✅ captcha/login HTTP指标暴露 |
 | U-L4-03 | TraceId 跨 gateway/user | ✅ |
 
 ## 已实测
