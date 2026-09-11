@@ -34,7 +34,7 @@
 | INV-L3-04 | 对账修复 | MySQL158/Redis148 → 对账修复148 | ✅ data:1 |
 | INV-L3-05 | 并发预扣 | 20并发qty=1 | ✅ Redis/MySQL一致不超卖 |
 | INV-L3-06 | 扩容窗口保护 | resize 时 confirm/release 延迟 | ⬜ |
-| INV-L3-07 | 多 SKU 部分成功 | 一 SKU 失败不影响其他 | ⬜ |
+| INV-L3-07 | 多SKU部分成功 | 2SKU:1成功1库存不足 | ✅ 失败触发重试,已成功SKU幂等不重复 |
 | INV-L3-08 | 超量并发预扣 | 5×qty=50超库存 | ✅ 只扣100不超卖 |
 
 ## L4 可观测

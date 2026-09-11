@@ -38,7 +38,7 @@
 |---|---|---|
 | S-L4-01 | 索引失败/DLQ | ✅ 修复后无异常 |
 | S-L4-02 | 搜索耗时 | ✅ Prometheus端点暴露 |
-| S-L4-03 | TraceId 跨 MQ | ⬜ |
+| S-L4-03 | TraceId跨MQ | 索引来自Canal无应用traceId(正常) | ✅ 消费端有restoreTraceId |
 
 ## 已实测
 - S-L1-01/02、S-L2-01/02/04、S-L3-01/03/05 ✅（搜索/索引/脏数据/序列化修复）
