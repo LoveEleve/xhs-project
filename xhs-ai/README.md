@@ -2,7 +2,7 @@
 
 > 全新设计与实现（不继承 `my-xhs-ai*` 旧代码，旧模块仅作参考/归档）
 >
-> 版本：v0.1（设计阶段）｜日期：2026-09-12
+> 版本：v0.2（M1/M1.5 已落地运行）｜日期：2026-09-12
 
 ## 文档索引
 
@@ -23,7 +23,9 @@
 | `docs/reviews/03-plugin-ecosystem-mapping.md` | 插件生态映射 + 二轮缺口（G15-G20） | ✅ 2026-09-12 |
 | `docs/reviews/04-engineering-gap-review.md` | **工程缺口 Review（30+ 项，P0 12 项）** | ✅ 2026-09-12 |
 | `docs/reviews/05-consistency-and-mcp-risks.md` | RV05：一致性修正 9 处 + MCP 工具膨胀风险 | ✅ 2026-09-12 |
-| `docs/requirements/01-scenario-library.md` | 业务场景库（28 场景 + REQ 编号 + 证据形态） | ✅ v0.1 |
+| `docs/reviews/06-deep-review-business-and-jd.md` | **RV06：业务贴合度 + JD 对齐深度 Review（P0/P1 清单 + 规划修订）** | ✅ 2026-09-12 |
+| `docs/reviews/07-jd-hit-matrix-v2.md` | JD 命中矩阵 v2（18 份 JD × xhs-ai v2 现状） | ✅ 2026-09-12 |
+| `docs/requirements/01-scenario-library.md` | 业务场景库（34 场景 + REQ 编号 + 证据形态） | ✅ v0.2 |
 | `docs/requirements/02-nfr-slo-threatmodel.md` | 量化 SLO + STRIDE 威胁模型 + REQ↔AC↔TC | ✅ v0.1 |
 | `docs/requirements/03-legacy-asset-governance.md` | R05 旧资产治理清单与入库白名单 | ✅ v0.1 |
 | `docs/design/01-model-gateway.md` | 专项：模型网关（路由/熔断/降级/预算/缓存友好） | ✅ v0.1 |
@@ -35,6 +37,13 @@
 | `docs/design/07-capacity-cost-model.md` | 专项：容量与成本模型（量化+阈值+局限） | ✅ v0.1 |
 | `docs/design/08-extension-framework-and-ecosystem.md` | 专项：扩展框架 v1/v2 + 生态吸收规划 | ✅ v0.1 |
 | `docs/design/09-feature-driven-ecosystem-adoption.md` | 专项：**功能驱动**的生态采纳（MCP 对标+翻译清单） | ✅ v0.1 |
+
+## 运行状态（2026-09-12）
+
+- 服务：`xhs-ai` 运行于 19020（Spring Boot 3.2.5 / JDK17），health UP，Flyway v1 已应用，JSON 日志入 ELK。
+- 对话：`POST /api/ai/chat`、`POST /api/ai/chat/stream`（siyu-all deepseek-v4-pro）。
+- MCP：Elasticsearch / Prometheus / Grafana 三官方 server 已接入（tools list + call 实测通）。
+- ⚠️ 未闭环（M1.6）：无鉴权、未注册 Nacos/网关（`/api/ai/**`）、危险工具白名单未启用、prometheus-mcp 19081 需绑本机。详见 `docs/reviews/06-deep-review-business-and-jd.md`。
 
 ## 技术选型（已确认）
 
@@ -54,20 +63,22 @@
 - [x] P1 深调研：数据源能力矩阵 / AgentScope 生产化深读
 - [x] P1 深调研：5 个头部 Agent 项目设计参考（R03）
 - [x] 源码级核验（AgentScope jar 6 项全关闭）+ 设计查漏补缺 (RV01)
-- [x] P1 深调研：业务场景库（RQ01，28 场景）
+- [x] P1 深调研：业务场景库（RQ01，34 场景）
 - [x] P1 深调研：旧资产治理清单（R05）
 - [x] 工程规范 04-engineering（E1-E7）
 - [x] P4 全量测试设计（TC 矩阵 v1.0）
 - [x] M1-1 依赖收敛验证（enforcer 三规则全过）
-- [ ] M1-2 骨架（Application/Actuator/Flyway/Logback JSON）→ 对话/SSE → 状态 → ELK/Prom
+- [x] M1-2 骨架（Application/Actuator/Flyway/Logback JSON）+ 对话/SSE（会话状态/ELK/Prom 待补）
+- [x] M1.5 官方 MCP 接入验证（ES/Prometheus/Grafana tools+call 实测通）
+- [x] RV06 业务贴合度 + JD 对齐深度 Review（P0/P1 清单 + 规划修订 + JD 矩阵 v2）
+- [ ] M1.6 安全与接线（鉴权/工具白名单/Nacos+网关/systemd/旧模块下线）
+- [ ] M2.0 业务竖切①：DIAG-08+OPS-01 DLQ 诊断→审批→重投→核验→审计
 - [x] P2 需求工程：SLO/STRIDE/追溯矩阵（RQ02）
 - [ ] P2 评审（AC 可测试）
 - [x] P3 架构 v0.2（折叠全部采纳项）
 - [x] P3 专项设计 9/9（+ 功能驱动生态采纳）
 - [x] RV05 一致性查漏补缺（9 处修正 + 工具集膨胀设计）
-- [ ] M1.5 官方 MCP 接入验证（ES/Prometheus/Grafana）
 - [x] 多副本 HITL 跨实例恢复设计（D02 §10）
 - [ ] 架构设计评审（02）
 - [ ] 测试设计评审（03）
-- [ ] 测试设计评审
-- [ ] 工程骨架（M1）
+- [ ] 工程骨架（M1）验收

@@ -97,14 +97,19 @@
 | ES / Redis / Prometheus / SkyWalking | 现有地址 | 本地可用 |
 | Langfuse | `LANGFUSE_OTEL_ENDPOINT/PUBLIC_KEY/SECRET_KEY` | 可选（无则只打本地日志） |
 
-## 7. 里程碑
+## 7. 里程碑（2026-09-12 修订：业务竖切优先）
+
+> 修订依据：`docs/reviews/06-deep-review-business-and-jd.md`。原则：**先业务竖切闭环，再横向铺能力**；每个竖切必须带验收指标 + ≥1 条 EVAL + 可演示路径。
 
 | 阶段 | 交付 | 验收 |
 |------|------|------|
-| M1 骨架 | Spring Boot + AgentScope 2.0 接入、对话/SSE、会话状态、OTel | AC-1.* / AC-6.1 |
-| M2 诊断 | FR-2 工具集 + HITL | AC-2.* / AC-5.* |
+| M1 骨架 ✅ | Spring Boot + AgentScope 2.0 接入、对话/SSE（会话状态/OTel 待补） | AC-1.* / AC-6.1 |
+| M1.5 MCP ✅ | 官方 ES/Prometheus/Grafana MCP 接入（tools+call 实测通） | reviews/06 §1 |
+| M1.6 安全与接线（P0） | 鉴权、工具白名单/危险工具禁用、19081 绑本机、Nacos+`/api/ai/**` 路由、旧 AI 模块与旧路由下线、systemd、traceId | P0 清单全绿 |
+| M2.0 业务竖切①（P0） | DIAG-08+OPS-01：DLQ 积压诊断→审批→重投→核验→审计，端到端（会话+工具编排+traceId+审计+HITL+1 EVAL） | AC-2.* / AC-5.* + 历史案例对照 |
+| M2 诊断横向 | DIAG P0 清单铺开，每场景配 1 EVAL；7 张真实案例卡复活入库 | AC-2.* |
 | M3 知识 | FR-3 RAG + 代码检索 + 三层知识入库 | AC-3.* |
-| M4 治理与评测 | FR-4/6/7 + 评测集 | AC-4.* / AC-6.2/6.3 / AC-7.* |
+| M4 治理与评测 | FR-4/6/7 + 评测集 50+、压测、MTTR 对照、红队、FMEA 18 项演练 | AC-4.* / AC-6.2/6.3 / AC-7.* |
 
 ## 8. 风险
 
