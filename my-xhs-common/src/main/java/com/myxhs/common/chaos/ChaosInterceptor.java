@@ -30,10 +30,10 @@ public class ChaosInterceptor {
     /**
      * 拦截所有 com.myxhs 包下的 Bean 方法
      * <p>
-     * 只拦截 service/controller/mapper 层，不拦截 config/aspect 等基础设施类。
+     * 只拦截 service/controller/mapper/listener 层，不拦截 config/aspect 等基础设施类。
      * </p>
      */
-    @Around("execution(* com.myxhs..service..*(..)) || execution(* com.myxhs..controller..*(..)) || execution(* com.myxhs..mapper..*(..))")
+    @Around("execution(* com.myxhs..service..*(..)) || execution(* com.myxhs..controller..*(..)) || execution(* com.myxhs..mapper..*(..)) || execution(* com.myxhs..listener..*(..))")
     public Object intercept(ProceedingJoinPoint joinPoint) throws Throwable {
         // 总开关关闭时直接放行（零开销）
         if (!chaosProperties.isEnabled()) {

@@ -124,7 +124,8 @@ TraceId 端到端断言、SSE 实时推送、WS 消息路由、推荐质量（�
 - HMAC/限流/SSE/TraceId 安全与可观测专项
 - DLQ 死信链路 ✅ 已闭环（counter 注入异常重试耗尽入 `%DLQ%counter-consumer-group`；本地死信合成行→deadLetterScanJob 重投成功 status 3→1；修复 #21 后积压指标可观测：counter=1/inventory-order=4）
 - 推荐质量 ✅ 冷启动已闭环（种入 6 用户×3 笔记行为数据 → recommendFeatureJob 特征 2 条 / recommendHotPoolJob 热池 3 条 / recommendItemCFJob 相似对 6 → `/api/recommend/feed` 2 条、`/similar/{noteId}` 2 条 score=0.913）
-- 剩余：事务回查 broker 注入（mqadmin 不支持发送事务半消息，需专用事务消息客户端；发送侧故障 fail-closed 已测）
+- 事务回查 ✅ 已闭环（扩展 chaos 切点至 listener 层；对 `OrderTransactionListener.executeLocalTransaction` 注入 75s 延迟（>broker 6s 事务超时/60s 检查间隔）→ 15:15:34 broker 回查触发并记录"本地事务未提交"→ 15:16:03 本地事务提交后消息投递 → inventory 预扣减恰好一次（118→117）→ 取消订单回补 118；无重复扣减）
+- 遗留项清零：矩阵 117 项 + 报告遗留（DLQ/推荐质量/事务回查）全部闭环
 
 ## 第五轮 混沌工程故障注入（2026-09-08）
 
@@ -147,7 +148,7 @@ TraceId 端到端断言、SSE 实时推送、WS 消息路由、推荐质量（�
 
 ### 混沌框架能力与限制
 
-- AOP 切点：`com.myxhs..service/controller/mapper`（不拦截 feign 包；注入 Service 层会绕过 Feign fallback）
+- AOP 切点：`com.myxhs..service/controller/mapper/listener`（listener 层于事务回查专项新增，覆盖 OrderTransactionListener；不拦截 feign 包）
 - 注入目标匹配：类名.方法名（SimpleName），支持通配
 - 用途：验证异常映射、超时降级、回滚/补偿、调用方容错
 
