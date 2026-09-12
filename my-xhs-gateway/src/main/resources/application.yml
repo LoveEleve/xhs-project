@@ -114,7 +114,7 @@ spring:
           metadata:
             response-timeout: 3000   # 3s
             connect-timeout: 1000
-            rate-limit-qps: 200
+            rate-limit-qps: 500      # 实测 note ~1096 RPS，约50%余量
 
         # 搜索服务（最高 QPS）
         - id: search-service
@@ -182,7 +182,7 @@ spring:
           metadata:
             response-timeout: 3000
             connect-timeout: 1000
-            rate-limit-qps: 100
+            rate-limit-qps: 500      # 实测 ~1020 RPS，约50%余量
 
         - id: cart-service
           uri: lb://my-xhs-cart
@@ -209,7 +209,7 @@ spring:
           metadata:
             response-timeout: 5000   # 5s（BFF 聚合）
             connect-timeout: 1000
-            rate-limit-qps: 50
+            rate-limit-qps: 300      # 实测 ~764 RPS，约40%余量
 
         - id: notification-service
           uri: lb://my-xhs-notification
@@ -237,7 +237,7 @@ spring:
           metadata:
             response-timeout: 3000
             connect-timeout: 1000
-            rate-limit-qps: 100
+            rate-limit-qps: 300      # 实测 ~761 RPS，约40%余量
 
         # AI 诊断台（Gateway 集成 2026-08-17，与 vite dev 代理语义一致）
         # 前端 baseURL=/ai-api（src/api/ai.ts），RewritePath 去掉 /ai-api 前缀 → 后端 /api/** 路径
