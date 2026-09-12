@@ -1,0 +1,13 @@
+[Unit]
+Description=my-xhs boot self-heal (disk resize + 15 Java services)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/data/workspace/xhs-project/deploy/scripts/boot-selfheal.sh
+RemainAfterExit=yes
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target
