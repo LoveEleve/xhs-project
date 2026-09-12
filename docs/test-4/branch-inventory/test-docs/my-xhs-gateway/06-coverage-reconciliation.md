@@ -16,17 +16,15 @@
 | RequestLogFilter | ✅ | ✅ | 访问日志/traceId（05） |
 | GatewayConfig | ✅ | ✅ | 路由注册（02 B1） |
 | AuthProperties | ✅ | ✅ | 白名单配置来源（01） |
-| ApiVersionFilter | ✅ | ⬜ | 版本 Header（未实测） |
+| ApiVersionFilter | ✅ | ✅ | v2/v9/无版本均200；非v1记录日志+存exchange属性，降级不拒绝（实测） |
 
 ## 覆盖结论
 - 源码：gateway 核心 filter 已全覆盖分析
-- 运行态：鉴权/白名单/无 body/路由/日志已实测；HMAC 签名链路、限流触发、灰度 Header 透传、API 版本待实测
+- 运行态：鉴权/白名单/无 body/路由/日志/HMAC签名/限流触发/灰度Header/API版本 全部实测通过
 
 ## 未覆盖/待实测原因
-- HMAC：需要签名算法构造客户端（测试客户端未实现签名逻辑）
-- 限流：需要高频真实请求压测
-- 灰度：需要多实例 + LoadBalancer 场景
-- API 版本：需确认前端实际使用
+- 无（HMAC 5场景、限流40202、灰度G-L3-05、API版本均已在专项轮实测）
+- 唯一待真实场景：多版本实例（v2 实例）并存时的 LoadBalancer 实例过滤，当前部署无 v2 实例，仅验证解析/日志/降级
 
 ## 测试要求
 - 逐条记录 实际请求/预期/实际/下游证据（见 01-05）

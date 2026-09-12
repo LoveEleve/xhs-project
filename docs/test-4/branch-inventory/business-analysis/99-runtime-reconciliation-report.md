@@ -126,6 +126,7 @@ TraceId 端到端断言、SSE 实时推送、WS 消息路由、推荐质量（�
 - 推荐质量 ✅ 冷启动已闭环（种入 6 用户×3 笔记行为数据 → recommendFeatureJob 特征 2 条 / recommendHotPoolJob 热池 3 条 / recommendItemCFJob 相似对 6 → `/api/recommend/feed` 2 条、`/similar/{noteId}` 2 条 score=0.913）
 - 事务回查 ✅ 已闭环（扩展 chaos 切点至 listener 层；对 `OrderTransactionListener.executeLocalTransaction` 注入 75s 延迟（>broker 6s 事务超时/60s 检查间隔）→ 15:15:34 broker 回查触发并记录"本地事务未提交"→ 15:16:03 本地事务提交后消息投递 → inventory 预扣减恰好一次（118→117）→ 取消订单回补 118；无重复扣减）
 - 遗留项清零：矩阵 117 项 + 报告遗留（DLQ/推荐质量/事务回查）全部闭环
+- 文档未测项清零：ApiVersionFilter 实测通过（v2/v9/无版本均200，非v1记录日志+降级不拒绝）；gateway 06 文档同步
 
 ## 第五轮 混沌工程故障注入（2026-09-08）
 
