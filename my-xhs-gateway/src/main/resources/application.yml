@@ -239,17 +239,14 @@ spring:
             connect-timeout: 1000
             rate-limit-qps: 300      # 实测 ~761 RPS，约40%余量
 
-        # AI 诊断台（Gateway 集成 2026-08-17，与 vite dev 代理语义一致）
-        # 前端 baseURL=/ai-api（src/api/ai.ts），RewritePath 去掉 /ai-api 前缀 → 后端 /api/** 路径
-        # SSE（/api/runs/{id}/stream）31min 超时对齐 AI 后端 SSE_TIMEOUT_MS=31min
-        - id: ai-app-service
-          uri: lb://my-xhs-ai-app
+        # xhs-ai（M1.6：新 AI 服务；JWT 由 GatewayAuthFilter 统一鉴权）
+        # SSE 长连接 31min；后端路径即 /api/ai/**，无需 Rewrite
+        - id: xhs-ai
+          uri: lb://xhs-ai
           predicates:
-            - Path=/ai-api/**
-          filters:
-            - RewritePath=/ai-api/(?<seg>.*), /$\{seg}
+            - Path=/api/ai/**
           metadata:
-            response-timeout: 1860000   # 31min（SSE 长连接，对齐 AI 后端 SSE_TIMEOUT_MS）
+            response-timeout: 1860000   # 31min（SSE 长连接）
             connect-timeout: 3000
             rate-limit-qps: 100
   data:

@@ -38,12 +38,13 @@
 | `docs/design/08-extension-framework-and-ecosystem.md` | 专项：扩展框架 v1/v2 + 生态吸收规划 | ✅ v0.1 |
 | `docs/design/09-feature-driven-ecosystem-adoption.md` | 专项：**功能驱动**的生态采纳（MCP 对标+翻译清单） | ✅ v0.1 |
 
-## 运行状态（2026-09-12）
+## 运行状态（2026-09-12，M1.6 完成）
 
-- 服务：`xhs-ai` 运行于 19020（Spring Boot 3.2.5 / JDK17），health UP，Flyway v1 已应用，JSON 日志入 ELK。
-- 对话：`POST /api/ai/chat`、`POST /api/ai/chat/stream`（siyu-all deepseek-v4-pro）。
-- MCP：Elasticsearch / Prometheus / Grafana 三官方 server 已接入（tools list + call 实测通）。
-- ⚠️ 未闭环（M1.6）：无鉴权、未注册 Nacos/网关（`/api/ai/**`）、危险工具白名单未启用、prometheus-mcp 19081 需绑本机。详见 `docs/reviews/06-deep-review-business-and-jd.md`。
+- 服务：`xhs-ai` 由 systemd 托管（`xhs-ai.service`，Restart=always），19020 health UP，Flyway v1，JSON 日志（含 traceId）入 ELK，`/actuator/prometheus` 可用。
+- 鉴权：平台信任模型（内部令牌/管理令牌/access JWT 覆盖 X-User-Id），未认证 401；入参校验与错误脱敏（GlobalExceptionHandler）。
+- 接入：已注册 Nacos（namespace `my-xhs`），网关路由 `/api/ai/**` → `lb://xhs-ai`（JWT 鉴权，SSE 31min 超时）；旧 `/ai-api/**` 路由与旧 AI 模块已下线。
+- MCP：ES/Prometheus/Grafana 三 server；Prometheus 工具白名单 20 个只读工具（危险工具已禁），web 监听仅 `127.0.0.1:19081`。
+- 下一步：M2.0 业务竖切①（DIAG-08+OPS-01 DLQ 诊断→审批→重投→核验→审计）。详见 `docs/reviews/06-deep-review-business-and-jd.md`。
 
 ## 技术选型（已确认）
 
@@ -71,7 +72,7 @@
 - [x] M1-2 骨架（Application/Actuator/Flyway/Logback JSON）+ 对话/SSE（会话状态/ELK/Prom 待补）
 - [x] M1.5 官方 MCP 接入验证（ES/Prometheus/Grafana tools+call 实测通）
 - [x] RV06 业务贴合度 + JD 对齐深度 Review（P0/P1 清单 + 规划修订 + JD 矩阵 v2）
-- [ ] M1.6 安全与接线（鉴权/工具白名单/Nacos+网关/systemd/旧模块下线）
+- [x] M1.6 安全与接线（鉴权/工具白名单/Nacos+网关/systemd/traceId/旧模块下线）✅ 2026-09-12
 - [ ] M2.0 业务竖切①：DIAG-08+OPS-01 DLQ 诊断→审批→重投→核验→审计
 - [x] P2 需求工程：SLO/STRIDE/追溯矩阵（RQ02）
 - [ ] P2 评审（AC 可测试）

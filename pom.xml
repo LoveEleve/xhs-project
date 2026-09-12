@@ -31,10 +31,7 @@
         <module>my-xhs-payment</module>
         <module>my-xhs-test</module>
         <module>my-xhs-benchmark</module>
-        <module>my-xhs-ai-tools</module>
-        <module>my-xhs-ai-app</module>
-        <module>my-xhs-ai-mcp</module>
-
+        <!-- 旧 AI 模块（my-xhs-ai-app/mcp/tools）已归档只读，不再参与构建（RV06 P0-4） -->
     </modules>
 
     <properties>

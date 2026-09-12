@@ -8,6 +8,9 @@ import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -37,7 +40,7 @@ public class ChatController {
 
     /** 单轮对话（同步） */
     @PostMapping("/chat")
-    public Mono<R<String>> chat(@RequestBody ChatRequest request) {
+    public Mono<R<String>> chat(@Valid @RequestBody ChatRequest request) {
         List<Msg> messages = List.of(new UserMessage(request.message()));
         return chatModel.stream(messages, List.of(), defaultOptions())
                 .timeout(Duration.ofSeconds(120))
@@ -46,13 +49,13 @@ public class ChatController {
                 .map(R::ok)
                 .onErrorResume(e -> {
                     log.error("[AI] 对话失败", e);
-                    return Mono.just(R.fail(500, "模型调用失败: " + e.getMessage()));
+                    return Mono.just(R.fail(500, "模型调用失败，请稍后重试"));
                 });
     }
 
     /** 流式对话（SSE：delta → done） */
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ServerSentEvent<String>> stream(@RequestBody ChatRequest request) {
+    public Flux<ServerSentEvent<String>> stream(@Valid @RequestBody ChatRequest request) {
         List<Msg> messages = List.of(new UserMessage(request.message()));
         return chatModel.stream(messages, List.of(), defaultOptions())
                 .timeout(Duration.ofSeconds(120))
@@ -63,7 +66,7 @@ public class ChatController {
                 .onErrorResume(e -> {
                     log.error("[AI] 流式对话失败", e);
                     return Flux.just(ServerSentEvent.<String>builder()
-                            .event("error").data("{\"message\":\"" + e.getMessage() + "\"}").build());
+                            .event("error").data("{\"message\":\"模型调用失败，请稍后重试\"}").build());
                 });
     }
 
@@ -89,6 +92,9 @@ public class ChatController {
     }
 
     /** 请求体 */
-    public record ChatRequest(String message) {
+    public record ChatRequest(
+            @NotBlank(message = "不能为空")
+            @Size(max = 4000, message = "长度不能超过 4000")
+            String message) {
     }
 }

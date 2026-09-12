@@ -40,7 +40,7 @@ public class McpController {
             return R.ok(mcpClientManager.listTools(name));
         } catch (Exception e) {
             log.error("[MCP] 获取工具清单失败 server={}", name, e);
-            return R.fail(500, "MCP 工具清单获取失败: " + e.getMessage());
+            return R.fail(500, "MCP 工具清单获取失败，请稍后重试");
         }
     }
 
@@ -52,7 +52,7 @@ public class McpController {
             return R.ok(mcpClientManager.callTool(name, tool, arguments));
         } catch (Exception e) {
             log.error("[MCP] 工具调用失败 server={} tool={}", name, tool, e);
-            return R.fail(500, "MCP 工具调用失败: " + e.getMessage());
+            return R.fail(500, "MCP 工具调用失败，请稍后重试");
         }
     }
 }

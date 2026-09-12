@@ -1,0 +1,22 @@
+[Unit]
+Description=xhs-ai — AIOps 诊断与知识问答 Agent (Spring Boot)
+Documentation=file:///data/workspace/xhs-project/xhs-ai/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/data/workspace/xhs-project
+EnvironmentFile=/data/workspace/xhs-project/.secrets/tokens.env
+EnvironmentFile=/data/workspace/xhs-project/.env.local
+ExecStart=/usr/bin/java -Xmx1g -jar /data/workspace/xhs-project/xhs-ai/target/xhs-ai-0.1.0-SNAPSHOT.jar
+SuccessExitStatus=143
+Restart=always
+RestartSec=10
+TimeoutStopSec=45
+# mixed：SIGTERM 主进程（优雅停机），退出时 SIGKILL 其余（MCP 子进程组）
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

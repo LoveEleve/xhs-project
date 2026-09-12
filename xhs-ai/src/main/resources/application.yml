@@ -7,6 +7,12 @@ spring:
     name: xhs-ai
   lifecycle:
     timeout-per-shutdown-phase: 30s
+  cloud:
+    nacos:
+      discovery:
+        enabled: true
+        server-addr: 192.168.0.142:18848
+        namespace: my-xhs
   datasource:
     url: ${MYXHS_AI_DB_URL:jdbc:mysql://192.168.0.142:3306/my_xhs_ai?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
     username: ${MYXHS_AI_DB_USER:myxhs_ai}
@@ -34,6 +40,16 @@ spring:
           max-idle: 8
           min-idle: 2
 
+# 鉴权（平台统一模型：网关 JWT → X-User-Id；内部/管理令牌用于服务间与运维）
+jwt:
+  secret: ${JWT_SECRET:}
+
+myxhs:
+  internal:
+    token: ${INTERNAL_TOKEN:}
+  admin:
+    token: ${ADMIN_TOKEN:}
+
 ai:
   model:
     base-url: ${MYXHS_LLM_BASE_URL:https://siyu.site/v1}
@@ -57,7 +73,20 @@ ai:
         enabled: true
         transport: stdio
         command: /opt/mcp-servers/prometheus-mcp-server
-        args: ["--web.listen-address=:19081"]
+        # 收口：web 监听仅本机；工具白名单只放只读（core 工具恒载：query/range_query/label_*/series/metric_metadata/docs_*）
+        args:
+          - "--web.listen-address=127.0.0.1:19081"
+          - "--mcp.tools=healthy"
+          - "--mcp.tools=ready"
+          - "--mcp.tools=list_targets"
+          - "--mcp.tools=list_alerts"
+          - "--mcp.tools=list_rules"
+          - "--mcp.tools=alertmanagers"
+          - "--mcp.tools=build_info"
+          - "--mcp.tools=config"
+          - "--mcp.tools=flags"
+          - "--mcp.tools=runtime_info"
+          - "--mcp.tools=exemplar_query"
         env:
           PROMETHEUS_MCP_SERVER_PROMETHEUS_URL: ${MYXHS_PROM_URL:}
       grafana:
@@ -72,21 +101,15 @@ ai:
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
-  global-config:
-    banner: false
-    db-config:
-      logic-delete-field: deleted
-      logic-delete-value: 1
-      logic-not-delete-value: 0
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,prometheus,metrics
+        include: health,info,prometheus
   endpoint:
     health:
-      show-details: always
+      show-details: never
   metrics:
     tags:
       application: xhs-ai

@@ -62,10 +62,13 @@ health_up() { # $1=port
   curl -sf --max-time 2 "http://127.0.0.1:$1/actuator/health" >/dev/null 2>&1
 }
 
-# xhs-ai（需要 tokens.env + .env.local；过滤注释行）
+# xhs-ai（优先 systemd 管理；回退：tokens.env + .env.local，过滤注释行）
 start_xhs_ai() {
   local port=19020
   if ss -lnt 2>/dev/null | grep -q ":$port "; then echo "xhs-ai already on :$port"; return 0; fi
+  if systemctl list-unit-files 2>/dev/null | grep -q '^xhs-ai\.service'; then
+    systemctl start xhs-ai 2>/dev/null && echo "started xhs-ai via systemd (:$port)" && return 0
+  fi
   local jar="$REPO/xhs-ai/target/xhs-ai-0.1.0-SNAPSHOT.jar"
   [ -f "$jar" ] || { echo "WARN: xhs-ai jar missing"; return 1; }
   local envs
