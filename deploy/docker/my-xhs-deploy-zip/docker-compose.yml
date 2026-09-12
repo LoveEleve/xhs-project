@@ -418,8 +418,8 @@ services:
       "
     deploy:
       resources:
-        limits: { cpus: '0.5', memory: 2048m }
-        reservations: { cpus: '0.25', memory: 1024m }
+        limits: { cpus: '2', memory: 2048m }
+        reservations: { cpus: '0.5', memory: 1024m }
     healthcheck:
       test: ["CMD-SHELL", "curl -s -u elastic:Xhs@2026#Elastic http://127.0.0.1:19200/_cluster/health?local=true | grep -q 'green\\|yellow'"]
       interval: 30s

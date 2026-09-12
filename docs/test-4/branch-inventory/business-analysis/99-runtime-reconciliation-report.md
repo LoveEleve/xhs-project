@@ -205,6 +205,30 @@ TraceId 端到端断言、SSE 实时推送、WS 消息路由、推荐质量（�
 - **修复**：堆积量 = `maxOffset - minOffset`（DLQ 无消费者，队列内全部消息即积压）
 - **验证**：修复后 gauge `counter-consumer-group=1.0`、`inventory-order-transaction-consumer-group=4.0`，与 topicStatus 一致
 
+## 性能压测与容量基线（2026-09-12）
+
+**方法**：wrk 直连服务端口（读接口无 AOP 限流）、c20/c50 × 20s；网关侧按路由 Sentinel QPS 限流（10~300）为端到端保护，e2e 实测超限返回非 2xx（~11k RPS 请求几乎全被拒）。
+
+| 场景 | 并发 | RPS | P50 | P99 | 备注 |
+|---|---|---|---|---|---|
+| product/spu/1 | c20 | 1020 | 19.6ms | 60ms | 缓存+布隆 |
+| note/detail | c20 | 1096 | 18.4ms | 93ms | Redis/DB |
+| home/feed | c20 | 764 | 26ms | 81ms | 2层并行聚合 |
+| recommend/feed | c20 | 688 → **761** | 26ms | 54→65ms | 修复前20个socket超时→修复后0 |
+| search/note | c20 | **175 → 683** | 115→**29ms** | 313→96ms | 见下瓶颈 |
+| search/note | c50 | **720** | 69ms | 150ms | 2核配额下 |
+
+**瓶颈定位（ES）**：
+- ES 服务端查询平均 0.88ms、profile 各 shard 执行 0ms，但压测时 P50 115ms
+- `docker stats` 显示 ES 容器 CPU 钉在 **50.67% = 0.5 核配额上限**（NanoCpus=500000000，compose limits 0.5）；主机 CPU 仅 13% 空闲充足 → **CPU 配额节流**而非查询实现问题
+- 认证排查：basic-auth 请求 `_cluster/health` 仅 1ms，非认证开销；highlight 偶发 3ms↔80ms 方差
+
+**修复与验证**：ES 配额 0.5→2 核（`docker update --cpus=2` 热更新 + compose 持久化）后：
+- search：175→**683 RPS（3.9x）**，P50 115→29ms，P99 313→96ms；c50 达 720 RPS
+- recommend 超时从 20 个降为 0，RPS 688→761
+
+**建议**：ES 保持 ≥2 核；网关限流阈值可按实测容量校准；热点关键词可考虑 ES request_cache；note_index 3 分片/14 文档有过度分片（非当前瓶颈）。
+
 ## 经验
 
 运行态复核发现了源码分析 + 单测无法覆盖的问题：topic/job/schema/启动时序/跨模块消息契约/
