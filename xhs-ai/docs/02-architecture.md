@@ -130,6 +130,7 @@ com.myxhs.ai
 | 20 | **容量/磁盘约束**：AI 组件新增 4-6GB 磁盘，依赖 65G 扩容；不足时降级（限知识/jdtls/自托管 Langfuse 可选） | D07 §2 | 立即全量 AI 组件 |
 | 21 | **扩展框架两代**：v1 Java SPI（声明式零信任）+ v2 出进程 Sidecar（借鉴 Reasonix v2 协议）；**禁止 in-process full-trust** | D08 §2 | 直接引第三方代码插件 |
 | 22 | **生态吸收治理**：catalog+SHA pin+人工评审+CI 校验+安装≠启用+provenance；吸收优先级 设计>MCP>Skill>Sidecar | D08 §4 | 无治理直接吸收 |
+| 23 | **MCP 提升为一等公民（v1.5）**：优先接官方 ES/Prometheus/Grafana MCP；数据库改为**受控只读查询**（AST校验+READ ONLY 事务+只读账号+行数/超时+脱敏+审计），替代"禁止 SQL" | D09 §3（功能对标发现） | 继续全自研工具层 |
 
 ## 6. 集成点（v0.2 增量）
 

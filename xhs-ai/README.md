@@ -33,6 +33,7 @@
 | `docs/design/06-failure-modes-fmea.md` | 专项：FMEA 失败模式（检测/降级/恢复/演练） | ✅ v0.1 |
 | `docs/design/07-capacity-cost-model.md` | 专项：容量与成本模型（量化+阈值+局限） | ✅ v0.1 |
 | `docs/design/08-extension-framework-and-ecosystem.md` | 专项：扩展框架 v1/v2 + 生态吸收规划 | ✅ v0.1 |
+| `docs/design/09-feature-driven-ecosystem-adoption.md` | 专项：**功能驱动**的生态采纳（MCP 对标+翻译清单） | ✅ v0.1 |
 
 ## 技术选型（已确认）
 
@@ -61,7 +62,8 @@
 - [x] P2 需求工程：SLO/STRIDE/追溯矩阵（RQ02）
 - [ ] P2 评审（AC 可测试）
 - [x] P3 架构 v0.2（折叠全部采纳项）
-- [x] P3 专项设计 8/8（+ 扩展框架与生态吸收）
+- [x] P3 专项设计 9/9（+ 功能驱动生态采纳）
+- [ ] M1.5 官方 MCP 接入验证（ES/Prometheus/Grafana）
 - [x] 多副本 HITL 跨实例恢复设计（D02 §10）
 - [ ] 架构设计评审（02）
 - [ ] 测试设计评审（03）
