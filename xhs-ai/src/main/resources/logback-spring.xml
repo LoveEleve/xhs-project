@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- 日志目录：与 filebeat 采集路径一致（/logs/*.json） -->
+    <property name="LOG_HOME" value="${LOG_HOME:-/logs}"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level [%X{traceId:-}] %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- JSON 日志 → /logs/xhs-ai.json（Filebeat → Logstash → ES） -->
+    <appender name="JSON_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_HOME}/xhs-ai.json</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_HOME}/xhs-ai.%d{yyyy-MM-dd}.%i.json.gz</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
+            <maxHistory>7</maxHistory>
+            <totalSizeCap>2GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder class="net.logstash.logback.encoder.LoggingEventCompositeJsonEncoder">
+            <providers>
+                <timestamp>
+                    <timeZone>Asia/Shanghai</timeZone>
+                </timestamp>
+                <logLevel/>
+                <loggerName/>
+                <threadName/>
+                <message/>
+                <stackTrace>
+                    <fieldName>stack_trace</fieldName>
+                </stackTrace>
+                <mdc/>
+                <pattern>
+                    <pattern>{"APP_NAME":"xhs-ai","log_source":"xhs-ai"}</pattern>
+                </pattern>
+            </providers>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="JSON_FILE"/>
+    </root>
+</configuration>

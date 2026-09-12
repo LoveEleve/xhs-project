@@ -62,20 +62,35 @@ health_up() { # $1=port
   curl -sf --max-time 2 "http://127.0.0.1:$1/actuator/health" >/dev/null 2>&1
 }
 
+# xhs-ai（需要 tokens.env + .env.local；过滤注释行）
+start_xhs_ai() {
+  local port=19020
+  if ss -lnt 2>/dev/null | grep -q ":$port "; then echo "xhs-ai already on :$port"; return 0; fi
+  local jar="$REPO/xhs-ai/target/xhs-ai-0.1.0-SNAPSHOT.jar"
+  [ -f "$jar" ] || { echo "WARN: xhs-ai jar missing"; return 1; }
+  local envs
+  envs="$(tr '\n' ' ' <"$TOKENS_FILE") $(grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$REPO/.env.local" | tr '\n' ' ')"
+  setsid -f env $envs java -Xmx1g -jar "$jar" > /tmp/xhs-ai.log 2>&1 </dev/null
+  echo "started xhs-ai (:$port)"
+}
+
 # 首轮：启动未监听服务
 for entry in $SERVICES; do start_svc "${entry%%:*}" "${entry##*:}"; done
+start_xhs_ai
 
 # 重试轮：最多 6 轮 × 30s；未监听的重启，直到 15/15 健康
 for round in 1 2 3 4 5 6; do
   sleep 30
   UP=0
   for entry in $SERVICES; do health_up "${entry##*:}" && UP=$((UP + 1)); done
-  echo "round $round health: $UP/15"
-  [ "$UP" -ge 15 ] && break
+  health_up 19020 && UP=$((UP + 1))
+  echo "round $round health: $UP/16 (incl. xhs-ai)"
+  [ "$UP" -ge 16 ] && break
   for entry in $SERVICES; do
     m="${entry%%:*}"; p="${entry##*:}"
     health_up "$p" || start_svc "$m" "$p"
   done
+  health_up 19020 || start_xhs_ai
 done
 
 echo "===== $(date '+%F %T') boot-selfheal done ====="
