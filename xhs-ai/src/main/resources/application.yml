@@ -5,6 +5,9 @@ server:
 spring:
   application:
     name: xhs-ai
+  mvc:
+    async:
+      request-timeout: 300000
   lifecycle:
     timeout-per-shutdown-phase: 30s
   cloud:
@@ -55,6 +58,9 @@ ai:
     base-url: ${MYXHS_LLM_BASE_URL:https://siyu.site/v1}
     api-key: ${MYXHS_LLM_API_KEY:}
     name: ${MYXHS_LLM_MODEL:deepseek-v4-pro}
+  mq:
+    namesrv-addr: ${MYXHS_MQ_NAMESRV:127.0.0.1:9876}
+    admin-timeout-ms: 5000
   mcp:
     servers:
       elasticsearch:

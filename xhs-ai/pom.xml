@@ -94,6 +94,11 @@
                 <artifactId>jedis</artifactId>
                 <version>7.4.1</version>
             </dependency>
+            <dependency>
+                <groupId>com.google.guava</groupId>
+                <artifactId>guava</artifactId>
+                <version>31.1-jre</version>
+            </dependency>
             <!-- okhttp/okio：Spring Boot BOM 托管 4.12.0，会与 AgentScope 的 5.3.2 产生双重实现 -->
             <dependency>
                 <groupId>com.squareup.okhttp3</groupId>
@@ -151,6 +156,32 @@
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+        <!-- RocketMQ Admin（M2.0 DLQ 诊断/重投） -->
+        <dependency>
+            <groupId>org.apache.rocketmq</groupId>
+            <artifactId>rocketmq-tools</artifactId>
+            <version>5.1.4</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>ch.qos.logback</groupId>
+                    <artifactId>logback-classic</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-log4j12</artifactId>
+                </exclusion>
+                <!-- 与 spring-jcl 重复（commons-validator 传递） -->
+                <exclusion>
+                    <groupId>commons-logging</groupId>
+                    <artifactId>commons-logging</artifactId>
+                </exclusion>
+                <!-- aliyunmq logback 桥与 slf4j-api 重复 shaded 类：保留 API，去掉 logback 绑定 -->
+                <exclusion>
+                    <groupId>io.github.aliyunmq</groupId>
+                    <artifactId>rocketmq-logback-classic</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

@@ -25,6 +25,7 @@
 | `docs/reviews/05-consistency-and-mcp-risks.md` | RV05：一致性修正 9 处 + MCP 工具膨胀风险 | ✅ 2026-09-12 |
 | `docs/reviews/06-deep-review-business-and-jd.md` | **RV06：业务贴合度 + JD 对齐深度 Review（P0/P1 清单 + 规划修订）** | ✅ 2026-09-12 |
 | `docs/reviews/07-jd-hit-matrix-v2.md` | JD 命中矩阵 v2（18 份 JD × xhs-ai v2 现状） | ✅ 2026-09-12 |
+| `docs/reports/m2.0-dlq-e2e.md` | **M2.0 业务竖切① E2E 记录（DLQ 诊断→审批→重投→核验→审计）** | ✅ 2026-09-12 |
 | `docs/requirements/01-scenario-library.md` | 业务场景库（34 场景 + REQ 编号 + 证据形态） | ✅ v0.2 |
 | `docs/requirements/02-nfr-slo-threatmodel.md` | 量化 SLO + STRIDE 威胁模型 + REQ↔AC↔TC | ✅ v0.1 |
 | `docs/requirements/03-legacy-asset-governance.md` | R05 旧资产治理清单与入库白名单 | ✅ v0.1 |
@@ -38,13 +39,13 @@
 | `docs/design/08-extension-framework-and-ecosystem.md` | 专项：扩展框架 v1/v2 + 生态吸收规划 | ✅ v0.1 |
 | `docs/design/09-feature-driven-ecosystem-adoption.md` | 专项：**功能驱动**的生态采纳（MCP 对标+翻译清单） | ✅ v0.1 |
 
-## 运行状态（2026-09-12，M1.6 完成）
+## 运行状态（2026-09-12，M1.6 + M2.0 完成）
 
-- 服务：`xhs-ai` 由 systemd 托管（`xhs-ai.service`，Restart=always），19020 health UP，Flyway v1，JSON 日志（含 traceId）入 ELK，`/actuator/prometheus` 可用。
-- 鉴权：平台信任模型（内部令牌/管理令牌/access JWT 覆盖 X-User-Id），未认证 401；入参校验与错误脱敏（GlobalExceptionHandler）。
-- 接入：已注册 Nacos（namespace `my-xhs`），网关路由 `/api/ai/**` → `lb://xhs-ai`（JWT 鉴权，SSE 31min 超时）；旧 `/ai-api/**` 路由与旧 AI 模块已下线。
-- MCP：ES/Prometheus/Grafana 三 server；Prometheus 工具白名单 20 个只读工具（危险工具已禁），web 监听仅 `127.0.0.1:19081`。
-- 下一步：M2.0 业务竖切①（DIAG-08+OPS-01 DLQ 诊断→审批→重投→核验→审计）。详见 `docs/reviews/06-deep-review-business-and-jd.md`。
+- 服务：`xhs-ai` 由 systemd 托管（`xhs-ai.service`，Restart=always），19020 health UP，Flyway v1，JSON 日志（含 traceId）入 ELK，`/actuator/prometheus` 可用；Nacos 注册 + 网关 `/api/ai/**` JWT 路由（SSE 31min）。
+- 鉴权：平台信任模型（内部/管理令牌/access JWT 覆盖 X-User-Id），未认证 401；入参校验与错误脱敏。
+- MCP：ES/Prometheus/Grafana 三 server；Prometheus 20 个只读工具白名单，19081 仅本机。
+- **M2.0 业务竖切①**：DLQ 诊断→审批→重投→核验→审计端到端跑通（Agent 自主编排 3 自研工具 + MCP；未审批不执行；审批后自动 effect+settlement；`ai_audit/ai_approval/ai_message` 全程落库）。证据：`docs/reports/m2.0-dlq-e2e.md`。
+- 下一步：M2.x（审批超时 fail-closed + 跨实例恢复、消费位点核验、工具集预算）、M3 知识库与案例卡。
 
 ## 技术选型（已确认）
 
@@ -73,7 +74,7 @@
 - [x] M1.5 官方 MCP 接入验证（ES/Prometheus/Grafana tools+call 实测通）
 - [x] RV06 业务贴合度 + JD 对齐深度 Review（P0/P1 清单 + 规划修订 + JD 矩阵 v2）
 - [x] M1.6 安全与接线（鉴权/工具白名单/Nacos+网关/systemd/traceId/旧模块下线）✅ 2026-09-12
-- [ ] M2.0 业务竖切①：DIAG-08+OPS-01 DLQ 诊断→审批→重投→核验→审计
+- [x] M2.0 业务竖切①：DIAG-08+OPS-01 DLQ 诊断→审批→重投→核验→审计 ✅ 2026-09-12（E2E 见 docs/reports/m2.0-dlq-e2e.md）
 - [x] P2 需求工程：SLO/STRIDE/追溯矩阵（RQ02）
 - [ ] P2 评审（AC 可测试）
 - [x] P3 架构 v0.2（折叠全部采纳项）

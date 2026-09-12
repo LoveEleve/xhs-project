@@ -111,7 +111,7 @@ M1 骨架 ✅（对话/SSE/Flyway/JSON 日志→ELK/自愈）、M1.5 MCP ✅（E
 | M1 骨架 | Spring Boot + AgentScope 接入、对话/SSE | ✅ 2026-09-12 |
 | M1.5 MCP | ES/Prometheus/Grafana 官方 MCP tools+call | ✅ 2026-09-12 |
 | **M1.6 安全与接线（新）** | 鉴权/工具白名单/19081 收口/Nacos+`/api/ai/**`/旧模块路由下线/systemd/端口收口 | ✅ 2026-09-12 |
-| **M2.0 业务竖切①（新）** | DIAG-08+OPS-01：DLQ 积压诊断→审批→重投→核验→审计，端到端（会话+工具编排+traceId+审计+HITL+1 EVAL） | 待开始（P0） |
+| **M2.0 业务竖切①（新）** | DIAG-08+OPS-01：DLQ 积压诊断→审批→重投→核验→审计，端到端（会话+工具编排+traceId+审计+HITL+1 EVAL） | ✅ 2026-09-12（E2E；EVAL harness 在 M4，见 reports/m2.0-dlq-e2e.md） |
 | M2 诊断横向 | DIAG P0 清单铺开，每场景配 1 EVAL；7 张真实案例卡入库 | 调整 |
 | M3 知识 | RAG + 代码检索 + 三层知识入库 + 案例库 | 保持 |
 | M4 治理与评测 | 评测集 50+、压测、MTTR 对照、红队、FMEA 18 项演练 | 保持 |
