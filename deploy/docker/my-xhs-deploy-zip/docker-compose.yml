@@ -702,12 +702,13 @@ services:
       - --path.sysfs=/host/sys
       - --path.rootfs=/rootfs
       - --collector.textfile.directory=/textfile
+      - --web.listen-address=:9101
     deploy:
       resources:
         limits: { cpus: '0.1', memory: 128m }
         reservations: { cpus: '0.05', memory: 64m }
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9100/ || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9101/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -852,6 +853,7 @@ services:
     command: >
       --config.file=/etc/prometheus/prometheus.yml
       --web.listen-address=:19090
+      --web.enable-lifecycle
       --storage.tsdb.path=/prometheus
       --storage.tsdb.retention.time=15d
     deploy:
@@ -963,7 +965,7 @@ services:
     command: ["filebeat", "run", "-e", "--strict.perms=false", "-c", "/usr/share/filebeat/filebeat.yml"]
     volumes:
       - ./config/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
-      - /logs:/logs:ro
+      - /data2/logs:/logs:ro
     depends_on:
       logstash:
         condition: service_started
