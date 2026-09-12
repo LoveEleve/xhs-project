@@ -57,7 +57,7 @@
 4. **脱敏**：旧文档含云主机 IP（如 21.130.247.89）、账号/密码示例 → 删除或打码
 5. **时效**：`source_date` 早于关键修复（2026-09-12）的卡片，需比对当前代码后标注 `verified_at`
 6. **改写**：B 级叙述文档提炼为统一卡片（标题/结论/证据/相关代码/相关 topic）
-7. **入库**：文档层（architecture/business）+ 代码层（code-map）分别入 ES `xhs_ai_knowledge`，带 `layer` 过滤字段
+7. **入库**：文档层（architecture/business）+ 代码层（code-map）入 ES `xhs_ai_knowledge`（v1 词法/元数据；向量评测触发后再加），带 `layer` 过滤字段；同步重建 `catalog.yaml`
 
 ## 5. 与知识三层的映射 & 规模
 

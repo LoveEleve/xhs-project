@@ -12,7 +12,7 @@
 │               Skills(GitSkillRepository)  Compaction  Plan(v1.5)  SubAgent(v1.5)      │
 │ 执行层        PolicyEngine(有序规则) │ ApprovalService(状态机) │ ToolRunner(契约)        │
 │ Tools 层      health/log/metric/trace/dlq/xxljob · code(LSP+Git) · knowledge · mcp    │
-│ Knowledge 层  入库管道 → 分块 → Ark embedding → ES(dense_vector+BM25)  │ LSP(jdtls)   │
+│ Knowledge 层  卡片治理 → catalog → ES(BM25+元数据) │ 向量按评测可选   │ 代码导航(轻量) │
 │ Memory 层     Redis(Sentinel) DistributedStore: AgentState + Remote workspace 文件    │
 │ Query 层      会话/审计统一查询（模型工具 + 导出）                                       │
 │ Observability Capture(metadata/sanitized/full) + OTLP→Langfuse + 成本/工具指标        │
@@ -51,7 +51,7 @@ pending → approved(once) | approved(always→写会话授权+批量放行同�
 - 变更动作只经 `ApprovalService` 的 settlement 执行；审计只追加
 
 ### 2.6 知识入库（双轨）
-- 文档轨：`docs/`/旧知识资产（治理后）→ 分块 → Ark embedding → ES 混合检索
+- 文档轨：`docs/`/旧知识资产（治理后）→ 三层卡片+catalog → ES BM25/元数据（向量评测触发后再加）
 - 代码轨：**LSP(jdtls) 精确导航 + JGit blame/历史**（G17）
 - 引用校验：回答引用必须能回链（文件/行/方法存在）
 
@@ -110,7 +110,7 @@ com.myxhs.ai
 |---|------|------|------|
 | 1 | AgentScope 2.0 Java（HarnessAgent） | 内置 Harness/HITL/分布式状态；生态贴合 | Spring AI、LangChain4j、Python |
 | 2 | Redis(Sentinel) DistributedStore 管状态+BaseStore | 多副本 CAS；MySQL 仅业务表 | MysqlAgentStateStore |
-| 3 | ES dense_vector + BM25 混合检索 | 复用 ES；免新组件 | 独立向量库 |
+| 3 | **结构化知识卡 + BM25/元数据检索为 v1**；dense_vector 混合检索为评测触发项（止损：无 ≥5% 提升即删除） | 语料小/标识符多/低 QPS；避免为简历堆管线（RV09） | 默认全量 embedding+向量库 |
 | 4 | SSE 流式（30 AgentEvent 映射） | 与现有 SSE 体验一致 | WebSocket |
 | 5 | HITL：框架 PermissionEngine + **自持久化审批状态机** | 在途由框架、可追溯/多实例恢复由 DB | 纯自研 |
 | 6 | v1 不启用沙箱（工具全 HTTP） | 无不可信代码执行 | Docker 沙箱（v2） |
@@ -124,7 +124,7 @@ com.myxhs.ai
 | 14 | **会话/审计统一查询 + 模型工具 + 导出** | G19 | 仅 DB 查询接口 |
 | 15 | **Guard 循环卫生**：重复提醒 + 工具超时策略 | G16 | 无 |
 | 16 | **AgentState 持久性**：Redis(Sentinel)+AOF everysec；RPO≤1s / RTO≤30s；写失败 fail-closed | F5/F6：可接受短暂不可用，拒绝状态分叉 | MySQL 权威 + Redis 缓存 |
-| 17 | **向量存储分阶段**：v1 ES(knn) ≤2 万 chunk；>5 万或 P95>300ms 迁专用向量库 | D07 量化：ES heap 512MB→1GB，迁移阈值明确 | Milvus/pgvector 起步 |
+| 17 | **向量存储分阶段（评测触发才启用）**：启用后 ES(knn) ≤2 万 chunk；>5 万或 P95>300ms 迁专用向量库 | D07 量化 + RV09 止损规则 | Milvus/pgvector 起步 |
 | 18 | **代码导航分阶段**：v1 tree-sitter/JavaParser+JGit；v1.1 上 jdtls（资源约束） | jdtls 1.2-1.5GB；磁盘/内存紧张时可降级 | 纯 jdtls v1 |
 | 19 | **模型网关自研薄层**（Java 内嵌；预算/审计/缓存/降级深度耦合）；上游 OpenAI 兼容，可替换为 LiteLLM/OneAPI | 避免额外组件；边界=OpenAI API | 直接引入开源网关 |
 | 20 | **容量/磁盘约束**：AI 组件新增 4-6GB 磁盘，依赖 65G 扩容；不足时降级（限知识/jdtls/自托管 Langfuse 可选） | D07 §2 | 立即全量 AI 组件 |
