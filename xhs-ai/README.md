@@ -22,6 +22,7 @@
 | `docs/reviews/02-code-level-agent-references.md` | 5 个 Agent 项目**代码级** Review（8 项设计增量 DELTA） | ✅ 2026-09-12 |
 | `docs/reviews/03-plugin-ecosystem-mapping.md` | 插件生态映射 + 二轮缺口（G15-G20） | ✅ 2026-09-12 |
 | `docs/reviews/04-engineering-gap-review.md` | **工程缺口 Review（30+ 项，P0 12 项）** | ✅ 2026-09-12 |
+| `docs/reviews/05-consistency-and-mcp-risks.md` | RV05：一致性修正 9 处 + MCP 工具膨胀风险 | ✅ 2026-09-12 |
 | `docs/requirements/01-scenario-library.md` | 业务场景库（28 场景 + REQ 编号 + 证据形态） | ✅ v0.1 |
 | `docs/requirements/02-nfr-slo-threatmodel.md` | 量化 SLO + STRIDE 威胁模型 + REQ↔AC↔TC | ✅ v0.1 |
 | `docs/requirements/03-legacy-asset-governance.md` | R05 旧资产治理清单与入库白名单 | ✅ v0.1 |
@@ -63,6 +64,7 @@
 - [ ] P2 评审（AC 可测试）
 - [x] P3 架构 v0.2（折叠全部采纳项）
 - [x] P3 专项设计 9/9（+ 功能驱动生态采纳）
+- [x] RV05 一致性查漏补缺（9 处修正 + 工具集膨胀设计）
 - [ ] M1.5 官方 MCP 接入验证（ES/Prometheus/Grafana）
 - [x] 多副本 HITL 跨实例恢复设计（D02 §10）
 - [ ] 架构设计评审（02）

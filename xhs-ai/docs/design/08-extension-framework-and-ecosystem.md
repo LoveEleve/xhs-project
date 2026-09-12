@@ -67,11 +67,11 @@
 
 ## 4. 治理与安全（吸收生态的前置条件）
 
-1. **供应链**：catalog SHA pin（≥2 周成熟期）+ 人工评审 + CI 在 pin commit 校验 + removed 黑名单 + provenance 记录
+1. **供应链**：catalog SHA pin（≥2 周成熟期）+ 人工评审 + CI 在 pin commit 校验 + removed 黑名单 + provenance 记录；**MCP server 同样纳入**（npm 精确版本 / 镜像 digest pin）
 2. **权限**：安装≠启用；启用需能力确认（tools/hooks/网络/文件/凭据）；组织策略可强制 deny
 3. **隔离**：v1 仅声明式（无代码）；v2 代码扩展必须出进程 + 资源限额 + 网络白名单；**永不复刻 in-process full-trust**
 4. **数据**：扩展出网内容过脱敏管道（D03）；审计记录扩展 id/来源/pin
-5. **许可**：吸收设计不受限；直接复用代码需逐一审许可（暂定：只吸收设计，不复制代码）
+5. **许可**：以**翻译重写**为主（功能合适即翻译，见 D09）；如需复用代码片段，保留版权声明并记录许可（MIT/Apache 可用；GPL/AGPL 隔离或避免）；Grafana MCP 许可待法务确认
 
 ## 5. 路线图与验收
 
