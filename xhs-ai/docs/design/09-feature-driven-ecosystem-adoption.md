@@ -25,7 +25,7 @@
 | 上下文膨胀/成本 | `Dynamic Context Pruning`（工具结果剪枝）、`Tokenscope`/`Context Analysis`（token/成本分析）、`snip`（命令输出裁剪 60-90%） | 活跃 | **翻译为策略**（工具结果剪枝阈值/成本看板） | M2 |
 | 密钥泄漏防护 | `VibeGuard`（secret→占位符，调用后还原）、`EnvSitter`（.env 只读指纹） | 活跃 | **翻译为脱敏管道增强 + 工作区保护规则** | M3 |
 | 危险操作拦截 | `CC Safety Net`（危险 git/fs 命令）、`guardme`（deny-first 护栏）、pi `permission-gate/protected-paths` | 活跃 | 翻译为 **PolicyEngine 默认规则包** | M2 |
-| 代码检索/RAG | `OpenCodeRAG`（tree-sitter 分块 + LanceDB）；Context7 MCP（官方文档） | 活跃 | 借鉴分块器；Context7 可挂 MCP | M3 |
+| 代码检索 | `OpenCodeRAG`（tree-sitter 分块 + LanceDB）；Context7 MCP（官方文档） | 活跃 | **不采纳向量/分块**（代码走 grep/AST/JGit，RV09）；Context7 可挂 MCP 作文档检索 | M3 |
 | 记忆 | `Agent Memory`/`Honcho`/`Supermemory`/`mem0`（MCP） | 活跃 | v2 评估（AgentScope memory 为主） | v2 |
 | 子代理/编排 | `Background Agents`、`oh-my-opencode`、`CrewBee`、`FlowDeck`（25 agent 四阶段） | 活跃 | v2 评估（AgentScope subagent 为主） | v2 |
 | 调度/通知 | `opencode-scheduler`（systemd/launchd）、`opencode-notify` | 活跃 | 借鉴；我们已有 XXL-Job/自愈 | M3 |

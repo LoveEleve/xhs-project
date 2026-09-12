@@ -67,7 +67,7 @@ public class AgentController {
                 .timeout(Duration.ofSeconds(300))
                 .flatMap(event -> Flux.fromIterable(toSse(event, finalText)))
                 .concatWith(Mono.just(sse("done", "{\"sessionId\":\"" + sessionId + "\"}")))
-                .doOnComplete(() -> agentService.recordAssistant(sessionId, uid, finalText.toString(), traceId))
+                .doFinally(signal -> agentService.recordAssistant(sessionId, uid, finalText.toString(), traceId))
                 .onErrorResume(e -> {
                     log.error("[Agent] stream 失败", e);
                     return Flux.just(sse("error", "{\"message\":\"Agent 执行失败，请稍后重试\"}"));
@@ -167,6 +167,8 @@ public class AgentController {
     }
 
     public record AgentChatRequest(
+            @Size(max = 128, message = "长度不能超过 128")
+            @jakarta.validation.constraints.Pattern(regexp = "^[A-Za-z0-9_-]*$", message = "格式非法")
             String sessionId,
             @NotBlank(message = "不能为空")
             @Size(max = 4000, message = "长度不能超过 4000")

@@ -60,7 +60,7 @@
 | **EnvSitter**（.env 防泄漏：只读指纹） | 设计吸收 | 工作区保护规则 + 红队用例 | M3 |
 | **Safety Net / permission-gate / protected-paths**（危险操作拦截） | 设计吸收 | PolicyEngine 规则集（D02）+ 默认规则包 | M2 |
 | **git-checkpoint / custom-compaction**（pi 示例） | 设计吸收 | 会话检查点（变更前快照）+ 压缩策略可插拔 | M3 |
-| **MCP（Context7 等）** | 直接使用（白名单） | MCP Bridge（D05，v1 预留 v2 启用） | M4 |
+| **MCP（Context7 等）** | 直接使用（白名单；M1.5 已启用） | Sidecar 协议 v2 | M4 |
 | **hermes catalog/index/tap** | 设计吸收 | Catalog+Taps（§2.3） | M3 |
 | **Reasonix 兼容层（Claude/Codex manifest）** | 设计吸收 | 扩展清单兼容：预留 `compat` 字段，不立即实现 | v2 |
 | memory 插件（Honcho/Supermemory/mem0） | 观察（v2 评估） | AgentScope memory 为主，评测后再决定 | v2 |
@@ -79,7 +79,7 @@
 |--------|------|------|
 | M2 | 内部扩展框架 v1（SPI+清单+CI 校验+disposer）+ 默认策略规则包 | 注册/卸载零残留；声明=注册 CI 绿；策略矩阵单测 |
 | M3 | Catalog+Taps（技能与工具）+ VibeGuard/EnvSitter/Checkpoint 机制 | tap 安装/校验/回滚；红队含 .env/密钥场景 |
-| M4 | Sidecar 协议 v2（Java SDK）+ MCP Bridge 启用 + 生态评估流程 | 握手能力子集校验；kill sidecar 不影响主流程；季度评估报告 |
+| M4 | Sidecar 协议 v2（Java SDK）+ 生态评估流程（MCP 已于 M1.5 启用） | 握手能力子集校验；kill sidecar 不影响主流程；季度评估报告 |
 | v2 | 内部 marketplace（UI/CLI）+ 兼容层（Claude/Codex manifest 可选） | 预览/安装/启用/审计闭环 |
 
 ## 6. 对现有设计的修订（ADR 增量）

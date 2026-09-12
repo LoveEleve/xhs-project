@@ -4,7 +4,7 @@
 
 ## 1. 范围
 
-- 管：LLM（chat/streaming）+ Embedding 调用的统一入口与策略
+- 管：LLM（chat/streaming）；Embedding 为评测触发实验（v1 不启用）
 - 不管：Agent 推理循环（AgentScope 负责）、提示词内容治理（见 D03/Skill 层）
 
 ## 2. 分层
@@ -19,7 +19,7 @@ AgentScope Model 抽象（OpenAIChatModel.baseUrl 指向网关）
 └─────┬──────────────────────────────────────────┘
       ▼
 siyu-all(主)  →  DeepSeek 官方(备)  →  私有 vLLM(可选)
-Ark Embedding（独立通道：批量/限流/降级 BM25）
+Ark Embedding（实验通道：仅向量实验启用后接入）
 ```
 
 ## 3. 路由策略（任务分级）
@@ -28,7 +28,7 @@ Ark Embedding（独立通道：批量/限流/降级 BM25）
 |------|------|------|
 | 诊断推理 / 知识问答（主链路） | `deepseek-v4-pro` | 需要推理与工具调用 |
 | 摘要 / 分块打标 / 意图分类 / 引用校验 | `deepseek-v4-flash` | 成本敏感、批量 |
-| Embedding | `doubao-embedding-vision-large`（2048d） | 知识入库/检索 |
+| Embedding | `doubao-embedding-vision-large`（2048d） | 向量实验（评测触发） |
 | 降级链 | pro → flash → **只读检索模式**（不生成，仅返回查询结果与引用） | 网关故障时保底可用 |
 
 - reasoning 模型适配：`reasoning_content` 与最终 `content` 分离处理；`max_tokens` 需覆盖 reasoning + answer

@@ -92,7 +92,7 @@
 | 依赖 | 配置项 | 状态 |
 |------|--------|------|
 | LLM（siyu-all） | `MYXHS_LLM_BASE_URL=https://siyu.site/v1`、`MYXHS_LLM_API_KEY`、`MYXHS_LLM_MODEL=deepseek-v4-pro` | ✅ 已验证可用 |
-| Embedding（火山方舟） | `ARK_PLAN_BASE_URL`、`ARK_PLAN_API_KEY`、`ARK_EMBEDDING_MODEL=doubao-embedding-vision-large` | ✅ 已验证（2048 维） |
+| Embedding（火山方舟，实验路径） | `ARK_PLAN_BASE_URL`、`ARK_PLAN_API_KEY`、`ARK_EMBEDDING_MODEL=doubao-embedding-vision-large` | ✅ Key/维度已验证；v1 不使用（D12/RV09） |
 | MySQL | `MYXHS_DB_URL/USER/PASSWORD`（只读）；`MYXHS_AI_DB_URL/...`（业务库） | 本地可用，待建库 |
 | ES / Redis / Prometheus / SkyWalking | 现有地址 | 本地可用 |
 | Langfuse | `LANGFUSE_OTEL_ENDPOINT/PUBLIC_KEY/SECRET_KEY` | 可选（无则只打本地日志） |
@@ -118,4 +118,4 @@
 | AgentScope 2.0 相对较新 | 先做最小对话 PoC（M1）验证；锁定版本；关键路径封装隔离 |
 | 知识资产质量参差 | 入库前治理（来源标注/去重/时效），评测兜底 |
 | SkyWalking trace 查询链路复杂 | M2 先支持 ES 日志 + traceId 关联，SkyWalking API 逐步接入 |
-| Embedding Key 未到位 | 先以关键词/BM25 兜底，Key 到位后切换向量检索并重建索引 |
+| Embedding 与向量检索 | **v1 默认不用**：结构化卡 + BM25/元数据（D12/RV09）；仅当 KB EVAL 基线 <90% 且失败以词汇不匹配为主才启动向量实验，无 ≥5% 提升即止损删除 |

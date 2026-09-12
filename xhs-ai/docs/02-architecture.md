@@ -52,7 +52,7 @@ pending → approved(once) | approved(always→写会话授权+批量放行同�
 
 ### 2.6 知识入库（双轨）
 - 文档轨：`docs/`/旧知识资产（治理后）→ 三层卡片+catalog → ES BM25/元数据（向量评测触发后再加）
-- 代码轨：**LSP(jdtls) 精确导航 + JGit blame/历史**（G17）
+- 代码轨：**v1 轻量解析（JavaParser/AST）+ JGit blame/历史**；jdtls 精确导航 v1.1（评测触发，G17）
 - 引用校验：回答引用必须能回链（文件/行/方法存在）
 
 ### 2.7 观测与合规（G15/G1）
@@ -77,7 +77,7 @@ com.myxhs.ai
 ├── approval/       # ApprovalService 状态机、授权 snapshot/restore、审计
 ├── tools/          # api(契约) + impl/{es,prom,mysql,rmq,xxljob,lsp,git,mcp,knowledge}
 ├── query/          # 会话/审计统一查询 + 模型工具 + 导出
-├── knowledge/      # 入库管道、hybrid 检索、引用校验、LSP 索引
+├── knowledge/      # 卡片治理、catalog、BM25/元数据检索、引用校验
 ├── memory/         # DistributedStore 配置、长期记忆治理
 ├── security/       # 脱敏、capture modes、出网审计
 ├── infra/          # 各外部系统客户端（含 lsp4j、mcp sdk、rocketmq-tools）
@@ -98,7 +98,7 @@ com.myxhs.ai
 | ai_approval | session_id, trace_id, tool, kind, raw_input, **raw_input_hash**, patterns, risk, status, requested_at, decided_by, decided_at, decision_reason, result | 审批（状态机） |
 | ai_session_grant | user_id, session_id, permission, pattern, created_at, revoked_at | always 授权（可恢复） |
 | ai_audit | trace_id, actor, action, target, params(脱敏), content_categories, redaction_count, result, created_at | 审计（只追加） |
-| ai_knowledge_doc / chunk | layer, source_path, title, content_hash / doc_id, seq, es_doc_id | 知识（向量在 ES） |
+| ai_knowledge_doc / chunk | layer, source_path, title, content_hash / doc_id, seq, es_doc_id | 知识（v1 BM25；向量列评测触发后再加） |
 | ai_eval_case / run / result | ... | 评测 |
 | ai_feedback | session_id, message_id, actor, kind(session_remark/message_rating), category, note, created_at | 反馈（不注入模型） |
 
@@ -118,7 +118,7 @@ com.myxhs.ai
 | 8 | **模型网关**：provider 抽象 + 超时/重试/熔断/降级/预算/cache 友好 | G3；单一网关耦合风险 | 直连单供应商 |
 | 9 | **策略引擎**：有序规则 last-match-wins + 默认 ask + 插件不可改策略 | ADOPT-2/G5 | 硬编码判断 |
 | 10 | **工具契约**：never-throw + timeout 声明 + intent/effect/settlement | DELTA-3/G5 | 直接调用 |
-| 11 | **代码导航 LSP(jdtls)+JGit 双轨** | G17（精确导航） | 纯 JGit/AST |
+| 11 | **代码导航 v1 轻量解析+JGit（jdtls v1.1 触发）** | G17（精确导航）；jdtls 资源成本见 ADR-18 | 纯 JGit/AST |
 | 12 | **MCP 仅桥接 Tools**：白名单 + server-qualified + env 清洗 | G18；复用生态 | 全部自研工具 |
 | 13 | **观测捕获模式**默认 sanitized + failsafe + 状态上限 | G15/G1 | 全量外发 |
 | 14 | **会话/审计统一查询 + 模型工具 + 导出** | G19 | 仅 DB 查询接口 |
@@ -147,7 +147,7 @@ com.myxhs.ai
 
 ## 8. 专项设计进展（2026-09-12 更新）
 
-- ✅ 已产出：`design/01`~`design/09`（模型网关/工具治理审批/观测合规/代码导航/MCP/FMEA/容量成本/扩展框架/生态采纳，见 README 索引）
+- ✅ 已产出：`design/01`~`design/09` + `design/12`（模型网关/工具治理审批/观测合规/代码导航/MCP/FMEA/容量成本/扩展框架/生态采纳，见 README 索引）
 - ⏳ 待补（M1.6 前置）：`design/10-sse-contract.md`（SSE 业务事件契约）、`design/11-security-authz.md`（鉴权与工具白名单）
 
 ## 9. 风险（v0.2）

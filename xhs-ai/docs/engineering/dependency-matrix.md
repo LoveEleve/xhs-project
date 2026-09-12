@@ -20,7 +20,7 @@
 | MyBatis-Plus | 3.5.7 | 对齐主工程 |
 | mysql-connector-j | 8.3.0 | Boot 托管 |
 | Flyway | 9.22.3 | Boot 托管（含 flyway-mysql） |
-| MCP SDK | 0.17.0 | AgentScope 传递（v1 不启用运行时路径） |
+| MCP SDK | 0.17.0 | AgentScope 传递（M1.5 已启用运行时路径） |
 
 ## 2. 冲突与处置（Enforcer 抓出，全部闭环）
 
@@ -29,7 +29,7 @@
 | 1 | okhttp 双版本 | Boot BOM 把 AgentScope 的 okhttp **降级**为 4.12.0，与 okhttp-jvm 5.3.2 并存（连带 okio 3.6/3.16 双版本） | dependencyManagement 显式 pin okhttp/okhttp-jvm 5.3.2 + okio/okio-jvm 3.16.4 |
 | 2 | jedis 版本 | Boot 托管 5.0.2，AgentScope 扩展按 7.4.1 开发 | pin jedis 7.4.1（M1 冒烟验证 RedisAgentStateStore 行为） |
 | 3 | 重复类 org.json | `jsonassert:1.5.1` 内嵌 `org/json/JSONString.class`，与 jedis 传递的 `org.json:json` 重复（test classpath） | 从 `spring-boot-starter-test` 排除 jsonassert（项目用 AssertJ/Jackson） |
-| 4 | MCP SDK 上游重叠 | `mcp-core` 与 `mcp-json`（0.17.0）均含 `io/modelcontextprotocol/json/**`（各 10 个同名类） | **登记豁免**：`ignoreClass io.modelcontextprotocol.json.*`（上游制品问题；v1 不启用 MCP，可在升版时移除） |
+| 4 | MCP SDK 上游重叠 | `mcp-core` 与 `mcp-json`（0.17.0）均含 `io/modelcontextprotocol/json/**`（各 10 个同名类） | **登记豁免**：`ignoreClass io.modelcontextprotocol.json.*`（上游制品问题；M1.5 已启用，升级后移除豁免） |
 
 ## 3. 例外登记（需跟踪）
 

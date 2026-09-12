@@ -5,7 +5,7 @@
 
 ## 1. 关键 API 事实（已核）
 
-- 入口：`HarnessAgent.builder()`（`agentscope-harness` 自动带 `agentscope-core`）；JDK 17+（我们用 21）
+- 入口：`HarnessAgent.builder()`（`agentscope-harness` 自动带 `agentscope-core`）；JDK 17+（本项目 JDK 17）
 - 调用：`agent.call(msg, RuntimeContext.builder().userId(...).sessionId(...).build())` / `agent.streamEvents(...)` 返回类型化事件（TEXT_BLOCK_DELTA / TOOL_CALL_START / …）
 - **无状态单例**：同一实例并发服务多 `(userId, sessionId)`；同 session 自动串行、不同 session 并行
 - 人格与记忆：`workspace/AGENTS.md`（人格）、`memory/YYYY-MM-DD.md` → `MEMORY.md`（自动合并 + 注入 system prompt）

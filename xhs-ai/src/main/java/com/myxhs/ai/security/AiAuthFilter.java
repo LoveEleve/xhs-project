@@ -40,8 +40,8 @@ import java.util.Set;
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
 public class AiAuthFilter extends OncePerRequestFilter {
 
-    private static final Set<String> OPEN_PATHS = Set.of(
-            "/actuator/health", "/actuator/prometheus", "/actuator/info");
+    private static final Set<String> OPEN_PATHS = Set.of("/actuator/health");
+    private static final String METRICS_PATH = "/actuator/prometheus";
     private static final String USER_ID_HEADER = "X-User-Id";
     private static final String INTERNAL_CALL_HEADER = "X-Internal-Call";
     private static final String ADMIN_CALL_HEADER = "X-Admin-Call";
@@ -62,6 +62,10 @@ public class AiAuthFilter extends OncePerRequestFilter {
                                     FilterChain chain) throws ServletException, IOException {
         String path = request.getRequestURI();
         if (OPEN_PATHS.contains(path)) {
+            chain.doFilter(request, response);
+            return;
+        }
+        if (METRICS_PATH.equals(path) && isPrivateAddress(request.getRemoteAddr())) {
             chain.doFilter(request, response);
             return;
         }
@@ -90,7 +94,25 @@ public class AiAuthFilter extends OncePerRequestFilter {
     }
 
     private boolean matches(String expected, String actual) {
-        return expected != null && !expected.isEmpty() && expected.equals(actual);
+        if (expected == null || expected.isEmpty() || actual == null) {
+            return false;
+        }
+        return java.security.MessageDigest.isEqual(
+                expected.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                actual.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    /** 指标端点仅允许本机/内网抓取（Prometheus on host） */
+    private boolean isPrivateAddress(String remoteAddr) {
+        if (remoteAddr == null) {
+            return false;
+        }
+        try {
+            java.net.InetAddress addr = java.net.InetAddress.getByName(remoteAddr);
+            return addr.isLoopbackAddress() || addr.isSiteLocalAddress() || addr.isLinkLocalAddress();
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /** 解析 JWT（仅接受 access 类型），返回 subject userId */

@@ -48,6 +48,17 @@ public class ApprovalController {
         }
     }
 
+    /** 执行失败重试（仅 approved 且上次执行 failed/缺失） */
+    @PostMapping("/{id}/execute")
+    public ResponseEntity<R<Map<String, Object>>> retryExecution(@PathVariable("id") Long id,
+                                                                 @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+        try {
+            return ResponseEntity.ok(R.ok(approvalService.retryExecution(userId == null ? 0L : userId, id)));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(R.fail(400, e.getMessage()));
+        }
+    }
+
     public record ApprovalReply(String reply, String message) {
     }
 }

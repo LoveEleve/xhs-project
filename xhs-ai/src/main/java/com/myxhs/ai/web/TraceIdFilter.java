@@ -29,10 +29,14 @@ public class TraceIdFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
         String traceId = request.getHeader(TRACE_ID_HEADER);
+        if (traceId != null) {
+            traceId = traceId.replaceAll("[^A-Za-z0-9._-]", "");
+            if (traceId.length() > MAX_LEN) {
+                traceId = traceId.substring(0, MAX_LEN);
+            }
+        }
         if (traceId == null || traceId.isBlank()) {
             traceId = UUID.randomUUID().toString().replace("-", "");
-        } else if (traceId.length() > MAX_LEN) {
-            traceId = traceId.substring(0, MAX_LEN);
         }
         MDC.put(MDC_KEY, traceId);
         response.setHeader(TRACE_ID_HEADER, traceId);

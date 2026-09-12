@@ -99,12 +99,32 @@ public class AgentService {
         Set<HostAndPort> sentinels = Arrays.stream(sentinelNodes.split(","))
                 .map(String::trim).filter(s -> !s.isBlank())
                 .map(HostAndPort::from).collect(Collectors.toSet());
-        // 哨兵无密码，主节点有密码：master/sentinel 分别配置
+        // 哨兵无密码，主节点有密码：master/sentinel 分别配置；RV10：瞬时抖动重试（最多 6 次 × 5s）
         JedisClientConfig masterConfig = DefaultJedisClientConfig.builder()
                 .password(redisPassword == null || redisPassword.isEmpty() ? null : redisPassword)
                 .build();
         JedisClientConfig sentinelConfig = DefaultJedisClientConfig.builder().build();
-        unifiedJedis = new JedisSentineled(sentinelMaster, masterConfig, sentinels, sentinelConfig);
+        RuntimeException lastError = null;
+        for (int attempt = 1; attempt <= 6; attempt++) {
+            try {
+                unifiedJedis = new JedisSentineled(sentinelMaster, masterConfig, sentinels, sentinelConfig);
+                lastError = null;
+                break;
+            } catch (RuntimeException e) {
+                lastError = e;
+                log.warn("[Agent] Redis Sentinel 建连失败（第 {} 次）: {}", attempt, e.getMessage());
+                try {
+                    Thread.sleep(5000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+        if (unifiedJedis == null) {
+            throw new IllegalStateException("Redis Sentinel 不可用，服务启动失败: "
+                    + (lastError == null ? "unknown" : lastError.getMessage()), lastError);
+        }
         AgentStateStore stateStore = RedisAgentStateStore.builder()
                 .jedisClient(unifiedJedis)
                 .keyPrefix("xhs-ai:state:")

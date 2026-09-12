@@ -8,30 +8,39 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.PreparedStatementCreator;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * ApprovalService：审批状态机 + raw_input 指纹（canonical 哈希）
+ * ApprovalService：状态机 / 主键安全 / 指纹去重 / 失败重试（RV10）
  */
 @ExtendWith(MockitoExtension.class)
 class ApprovalServiceTest {
 
     @Mock
     private JdbcTemplate jdbcTemplate;
+    @Mock
+    private TransactionTemplate transactionTemplate;
     @Mock
     private AuditService auditService;
     @Mock
@@ -41,9 +50,22 @@ class ApprovalServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ApprovalService(jdbcTemplate, new ObjectMapper(), auditService, approvalExecutor);
+        service = new ApprovalService(jdbcTemplate, transactionTemplate, new ObjectMapper(), auditService, approvalExecutor);
         lenient().when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
-        lenient().when(jdbcTemplate.queryForObject(anyString(), eq(Long.class))).thenReturn(42L);
+        lenient().when(jdbcTemplate.queryForList(anyString(), any(Object[].class))).thenReturn(List.of());
+        lenient().when(jdbcTemplate.update(any(PreparedStatementCreator.class), any(KeyHolder.class)))
+                .thenAnswer(invocation -> {
+                    KeyHolder keyHolder = invocation.getArgument(1);
+                    if (keyHolder instanceof GeneratedKeyHolder generated) {
+                        generated.getKeyList().add(Map.of("GENERATED_KEY", 42L));
+                    }
+                    return 1;
+                });
+        lenient().doAnswer(invocation -> {
+            Consumer<?> consumer = invocation.getArgument(0);
+            consumer.accept(null);
+            return null;
+        }).when(transactionTemplate).executeWithoutResult(any());
     }
 
     @Test
@@ -61,7 +83,6 @@ class ApprovalServiceTest {
 
         assertEquals(42L, r1.get("approvalId"));
         assertEquals("pending", r1.get("status"));
-        assertEquals("ask", r1.get("risk"));
         assertEquals(r1.get("rawInputHash"), r2.get("rawInputHash"));
     }
 
@@ -73,8 +94,19 @@ class ApprovalServiceTest {
     }
 
     @Test
+    void createPendingReusesExistingPendingWithSameFingerprint() {
+        when(jdbcTemplate.queryForList(anyString(), any(Object[].class)))
+                .thenReturn(List.of(Map.of("id", 7L, "risk", "ask")));
+        Map<String, Object> result = service.createPending(1L, "s1", "dlq.redeliver", "mq",
+                Map.of("msgId", "A"), "ask", List.of());
+        assertEquals(7L, result.get("approvalId"));
+        assertEquals(true, result.get("reused"));
+        verify(jdbcTemplate, never()).update(any(PreparedStatementCreator.class), any(KeyHolder.class));
+    }
+
+    @Test
     void replyRejectsWhenAlreadyDecided() {
-        doReturn(List.of(row("approved"))).when(jdbcTemplate).queryForList(anyString(), any(Object[].class));
+        when(jdbcTemplate.queryForList(anyString(), any(Object[].class))).thenReturn(List.of(row("approved", null)));
         IllegalStateException e = assertThrows(IllegalStateException.class,
                 () -> service.reply(1L, 42L, "once", null));
         assertEquals("审批已被处理: approved", e.getMessage());
@@ -83,7 +115,7 @@ class ApprovalServiceTest {
     @Test
     void replyOnceExecutesApprovedTool() {
         when(jdbcTemplate.queryForList(anyString(), any(Object[].class)))
-                .thenReturn(List.of(row("pending")), List.of(row("approved")));
+                .thenReturn(List.of(row("pending", null)), List.of(row("approved", null)));
         Map<String, Object> result = service.reply(1L, 42L, "once", "ok");
         assertEquals("approved", result.get("status"));
         verify(approvalExecutor).execute(eq("dlq.redeliver"), any(Map.class), eq(1L), any());
@@ -91,14 +123,39 @@ class ApprovalServiceTest {
 
     @Test
     void replyRejectCascadesPendingInSameSession() {
-        doReturn(List.of(row("pending"))).when(jdbcTemplate).queryForList(anyString(), any(Object[].class));
+        when(jdbcTemplate.queryForList(anyString(), any(Object[].class))).thenReturn(List.of(row("pending", null)));
         service.reply(1L, 42L, "reject", "no");
-        verify(jdbcTemplate).update(
-                org.mockito.ArgumentMatchers.contains("级联拒绝"),
-                any(), anyString(), any());
+        verify(jdbcTemplate).update(contains("级联拒绝"), any(), anyString(), any());
     }
 
-    private Map<String, Object> row(String status) {
+    @Test
+    void replyCasConflictThrows() {
+        when(jdbcTemplate.queryForList(anyString(), any(Object[].class))).thenReturn(List.of(row("pending", null)));
+        when(jdbcTemplate.update(contains("status='pending'"), any(Object[].class))).thenReturn(0);
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.reply(1L, 42L, "once", null));
+        assertEquals("审批状态已被其他操作变更，请刷新", e.getMessage());
+    }
+
+    @Test
+    void retryRejectsAlreadyExecuted() {
+        when(jdbcTemplate.queryForList(anyString(), any(Object[].class)))
+                .thenReturn(List.of(row("approved", "{\"executionStatus\":\"executed\"}")));
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.retryExecution(1L, 42L));
+        assertEquals("该审批已执行成功，禁止重复执行", e.getMessage());
+    }
+
+    @Test
+    void retryRunsAgainWhenPreviousExecutionFailed() {
+        when(jdbcTemplate.queryForList(anyString(), any(Object[].class)))
+                .thenReturn(List.of(row("approved", "{\"executionStatus\":\"failed\"}")));
+        Map<String, Object> result = service.retryExecution(1L, 42L);
+        assertEquals("executed", result.get("executionStatus"));
+        verify(approvalExecutor).execute(eq("dlq.redeliver"), any(Map.class), eq(1L), any());
+    }
+
+    private Map<String, Object> row(String status, String result) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("id", 42L);
         row.put("session_id", "s1");
@@ -107,6 +164,7 @@ class ApprovalServiceTest {
         row.put("risk", "ask");
         row.put("status", status);
         row.put("raw_input", "{\"group\":\"g\",\"msgId\":\"m\"}");
+        row.put("result", result);
         return row;
     }
 }

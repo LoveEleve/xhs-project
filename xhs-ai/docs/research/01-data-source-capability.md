@@ -51,14 +51,14 @@
 
 - 代码仓：`/data/workspace/xhs-project`（本地 Git；JGit 可做 blame/最近提交）
 - 旧项目资产：`my-xhs-ai` 共 278 文件（business-analysis 137 / knowledge 69 / docs 59）
-  - 故障卡（failure yaml）仅 1 张 → **知识资产以正文为主、结构化不足**，需治理后入 RAG
+  - 故障卡（failure yaml）仅 1 张 → **知识资产以正文为主、结构化不足**，需治理后入知识卡（BM25；D12）
 - 设计影响：知识入库管线必须含"来源标注 + 分层（架构/业务/代码）+ 去重 + 时效"；代码知识用 JGit 动态生成而非静态文档
 
 ## 8. 模型与 Embedding（已验证）
 
 - LLM：siyu-all `https://siyu.site/v1`（OpenAI 兼容），`deepseek-v4-pro`（推理模型，含 reasoning_content）/ `deepseek-v4-flash`
 - Embedding：火山方舟 `doubao-embedding-vision-large`（2048 维，单条 0.35s / 批量 0.23s）
-- 设计影响：模型网关抽象（provider 可切换/降级）；向量维度 2048 固定写进 ES mapping
+- 设计影响：模型网关抽象（provider 可切换/降级）；向量维度已验证，mapping 在评测触发启用向量后再定
 
 ## 9. 能力缺口（需要补齐的探测）
 
@@ -67,5 +67,5 @@
 | 1 | SkyWalking GraphQL 可用性 | 实测 `/graphql` 查询 traceId |
 | 2 | RocketMQ Admin SDK 在 xhs-ai 的可用性 | Maven 拉取 `rocketmq-tools:5.1.4` + 连通性验证 |
 | 3 | Prometheus 与 VictoriaMetrics 的关系 | 复核 9090 服务身份与数据源配置 |
-| 4 | ES 检索性能基线（日志大索引 + knn 向量） | 方案定后做专项压测 |
+| 4 | ES 检索性能基线（日志大索引；向量为实验项） | 方案定后做专项压测 |
 | 5 | 审计/审批在 AgentScope 的挂起与恢复边界 | 对照 AgentScope 2.0 文档 + 源码验证 |

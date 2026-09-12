@@ -62,6 +62,12 @@ public class DlqDetailTool implements AgentTool {
         if (group == null || group.isBlank()) {
             return ToolSupport.error(param, "缺少必填参数 group");
         }
+        if (!group.matches("[A-Za-z0-9._-]{1,64}")) {
+            return ToolSupport.error(param, "group 参数格式非法");
+        }
+        if (msgId != null && !msgId.isBlank() && !msgId.matches("[A-Za-z0-9]{4,64}")) {
+            return ToolSupport.error(param, "msgId 参数格式非法");
+        }
         try {
             Map<String, Object> detail = dlqAdminService.messageDetail(group, msgId);
             Map<String, Object> firstFailure = esLogSearchService.firstFailure(
@@ -72,7 +78,7 @@ public class DlqDetailTool implements AgentTool {
             return ToolSupport.result(param, ToolSupport.json(detail));
         } catch (Exception e) {
             log.warn("[工具] dlq_message_detail 失败 group={}: {}", group, e.getMessage());
-            return ToolSupport.error(param, "DLQ 消息查询失败: " + e.getMessage());
+            return ToolSupport.error(param, "DLQ 消息查询失败（内部错误）");
         }
     }
 }

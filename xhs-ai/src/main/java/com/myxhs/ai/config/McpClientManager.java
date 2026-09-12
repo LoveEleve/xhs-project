@@ -65,8 +65,17 @@ public class McpClientManager {
             builder.headers(server.getHeaders());
         }
         McpClientWrapper wrapper = builder.buildSync();
-        if (!wrapper.isInitialized()) {
-            wrapper.initialize().block(timeout.plusSeconds(10));
+        try {
+            if (!wrapper.isInitialized()) {
+                wrapper.initialize().block(timeout.plusSeconds(10));
+            }
+        } catch (Exception e) {
+            try {
+                wrapper.close();
+            } catch (Exception closeError) {
+                log.warn("[MCP] server={} 失败清理异常: {}", name, closeError.getMessage());
+            }
+            throw e;
         }
         log.info("[MCP] server={} 初始化完成", name);
         return wrapper;

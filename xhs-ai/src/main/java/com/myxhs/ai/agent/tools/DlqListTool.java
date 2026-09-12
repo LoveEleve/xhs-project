@@ -53,7 +53,7 @@ public class DlqListTool implements AgentTool {
             return ToolSupport.result(param, ToolSupport.json(Map.of("dlqTopics", topics)));
         } catch (Exception e) {
             log.warn("[工具] dlq_topic_list 失败: {}", e.getMessage());
-            return ToolSupport.error(param, "DLQ 列表查询失败: " + e.getMessage());
+            return ToolSupport.error(param, "DLQ 列表查询失败（内部错误）");
         }
     }
 }

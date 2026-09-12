@@ -48,7 +48,6 @@ ai:
     name: ${MYXHS_LLM_MODEL:deepseek-v4-pro}
   mq:
     namesrv-addr: ${MYXHS_MQ_NAMESRV:127.0.0.1:9876}
-    admin-timeout-ms: 5000
   mcp:
     servers:
       elasticsearch:
@@ -83,6 +82,7 @@ ai:
           - "--mcp.tools=exemplar_query"
         env:
           PROMETHEUS_MCP_SERVER_PROMETHEUS_URL: ${MYXHS_PROM_URL:}
+      # Grafana MCP：仅通过 /api/ai/mcp/servers 直连使用；不注册进 Agent（57 工具超预算）
       grafana:
         enabled: true
         transport: stdio

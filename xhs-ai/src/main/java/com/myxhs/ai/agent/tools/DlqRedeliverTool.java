@@ -64,6 +64,16 @@ public class DlqRedeliverTool implements AgentTool {
         if (group == null || group.isBlank() || msgId == null || msgId.isBlank()) {
             return ToolSupport.error(param, "缺少必填参数 group/msgId");
         }
+        if (!group.matches("[A-Za-z0-9._-]{1,64}")) {
+            return ToolSupport.error(param, "group 参数格式非法");
+        }
+        if (!msgId.matches("[A-Za-z0-9]{4,64}")) {
+            return ToolSupport.error(param, "msgId 参数格式非法");
+        }
+        String topicArg = ToolSupport.arg(param, "originalTopic");
+        if (topicArg != null && !topicArg.isBlank() && !topicArg.matches("[A-Za-z0-9._%-]{1,128}")) {
+            return ToolSupport.error(param, "originalTopic 参数格式非法");
+        }
         Long actor = ToolSupport.actor(param);
         String sessionId = ToolSupport.sessionId(param);
         try {
@@ -98,7 +108,7 @@ public class DlqRedeliverTool implements AgentTool {
                             + pending.get("approvalId") + "/reply，reply=once/always/reject。审批通过后将自动执行重投并核验。")));
         } catch (Exception e) {
             log.warn("[工具] dlq_redeliver 失败 group={} msgId={}: {}", group, msgId, e.getMessage());
-            return ToolSupport.error(param, "提交重投审批失败: " + e.getMessage());
+            return ToolSupport.error(param, "提交重投审批失败（内部错误）");
         }
     }
 }

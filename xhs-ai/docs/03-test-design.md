@@ -30,8 +30,8 @@
 | TC-UT-DIAG-08-01 | DLQ 消息解析 | DIAG-08 | key/body/tag 字段；脏消息容错 |
 | TC-UT-GUARD-01 | 循环卫生 | PLAT-01 | 重复调用提醒阈值；超时策略 deadline |
 | TC-UT-COST-01 | 成本计算 | PLAT-04 | usage→cost；缓存 token 计入；费率版本 |
-| TC-UT-RETR-01 | 混合检索融合 | KB-01..08 | 向量+BM25 归一化；layer 过滤；topK |
-| TC-UT-CHUNK-01 | 分块器 | KB | 标题/方法边界；超长截断；hash 去重 |
+| TC-UT-RETR-01 | 检索基线（BM25+元数据） | KB-01..08 | layer/tag 过滤；排序；topK |
+| TC-UT-CARD-01 | 卡片治理 | KB | schema 校验；引用回链；hash 去重 |
 | TC-UT-TOOLMETA-01 | 工具元数据校验 | OPS | 缺 risk/timeout/idempotent 即失败（CI） |
 
 ## 3. CT（契约）矩阵（fixture 录制/回放）
@@ -39,13 +39,13 @@
 | TC | 目标系统 | 关联 | 关键断言 |
 |----|---------|------|---------|
 | TC-CT-LLM-01..04 | siyu-all | DIAG-15 | 正常/429/5xx/超时/零内容/推理-only（含 reasoning_content） |
-| TC-CT-ARK-01 | Ark embedding | KB | 批量成功/429/空数组/维度=2048 |
+| TC-CT-ARK-01 | Ark embedding（实验路径） | KB | 仅向量实验启用时执行；批量/429/维度=2048 |
 | TC-CT-ES-01..03 | ES 日志 | DIAG-02/03 | 命中/空结果/字段缺失/mapping 变更 |
-| TC-CT-ES-04 | ES knn | KB | 向量检索命中/过滤/超时 |
+| TC-CT-ES-04 | ES knn（实验路径） | KB | 仅向量实验启用时执行；命中/过滤/超时 |
 | TC-CT-PROM-01 | VictoriaMetrics | DIAG-10 | instant/range/空/异常 |
 | TC-CT-RMQ-01..02 | RocketMQ Admin | DIAG-08/OPS-01 | topicStatus/consumerProgress/DLQ 详情/重投响应 |
 | TC-CT-JOB-01 | XXL-Job | DIAG-13/OPS-03 | 登录/列表/触发/结果 |
-| TC-CT-LSP-01 | jdtls | KB-05 | definition/references 响应解析；进程不可用降级 |
+| TC-CT-LSP-01 | 代码导航（v1 轻量解析/AST+JGit） | KB-05 | 符号定位/调用方解析；不可用降级（jdtls v1.1） |
 | TC-CT-MCP-01 | MCP server（v1.5 启用） | ADR-23 | 官方 ES/Prom/Grafana：握手/tools 列表/调用/非法 schema 拒载/超时熔断 |
 
 ## 4. IT（集成）矩阵
@@ -57,7 +57,7 @@
 | TC-IT-APPROVAL-01 | 审批持久化 | PLAT-02 | 登记先行；重启后 pending/grants 恢复 |
 | TC-IT-APPROVAL-02 | 超时 fail-closed | PLAT-02 | 超时→拒绝；无进展不变量 |
 | TC-IT-HITL-X-01 | 跨实例恢复 | D02 §10 | kill 等待副本→另一副本 reply 续跑 |
-| TC-IT-KB-01 | 入库管道 | KB | 文档→chunk→embedding→ES；hash 去重；失败重试 |
+| TC-IT-KB-01 | 知识入库 | KB | 卡片→catalog→ES(BM25)；引用校验；hash 去重；失败重试 |
 | TC-IT-KB-02 | alias 切换 | E3.4 | reindex→alias 原子切换；查询无中断 |
 | TC-IT-AUDIT-01 | 审计只追加 | PLAT-03 | 无 UPDATE/DELETE 权限；参数脱敏；出网计数 |
 | TC-IT-QUERY-01 | 会话/审计查询 | PLAT-03 | 按 traceId/user/时间过滤；导出 |

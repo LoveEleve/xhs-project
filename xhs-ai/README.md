@@ -2,15 +2,15 @@
 
 > 全新设计与实现（不继承 `my-xhs-ai*` 旧代码，旧模块仅作参考/归档）
 >
-> 版本：v0.2（M1/M1.5 已落地运行）｜日期：2026-09-12
+> 版本：v0.3（M1~M2.0 已落地运行；RV08/RV09/RV10 评审闭环）｜日期：2026-09-12
 
 ## 文档索引
 
 | 文档 | 说明 | 状态 |
 |------|------|------|
 | `docs/00-context.md` | 背景、旧实现问题清单、术语、系统边界 | 草稿 |
-| `docs/01-prd.md` | 需求与验收条件（AC） | v0.1 评审中 |
-| `docs/02-architecture.md` | 架构设计（AgentScope 2.0 Java） | v0.1 评审中 |
+| `docs/01-prd.md` | 需求与验收条件（AC） | v0.2（RV09 修订） |
+| `docs/02-architecture.md` | 架构设计（AgentScope 2.0 Java） | v0.2（RV09 修订） |
 | `docs/03-test-design.md` | 测试设计（全量 TC 矩阵/fixture/压测/红队） | ✅ v1.0 |
 | `docs/04-engineering.md` | 工程规范（E1-E7 可执行版） | ✅ v0.1 |
 | `docs/engineering/dependency-matrix.md` | 依赖矩阵与冲突处置（M1-1） | ✅ 2026-09-12 |
@@ -28,6 +28,7 @@
 | `docs/reports/m2.0-dlq-e2e.md` | **M2.0 业务竖切① E2E 记录（DLQ 诊断→审批→重投→核验→审计）** | ✅ 2026-09-12 |
 | `docs/reviews/08-m2.0-expert-review.md` | **RV08：M2.0 专家评审（harness-skills expert-reviewer 双轴）** | ✅ 2026-09-12 |
 | `docs/reviews/09-tech-necessity-review.md` | **RV09：技术必要性审查（RAG 争论 → 不建朴素 RAG；每项技术的触发/止损）** | ✅ 2026-09-12 |
+| `docs/reviews/10-full-dimension-review.md` | **RV10：全维度深度 Review（代码 P0×2 修复 / settlement 异步闭环 / 文档回写）** | ✅ 2026-09-12 |
 | `docs/requirements/01-scenario-library.md` | 业务场景库（34 场景 + REQ 编号 + 证据形态） | ✅ v0.2 |
 | `docs/requirements/02-nfr-slo-threatmodel.md` | 量化 SLO + STRIDE 威胁模型 + REQ↔AC↔TC | ✅ v0.1 |
 | `docs/requirements/03-legacy-asset-governance.md` | R05 旧资产治理清单与入库白名单 | ✅ v0.1 |
@@ -76,6 +77,7 @@
 - [x] M1-2 骨架（Application/Actuator/Flyway/Logback JSON）+ 对话/SSE（会话状态/ELK/Prom 待补）
 - [x] M1.5 官方 MCP 接入验证（ES/Prometheus/Grafana tools+call 实测通）
 - [x] RV06 业务贴合度 + JD 对齐深度 Review（P0/P1 清单 + 规划修订 + JD 矩阵 v2）
+- [x] RV08/RV09/RV10 评审闭环（专家评审/技术必要性/全维度）+ settlement 异步核验 + 审批事务化
 - [x] M1.6 安全与接线（鉴权/工具白名单/Nacos+网关/systemd/traceId/旧模块下线）✅ 2026-09-12
 - [x] M2.0 业务竖切①：DIAG-08+OPS-01 DLQ 诊断→审批→重投→核验→审计 ✅ 2026-09-12（E2E 见 docs/reports/m2.0-dlq-e2e.md）
 - [x] P2 需求工程：SLO/STRIDE/追溯矩阵（RQ02）

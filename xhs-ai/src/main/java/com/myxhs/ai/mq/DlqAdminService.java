@@ -147,6 +147,36 @@ public class DlqAdminService {
         return result;
     }
 
+    /** 在 DLQ 中按原始消息 ID 查找（重投消息再入 DLQ 的判定依据） */
+    public java.util.Optional<Map<String, Object>> findByOriginMsgId(String group, String originMsgId) throws Exception {
+        if (originMsgId == null || originMsgId.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        String topic = dlqTopic(group);
+        TopicStatsTable stats = admin().examineTopicStats(topic);
+        List<Map.Entry<MessageQueue, org.apache.rocketmq.remoting.protocol.admin.TopicOffset>> queues =
+                new ArrayList<>(stats.getOffsetTable().entrySet());
+        queues.sort(Comparator.comparing(e -> e.getKey().getQueueId()));
+        for (Map.Entry<MessageQueue, org.apache.rocketmq.remoting.protocol.admin.TopicOffset> entry : queues) {
+            long max = entry.getValue().getMaxOffset();
+            for (long offset = max - 1; offset >= Math.max(0, max - 100); offset--) {
+                PullResult pull = reader().pullBlockIfNotFound(entry.getKey(), null, offset, 1);
+                if (pull.getPullStatus() != PullStatus.FOUND || pull.getMsgFoundList() == null
+                        || pull.getMsgFoundList().isEmpty()) {
+                    continue;
+                }
+                MessageExt candidate = pull.getMsgFoundList().get(0);
+                String origin = firstNonNull(
+                        candidate.getProperty(MessageConst.PROPERTY_DLQ_ORIGIN_MESSAGE_ID),
+                        candidate.getProperty(MessageConst.PROPERTY_ORIGIN_MESSAGE_ID));
+                if (originMsgId.equals(origin)) {
+                    return java.util.Optional.of(toDetail(candidate));
+                }
+            }
+        }
+        return java.util.Optional.empty();
+    }
+
     public long dlqBacklog(String groupOrTopic) throws Exception {
         String topic = groupOrTopic.startsWith(DLQ_PREFIX) ? groupOrTopic : dlqTopic(groupOrTopic);
         TopicStatsTable stats = admin().examineTopicStats(topic);
