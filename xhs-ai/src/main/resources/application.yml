@@ -39,6 +39,35 @@ ai:
     base-url: ${MYXHS_LLM_BASE_URL:https://siyu.site/v1}
     api-key: ${MYXHS_LLM_API_KEY:}
     name: ${MYXHS_LLM_MODEL:deepseek-v4-pro}
+  mcp:
+    servers:
+      elasticsearch:
+        enabled: true
+        transport: stdio
+        command: ${MYXHS_NPX:/opt/node20/bin/npx}
+        args: ["-y", "@elastic/mcp-server-elasticsearch@0.1.1"]
+        env:
+          ES_URL: ${MYXHS_ES_URL:}
+          ES_USERNAME: ${MYXHS_ES_USER:}
+          ES_PASSWORD: ${MYXHS_ES_PASSWORD:}
+          OTEL_SDK_DISABLED: "true"
+          PATH: ${MYXHS_MCP_PATH:/opt/node20/bin:/usr/local/bin:/usr/bin:/bin}
+          HOME: /root
+      prometheus:
+        enabled: true
+        transport: stdio
+        command: /opt/mcp-servers/prometheus-mcp-server
+        args: ["--web.listen-address=:19081"]
+        env:
+          PROMETHEUS_MCP_SERVER_PROMETHEUS_URL: ${MYXHS_PROM_URL:}
+      grafana:
+        enabled: true
+        transport: stdio
+        command: /opt/mcp-servers/mcp-grafana
+        args: ["--disable-write"]
+        env:
+          GRAFANA_URL: ${MYXHS_GRAFANA_URL:}
+          GRAFANA_SERVICE_ACCOUNT_TOKEN: ${MYXHS_GRAFANA_TOKEN:}
 
 mybatis-plus:
   configuration:
