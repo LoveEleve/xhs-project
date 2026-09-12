@@ -5,6 +5,8 @@ import com.myxhs.ai.config.McpClientManager;
 import io.modelcontextprotocol.spec.McpSchema;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -35,24 +37,26 @@ public class McpController {
     }
 
     @GetMapping("/servers/{name}/tools")
-    public R<List<Map<String, Object>>> tools(@PathVariable("name") String name) {
+    public ResponseEntity<R<List<Map<String, Object>>>> tools(@PathVariable("name") String name) {
         try {
-            return R.ok(mcpClientManager.listTools(name));
+            return ResponseEntity.ok(R.ok(mcpClientManager.listTools(name)));
         } catch (Exception e) {
             log.error("[MCP] 获取工具清单失败 server={}", name, e);
-            return R.fail(500, "MCP 工具清单获取失败，请稍后重试");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(R.fail(500, "MCP 工具清单获取失败，请稍后重试"));
         }
     }
 
     @PostMapping("/servers/{name}/tools/{tool}")
-    public R<McpSchema.CallToolResult> call(@PathVariable("name") String name,
-                                            @PathVariable("tool") String tool,
-                                            @RequestBody(required = false) Map<String, Object> arguments) {
+    public ResponseEntity<R<McpSchema.CallToolResult>> call(@PathVariable("name") String name,
+                                                            @PathVariable("tool") String tool,
+                                                            @RequestBody(required = false) Map<String, Object> arguments) {
         try {
-            return R.ok(mcpClientManager.callTool(name, tool, arguments));
+            return ResponseEntity.ok(R.ok(mcpClientManager.callTool(name, tool, arguments)));
         } catch (Exception e) {
             log.error("[MCP] 工具调用失败 server={} tool={}", name, tool, e);
-            return R.fail(500, "MCP 工具调用失败，请稍后重试");
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(R.fail(500, "MCP 工具调用失败，请稍后重试"));
         }
     }
 }

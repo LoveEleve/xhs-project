@@ -28,7 +28,11 @@ public class AuditService {
     private final ObjectMapper objectMapper;
 
     public void record(Long actor, String action, String target, Map<String, Object> params, String result) {
-        String traceId = MDC.get(TraceIdFilter.MDC_KEY);
+        record(actor, action, target, params, result, MDC.get(TraceIdFilter.MDC_KEY));
+    }
+
+    public void record(Long actor, String action, String target, Map<String, Object> params, String result,
+                       String traceId) {
         try {
             String paramsJson = params == null ? null
                     : objectMapper.writeValueAsString(sanitize(params));

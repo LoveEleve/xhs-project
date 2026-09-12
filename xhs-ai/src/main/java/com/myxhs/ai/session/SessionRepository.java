@@ -27,10 +27,16 @@ public class SessionRepository {
 
     public void appendMessage(String sessionId, Long userId, String role, String content,
                               String toolCallsJson, int tokensIn, int tokensOut) {
+        appendMessage(sessionId, userId, role, content, MDC.get(TraceIdFilter.MDC_KEY),
+                toolCallsJson, tokensIn, tokensOut);
+    }
+
+    public void appendMessage(String sessionId, Long userId, String role, String content, String traceId,
+                              String toolCallsJson, int tokensIn, int tokensOut) {
         jdbcTemplate.update(
                 "INSERT INTO ai_message(session_id, user_id, role, content, trace_id, tool_calls, tokens_in, tokens_out) "
                         + "VALUES(?,?,?,?,?,?,?,?)",
-                sessionId, userId, role, content, MDC.get(TraceIdFilter.MDC_KEY),
+                sessionId, userId, role, content, traceId,
                 toolCallsJson, tokensIn, tokensOut);
     }
 

@@ -42,6 +42,17 @@ public final class ToolSupport {
         return 0L;
     }
 
+    public static String traceId(ToolCallParam param) {
+        RuntimeContext ctx = param.getRuntimeContext();
+        if (ctx != null) {
+            try {
+                return ctx.get("traceId", String.class);
+            } catch (Exception ignored) {
+            }
+        }
+        return null;
+    }
+
     public static String sessionId(ToolCallParam param) {
         RuntimeContext ctx = param.getRuntimeContext();
         if (ctx != null && ctx.getSessionId() != null && !ctx.getSessionId().isBlank()) {
@@ -69,6 +80,13 @@ public final class ToolSupport {
     }
 
     private static String escape(String text) {
-        return text == null ? "" : text.replace("\\", "\\\\").replace("\"", "\\\"");
+        if (text == null) {
+            return "";
+        }
+        return text.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t");
     }
 }

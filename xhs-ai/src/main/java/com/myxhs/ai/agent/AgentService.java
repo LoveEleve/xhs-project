@@ -90,7 +90,7 @@ public class AgentService {
         toolkit.registerAgentTool(dlqRedeliverTool);
         for (String server : List.of("elasticsearch", "prometheus")) {
             try {
-                toolkit.registerMcpClient(mcpClientManager.client(server)).block();
+                toolkit.registerMcpClient(mcpClientManager.client(server)).block(java.time.Duration.ofSeconds(30));
                 log.info("[Agent] MCP 工具已注册: {}", server);
             } catch (Exception e) {
                 log.warn("[Agent] MCP 工具注册失败 {}: {}", server, e.getMessage());
@@ -127,12 +127,13 @@ public class AgentService {
     }
 
     /** 流式执行（不负责 assistant 归档，由调用方调 recordAssistant） */
-    public Flux<Event> stream(Long userId, String sessionId, String message) {
+    public Flux<Event> stream(Long userId, String sessionId, String message, String traceId) {
         sessionRepository.ensureSession(userId, sessionId, message);
-        sessionRepository.appendMessage(sessionId, userId, "user", message, null, 0, 0);
+        sessionRepository.appendMessage(sessionId, userId, "user", message, traceId, null, 0, 0);
         RuntimeContext context = RuntimeContext.builder()
                 .userId(String.valueOf(userId))
                 .sessionId(sessionId)
+                .put("traceId", traceId)
                 .build();
         StreamOptions options = StreamOptions.builder()
                 .eventTypes(EventType.ALL)
@@ -144,26 +145,27 @@ public class AgentService {
     }
 
     /** 同步执行（收集最终答复并归档） */
-    public Mono<String> chat(Long userId, String sessionId, String message) {
+    public Mono<String> chat(Long userId, String sessionId, String message, String traceId) {
         StringBuilder reply = new StringBuilder();
-        return stream(userId, sessionId, message)
+        return stream(userId, sessionId, message, traceId)
                 .doOnNext(event -> {
                     if (event.getType() == EventType.AGENT_RESULT && event.isLast()) {
                         reply.append(extractText(event.getMessage()));
                     }
                 })
                 .then(Mono.fromSupplier(() -> {
-                    recordAssistant(sessionId, userId, reply.toString());
+                    recordAssistant(sessionId, userId, reply.toString(), traceId);
                     return reply.toString();
                 }));
     }
 
-    public void recordAssistant(String sessionId, Long userId, String text) {
+    public void recordAssistant(String sessionId, Long userId, String text, String traceId) {
         if (text == null || text.isBlank()) {
             return;
         }
-        sessionRepository.appendMessage(sessionId, userId, "assistant", text, null, 0, 0);
-        auditService.record(userId, "agent.chat", "session=" + sessionId, null, "done, chars=" + text.length());
+        sessionRepository.appendMessage(sessionId, userId, "assistant", text, traceId, null, 0, 0);
+        auditService.record(userId, "agent.chat", "session=" + sessionId, null,
+                "done, chars=" + text.length(), traceId);
     }
 
     public String newSessionId(Long userId) {

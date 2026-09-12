@@ -30,18 +30,6 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
-  data:
-    redis:
-      password: ${REDIS_PASSWORD:}
-      timeout: 3000ms
-      sentinel:
-        master: ${REDIS_SENTINEL_MASTER:mymaster}
-        nodes: ${REDIS_SENTINEL_NODES:192.168.0.142:26379}
-      lettuce:
-        pool:
-          max-active: 16
-          max-idle: 8
-          min-idle: 2
 
 # 鉴权（平台统一模型：网关 JWT → X-User-Id；内部/管理令牌用于服务间与运维）
 jwt:

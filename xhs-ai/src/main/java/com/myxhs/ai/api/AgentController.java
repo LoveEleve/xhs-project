@@ -2,6 +2,7 @@ package com.myxhs.ai.api;
 
 import com.myxhs.ai.agent.AgentService;
 import com.myxhs.ai.common.R;
+import com.myxhs.ai.web.TraceIdFilter;
 import io.agentscope.core.agent.Event;
 import io.agentscope.core.agent.EventType;
 import io.agentscope.core.message.ContentBlock;
@@ -12,6 +13,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.MDC;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -43,7 +46,8 @@ public class AgentController {
                                              @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         long uid = userId == null ? 0L : userId;
         String sessionId = resolveSession(request.sessionId(), uid);
-        return agentService.chat(uid, sessionId, request.message())
+        String traceId = MDC.get(TraceIdFilter.MDC_KEY);
+        return agentService.chat(uid, sessionId, request.message(), traceId)
                 .timeout(Duration.ofSeconds(300))
                 .map(reply -> R.ok(Map.<String, Object>of("sessionId", sessionId, "reply", reply)))
                 .onErrorResume(e -> {
@@ -57,12 +61,13 @@ public class AgentController {
                                                 @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         long uid = userId == null ? 0L : userId;
         String sessionId = resolveSession(request.sessionId(), uid);
+        String traceId = MDC.get(TraceIdFilter.MDC_KEY);
         StringBuilder finalText = new StringBuilder();
-        return agentService.stream(uid, sessionId, request.message())
+        return agentService.stream(uid, sessionId, request.message(), traceId)
                 .timeout(Duration.ofSeconds(300))
                 .flatMap(event -> Flux.fromIterable(toSse(event, finalText)))
                 .concatWith(Mono.just(sse("done", "{\"sessionId\":\"" + sessionId + "\"}")))
-                .doOnComplete(() -> agentService.recordAssistant(sessionId, uid, finalText.toString()))
+                .doOnComplete(() -> agentService.recordAssistant(sessionId, uid, finalText.toString(), traceId))
                 .onErrorResume(e -> {
                     log.error("[Agent] stream 失败", e);
                     return Flux.just(sse("error", "{\"message\":\"Agent 执行失败，请稍后重试\"}"));
@@ -82,7 +87,7 @@ public class AgentController {
             String name = toolName(event.getMessage());
             String output = extractToolOutput(event.getMessage());
             events.add(sse("tool", jsonData(Map.of("name", name, "output", truncate(output, 800)))));
-            if (output.contains("pending_approval")) {
+            if (isPendingApproval(output)) {
                 events.add(sse("approval_required", output));
             }
         } else if (event.getType() == EventType.AGENT_RESULT && event.isLast()) {
@@ -97,6 +102,18 @@ public class AgentController {
             }
         }
         return events;
+    }
+
+    private boolean isPendingApproval(String output) {
+        if (output == null || !output.contains("pending_approval")) {
+            return false;
+        }
+        try {
+            return "pending_approval".equals(
+                    new ObjectMapper().readTree(output).path("status").asText());
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private String toolName(io.agentscope.core.message.Msg msg) {

@@ -3,6 +3,8 @@ package com.myxhs.ai.api;
 import com.myxhs.ai.approval.ApprovalService;
 import com.myxhs.ai.common.R;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -35,13 +37,14 @@ public class ApprovalController {
     }
 
     @PostMapping("/{id}/reply")
-    public R<Map<String, Object>> reply(@PathVariable("id") Long id,
-                                        @RequestBody ApprovalReply request,
-                                        @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+    public ResponseEntity<R<Map<String, Object>>> reply(@PathVariable("id") Long id,
+                                                        @RequestBody ApprovalReply request,
+                                                        @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         try {
-            return R.ok(approvalService.reply(userId == null ? 0L : userId, id, request.reply(), request.message()));
+            return ResponseEntity.ok(
+                    R.ok(approvalService.reply(userId == null ? 0L : userId, id, request.reply(), request.message())));
         } catch (IllegalArgumentException | IllegalStateException e) {
-            return R.fail(400, e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(R.fail(400, e.getMessage()));
         }
     }
 

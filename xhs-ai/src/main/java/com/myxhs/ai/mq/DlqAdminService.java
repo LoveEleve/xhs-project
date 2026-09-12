@@ -165,7 +165,7 @@ public class DlqAdminService {
         queues.sort(Comparator.comparing(e -> e.getKey().getQueueId()));
         for (Map.Entry<MessageQueue, org.apache.rocketmq.remoting.protocol.admin.TopicOffset> entry : queues) {
             long max = entry.getValue().getMaxOffset();
-            for (long offset = max - 1; offset >= Math.max(0, max - 20); offset--) {
+            for (long offset = max - 1; offset >= Math.max(0, max - 200); offset--) {
                 PullResult pull = reader().pullBlockIfNotFound(entry.getKey(), null, offset, 1);
                 if (pull.getPullStatus() != PullStatus.FOUND || pull.getMsgFoundList() == null
                         || pull.getMsgFoundList().isEmpty()) {

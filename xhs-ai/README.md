@@ -26,6 +26,7 @@
 | `docs/reviews/06-deep-review-business-and-jd.md` | **RV06：业务贴合度 + JD 对齐深度 Review（P0/P1 清单 + 规划修订）** | ✅ 2026-09-12 |
 | `docs/reviews/07-jd-hit-matrix-v2.md` | JD 命中矩阵 v2（18 份 JD × xhs-ai v2 现状） | ✅ 2026-09-12 |
 | `docs/reports/m2.0-dlq-e2e.md` | **M2.0 业务竖切① E2E 记录（DLQ 诊断→审批→重投→核验→审计）** | ✅ 2026-09-12 |
+| `docs/reviews/08-m2.0-expert-review.md` | **RV08：M2.0 专家评审（harness-skills expert-reviewer 双轴）** | ✅ 2026-09-12 |
 | `docs/requirements/01-scenario-library.md` | 业务场景库（34 场景 + REQ 编号 + 证据形态） | ✅ v0.2 |
 | `docs/requirements/02-nfr-slo-threatmodel.md` | 量化 SLO + STRIDE 威胁模型 + REQ↔AC↔TC | ✅ v0.1 |
 | `docs/requirements/03-legacy-asset-governance.md` | R05 旧资产治理清单与入库白名单 | ✅ v0.1 |

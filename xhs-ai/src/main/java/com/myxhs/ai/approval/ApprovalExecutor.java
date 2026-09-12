@@ -24,6 +24,10 @@ public class ApprovalExecutor {
     private final AuditService auditService;
 
     public Map<String, Object> execute(String tool, Map<String, Object> rawInput, Long actor) {
+        return execute(tool, rawInput, actor, null);
+    }
+
+    public Map<String, Object> execute(String tool, Map<String, Object> rawInput, Long actor, String traceId) {
         if (!"dlq.redeliver".equals(tool)) {
             throw new IllegalArgumentException("不支持的审批执行工具: " + tool);
         }
@@ -31,7 +35,7 @@ public class ApprovalExecutor {
         String msgId = String.valueOf(rawInput.get("msgId"));
         String originalTopic = rawInput.get("originalTopic") == null ? null : String.valueOf(rawInput.get("originalTopic"));
 
-        auditService.record(actor, "dlq.redeliver.effect.start", "group=" + group + ",msgId=" + msgId, rawInput, "running");
+        auditService.record(actor, "dlq.redeliver.effect.start", "group=" + group + ",msgId=" + msgId, rawInput, "running", traceId);
         try {
             long backlogBefore = dlqAdminService.dlqBacklog(group);
             Map<String, Object> effect = dlqAdminService.redeliver(group, msgId, originalTopic);
@@ -50,12 +54,12 @@ public class ApprovalExecutor {
             result.put("effect", effect);
             result.put("settlement", settlement);
             auditService.record(actor, "dlq.redeliver.settled", "group=" + group + ",msgId=" + msgId, rawInput,
-                    "sendStatus=" + effect.get("sendStatus") + ",noNewDlq=" + settlement.get("noNewDlq"));
+                    "sendStatus=" + effect.get("sendStatus") + ",noNewDlq=" + settlement.get("noNewDlq"), traceId);
             return result;
         } catch (Exception e) {
             log.error("[审批执行] dlq.redeliver 失败 group={} msgId={}", group, msgId, e);
             auditService.record(actor, "dlq.redeliver.failed", "group=" + group + ",msgId=" + msgId, rawInput,
-                    "error=" + e.getMessage());
+                    "error=" + e.getMessage(), traceId);
             throw new IllegalStateException("重投执行失败: " + e.getMessage(), e);
         }
     }

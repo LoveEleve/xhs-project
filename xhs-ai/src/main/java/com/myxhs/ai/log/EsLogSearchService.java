@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
@@ -26,8 +27,12 @@ public class EsLogSearchService {
                               @Value("${MYXHS_ES_USER:}") String user,
                               @Value("${MYXHS_ES_PASSWORD:}") String password) {
         String auth = Base64.getEncoder().encodeToString((user + ":" + password).getBytes());
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(2000);
+        factory.setReadTimeout(5000);
         this.client = RestClient.builder()
                 .baseUrl(url)
+                .requestFactory(factory)
                 .defaultHeader("Authorization", "Basic " + auth)
                 .build();
     }

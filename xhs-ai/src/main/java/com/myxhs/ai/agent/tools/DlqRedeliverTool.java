@@ -79,7 +79,7 @@ public class DlqRedeliverTool implements AgentTool {
             rawInput.put("reason", ToolSupport.arg(param, "reason"));
 
             if (approvalService.hasGrant(actor, sessionId, "dlq.redeliver")) {
-                Map<String, Object> execution = approvalExecutor.execute("dlq.redeliver", rawInput, actor);
+                Map<String, Object> execution = approvalExecutor.execute("dlq.redeliver", rawInput, actor, ToolSupport.traceId(param));
                 return ToolSupport.result(param, ToolSupport.json(Map.of(
                         "status", "executed_by_grant",
                         "message", "已按会话授权(always)直接执行重投并核验",
@@ -89,7 +89,7 @@ public class DlqRedeliverTool implements AgentTool {
             Map<String, Object> pending = approvalService.createPending(actor, sessionId,
                     "dlq.redeliver", "mq.redeliver", rawInput, "ask", List.of("dlq:" + group));
             auditService.record(actor, "dlq.redeliver.intent", "group=" + group + ",msgId=" + msgId,
-                    rawInput, "pending_approval");
+                    rawInput, "pending_approval", ToolSupport.traceId(param));
             return ToolSupport.result(param, ToolSupport.json(Map.of(
                     "status", "pending_approval",
                     "approvalId", pending.get("approvalId"),

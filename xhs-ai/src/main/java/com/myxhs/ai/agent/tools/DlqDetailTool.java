@@ -68,7 +68,7 @@ public class DlqDetailTool implements AgentTool {
                     str(detail.get("originMsgId")), str(detail.get("msgId")), str(detail.get("keys")));
             detail.put("firstFailureLog", firstFailure);
             auditService.record(ToolSupport.actor(param), "dlq.message_detail", "group=" + group,
-                    Map.of("msgId", String.valueOf(detail.get("msgId"))), "ok");
+                    Map.of("msgId", String.valueOf(detail.get("msgId"))), "ok", ToolSupport.traceId(param));
             return ToolSupport.result(param, ToolSupport.json(detail));
         } catch (Exception e) {
             log.warn("[工具] dlq_message_detail 失败 group={}: {}", group, e.getMessage());

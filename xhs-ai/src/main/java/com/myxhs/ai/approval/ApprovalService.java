@@ -99,8 +99,11 @@ public class ApprovalService {
         if ("always".equals(reply)) {
             String pattern = grantPattern(sessionId);
             jdbcTemplate.update(
-                    "INSERT INTO ai_session_grant(user_id, session_id, permission, pattern) VALUES(?,?,?,?) "
-                            + "ON DUPLICATE KEY UPDATE revoked_at = NULL",
+                    "UPDATE ai_session_grant SET revoked_at = CURRENT_TIMESTAMP(3) "
+                            + "WHERE user_id=? AND session_id=? AND permission=? AND revoked_at IS NULL",
+                    owner, sessionId, tool);
+            jdbcTemplate.update(
+                    "INSERT INTO ai_session_grant(user_id, session_id, permission, pattern) VALUES(?,?,?,?)",
                     owner, sessionId, tool, pattern);
         }
         if ("reject".equals(reply)) {
@@ -113,7 +116,7 @@ public class ApprovalService {
         Map<String, Object> result = null;
         if ("approved".equals(newStatus)) {
             Map<String, Object> rawInput = parseRawInput(row);
-            result = approvalExecutor.execute(tool, rawInput, userId);
+            result = approvalExecutor.execute(tool, rawInput, userId, org.slf4j.MDC.get(com.myxhs.ai.web.TraceIdFilter.MDC_KEY));
             try {
                 jdbcTemplate.update("UPDATE ai_approval SET result=? WHERE id=?",
                         objectMapper.writeValueAsString(result), id);

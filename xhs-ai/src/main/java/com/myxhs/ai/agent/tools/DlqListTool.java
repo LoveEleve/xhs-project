@@ -49,7 +49,7 @@ public class DlqListTool implements AgentTool {
         try {
             List<Map<String, Object>> topics = dlqAdminService.listDlqTopics();
             auditService.record(ToolSupport.actor(param), "dlq.topic_list", "rocketmq",
-                    Map.of("count", topics.size()), "ok");
+                    Map.of("count", topics.size()), "ok", ToolSupport.traceId(param));
             return ToolSupport.result(param, ToolSupport.json(Map.of("dlqTopics", topics)));
         } catch (Exception e) {
             log.warn("[工具] dlq_topic_list 失败: {}", e.getMessage());
