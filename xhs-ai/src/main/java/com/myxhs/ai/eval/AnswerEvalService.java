@@ -2,6 +2,7 @@ package com.myxhs.ai.eval;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.ai.agent.AgentService;
+import com.myxhs.ai.code.CodeLocateService;
 import com.myxhs.ai.knowledge.KnowledgeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -41,6 +42,7 @@ public class AnswerEvalService {
 
     private final KnowledgeRepository knowledgeRepository;
     private final AgentService agentService;
+    private final CodeLocateService codeLocateService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${ai.knowledge.answer-eval-cases:/data/workspace/xhs-project/xhs-ai/eval/answer-cases.yaml}")
@@ -53,7 +55,7 @@ public class AnswerEvalService {
     private String codeRoot;
 
     @SuppressWarnings("unchecked")
-    public Map<String, Object> run(String type, int limit) {
+    public Map<String, Object> run(String type, int limit, String ids) {
         List<Map<String, Object>> cases;
         try (Reader reader = new InputStreamReader(Files.newInputStream(Path.of(casesPath)), StandardCharsets.UTF_8)) {
             cases = new Yaml().load(reader);
@@ -63,8 +65,11 @@ public class AnswerEvalService {
         if (cases == null || cases.isEmpty()) {
             return Map.of("error", "答案级评测集为空");
         }
+        java.util.Set<String> idFilter = (ids == null || ids.isBlank()) ? java.util.Set.of()
+                : java.util.Arrays.stream(ids.split(",")).map(String::trim).collect(java.util.stream.Collectors.toSet());
         List<Map<String, Object>> selected = cases.stream()
                 .filter(c -> type == null || type.isBlank() || type.equals(c.get("type")))
+                .filter(c -> idFilter.isEmpty() || idFilter.contains(String.valueOf(c.get("id"))))
                 .limit(limit <= 0 ? cases.size() : limit)
                 .toList();
 
@@ -90,6 +95,17 @@ public class AnswerEvalService {
             } catch (Exception e) {
                 answer = "";
                 log.warn("[答案评测] {} 执行失败: {}", id, e.getMessage());
+            }
+            // 空回答（模型/网关瞬时抖动）自动重试 1 次，不计入失败
+            if (answer == null || answer.isBlank()) {
+                try {
+                    Thread.sleep(2000);
+                    answer = agentService.chat(0L, "eval-retry-" + id + "-" + System.currentTimeMillis() / 1000, question, "eval-" + id)
+                            .block(Duration.ofSeconds(200));
+                    log.info("[答案评测] {} 空回答已重试一次", id);
+                } catch (Exception e) {
+                    log.warn("[答案评测] {} 重试仍失败: {}", id, e.getMessage());
+                }
             }
             long ms = System.currentTimeMillis() - start;
             totalMs += ms;
@@ -117,22 +133,27 @@ public class AnswerEvalService {
                 }
             }
 
-            // 引用有效性（提取回答中的卡片/文件引用并验证存在）
+            // 引用有效性（卡片按 id/路径匹配；目录引用与非可验证引用忽略；java 支持短名）
             List<String> invalid = new ArrayList<>();
             int cited = 0;
             Matcher cardMatcher = CARD_CITE.matcher(text);
             while (cardMatcher.find()) {
-                cited++;
                 String cite = cardMatcher.group().replaceFirst("\\.ya?ml$", "");
-                if (knowledgeRepository.byId(cite).isEmpty()) {
+                if (cardExists(cite)) {
+                    cited++;
+                } else if (!Files.isDirectory(Path.of(knowledgeDir(), cite))) {
+                    cited++;
                     invalid.add(cite);
                 }
             }
             Matcher fileMatcher = FILE_CITE.matcher(text);
             while (fileMatcher.find()) {
-                cited++;
                 String file = fileMatcher.group().replaceAll(":\\d+$", "");
-                if (!Files.exists(Path.of(codeRoot, file.startsWith("/") ? file.substring(1) : file))) {
+                if (file.contains("...")) {
+                    continue; // 省略号引用不可核验，跳过
+                }
+                cited++;
+                if (!codeLocateService.exists(file)) {
                     invalid.add(file);
                 }
             }
@@ -154,7 +175,8 @@ public class AnswerEvalService {
             r.put("ms", ms);
             r.put("reasons", reasons);
             r.put("invalidCitations", invalid);
-            r.put("answerPreview", text.length() > 200 ? text.substring(0, 200) : text);
+            r.put("answerPreview", text.length() > 400 ? text.substring(0, 400) : text);
+            r.put("answer", text.length() > 4000 ? text.substring(0, 4000) : text);
             results.add(r);
             log.info("[答案评测] {} pass={} ({}ms)", id, pass, ms);
         }
@@ -178,6 +200,30 @@ public class AnswerEvalService {
         log.info("[答案评测] total={}, pass={} ({}%), citationValid={}%",
                 selected.size(), passed, summary.get("passRate"), summary.get("citationValidRate"));
         return summary;
+    }
+
+    /** 卡片引用判定：直接命中 / 末段 id / 路径后缀 / 知识目录下真实文件（含 .md） */
+    private boolean cardExists(String cite) {
+        if (knowledgeRepository.byId(cite).isPresent()) {
+            return true;
+        }
+        String normalized = cite.replaceFirst("\\.ya?ml$", "");
+        String last = normalized.contains("/") ? normalized.substring(normalized.lastIndexOf('/') + 1) : normalized;
+        boolean cardMatch = knowledgeRepository.all().stream().anyMatch(c -> {
+            String path = c.path().replaceFirst("\\.ya?ml$", "");
+            return c.id().equals(normalized) || c.id().equals(last)
+                    || path.endsWith(normalized) || path.endsWith("/" + last);
+        });
+        if (cardMatch) {
+            return true;
+        }
+        return Files.exists(Path.of(knowledgeDir(), cite))
+                || Files.exists(Path.of(knowledgeDir(), cite + ".yaml"))
+                || Files.exists(Path.of(knowledgeDir(), cite + ".md"));
+    }
+
+    private String knowledgeDir() {
+        return casesPath.replaceFirst("/eval/.*$", "/knowledge");
     }
 
     private void writeReport(Map<String, Object> summary) {

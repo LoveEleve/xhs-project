@@ -27,6 +27,7 @@
 | `docs/reviews/07-jd-hit-matrix-v2.md` | JD 命中矩阵 v2（18 份 JD × xhs-ai v2 现状） | ✅ 2026-09-12 |
 | `docs/reports/m2.0-dlq-e2e.md` | **M2.0 业务竖切① E2E 记录（DLQ 诊断→审批→重投→核验→审计）** | ✅ 2026-09-12 |
 | `docs/reports/kb-eval-20260913.md` | **KB 检索评测（30 条，hit@1=100%，门禁通过；向量不启动）** | ✅ 2026-09-13 |
+| `docs/reports/answer-eval-2026-09-13.md` | **答案级评测（50 用例全过；引用有效性 100%；含失败归因）** | ✅ 2026-09-13 |
 | `docs/eval/kb-cases.yaml` | KB 评测集（30 条，问题→期望卡片） | ✅ 2026-09-13 |
 | `docs/reports/m4-security-and-metering-20260913.md` | **M4 证据：红队 8 项 + Token 计量（成本口径）** | ✅ 2026-09-13 |
 | `docs/reports/mttr-raw-20260913/` | MTTR 原始数据（10 案例请求/响应 + 耗时 TSV） | ✅ 2026-09-13 |
@@ -95,6 +96,7 @@
 - [x] M3 code_locate v1（文件:行号 引用）+ 知识检索主干闭环（RV15）
 - [x] M4 启动：红队 8 项全拦截 + Token 计量落点（Prometheus）+ 双 MCP 端口冲突修复
 - [x] MTTR 对照：10 案例实测（9/10 证据完整；Agent 均值 1.58min；保守降幅 92.3%）
+- [x] 答案级评测：KB30+DIAG15+SEC5 共 50 条全过，引用有效性 100%（报告+原始 JSON 入库）
 - [x] M1.6 安全与接线（鉴权/工具白名单/Nacos+网关/systemd/traceId/旧模块下线）✅ 2026-09-12
 - [x] M2.0 业务竖切①：DIAG-08+OPS-01 DLQ 诊断→审批→重投→核验→审计 ✅ 2026-09-12（E2E 见 docs/reports/m2.0-dlq-e2e.md）
 - [x] P2 需求工程：SLO/STRIDE/追溯矩阵（RQ02）

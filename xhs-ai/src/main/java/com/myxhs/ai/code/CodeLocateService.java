@@ -27,6 +27,45 @@ public class CodeLocateService {
     @Value("${ai.code.root:/data/workspace/xhs-project}")
     private String codeRoot;
 
+    private volatile java.util.Set<String> fileNameCache;
+
+    /** 引用存在性校验（供答案级评测）：支持仓库相对路径与短文件名 */
+    public boolean exists(String ref) {
+        if (ref == null || ref.isBlank() || ref.contains("...")) {
+            return false;
+        }
+        String norm = ref.startsWith("/") ? ref.substring(1) : ref;
+        try {
+            if (norm.contains("/")) {
+                return Files.exists(Path.of(codeRoot, norm));
+            }
+            return fileNames().contains(norm);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private java.util.Set<String> fileNames() {
+        java.util.Set<String> cached = fileNameCache;
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (this) {
+            if (fileNameCache == null) {
+                java.util.Set<String> names = new java.util.HashSet<>();
+                try (Stream<Path> files = Files.walk(Path.of(codeRoot))) {
+                    files.filter(p -> p.toString().endsWith(".java"))
+                            .filter(p -> !p.toString().contains("/target/"))
+                            .forEach(p -> names.add(p.getFileName().toString()));
+                } catch (Exception e) {
+                    log.warn("[代码定位] 文件名索引构建失败: {}", e.getMessage());
+                }
+                fileNameCache = names;
+            }
+            return fileNameCache;
+        }
+    }
+
     public Map<String, Object> locate(String query, Integer limit) {
         if (query == null || query.isBlank()) {
             return Map.of("error", "query 不能为空");

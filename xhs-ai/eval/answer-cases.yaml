@@ -76,7 +76,7 @@
   - bff-role
   expectAny: []
   mustRefuse: false
-- id: KB-bff-role
+- id: KB-bff-role-2
   type: kb
   question: 为什么 home 是 BFF？
   expectCardIds:
@@ -97,7 +97,7 @@
   - middleware-role
   expectAny: []
   mustRefuse: false
-- id: KB-middleware-role
+- id: KB-middleware-role-2
   type: kb
   question: 这些中间件分别干什么？
   expectCardIds:
@@ -111,7 +111,7 @@
   - order-inventory-payment-flow
   expectAny: []
   mustRefuse: false
-- id: KB-order-inventory-payment-flow
+- id: KB-order-inventory-payment-flow-2
   type: kb
   question: 订单、库存、支付在主链里怎么衔接？
   expectCardIds:
@@ -125,7 +125,7 @@
   - order-orchestration-role
   expectAny: []
   mustRefuse: false
-- id: KB-order-orchestration-role
+- id: KB-order-orchestration-role-2
   type: kb
   question: 为什么 order 是编排中心？
   expectCardIds:
@@ -146,7 +146,7 @@
   - close-order
   expectAny: []
   mustRefuse: false
-- id: KB-close-order
+- id: KB-close-order-2
   type: kb
   question: 关单链路是怎样收尾的？
   expectCardIds:
@@ -160,7 +160,7 @@
   - compensation-path
   expectAny: []
   mustRefuse: false
-- id: KB-compensation-path
+- id: KB-compensation-path-2
   type: kb
   question: 为什么需要补偿链？
   expectCardIds:
@@ -174,7 +174,7 @@
   - coupon-lifecycle
   expectAny: []
   mustRefuse: false
-- id: KB-coupon-lifecycle
+- id: KB-coupon-lifecycle-2
   type: kb
   question: 优惠券在主交易链里经历了什么生命周期？
   expectCardIds:
@@ -188,7 +188,7 @@
   - inventory-three-level
   expectAny: []
   mustRefuse: false
-- id: KB-inventory-three-level
+- id: KB-inventory-three-level-2
   type: kb
   question: 为什么库存要三级扣减？
   expectCardIds:
@@ -202,7 +202,7 @@
   - order-create
   expectAny: []
   mustRefuse: false
-- id: KB-order-create
+- id: KB-order-create-2
   type: kb
   question: 下单创建过程到底做了什么？
   expectCardIds:

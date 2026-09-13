@@ -74,12 +74,13 @@ public class KnowledgeController {
     public ResponseEntity<R<Map<String, Object>>> answerEval(
             @org.springframework.web.bind.annotation.RequestParam(value = "type", required = false) String type,
             @org.springframework.web.bind.annotation.RequestParam(value = "limit", defaultValue = "10") int limit,
+            @org.springframework.web.bind.annotation.RequestParam(value = "ids", required = false) String ids,
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall,
             @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
         if (!privileged(adminCall, internalCall)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(R.fail(403, "需要管理令牌"));
         }
-        return ResponseEntity.ok(R.ok(answerEvalService.run(type, limit)));
+        return ResponseEntity.ok(R.ok(answerEvalService.run(type, limit, ids)));
     }
 
     /** KB 检索评测（hit@1/hit@3 门禁；M3 出口） */

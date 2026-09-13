@@ -73,6 +73,12 @@ public class AgentService {
             9. 工具调用纪律：同一工具最多调用 1 次；参数报错后禁止重复调用同一工具；非指标问题禁止调用 label_values/label_names/series；
                总工具调用不超过 4 次；系统本体问题禁止不调用工具直接作答——首步就用 knowledge_search（query 取问题关键词）。
             10. 代码定位问题（"某逻辑在哪个类/方法"）：使用 code_locate（query 传类名/方法名），回答引用 文件:行号。
+            11. topic/表名/索引/路由/类名等"锚点事实"：必须先 knowledge_search（至少换两种关键词各一次）+ card_read 至少一张卡，
+                再用 code_locate 检索代码/配置；全部无果才能声明"知识库暂无记录"。禁止未检索就直接拒答。
+            12. 日志/指标类问题（错误日志、QPS/延迟、实例健康）：必须调用 MCP 工具检索（ES 的 search / Prometheus 的 query）后再回答；
+                不得只做口头计划或凭印象作答；工具返回空也要给出检索条件。
+            13. 引用纪律：只能引用工具实际返回的卡片 id/path 或代码位置；引用卡片一律用其 id（不带 .yaml），
+                不得编造文件名或路径（如虚构的 xx-01.md）。无法确认出处时说明"未找到出处"，宁可少引用。
             """;
 
     private final Model chatModel;
