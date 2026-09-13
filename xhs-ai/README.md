@@ -2,7 +2,7 @@
 
 > 全新设计与实现（不继承 `my-xhs-ai*` 旧代码，旧模块仅作参考/归档）
 >
-> 版本：v0.4（M1~M4 证据周进行中；RV08~RV16 闭环）｜日期：2026-09-13
+> 版本：v0.5（M1~M4 主体完成；RV08~RV18 闭环）｜日期：2026-09-13
 
 ## 文档索引
 
@@ -29,7 +29,8 @@
 | `docs/reports/kb-eval-20260913.md` | **KB 检索评测（30 条，hit@1=100%，门禁通过；向量不启动）** | ✅ 2026-09-13 |
 | `docs/reports/answer-eval-2026-09-13.md` | **答案级评测（50 用例全过；引用有效性 100%；含失败归因）** | ✅ 2026-09-13 |
 | `docs/reports/cost-week-2026-09-13.md` | **成本周（N=100 轻量 + 10 诊断；单次诊断 ≈¥0.012–0.048）** | ✅ 2026-09-13 |
-| `docs/eval/kb-cases.yaml` | KB 评测集（30 条，问题→期望卡片） | ✅ 2026-09-13 |
+| `eval/kb-cases.yaml` | KB 评测集（30 条，问题→期望卡片） | ✅ 2026-09-13 |
+| `eval/answer-cases.yaml` | 答案级评测集（50 条：KB30/DIAG15/SEC5） | ✅ 2026-09-13 |
 | `docs/reports/m4-security-and-metering-20260913.md` | **M4 证据：红队 8 项 + Token 计量（成本口径）** | ✅ 2026-09-13 |
 | `docs/reports/mttr-raw-20260913/` | MTTR 原始数据（10 案例请求/响应 + 耗时 TSV） | ✅ 2026-09-13 |
 | `docs/reports/mttr-benchmark-20260913.md` | **MTTR 对照评测（10 案例；Agent 1.58min，降幅 92.3% 保守下界）** | ✅ 2026-09-13 |
@@ -43,6 +44,7 @@
 | `docs/reviews/15-m3-knowledge-retrieval-complete.md` | **RV15：M3 知识检索闭环（code_locate + 主干完成清单）** | ✅ 2026-09-13 |
 | `docs/reviews/16-full-dimension-review.md` | **RV16：全维度深度 Review（8 个 P1 修复：IDOR/熔断/降级/缓存/守卫）** | ✅ 2026-09-13 |
 | `docs/reviews/17-m2x-approval-and-settlement.md` | **RV17：M2.x 审批超时 fail-closed + 跨实例决策事件 + 消费位点核验（实测）** | ✅ 2026-09-13 |
+| `docs/reviews/18-rv18-deep-review.md` | **RV18：四路深审 + P0/P1 修复（重投双 ID 匹配、队列级位点、执行 CAS、诊断鉴权、事件总线落地）** | ✅ 2026-09-13 |
 | `docs/requirements/01-scenario-library.md` | 业务场景库（34 场景 + REQ 编号 + 证据形态） | ✅ v0.2 |
 | `docs/requirements/02-nfr-slo-threatmodel.md` | 量化 SLO + STRIDE 威胁模型 + REQ↔AC↔TC | ✅ v0.1 |
 | `docs/requirements/03-legacy-asset-governance.md` | R05 旧资产治理清单与入库白名单 | ✅ v0.1 |
@@ -57,21 +59,22 @@
 | `docs/design/09-feature-driven-ecosystem-adoption.md` | 专项：**功能驱动**的生态采纳（MCP 对标+翻译清单） | ✅ v0.1 |
 | `docs/design/12-retrieval-and-knowledge.md` | 专项：检索与知识（Agentic Retrieval，非默认 RAG） | ✅ v0.1 |
 
-## 运行状态（2026-09-12，M1.6 + M2.0 完成）
+## 运行状态（2026-09-13，M1~M4 主体完成）
 
-- 服务：`xhs-ai` 由 systemd 托管（`xhs-ai.service`，Restart=always），19020 health UP，Flyway v1，JSON 日志（含 traceId）入 ELK，`/actuator/prometheus` 可用；Nacos 注册 + 网关 `/api/ai/**` JWT 路由（SSE 31min）。
+- 服务：`xhs-ai` 由 systemd 托管（`xhs-ai.service`，Restart=always），19020 health UP，Flyway v1，JSON 日志（含 traceId）入 ELK，`/actuator/prometheus` 可用；Nacos 注册 + 网关 `/api/ai/**` JWT 路由（SSE 31min）；审批位点诊断端点仅管理/内部令牌可用（未授权 401）。
 - 鉴权：平台信任模型（内部/管理令牌/access JWT 覆盖 X-User-Id），未认证 401；入参校验与错误脱敏。
 - MCP：ES/Prometheus/Grafana 三 server；Prometheus 17 个只读工具白名单（Agent 侧），web 监听随机本机端口。
 - **M2.0 业务竖切①**：DLQ 诊断→审批→重投→核验→审计端到端跑通（Agent 自主编排 3 自研工具 + MCP；未审批不执行；审批后自动 effect+settlement；`ai_audit/ai_approval/ai_message` 全程落库）。证据：`docs/reports/m2.0-dlq-e2e.md`。
-- 下一步：M2.x（审批超时 fail-closed + 跨实例恢复、消费位点核验、工具集预算）、M3 知识库与案例卡。
+- M2.x 已交付（RV17）：超时 fail-closed、跨实例 pub/sub、队列级消费位点核验（RV18 修复）、诊断端点。
+- 下一步：M4 剩余（压测 N≥100 出 P50/P95/P99、FMEA 演练 4-6 项、工具预算护栏）。
 
 ## 技术选型（已确认）
 
 | 项 | 选型 | 说明 |
 |----|------|------|
 | Agent 框架 | **AgentScope 2.0 Java**（HarnessAgent） | JDK 17；内置 workspace/memory/skill/subagent/HITL/分布式状态 |
-| LLM | **siyu-all 网关**（`https://siyu.site/v1`，OpenAI 兼容） | `deepseek-v4-pro` 主模型 / `deepseek-v4-flash` 轻量任务 |
-| Embedding | **火山方舟 Agent Plan**（`doubao-embedding-vision-large`，2048 维） | ✅ 已验证（HTTP 200/0.35s/2048 维） |
+| LLM | **siyu-all 网关**（`https://siyu.site/v1`，OpenAI 兼容） | 双通道：聊天 `deepseek-v4-pro` / Agent 工具循环 `qwen3.8-flash`（tool_calls 最稳）/ 降级 `deepseek-v4-flash` |
+| Embedding | **火山方舟 Agent Plan**（`doubao-embedding-vision-large`，2048 维） | ✅ 已验证（HTTP 200/0.35s/2048 维）；**封存**：BM25 hit@1=100% 达门槛，按 RV09 止损规则不启用向量 |
 | 存储 | MySQL（xhs 主库只读 + `my_xhs_ai` 业务库）/ Redis / ES | 复用现有中间件 |
 | 可观测 | OpenTelemetry → Langfuse | AgentScope 内置 OTel 埋点 |
 | 构建 | Maven + JUnit 5（对齐 xhs 主工程） | CI：单元测试 + 静态检查 + 契约测试 |
@@ -88,19 +91,20 @@
 - [x] 工程规范 04-engineering（E1-E7）
 - [x] P4 全量测试设计（TC 矩阵 v1.0）
 - [x] M1-1 依赖收敛验证（enforcer 三规则全过）
-- [x] M1-2 骨架（Application/Actuator/Flyway/Logback JSON）+ 对话/SSE（会话状态/ELK/Prom 待补）
+- [x] M1-2 骨架（Application/Actuator/Flyway/Logback JSON）+ 对话/SSE（会话状态/ELK/Prom 已补）
 - [x] M1.5 官方 MCP 接入验证（ES/Prometheus/Grafana tools+call 实测通）
 - [x] RV06 业务贴合度 + JD 对齐深度 Review（P0/P1 清单 + 规划修订 + JD 矩阵 v2）
 - [x] RV08/RV09/RV10 评审闭环（专家评审/技术必要性/全维度）+ settlement 异步核验 + 审批事务化
-- [x] M3 知识层增量：54 张卡片迁移+catalog+ES BM25+knowledge_* 工具+MCP 白名单（RV13）
-- [x] D01 模型网关（ModelGateway：传输重试/熔断/降级/指标，17 单测）+ Agent 知识问答 E2E（RV14）
+- [x] M3 知识层增量：55 张卡片（54+infra-anchors）迁移+catalog+ES BM25+knowledge_* 工具+MCP 白名单（RV13/RV18）
+- [x] D01 模型网关（ModelGateway：传输重试/熔断/降级/指标）+ Agent 知识问答 E2E（RV14；测试累计 22/22）
 - [x] M3 KB EVAL：30 条（10/10/10）hit@1=100% 门禁通过；向量实验按 RV09 止损规则不启动
 - [x] M3 code_locate v1（文件:行号 引用）+ 知识检索主干闭环（RV15）
 - [x] M4 启动：红队 8 项全拦截 + Token 计量落点（Prometheus）+ 双 MCP 端口冲突修复
 - [x] MTTR 对照：10 案例实测（9/10 证据完整；Agent 均值 1.58min；保守降幅 92.3%）
 - [x] 答案级评测：KB30+DIAG15+SEC5 共 50 条全过，引用有效性 100%（报告+原始 JSON 入库）
 - [x] 成本周：单次诊断 18.3k in / 1.4k out tokens（≈¥0.012–0.048），较全量直塞降幅 ~74%（估算）
-- [x] M2.x：审批超时 fail-closed + 跨实例 pub/sub 决策事件 + 消费位点核验（19/19 单测）
+- [x] M2.x：审批超时 fail-closed + 跨实例 pub/sub 决策事件 + 队列级消费位点核验（RV17 交付，RV18 修正；22/22 单测）
+- [x] RV18 四路深审：文档口径/SRE 运行态/跨项目一致性/代码第四轮 + P0/P1 修复闭环
 - [x] M1.6 安全与接线（鉴权/工具白名单/Nacos+网关/systemd/traceId/旧模块下线）✅ 2026-09-12
 - [x] M2.0 业务竖切①：DIAG-08+OPS-01 DLQ 诊断→审批→重投→核验→审计 ✅ 2026-09-12（E2E 见 docs/reports/m2.0-dlq-e2e.md）
 - [x] P2 需求工程：SLO/STRIDE/追溯矩阵（RQ02）

@@ -1,0 +1,51 @@
+id: infra-anchors
+category: code-map
+layer: code-map
+priority: P0
+question: 系统里常用的 MQ topic、核心表、ES 索引与网关 AI 路由前缀分别是什么？
+answer: >
+  以下为代码/SQL/配置中可直接核验的基础设施锚点（回答 topic/表名/索引/路由类问题必须以此为准）：
+  MQ：ORDER_TRANSACTION_TOPIC（下单事务消息，inventory 消费）、PAY_RESULT_TOPIC（支付回调结果，order/payment 消费）、
+  ORDER_CLOSE_TOPIC（订单关闭，order 消费）、CART_TOPIC（购物车变更，cart-sync/cart-event-sink 消费）、
+  PRODUCT_INDEX_TOPIC（商品索引同步，search 消费）、RECOMMEND_BEHAVIOR_TOPIC（推荐行为上报，search 消费）；
+  死信命名规则：%DLQ%{consumerGroup}，重试命名规则：%RETRY%{consumerGroup}。
+  表：t_cart_event（购物车事件流水，my_xhs_cart）、t_inventory_prededuct_idem（库存预扣幂等，my_xhs_inventory）、
+  t_payment / t_refund / t_order_event（交易/退款/订单事件，my_xhs_order）、t_user_behavior（行为，my_xhs_content）。
+  ES 索引：product_index（商品索引）、myxhs-logs-*（应用日志）、xhs_ai_knowledge（AI 知识卡）。
+  网关：AI 服务路由前缀 /api/ai/** → lb://xhs-ai（JWT 鉴权）。
+structured_points:
+  topics: ORDER_TRANSACTION_TOPIC / PAY_RESULT_TOPIC / ORDER_CLOSE_TOPIC / CART_TOPIC / PRODUCT_INDEX_TOPIC / RECOMMEND_BEHAVIOR_TOPIC
+  dlq_rule: '%DLQ%{consumerGroup}；重试 %RETRY%{consumerGroup}'
+  tables: t_cart_event / t_inventory_prededuct_idem / t_payment / t_refund / t_order_event / t_user_behavior
+  es_indexes: product_index / myxhs-logs-* / xhs_ai_knowledge
+  gateway_route: /api/ai/** → lb://xhs-ai
+why_it_matters: >
+  这类"锚点事实"散落在代码常量、SQL 与配置中，是诊断与知识问答的高频查询对象；
+  以可核验来源固化后，模型不得再凭记忆臆造 topic/表名。
+sources:
+  - my-xhs-inventory/src/main/java/com/myxhs/inventory/consumer/OrderTransactionConsumer.java
+  - my-xhs-order/src/main/java/com/myxhs/order/consumer/PayResultConsumer.java
+  - my-xhs-payment/src/main/java/com/myxhs/payment/consumer/PayResultConsumer.java
+  - my-xhs-order/src/main/java/com/myxhs/order/consumer/OrderCloseConsumer.java
+  - my-xhs-cart/src/main/java/com/myxhs/cart/consumer/CartSyncConsumer.java
+  - my-xhs-search/src/main/java/com/myxhs/search/consumer/ProductIndexSyncConsumer.java
+  - my-xhs-search/src/main/java/com/myxhs/search/consumer/BehaviorReportConsumer.java
+  - deploy/docker/my-xhs-deploy-zip/sql/mysql-inventory-init.sql
+  - deploy/docker/my-xhs-deploy-zip/sql/mysql-order-init.sql
+  - deploy/docker/my-xhs-deploy-zip/sql/init-all.sql
+  - my-xhs-gateway/src/main/resources/application.yml
+  - my-xhs-search/src/main/resources/application.yml
+trigger_keywords:
+  - topic
+  - 表名
+  - 索引
+  - 路由
+  - 网关
+  - DLQ
+best_for_questions:
+  - 下单事务消息的 topic 是什么？
+  - 支付回调结果走哪个 topic？
+  - 购物车事件流水表名是什么？
+  - 网关为 AI 服务配置的路由前缀是什么？
+anti_confusion:
+  - 不要臆造未列出的 topic/表名；不在本卡时用 code_locate 检索，仍无则声明无记录

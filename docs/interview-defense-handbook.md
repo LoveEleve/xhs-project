@@ -77,7 +77,7 @@
 
 ## H. Feed 推拉结合
 
-- **设计**：普通作者写扩散（粉丝 Pipeline 批量 ZADD，500/批 + Redis 进度断点）；大 V（阈值 5w 粉）写发件箱走拉模式；读侧合并收件箱 + 大 V 发件箱。
+- **设计**：普通作者写扩散（粉丝 Pipeline 批量 ZADD，500/批 + Redis 进度断点）；大 V（阈值 10w 粉，`home.feed.big-v-threshold=100000`）写发件箱走拉模式；读侧合并收件箱 + 大 V 发件箱。
 - **争议**：纯推（读快写慢）vs 纯拉（大 V 友好）vs 推拉结合；阈值取多少。
 - **坑**：进度 key TTL 只有 1h；已删标记只 5min，晚到推送可能写回；收件箱膨胀靠异步裁剪。
 - **兜底**：ZADD 幂等可重推；content 侧 30s 本地消息补发 + 60s 推送未完成补偿（MySQL `push_status` 兜底）；断点续推实测可跳过已推粉丝。
@@ -140,7 +140,7 @@
 
 ## O. DLQ 治理与消费者韧性
 
-- **设计**：消费者 `maxReconsumeTimes=3` → `%DLQ%<group>`；DlqMetrics 采样 22 个消费组出 Gauge；业务侧另有补偿通道（Redis 集合/本地消息/Outbox）。
+- **设计**：消费者 `maxReconsumeTimes`（18 个组 3 次 / 8 个组 5 次）→ `%DLQ%<group>`；DlqMetrics 对 22 个核心消费组采样出 Gauge；业务侧另有补偿通道（Redis 集合/本地消息/Outbox）。
 - **争议**：有限重试入 DLQ vs 无限重试；自动重投 vs 人工审批；原生指标 vs 自算。
 - **坑**：DLQ 指标曾**恒为 0**（`searchOffset(now)` 与 maxOffset 恒等，运行态 #21）；`-1` 是“无 DLQ/查询失败”的哨兵不是真实积压；order 补偿进 DLQ 曾没有重放通道。
 - **兜底**：积压改为 `maxOffset-minOffset`；订单补偿近上限写 Redis 待处理集合、由 Job 每分钟重放；L3 死信重投需人工审批。

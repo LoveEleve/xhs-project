@@ -47,8 +47,8 @@
 
 | # | 事项 | 触发/里程碑 |
 |---|------|------------|
-| 1 | 审批超时 fail-closed + 跨实例 pub/sub（PLAT-02 / D02 §10） | M2.x 专项 |
-| 2 | 消费位点核验（替代"未再入 DLQ"推断） | M2.x |
+| 1 | 审批超时 fail-closed + 跨实例 pub/sub（PLAT-02 / D02 §10） | ✅ RV17 交付 |
+| 2 | 消费位点核验（替代"未再入 DLQ"推断） | ✅ RV17 交付，RV18 升级队列级 |
 | 3 | 工具集 schema 预算（27→>40 时上 tool_search）；Grafana 工具不进 Agent | M3 前夜 |
 | 4 | 用户级限流/token 预算；`raw_input_hash` 执行前校验 | M2.x |
 | 5 | 依赖治理：MCP 重复类收敛、Jackson/reactor 版本全对齐、MyBatis-Plus 去留、OTel 版本对齐 | M3 动 pom 时 |
