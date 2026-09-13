@@ -1,0 +1,10 @@
+dlq|当前有哪些 DLQ 消费组和积压量？
+prom|用 Prometheus 查一下当前 up=0 的实例有哪些？
+log|最近 1 小时 ERROR 日志最多的服务是哪个？给出证据。
+code|库存预扣的核心方法在哪个类？给出文件:行号。
+kb-order|order 为什么是交易链的编排中心？给出来源。
+kb-refund|退款链路涉及哪些服务与状态流转？
+kb-inventory|库存三级扣减（Redis 分桶/DB/幂等）是怎么设计的？
+kb-txmsg|事务消息回查机制为什么存在？
+kb-compensation|支付成功后的补偿路径有哪些？
+kb-gateway|网关（gateway）在系统中的角色与边界是什么？
