@@ -32,6 +32,9 @@ public class CodeLocateService {
             return Map.of("error", "query 不能为空");
         }
         String needle = query.trim();
+        if (needle.length() > 200) {
+            needle = needle.substring(0, 200);
+        }
         int max = limit == null ? DEFAULT_LIMIT : Math.min(Math.max(limit, 1), 20);
         String classPart = null;
         String methodPart = null;
@@ -47,6 +50,7 @@ public class CodeLocateService {
         try (Stream<Path> files = Files.walk(root)) {
             var it = files.filter(p -> p.toString().endsWith(".java"))
                     .filter(p -> !p.toString().contains("/target/"))
+                    .filter(p -> !Files.isSymbolicLink(p))
                     .filter(Files::isRegularFile)
                     .iterator();
             while (it.hasNext() && scanned < MAX_FILES && matches.size() < max) {
@@ -61,6 +65,7 @@ public class CodeLocateService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("query", needle);
         result.put("scannedFiles", scanned);
+        result.put("truncated", scanned >= MAX_FILES || matches.size() >= max);
         result.put("matches", matches);
         result.put("hint", "返回 文件:行号；回答引用具体位置，必要时用 grep 语义继续缩小。");
         return result;
@@ -81,7 +86,7 @@ public class CodeLocateService {
                     continue;
                 }
                 Map<String, Object> item = new LinkedHashMap<>();
-                item.put("file", file.toString().replace(codeRoot, ""));
+                item.put("file", "/" + Path.of(codeRoot).relativize(file));
                 item.put("line", i + 1);
                 item.put("snippet", line.trim().length() > 160 ? line.trim().substring(0, 160) : line.trim());
                 found.add(item);

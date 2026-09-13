@@ -46,7 +46,7 @@
 
 ## 5. 产物
 
-- 原始：`/tmp/mttr/*.json`（10 案例请求/响应）、`/tmp/mttr/results.tsv`（耗时）
+- 原始：`docs/reports/mttr-raw-20260913/`（10 案例请求/响应 JSON + `results.tsv` 耗时 + `cases.txt`）
 - 本报告：`docs/reports/mttr-benchmark-20260913.md`
 
 > 备注：如面试深挖，按"Agent 墙钟实测 + 人工口径重构（保守下界 92.3%）"口径说明，不引用未实测的人工分钟数。

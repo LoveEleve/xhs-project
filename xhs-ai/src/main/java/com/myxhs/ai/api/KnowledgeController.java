@@ -1,6 +1,10 @@
 package com.myxhs.ai.api;
 
 import com.myxhs.ai.common.R;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.RequestHeader;
 import com.myxhs.ai.code.CodeLocateService;
 import com.myxhs.ai.eval.KbEvalService;
 import com.myxhs.ai.knowledge.KnowledgeIndexer;
@@ -27,6 +31,12 @@ public class KnowledgeController {
     private final KbEvalService kbEvalService;
     private final CodeLocateService codeLocateService;
 
+    @Value("${myxhs.admin.token:}")
+    private String adminToken;
+
+    @Value("${myxhs.internal.token:}")
+    private String internalToken;
+
     @GetMapping("/stats")
     public R<Map<String, Object>> stats() {
         Map<String, Object> stats = new LinkedHashMap<>();
@@ -36,8 +46,18 @@ public class KnowledgeController {
     }
 
     @PostMapping("/reindex")
-    public R<Map<String, Object>> reindex() {
-        return R.ok(knowledgeIndexer.reindex());
+    public ResponseEntity<R<Map<String, Object>>> reindex(
+            @RequestHeader(value = "X-Admin-Call", required = false) String adminCall,
+            @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
+        if (!privileged(adminCall, internalCall)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(R.fail(403, "需要管理令牌"));
+        }
+        return ResponseEntity.ok(R.ok(knowledgeIndexer.reindex()));
+    }
+
+    private boolean privileged(String adminCall, String internalCall) {
+        return (adminToken != null && !adminToken.isEmpty() && adminToken.equals(adminCall))
+                || (internalToken != null && !internalToken.isEmpty() && internalToken.equals(internalCall));
     }
 
     /** 代码定位（只读；冒烟/评测入口） */
@@ -49,7 +69,12 @@ public class KnowledgeController {
 
     /** KB 检索评测（hit@1/hit@3 门禁；M3 出口） */
     @PostMapping("/eval")
-    public R<Map<String, Object>> eval() {
-        return R.ok(kbEvalService.run());
+    public ResponseEntity<R<Map<String, Object>>> eval(
+            @RequestHeader(value = "X-Admin-Call", required = false) String adminCall,
+            @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
+        if (!privileged(adminCall, internalCall)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(R.fail(403, "需要管理令牌"));
+        }
+        return ResponseEntity.ok(R.ok(kbEvalService.run()));
     }
 }

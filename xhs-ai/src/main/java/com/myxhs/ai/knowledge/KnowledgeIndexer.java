@@ -72,6 +72,15 @@ public class KnowledgeIndexer {
     public Map<String, Object> reindex() {
         try {
             ensureIndex();
+            // 全量重建：先清空（卡片下线后不得残留）
+            try {
+                client().post().uri("/" + INDEX + "/_delete_by_query?refresh=true")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"query\":{\"match_all\":{}}}")
+                        .retrieve().toBodilessEntity();
+            } catch (Exception e) {
+                log.warn("[知识索引] 清空旧文档失败（可能为空索引）: {}", e.getMessage());
+            }
             List<KnowledgeCard> cards = knowledgeRepository.all();
             int ok = 0;
             for (KnowledgeCard card : cards) {

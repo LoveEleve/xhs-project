@@ -2,7 +2,7 @@
 
 > 全新设计与实现（不继承 `my-xhs-ai*` 旧代码，旧模块仅作参考/归档）
 >
-> 版本：v0.3（M1~M2.0 已落地运行；RV08/RV09/RV10 评审闭环）｜日期：2026-09-12
+> 版本：v0.4（M1~M4 证据周进行中；RV08~RV16 闭环）｜日期：2026-09-13
 
 ## 文档索引
 
@@ -27,7 +27,9 @@
 | `docs/reviews/07-jd-hit-matrix-v2.md` | JD 命中矩阵 v2（18 份 JD × xhs-ai v2 现状） | ✅ 2026-09-12 |
 | `docs/reports/m2.0-dlq-e2e.md` | **M2.0 业务竖切① E2E 记录（DLQ 诊断→审批→重投→核验→审计）** | ✅ 2026-09-12 |
 | `docs/reports/kb-eval-20260913.md` | **KB 检索评测（30 条，hit@1=100%，门禁通过；向量不启动）** | ✅ 2026-09-13 |
+| `docs/eval/kb-cases.yaml` | KB 评测集（30 条，问题→期望卡片） | ✅ 2026-09-13 |
 | `docs/reports/m4-security-and-metering-20260913.md` | **M4 证据：红队 8 项 + Token 计量（成本口径）** | ✅ 2026-09-13 |
+| `docs/reports/mttr-raw-20260913/` | MTTR 原始数据（10 案例请求/响应 + 耗时 TSV） | ✅ 2026-09-13 |
 | `docs/reports/mttr-benchmark-20260913.md` | **MTTR 对照评测（10 案例；Agent 1.58min，降幅 92.3% 保守下界）** | ✅ 2026-09-13 |
 | `docs/reviews/08-m2.0-expert-review.md` | **RV08：M2.0 专家评审（harness-skills expert-reviewer 双轴）** | ✅ 2026-09-12 |
 | `docs/reviews/09-tech-necessity-review.md` | **RV09：技术必要性审查（RAG 争论 → 不建朴素 RAG；每项技术的触发/止损）** | ✅ 2026-09-12 |
@@ -37,6 +39,7 @@
 | `docs/reviews/13-m3-knowledge-progress.md` | **RV13：M3 知识层进展（54 卡入 BM25/Top1 命中）+ 模型网关稳定性评估** | ✅ 2026-09-13 |
 | `docs/reviews/14-model-gateway-and-kb-e2e.md` | **RV14：D01 模型网关（重试/熔断/降级/指标）+ 知识问答端到端打通** | ✅ 2026-09-13 |
 | `docs/reviews/15-m3-knowledge-retrieval-complete.md` | **RV15：M3 知识检索闭环（code_locate + 主干完成清单）** | ✅ 2026-09-13 |
+| `docs/reviews/16-full-dimension-review.md` | **RV16：全维度深度 Review（8 个 P1 修复：IDOR/熔断/降级/缓存/守卫）** | ✅ 2026-09-13 |
 | `docs/requirements/01-scenario-library.md` | 业务场景库（34 场景 + REQ 编号 + 证据形态） | ✅ v0.2 |
 | `docs/requirements/02-nfr-slo-threatmodel.md` | 量化 SLO + STRIDE 威胁模型 + REQ↔AC↔TC | ✅ v0.1 |
 | `docs/requirements/03-legacy-asset-governance.md` | R05 旧资产治理清单与入库白名单 | ✅ v0.1 |
@@ -55,7 +58,7 @@
 
 - 服务：`xhs-ai` 由 systemd 托管（`xhs-ai.service`，Restart=always），19020 health UP，Flyway v1，JSON 日志（含 traceId）入 ELK，`/actuator/prometheus` 可用；Nacos 注册 + 网关 `/api/ai/**` JWT 路由（SSE 31min）。
 - 鉴权：平台信任模型（内部/管理令牌/access JWT 覆盖 X-User-Id），未认证 401；入参校验与错误脱敏。
-- MCP：ES/Prometheus/Grafana 三 server；Prometheus 20 个只读工具白名单，19081 仅本机。
+- MCP：ES/Prometheus/Grafana 三 server；Prometheus 17 个只读工具白名单（Agent 侧），web 监听随机本机端口。
 - **M2.0 业务竖切①**：DLQ 诊断→审批→重投→核验→审计端到端跑通（Agent 自主编排 3 自研工具 + MCP；未审批不执行；审批后自动 effect+settlement；`ai_audit/ai_approval/ai_message` 全程落库）。证据：`docs/reports/m2.0-dlq-e2e.md`。
 - 下一步：M2.x（审批超时 fail-closed + 跨实例恢复、消费位点核验、工具集预算）、M3 知识库与案例卡。
 

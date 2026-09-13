@@ -119,10 +119,23 @@ class ModelGatewayTest {
         FakeModel fallback = new FakeModel("f", List.of(Flux.just(ok())));
         ModelGateway gateway = new ModelGateway(primary, fallback, new SimpleMeterRegistry(), 3, 10, 3, 1000);
 
-        // 已出流后的传输失败不可重试：主通道只调用一次，随后切备用
-        ChatResponse response = gateway.stream(MSGS, List.of(), null).blockLast();
-        assertEquals("r1", response.getId());
+        // 已出流后的失败：不重试、不降级重放，直接报错
+        assertThrows(ModelGateway.ModelUnavailableException.class,
+                () -> gateway.stream(MSGS, List.of(), null).blockLast());
         assertEquals(1, primary.calls.get());
-        assertEquals(1, fallback.calls.get());
+        assertEquals(0, fallback.calls.get());
+    }
+
+    @Test
+    void breakerResetsCountersOnPrimarySuccess() {
+        FakeModel primary = new FakeModel("p", List.of(Flux.just(ok()), socketError(), socketError(), Flux.just(ok())));
+        FakeModel fallback = new FakeModel("f", List.of(Flux.just(ok())));
+        ModelGateway gateway = new ModelGateway(primary, fallback, new SimpleMeterRegistry(), 1, 10, 3, 60000);
+        gateway.stream(MSGS, List.of(), null).blockLast();   // success -> reset
+        gateway.stream(MSGS, List.of(), null).blockLast();   // fail 1
+        gateway.stream(MSGS, List.of(), null).blockLast();   // fail 2 (threshold 3 not reached)
+        int callsBefore = primary.calls.get();
+        gateway.stream(MSGS, List.of(), null).blockLast();   // 主通道仍可用（未被熔断）
+        assertEquals(callsBefore + 1, primary.calls.get());
     }
 }

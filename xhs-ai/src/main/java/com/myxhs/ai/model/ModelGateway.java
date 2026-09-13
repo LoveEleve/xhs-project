@@ -59,17 +59,30 @@ public class ModelGateway implements Model {
 
     @Override
     public Flux<ChatResponse> stream(List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+        long openUntil = breakerOpenUntil.get();
+        if (openUntil > 0 && System.currentTimeMillis() >= openUntil) {
+            // 冷却结束：半开——清空计数放行本请求作为探测
+            breakerOpenUntil.set(0);
+            consecutiveFailures.set(0);
+            log.info("[模型网关] 熔断冷却结束，半开放行探测请求");
+        }
         if (System.currentTimeMillis() < breakerOpenUntil.get()) {
             log.warn("[模型网关] 熔断开启，直接使用备用通道: primary={}", primary.getModelName());
-            counter("fallback", "breaker_open");
+            counter("fallback", primary.getModelName(), "breaker_open");
             return callWithRetry(fallback, "fallback", messages, tools, options, 1);
         }
         return callWithRetry(primary, "primary", messages, tools, options, maxAttempts)
+                .doOnComplete(() -> consecutiveFailures.set(0))
                 .onErrorResume(primaryError -> {
                     recordFailure();
+                    if (primaryError instanceof PartialStreamException) {
+                        log.warn("[模型网关] 主通道流中断（已输出部分内容），不降级重放: {}", primaryError.getMessage());
+                        return Flux.error(new ModelUnavailableException(
+                                "模型流中断（已输出部分内容，请重试）: " + primaryError.getMessage(), primaryError));
+                    }
                     log.warn("[模型网关] 主通道失败（{}），切换备用通道: {}",
                             primary.getModelName(), primaryError.getMessage());
-                    counter("fallback", "failover");
+                    counter("fallback", primary.getModelName(), "failover");
                     return callWithRetry(fallback, "fallback", messages, tools, options, 2)
                             .onErrorResume(fallbackError -> {
                                 log.error("[模型网关] 主/备通道均失败: primary={}, fallback={}",
@@ -101,16 +114,16 @@ public class ModelGateway implements Model {
                         .filter(this::isRetryable)
                         .doBeforeRetry(signal -> {
                             log.warn("[模型网关] {} 传输错误重试（{}/{}）: {}",
-                                    channel, signal.totalRetries() + 1, maxAttempts, signal.failure().getMessage());
-                            counter(channel, "retry");
+                                    channel, signal.totalRetries() + 1, attempts, signal.failure().getMessage());
+                            counter(channel, modelName, "retry");
                         })
                         .onRetryExhaustedThrow((spec, signal) -> signal.failure()))
                 .doOnComplete(() -> {
-                    counter(channel, "ok");
+                    counter(channel, modelName, "ok");
                     timer(channel, modelName, System.currentTimeMillis() - start);
                 })
                 .doOnError(e -> {
-                    counter(channel, "error");
+                    counter(channel, modelName, "error");
                     timer(channel, modelName, System.currentTimeMillis() - start);
                 });
     }
@@ -143,16 +156,19 @@ public class ModelGateway implements Model {
             long until = System.currentTimeMillis() + breakerCooldownMs;
             if (until > breakerOpenUntil.get()) {
                 breakerOpenUntil.set(until);
-                counter("primary", "breaker_open");
+                counter("primary", primary.getModelName(), "breaker_open");
+                if (meterRegistry != null) {
+                    meterRegistry.counter("ai_model_breaker_open_total", "model", primary.getModelName()).increment();
+                }
                 log.error("[模型网关] 熔断开启 {}ms（连续失败 {} 次）", breakerCooldownMs, failures);
             }
         }
     }
 
-    private void counter(String channel, String result) {
+    private void counter(String channel, String modelName, String result) {
         if (meterRegistry != null) {
             meterRegistry.counter("ai_model_calls_total",
-                    "channel", channel, "result", result, "model", getModelName()).increment();
+                    "channel", channel, "result", result, "model", modelName).increment();
         }
     }
 

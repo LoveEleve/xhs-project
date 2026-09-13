@@ -18,6 +18,14 @@ public class SessionRepository {
 
     private final JdbcTemplate jdbcTemplate;
 
+    /** 该 sessionId 是否已属于其他用户（防 IDOR：外部 sessionId 可被他人续聊） */
+    public boolean ownedByOther(String sessionId, Long userId) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM ai_session WHERE session_id = ? AND user_id <> ?",
+                Integer.class, sessionId, userId);
+        return count != null && count > 0;
+    }
+
     public void ensureSession(Long userId, String sessionId, String title) {
         jdbcTemplate.update(
                 "INSERT INTO ai_session(user_id, session_id, title) VALUES(?,?,?) "

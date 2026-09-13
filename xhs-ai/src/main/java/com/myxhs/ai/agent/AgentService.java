@@ -168,11 +168,14 @@ public class AgentService {
 
     /** 流式执行（不负责 assistant 归档，由调用方调 recordAssistant） */
     public Flux<Event> stream(Long userId, String sessionId, String message, String traceId) {
+        if (sessionRepository.ownedByOther(sessionId, userId)) {
+            throw new IllegalArgumentException("无权访问该会话");
+        }
         sessionRepository.ensureSession(userId, sessionId, message);
         sessionRepository.appendMessage(sessionId, userId, "user", message, traceId, null, 0, 0);
         RuntimeContext context = RuntimeContext.builder()
                 .userId(String.valueOf(userId))
-                .sessionId(sessionId)
+                .sessionId(userId + ":" + sessionId)
                 .put("traceId", traceId)
                 .build();
         StreamOptions options = StreamOptions.builder()

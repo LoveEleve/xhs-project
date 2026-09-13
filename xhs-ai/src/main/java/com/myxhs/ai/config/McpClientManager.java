@@ -27,7 +27,7 @@ public class McpClientManager {
 
     private final McpProperties properties;
     private final Map<String, McpClientWrapper> clients = new ConcurrentHashMap<>();
-    private final Map<String, Set<String>> toolNames = new ConcurrentHashMap<>();
+    private final Map<String, ToolCache> toolNames = new ConcurrentHashMap<>();
     private final Map<String, String> errors = new ConcurrentHashMap<>();
 
     public Set<String> serverNames() {
@@ -100,9 +100,11 @@ public class McpClientManager {
     }
 
     public McpSchema.CallToolResult callTool(String name, String tool, Map<String, Object> arguments) {
-        Set<String> names = knownTools(name);
-        if (!names.contains(tool)) {
-            throw new IllegalArgumentException("MCP 工具不存在或未启用: " + name + "/" + tool);
+        if (!knownTools(name).contains(tool)) {
+            toolNames.remove(name);
+            if (!knownTools(name).contains(tool)) {
+                throw new IllegalArgumentException("MCP 工具不存在或未启用: " + name + "/" + tool);
+            }
         }
         McpClientWrapper wrapper = client(name);
         McpSchema.CallToolResult result = wrapper
@@ -114,16 +116,38 @@ public class McpClientManager {
         return result;
     }
 
-    /** 工具名集合（每 server 预取一次，未知工具快速失败） */
+    /** 工具名缓存（TTL 10min；空集不缓存；未命中失效重取一次） */
+    private static final long TOOL_CACHE_TTL_MS = 10 * 60 * 1000L;
+
+    private static final class ToolCache {
+        final Set<String> names;
+        final long at;
+
+        ToolCache(Set<String> names) {
+            this.names = names;
+            this.at = System.currentTimeMillis();
+        }
+    }
+
     private Set<String> knownTools(String name) {
-        return toolNames.computeIfAbsent(name, key -> {
-            McpClientWrapper wrapper = client(key);
-            List<McpSchema.Tool> tools = wrapper.listTools().block(Duration.ofSeconds(15));
-            Set<String> set = tools == null ? Set.of()
-                    : tools.stream().map(McpSchema.Tool::name).collect(java.util.stream.Collectors.toSet());
-            log.info("[MCP] server={} 工具名缓存: {} 个", key, set.size());
-            return set;
-        });
+        ToolCache cache = toolNames.get(name);
+        if (cache != null && System.currentTimeMillis() - cache.at <= TOOL_CACHE_TTL_MS) {
+            return cache.names;
+        }
+        Set<String> fetched = fetchToolNames(name);
+        if (!fetched.isEmpty()) {
+            toolNames.put(name, new ToolCache(fetched));
+        }
+        return fetched;
+    }
+
+    private Set<String> fetchToolNames(String name) {
+        McpClientWrapper wrapper = client(name);
+        List<McpSchema.Tool> tools = wrapper.listTools().block(Duration.ofSeconds(15));
+        Set<String> set = tools == null ? Set.of()
+                : tools.stream().map(McpSchema.Tool::name).collect(java.util.stream.Collectors.toSet());
+        log.info("[MCP] server={} 工具名缓存刷新: {} 个", name, set.size());
+        return set;
     }
 
     /** 各 server 状态（供健康检查/排障） */
