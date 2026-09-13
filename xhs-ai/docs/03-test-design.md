@@ -129,3 +129,14 @@ release:  RED + PERF + E2E 全量 + 手工验收清单          → 打 tag
 - 网络：CI 默认不出网；`-Peval-live` 才访问 LLM/Ark
 - 测试数据：`my_xhs_ai_test` 库；知识 fixture 独立目录；评测集版本化（git）
 - 隔离：每用例独立 `(userId,sessionId)`；清理钩子保证无残留
+
+## 8. 数据完整性与 DLQ 门禁（RV11 沉淀）
+
+| TC | 名称 | 断言 |
+|----|------|------|
+| TC-EVAL-OPS-01 | DLQ 全量零积压 | 每轮回归结束：全量 `%DLQ%*` backlog=0（批准豁免除外），非零即失败 |
+| TC-CT-EVENT-01 | 消费者动作词汇表契约 | 对每个 consumer group 发动作全集（如 cart：ADD/UPDATE/DELETE/CHECK/CHECK_ALL/CLEAR），断言逐动作发布数=落库数；无 SKU 动作（CLEAR/CHECK_ALL）走 0 哨兵 |
+| TC-CT-SCHEMA-01 | Schema 契约校验 | 代码声明（唯一索引/非空/枚举/哨兵约定）与实际 DDL 机械比对（uk_msg_id 类漂移零容忍） |
+
+> 原则（RV11）：断言打在**副作用**（DLQ/事件表/审计）上，不只打主流程返回值；旁路链路必须有独立完整性门禁。
+

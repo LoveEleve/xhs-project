@@ -153,7 +153,14 @@ public class DlqAdminService {
             return java.util.Optional.empty();
         }
         String topic = dlqTopic(group);
-        TopicStatsTable stats = admin().examineTopicStats(topic);
+        TopicStatsTable stats;
+        try {
+            stats = admin().examineTopicStats(topic);
+        } catch (Exception e) {
+            // DLQ topic 不存在（被清理且无新失败）= 未再入 DLQ，属正常路径
+            log.debug("[DLQ] topic 不存在或查询失败（视为无匹配）: {} ({})", topic, e.getMessage());
+            return java.util.Optional.empty();
+        }
         List<Map.Entry<MessageQueue, org.apache.rocketmq.remoting.protocol.admin.TopicOffset>> queues =
                 new ArrayList<>(stats.getOffsetTable().entrySet());
         queues.sort(Comparator.comparing(e -> e.getKey().getQueueId()));

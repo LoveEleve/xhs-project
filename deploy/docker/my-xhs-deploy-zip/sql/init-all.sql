@@ -449,13 +449,14 @@ CREATE TABLE IF NOT EXISTS t_cart_event (
     id           BIGINT       NOT NULL COMMENT 'ID',
     user_id      BIGINT       NOT NULL COMMENT '用户ID',
     sku_id       BIGINT       NOT NULL COMMENT 'SKU ID',
-    action       VARCHAR(32)  NOT NULL COMMENT 'ADD/UPDATE/REMOVE/MERGE/CLEAR',
+    action       VARCHAR(32)  NOT NULL COMMENT 'ADD/UPDATE/DELETE/CHECK/CHECK_ALL/CLEAR；CLEAR 时 sku_id=0 哨兵',
     quantity     INT          DEFAULT 1 COMMENT '数量',
     checked      TINYINT      DEFAULT 1 COMMENT '是否选中：0-否 1-是',
     event_time   DATETIME     DEFAULT NULL COMMENT '事件时间',
     msg_id       VARCHAR(64)  DEFAULT NULL COMMENT 'MQ消息ID',
     created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (id),
+    UNIQUE KEY uk_msg_id (msg_id),
     INDEX idx_user_id (user_id),
     INDEX idx_sku_id (sku_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='购物车事件流水(append-only)';
