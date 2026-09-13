@@ -36,8 +36,8 @@
 
 ## 五、遗留（M4 清单）
 
-1. 压测 N≥100（P50/P95/P99 CSV）
+1. ~~压测 N≥100（P50/P95/P99 CSV）~~ ✅ 已完成（C=5 基线 + C=20 超载，`docs/reports/load-test-20260913.md`）
 2. FMEA 演练 4-6 项（停 ES/Redis failover/kill MCP/滚动重启）
-3. 工具预算护栏（>40 工具触发 tool_search）
+3. ~~工具预算护栏~~ ✅ 已完成（软32/硬40 + `ai_agent_tools_total` Gauge；硬预算要求先实现 tool_search）
 4. 平台侧：DlqMetrics 清单与实际消费者组存在 8 组差（挂账：低频组未建 DLQ Gauge）
 5. ~~KB 评测 55 卡复跑~~ ✅ 已完成：答案级 30/30、聚合引用 100%（首轮 2 例幻觉路径经定向复测修正，硬校验门禁生效）

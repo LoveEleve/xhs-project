@@ -30,6 +30,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -107,6 +108,15 @@ public class AgentService {
     @Value("${REDIS_PASSWORD:}")
     private String redisPassword;
 
+    @Value("${myxhs.agent.tool-soft-budget:32}")
+    private int toolSoftBudget;
+
+    @Value("${myxhs.agent.tool-hard-budget:40}")
+    private int toolHardBudget;
+
+    @Autowired(required = false)
+    private io.micrometer.core.instrument.MeterRegistry meterRegistry;
+
     private JedisSentineled unifiedJedis;
     private ReActAgent agent;
 
@@ -120,7 +130,6 @@ public class AgentService {
         toolkit.registerAgentTool(knowledgeSearchTool);
         toolkit.registerAgentTool(cardReadTool);
         toolkit.registerAgentTool(codeLocateTool);
-        // BISECT: temporarily disabled knowledge tools
         registerMcpWithAllowlist(toolkit);
         Set<HostAndPort> sentinels = Arrays.stream(sentinelNodes.split(","))
                 .map(String::trim).filter(s -> !s.isBlank())
@@ -169,7 +178,17 @@ public class AgentService {
                         .maxTokens(8192)
                         .build())
                 .build();
-        log.info("[Agent] 装配完成: tools={}", toolkit.getToolNames());
+        Set<String> toolNames = toolkit.getToolNames();
+        ToolBudget.Level level = ToolBudget.evaluate(toolNames.size(), toolSoftBudget, toolHardBudget);
+        if (meterRegistry != null) {
+            meterRegistry.gauge("ai_agent_tools_total", toolNames.size());
+        }
+        if (level == ToolBudget.Level.WARN) {
+            log.warn("[Agent] 工具数 {} 超过软预算 {}，请评估是否实现 tool_search 渐进加载", toolNames.size(), toolSoftBudget);
+        } else if (level == ToolBudget.Level.FAIL) {
+            throw new IllegalStateException(ToolBudget.failMessage(toolNames.size(), toolSoftBudget, toolHardBudget));
+        }
+        log.info("[Agent] 装配完成: tools={}, budget={}", toolNames.size(), level);
     }
 
     /** 流式执行（不负责 assistant 归档，由调用方调 recordAssistant） */

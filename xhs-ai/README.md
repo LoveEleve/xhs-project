@@ -34,6 +34,7 @@
 | `docs/reports/m4-security-and-metering-20260913.md` | **M4 证据：红队 8 项 + Token 计量（成本口径）** | ✅ 2026-09-13 |
 | `docs/reports/mttr-raw-20260913/` | MTTR 原始数据（10 案例请求/响应 + 耗时 TSV） | ✅ 2026-09-13 |
 | `docs/reports/mttr-benchmark-20260913.md` | **MTTR 对照评测（10 案例；Agent 1.58min，降幅 92.3% 保守下界）** | ✅ 2026-09-13 |
+| `docs/reports/load-test-20260913.md` | **M4 压测（C=5：100/100，P50 13.5s/P95 39.0s/P99 46.5s；C=20 超载降级记录）** | ✅ 2026-09-13 |
 | `docs/reviews/08-m2.0-expert-review.md` | **RV08：M2.0 专家评审（harness-skills expert-reviewer 双轴）** | ✅ 2026-09-12 |
 | `docs/reviews/09-tech-necessity-review.md` | **RV09：技术必要性审查（RAG 争论 → 不建朴素 RAG；每项技术的触发/止损）** | ✅ 2026-09-12 |
 | `docs/reviews/10-full-dimension-review.md` | **RV10：全维度深度 Review（代码 P0×2 修复 / settlement 异步闭环 / 文档回写）** | ✅ 2026-09-12 |
@@ -66,7 +67,7 @@
 - MCP：ES/Prometheus/Grafana 三 server；Prometheus 17 个只读工具白名单（Agent 侧），web 监听随机本机端口。
 - **M2.0 业务竖切①**：DLQ 诊断→审批→重投→核验→审计端到端跑通（Agent 自主编排 3 自研工具 + MCP；未审批不执行；审批后自动 effect+settlement；`ai_audit/ai_approval/ai_message` 全程落库）。证据：`docs/reports/m2.0-dlq-e2e.md`。
 - M2.x 已交付（RV17）：超时 fail-closed、跨实例 pub/sub、队列级消费位点核验（RV18 修复）、诊断端点。
-- 下一步：M4 剩余（压测 N≥100 出 P50/P95/P99、FMEA 演练 4-6 项、工具预算护栏）。
+- 下一步：M4 剩余（FMEA 演练 4-6 项）。压测与工具预算护栏已交付。
 
 ## 技术选型（已确认）
 
@@ -105,6 +106,7 @@
 - [x] 成本周：单次诊断 18.3k in / 1.4k out tokens（≈¥0.012–0.048），较全量直塞降幅 ~74%（估算）
 - [x] M2.x：审批超时 fail-closed + 跨实例 pub/sub 决策事件 + 队列级消费位点核验（RV17 交付，RV18 修正；22/22 单测）
 - [x] RV18 四路深审：文档口径/SRE 运行态/跨项目一致性/代码第四轮 + P0/P1 修复闭环
+- [x] M4 压测 N=100（C=5 全成，P50/P95/P99 入库）+ 工具预算护栏（软32/硬40，Gauge `ai_agent_tools_total`）
 - [x] M1.6 安全与接线（鉴权/工具白名单/Nacos+网关/systemd/traceId/旧模块下线）✅ 2026-09-12
 - [x] M2.0 业务竖切①：DIAG-08+OPS-01 DLQ 诊断→审批→重投→核验→审计 ✅ 2026-09-12（E2E 见 docs/reports/m2.0-dlq-e2e.md）
 - [x] P2 需求工程：SLO/STRIDE/追溯矩阵（RQ02）

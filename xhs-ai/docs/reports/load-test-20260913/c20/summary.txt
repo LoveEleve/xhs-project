@@ -1,0 +1,3 @@
+N=100 C=20 (客户端120s超时口径：超时请求 time_total 未写入，失败39=curl 28，实际应视为 >120s) ok=61 fail=39 duration=338s
+P50=24.932s P95=81.115s P99=95.406s mean=32.764s max=95.406s
+throughput=0.18 req/s

@@ -1,0 +1,3 @@
+N=100 C=5 ok=100 fail=0 duration=322s
+P50=13.516s P95=38.953s P99=46.483s mean=15.210s max=46.483s
+throughput=0.31 req/s
