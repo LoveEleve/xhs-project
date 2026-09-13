@@ -1,6 +1,7 @@
 package com.myxhs.ai.api;
 
 import com.myxhs.ai.common.R;
+import com.myxhs.ai.code.CodeLocateService;
 import com.myxhs.ai.eval.KbEvalService;
 import com.myxhs.ai.knowledge.KnowledgeIndexer;
 import com.myxhs.ai.knowledge.KnowledgeRepository;
@@ -24,6 +25,7 @@ public class KnowledgeController {
     private final KnowledgeRepository knowledgeRepository;
     private final KnowledgeIndexer knowledgeIndexer;
     private final KbEvalService kbEvalService;
+    private final CodeLocateService codeLocateService;
 
     @GetMapping("/stats")
     public R<Map<String, Object>> stats() {
@@ -36,6 +38,13 @@ public class KnowledgeController {
     @PostMapping("/reindex")
     public R<Map<String, Object>> reindex() {
         return R.ok(knowledgeIndexer.reindex());
+    }
+
+    /** 代码定位（只读；冒烟/评测入口） */
+    @org.springframework.web.bind.annotation.GetMapping("/code-locate")
+    public R<Map<String, Object>> locate(@org.springframework.web.bind.annotation.RequestParam("q") String query,
+                                         @org.springframework.web.bind.annotation.RequestParam(value = "limit", required = false) Integer limit) {
+        return R.ok(codeLocateService.locate(query, limit));
     }
 
     /** KB 检索评测（hit@1/hit@3 门禁；M3 出口） */

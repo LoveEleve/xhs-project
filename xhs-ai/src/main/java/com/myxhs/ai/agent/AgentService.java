@@ -1,6 +1,7 @@
 package com.myxhs.ai.agent;
 
 import com.myxhs.ai.agent.tools.CardReadTool;
+import com.myxhs.ai.agent.tools.CodeLocateTool;
 import com.myxhs.ai.agent.tools.DlqDetailTool;
 import com.myxhs.ai.agent.tools.DlqListTool;
 import com.myxhs.ai.agent.tools.DlqRedeliverTool;
@@ -71,6 +72,7 @@ public class AgentService {
                注意：Prometheus 的 docs_search/docs_list 只查监控文档，禁止用于系统架构问题。
             9. 工具调用纪律：同一工具最多调用 1 次；参数报错后禁止重复调用同一工具；非指标问题禁止调用 label_values/label_names/series；
                总工具调用不超过 4 次；系统本体问题禁止不调用工具直接作答——首步就用 knowledge_search（query 取问题关键词）。
+            10. 代码定位问题（"某逻辑在哪个类/方法"）：使用 code_locate（query 传类名/方法名），回答引用 文件:行号。
             """;
 
     private final Model chatModel;
@@ -88,6 +90,7 @@ public class AgentService {
     private final KnowledgeCatalogTool knowledgeCatalogTool;
     private final KnowledgeSearchTool knowledgeSearchTool;
     private final CardReadTool cardReadTool;
+    private final CodeLocateTool codeLocateTool;
 
     @Value("${REDIS_SENTINEL_MASTER:mymaster}")
     private String sentinelMaster;
@@ -110,6 +113,7 @@ public class AgentService {
         toolkit.registerAgentTool(knowledgeCatalogTool);
         toolkit.registerAgentTool(knowledgeSearchTool);
         toolkit.registerAgentTool(cardReadTool);
+        toolkit.registerAgentTool(codeLocateTool);
         // BISECT: temporarily disabled knowledge tools
         registerMcpWithAllowlist(toolkit);
         Set<HostAndPort> sentinels = Arrays.stream(sentinelNodes.split(","))
