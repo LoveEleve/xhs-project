@@ -1,0 +1,14 @@
+{
+  "phase1": {
+    "n": 100,
+    "input_tokens": 2849,
+    "output_tokens": 9665,
+    "calls": 93
+  },
+  "phase2": {
+    "n": 10,
+    "input_tokens": 182920,
+    "output_tokens": 14332,
+    "calls": 32
+  }
+}
