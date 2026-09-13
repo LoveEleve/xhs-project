@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestHeader;
 import com.myxhs.ai.code.CodeLocateService;
+import com.myxhs.ai.eval.AnswerEvalService;
 import com.myxhs.ai.eval.KbEvalService;
 import com.myxhs.ai.knowledge.KnowledgeIndexer;
 import com.myxhs.ai.knowledge.KnowledgeRepository;
@@ -29,6 +30,7 @@ public class KnowledgeController {
     private final KnowledgeRepository knowledgeRepository;
     private final KnowledgeIndexer knowledgeIndexer;
     private final KbEvalService kbEvalService;
+    private final AnswerEvalService answerEvalService;
     private final CodeLocateService codeLocateService;
 
     @Value("${myxhs.admin.token:}")
@@ -65,6 +67,19 @@ public class KnowledgeController {
     public R<Map<String, Object>> locate(@org.springframework.web.bind.annotation.RequestParam("q") String query,
                                          @org.springframework.web.bind.annotation.RequestParam(value = "limit", required = false) Integer limit) {
         return R.ok(codeLocateService.locate(query, limit));
+    }
+
+    /** 答案级评测（KB/DIAG 关键词+引用校验 / SEC 拒答校验）；limit≤0 表示全量 */
+    @PostMapping("/eval/answers")
+    public ResponseEntity<R<Map<String, Object>>> answerEval(
+            @org.springframework.web.bind.annotation.RequestParam(value = "type", required = false) String type,
+            @org.springframework.web.bind.annotation.RequestParam(value = "limit", defaultValue = "10") int limit,
+            @RequestHeader(value = "X-Admin-Call", required = false) String adminCall,
+            @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
+        if (!privileged(adminCall, internalCall)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(R.fail(403, "需要管理令牌"));
+        }
+        return ResponseEntity.ok(R.ok(answerEvalService.run(type, limit)));
     }
 
     /** KB 检索评测（hit@1/hit@3 门禁；M3 出口） */
