@@ -97,7 +97,7 @@
 - [x] RV08/RV09/RV10 评审闭环（专家评审/技术必要性/全维度）+ settlement 异步核验 + 审批事务化
 - [x] M3 知识层增量：55 张卡片（54+infra-anchors）迁移+catalog+ES BM25+knowledge_* 工具+MCP 白名单（RV13/RV18）
 - [x] D01 模型网关（ModelGateway：传输重试/熔断/降级/指标）+ Agent 知识问答 E2E（RV14；测试累计 22/22）
-- [x] M3 KB EVAL：30 条（10/10/10）hit@1=100% 门禁通过；向量实验按 RV09 止损规则不启动
+- [x] M3 KB EVAL：30 条（10/10/10）hit@1=100% 门禁通过；55 卡复跑答案级 30/30、引用 100%（RV18）；向量实验按 RV09 止损规则不启动
 - [x] M3 code_locate v1（文件:行号 引用）+ 知识检索主干闭环（RV15）
 - [x] M4 启动：红队 8 项全拦截 + Token 计量落点（Prometheus）+ 双 MCP 端口冲突修复
 - [x] MTTR 对照：10 案例实测（9/10 证据完整；Agent 均值 1.58min；保守降幅 92.3%）
