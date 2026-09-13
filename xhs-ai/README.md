@@ -30,6 +30,7 @@
 | `docs/reviews/09-tech-necessity-review.md` | **RV09：技术必要性审查（RAG 争论 → 不建朴素 RAG；每项技术的触发/止损）** | ✅ 2026-09-12 |
 | `docs/reviews/10-full-dimension-review.md` | **RV10：全维度深度 Review（代码 P0×2 修复 / settlement 异步闭环 / 文档回写）** | ✅ 2026-09-12 |
 | `docs/reviews/11-cart-dlq-rootcause-fix.md` | **RV11：cart 事件流水 DLQ 根因修复（CLEAR/CHECK_ALL 无 SKU + 测试漏检复盘 + 四道门禁）** | ✅ 2026-09-13 |
+| `docs/reviews/12-search-dlq-rootcause-fix.md` | **RV12：search 两组历史 DLQ 排查（环境期失败）+ 韧性缺陷修复（版本冲突幂等/不可重试分类）** | ✅ 2026-09-13 |
 | `docs/requirements/01-scenario-library.md` | 业务场景库（34 场景 + REQ 编号 + 证据形态） | ✅ v0.2 |
 | `docs/requirements/02-nfr-slo-threatmodel.md` | 量化 SLO + STRIDE 威胁模型 + REQ↔AC↔TC | ✅ v0.1 |
 | `docs/requirements/03-legacy-asset-governance.md` | R05 旧资产治理清单与入库白名单 | ✅ v0.1 |

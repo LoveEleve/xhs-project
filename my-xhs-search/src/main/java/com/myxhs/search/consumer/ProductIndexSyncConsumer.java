@@ -5,6 +5,7 @@ import co.elastic.clients.elasticsearch.core.IndexRequest;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.myxhs.common.response.ResultCode;
 import com.myxhs.common.trace.MqTraceHelper;
 import com.myxhs.search.feign.ProductFeignClient;
 import com.myxhs.search.service.ProductIndexDocumentBuilder;
@@ -223,6 +224,11 @@ public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
 
         com.myxhs.common.response.R<Map<String, Object>> response = productFeignClient.getSpuDetail(spuId);
         if (response == null || !response.isSuccess() || response.getData() == null) {
+            // RV12：商品不存在为确定性失败，跳过不重试（避免无意义死信）；其余（超时/服务不可用）仍重试
+            if (response != null && response.getCode() == ResultCode.PRODUCT_NOT_FOUND.getCode()) {
+                log.warn("[商品索引同步] 商品不存在，跳过（不可重试）: spuId={}", spuId);
+                return;
+            }
             throw new IllegalStateException("商品详情获取失败: spuId=" + spuId);
         }
         Map<String, Object> product = new HashMap<>();
@@ -236,12 +242,20 @@ public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
 
         String jsonDoc = JSON.toJSONString(doc);
 
-        esClient.index(IndexRequest.of(idx -> idx
-                .index(productIndexName)
-                .id(String.valueOf(spuId))
-                .versionType(co.elastic.clients.elasticsearch._types.VersionType.ExternalGte)
-                .version(version)
-                .withJson(new StringReader(jsonDoc))));
+        try {
+            esClient.index(IndexRequest.of(idx -> idx
+                    .index(productIndexName)
+                    .id(String.valueOf(spuId))
+                    .versionType(co.elastic.clients.elasticsearch._types.VersionType.ExternalGte)
+                    .version(version)
+                    .withJson(new StringReader(jsonDoc))));
+        } catch (Exception e) {
+            if (isVersionConflict(e)) {
+                log.info("[商品索引同步] 陈旧版本消息已忽略(ES 已有更新版本): spuId={}, version={}", spuId, version);
+                return;
+            }
+            throw e;
+        }
 
         log.info("[商品索引同步] Canal 索引成功: spuId={}, version={}", spuId, version);
     }
@@ -273,14 +287,35 @@ public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
         // 优先使用消息自带的时间戳，降级使用当前时间
         long version = event.getLongValue("timestamp", System.currentTimeMillis());
 
-        esClient.index(IndexRequest.of(idx -> idx
-                .index(productIndexName)
-                .id(String.valueOf(spuId))
-                .versionType(co.elastic.clients.elasticsearch._types.VersionType.ExternalGte)
-                .version(version)
-                .withJson(new StringReader(jsonDoc))));
+        try {
+            esClient.index(IndexRequest.of(idx -> idx
+                    .index(productIndexName)
+                    .id(String.valueOf(spuId))
+                    .versionType(co.elastic.clients.elasticsearch._types.VersionType.ExternalGte)
+                    .version(version)
+                    .withJson(new StringReader(jsonDoc))));
+        } catch (Exception e) {
+            if (isVersionConflict(e)) {
+                log.info("[商品索引同步] 陈旧版本消息已忽略(ES 已有更新版本): spuId={}, version={}", spuId, version);
+                return;
+            }
+            throw e;
+        }
 
         log.info("[商品索引同步] 扁平格式索引成功: spuId={}, version={}", spuId, version);
+    }
+
+    /** 判断是否为 ES 版本冲突（ExternalGte 拒绝陈旧版本，属幂等已应用语义） */
+    private boolean isVersionConflict(Throwable e) {
+        Throwable t = e;
+        while (t != null) {
+            String m = String.valueOf(t.getMessage());
+            if (m.contains("version_conflict") || m.contains("version conflict")) {
+                return true;
+            }
+            t = t.getCause();
+        }
+        return false;
     }
 
     /**
@@ -302,8 +337,10 @@ public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
                     .version(version)
                     .withJson(new StringReader(jsonDoc))));
             log.info("[商品索引同步] 标记删除成功: spuId={}", spuId);
-        } catch (co.elastic.clients.elasticsearch._types.ElasticsearchException e) {
-            if (e.getMessage() != null && e.getMessage().contains("not_found")) {
+        } catch (Exception e) {
+            if (isVersionConflict(e)) {
+                log.info("[商品索引同步] 陈旧版本删除标记已忽略(ES 已有更新版本): spuId={}, version={}", spuId, version);
+            } else if (e.getMessage() != null && e.getMessage().contains("not_found")) {
                 log.debug("[商品索引同步] 文档不存在，跳过删除: spuId={}", spuId);
             } else {
                 throw e;
