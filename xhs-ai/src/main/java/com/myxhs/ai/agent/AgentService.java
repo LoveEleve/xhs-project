@@ -23,6 +23,8 @@ import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.Toolkit;
 import io.agentscope.core.model.Model;
+import io.agentscope.core.permission.PermissionContextState;
+import io.agentscope.core.permission.PermissionMode;
 import io.agentscope.extensions.redis.state.RedisAgentStateStore;
 import io.agentscope.harness.agent.tools.McpServerConfig;
 import io.agentscope.harness.agent.tools.McpServerRegistrar;
@@ -173,6 +175,12 @@ public class AgentService {
                 .stateStore(stateStore)
                 .maxIters(12)
                 .checkRunning(true)
+                // 非交互 API：无人在线应答权限询问；工具白名单+HITL 审批由应用层兜底
+                // （RV19：ES MCP 工具无只读注解，默认 ASK 导致工具卡在 asking、答复为空；
+                //  DONT_ASK 仍被默认规则拒绝，故 BYPASS 框架级权限检查）
+                .permissionContext(PermissionContextState.builder()
+                        .mode(PermissionMode.BYPASS)
+                        .build())
                 .generateOptions(io.agentscope.core.model.GenerateOptions.builder()
                         .temperature(0.2)
                         .maxTokens(8192)

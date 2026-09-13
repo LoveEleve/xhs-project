@@ -33,7 +33,7 @@
 | `eval/answer-cases.yaml` | 答案级评测集（50 条：KB30/DIAG15/SEC5） | ✅ 2026-09-13 |
 | `docs/reports/m4-security-and-metering-20260913.md` | **M4 证据：红队 8 项 + Token 计量（成本口径）** | ✅ 2026-09-13 |
 | `docs/reports/mttr-raw-20260913/` | MTTR 原始数据（10 案例请求/响应 + 耗时 TSV） | ✅ 2026-09-13 |
-| `docs/reports/mttr-benchmark-20260913.md` | **MTTR 对照评测（10 案例；Agent 1.58min，降幅 92.3% 保守下界）** | ✅ 2026-09-13 |
+| `docs/reports/mttr-benchmark-20260913.md` | **MTTR 对照评测（10/10 案例；Agent 1.63min，降幅 92.1% 保守下界）** | ✅ 2026-09-13 |
 | `docs/reports/load-test-20260913.md` | **M4 压测（C=5：100/100，P50 13.5s/P95 39.0s/P99 46.5s；C=20 超载降级记录）** | ✅ 2026-09-13 |
 | `docs/reviews/08-m2.0-expert-review.md` | **RV08：M2.0 专家评审（harness-skills expert-reviewer 双轴）** | ✅ 2026-09-12 |
 | `docs/reviews/09-tech-necessity-review.md` | **RV09：技术必要性审查（RAG 争论 → 不建朴素 RAG；每项技术的触发/止损）** | ✅ 2026-09-12 |
@@ -46,6 +46,7 @@
 | `docs/reviews/16-full-dimension-review.md` | **RV16：全维度深度 Review（8 个 P1 修复：IDOR/熔断/降级/缓存/守卫）** | ✅ 2026-09-13 |
 | `docs/reviews/17-m2x-approval-and-settlement.md` | **RV17：M2.x 审批超时 fail-closed + 跨实例决策事件 + 消费位点核验（实测）** | ✅ 2026-09-13 |
 | `docs/reviews/18-rv18-deep-review.md` | **RV18：四路深审 + P0/P1 修复（重投双 ID 匹配、队列级位点、执行 CAS、诊断鉴权、事件总线落地）** | ✅ 2026-09-13 |
+| `docs/reviews/19-m4-fmea-drills.md` | **RV19：M4 FMEA 演练 4 项 + Agent→ES MCP 权限挂起 P0 修复（MTTR 10/10）** | ✅ 2026-09-14 |
 | `docs/requirements/01-scenario-library.md` | 业务场景库（34 场景 + REQ 编号 + 证据形态） | ✅ v0.2 |
 | `docs/requirements/02-nfr-slo-threatmodel.md` | 量化 SLO + STRIDE 威胁模型 + REQ↔AC↔TC | ✅ v0.1 |
 | `docs/requirements/03-legacy-asset-governance.md` | R05 旧资产治理清单与入库白名单 | ✅ v0.1 |
@@ -101,12 +102,13 @@
 - [x] M3 KB EVAL：30 条（10/10/10）hit@1=100% 门禁通过；55 卡复跑答案级 30/30、引用 100%（RV18）；向量实验按 RV09 止损规则不启动
 - [x] M3 code_locate v1（文件:行号 引用）+ 知识检索主干闭环（RV15）
 - [x] M4 启动：红队 8 项全拦截 + Token 计量落点（Prometheus）+ 双 MCP 端口冲突修复
-- [x] MTTR 对照：10 案例实测（9/10 证据完整；Agent 均值 1.58min；保守降幅 92.3%）
+- [x] MTTR 对照：10 案例实测（10/10 证据完整；Agent 均值 1.63min；保守降幅 92.1%；案例 10 缺陷已于 RV19 修复复测）
 - [x] 答案级评测：KB30+DIAG15+SEC5 共 50 条全过，引用有效性 100%（报告+原始 JSON 入库）
 - [x] 成本周：单次诊断 18.3k in / 1.4k out tokens（≈¥0.012–0.048），较全量直塞降幅 ~74%（估算）
 - [x] M2.x：审批超时 fail-closed + 跨实例 pub/sub 决策事件 + 队列级消费位点核验（RV17 交付，RV18 修正；22/22 单测）
 - [x] RV18 四路深审：文档口径/SRE 运行态/跨项目一致性/代码第四轮 + P0/P1 修复闭环
 - [x] M4 压测 N=100（C=5 全成，P50/P95/P99 入库）+ 工具预算护栏（软32/硬40，Gauge `ai_agent_tools_total`）
+- [x] M4 FMEA 演练 4 项（停 ES / Redis failover / 滚动重启 / kill MCP）→ 发现并修复 **Agent→ES MCP 工具挂起 P0**（RV19）
 - [x] M1.6 安全与接线（鉴权/工具白名单/Nacos+网关/systemd/traceId/旧模块下线）✅ 2026-09-12
 - [x] M2.0 业务竖切①：DIAG-08+OPS-01 DLQ 诊断→审批→重投→核验→审计 ✅ 2026-09-12（E2E 见 docs/reports/m2.0-dlq-e2e.md）
 - [x] P2 需求工程：SLO/STRIDE/追溯矩阵（RQ02）
