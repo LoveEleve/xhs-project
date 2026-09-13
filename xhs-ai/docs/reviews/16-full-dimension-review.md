@@ -24,11 +24,11 @@
 
 | 项 | 结论 |
 |---|------|
-| 24h 自动重启 31 次 | 三根因：Redis Sentinel 瞬断（已有 6×5s 重试）、Nacos 瞬断、**多 @Primary Bean crash loop（已修）**；建议调大 `StartLimitIntervalSec` 并接入重启告警 |
+| 24h 自动重启 31 次 | 三根因：Redis Sentinel 瞬断（已有 6×5s 重试）、Nacos 瞬断、**多 @Primary Bean crash loop（已修）**；✅ unit 已加 `StartLimitIntervalSec=300 / Burst=10`（防慢速循环）；重启告警为 M4 计划 |
 | `%DLQ%*` 全量 | 零（历史三组已清账） |
 | 会话/审计 | 54 会话 / 89 消息；审批 18 单全 approved；核验 17 条 |
-| `/actuator/prometheus` | 对 RFC1918 免鉴权（19020 绑 0.0.0.0）——**挂账**：改 `management.server.address=127.0.0.1` 或防火墙白名单（Prometheus target 同步改 127.0.0.1） |
-| MCP 进程 | ES 存在 2 组实例（旧实例未回收，P2 挂账）；prometheus 双实例已改随机端口无冲突 |
+| `/actuator/prometheus` | ✅ **已修**：仅 loopback 放行（内网/容器访问 401）；Prometheus target 增 `127.0.0.1:19020`（service=xhs-ai）且 `health=up`（此前并未抓取 xhs-ai） |
+| MCP 进程 | ✅ 现状干净（1 ES + 1 Prom 子进程）；`KillMode=mixed`+cgroup 负责回收；曾尝试 ExecStartPre pkill 会误伤 systemd 控制进程，已撤销 |
 | 熔断指标/延迟 max=0 | 本轮已补 breaker 指标；latency max 失真为 P2 挂账 |
 
 ## 3. 文档与简历回写（已完成）

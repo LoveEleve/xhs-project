@@ -3,6 +3,8 @@ Description=xhs-ai — AIOps 诊断与知识问答 Agent (Spring Boot)
 Documentation=file:///data/workspace/xhs-project/xhs-ai/README.md
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
 
 [Service]
 Type=simple

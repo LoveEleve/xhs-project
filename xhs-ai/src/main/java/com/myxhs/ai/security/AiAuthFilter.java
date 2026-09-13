@@ -102,14 +102,13 @@ public class AiAuthFilter extends OncePerRequestFilter {
                 actual.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
-    /** 指标端点仅允许本机/内网抓取（Prometheus on host） */
+    /** 指标端点仅允许本机抓取（Prometheus host 网络模式抓 127.0.0.1） */
     private boolean isPrivateAddress(String remoteAddr) {
         if (remoteAddr == null) {
             return false;
         }
         try {
-            java.net.InetAddress addr = java.net.InetAddress.getByName(remoteAddr);
-            return addr.isLoopbackAddress() || addr.isSiteLocalAddress() || addr.isLinkLocalAddress();
+            return java.net.InetAddress.getByName(remoteAddr).isLoopbackAddress();
         } catch (Exception e) {
             return false;
         }

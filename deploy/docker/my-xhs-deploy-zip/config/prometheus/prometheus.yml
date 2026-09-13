@@ -89,6 +89,10 @@ scrape_configs:
       - targets: ['192.168.0.142:19016']
         labels:
           service: 'my-xhs-search'
+      # AI 诊断 Agent（host 网络，抓 loopback）
+      - targets: ['127.0.0.1:19020']
+        labels:
+          service: 'xhs-ai'
 
   # ==================== Prometheus 自身 ====================
   - job_name: 'prometheus'
