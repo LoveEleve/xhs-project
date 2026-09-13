@@ -73,3 +73,8 @@ ai.embedding:       { base-url: ${ARK_PLAN_BASE_URL}, api-key: ${ARK_PLAN_API_KE
 - 单测：路由选择、退避序列、熔断状态机、预算降级
 - 集成：主→备切换、预算耗尽降级、只读兜底模式
 - 指标：每 provider 成功率/延迟/成本；告警规则
+
+---
+
+> 状态（2026-09-13 / RV14）：**v1 已实现** `ModelGateway`（传输重试仅限未出流、连续失败熔断 60s、备用模型降级、Prometheus 指标；17 单测）。
+> 双通道：聊天 `deepseek-v4-pro`、Agent 工具循环 `qwen3.8-flash`。路由/预算/缓存友好仍为后续增量。

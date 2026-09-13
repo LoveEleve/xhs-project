@@ -93,8 +93,12 @@ public class KnowledgeRepository {
         if (card != null) {
             return Optional.of(card);
         }
+        String normalized = idOrPath.replaceFirst("\\.ya?ml$", "");
         return cards.values().stream()
-                .filter(c -> c.path().equals(idOrPath) || c.path().endsWith("/" + idOrPath))
+                .filter(c -> {
+                    String path = c.path().replaceFirst("\\.ya?ml$", "");
+                    return path.equals(normalized) || path.endsWith("/" + normalized);
+                })
                 .findFirst();
     }
 

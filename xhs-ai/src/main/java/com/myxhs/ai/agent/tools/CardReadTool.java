@@ -1,6 +1,8 @@
 package com.myxhs.ai.agent.tools;
 
+import com.myxhs.ai.audit.AuditService;
 import com.myxhs.ai.knowledge.KnowledgeCard;
+import com.myxhs.ai.audit.AuditService;
 import com.myxhs.ai.knowledge.KnowledgeRepository;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.AgentTool;
@@ -26,6 +28,7 @@ public class CardReadTool implements AgentTool {
     private static final int MAX_CONTENT = 4000;
 
     private final KnowledgeRepository knowledgeRepository;
+    private final AuditService auditService;
 
     @Override
     public String getName() {
@@ -60,6 +63,9 @@ public class CardReadTool implements AgentTool {
             return ToolSupport.error(param, "卡片不存在: " + id);
         }
         KnowledgeCard c = card.get();
+        auditService.record(ToolSupport.actor(param), "card_read", "id=" + c.id(),
+                Map.of("layer", c.layer()), "ok", ToolSupport.traceId(param));
+        log.info("[知识] card_read 调用: id={}", c.id());
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("id", c.id());
         result.put("layer", c.layer());

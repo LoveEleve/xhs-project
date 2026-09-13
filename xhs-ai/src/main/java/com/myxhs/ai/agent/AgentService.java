@@ -21,7 +21,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.state.AgentStateStore;
 import io.agentscope.core.tool.Toolkit;
-import io.agentscope.extensions.model.openai.OpenAIChatModel;
+import io.agentscope.core.model.Model;
 import io.agentscope.extensions.redis.state.RedisAgentStateStore;
 import io.agentscope.harness.agent.tools.McpServerConfig;
 import io.agentscope.harness.agent.tools.McpServerRegistrar;
@@ -69,9 +69,11 @@ public class AgentService {
             8. 系统本体知识问题（架构/业务链路/代码结构/历史故障）：必须使用 knowledge_* 工具（先 knowledge_catalog → knowledge_search → card_read）；
                回答必须引用卡片 id/path（如 architecture/bff-role）；知识库无依据时明确说明"知识库暂无"，不得凭模型记忆编造。
                注意：Prometheus 的 docs_search/docs_list 只查监控文档，禁止用于系统架构问题。
+            9. 工具调用纪律：同一工具最多调用 1 次；参数报错后禁止重复调用同一工具；非指标问题禁止调用 label_values/label_names/series；
+               总工具调用不超过 4 次；系统本体问题禁止不调用工具直接作答——首步就用 knowledge_search（query 取问题关键词）。
             """;
 
-    private final OpenAIChatModel chatModel;
+    private final Model chatModel;
     private final McpClientManager mcpClientManager;
     private final McpProperties mcpProperties;
     private final SessionRepository sessionRepository;
@@ -79,13 +81,13 @@ public class AgentService {
     private final DlqListTool dlqListTool;
     private final DlqDetailTool dlqDetailTool;
     private final DlqRedeliverTool dlqRedeliverTool;
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.beans.factory.annotation.Qualifier("agentModel")
+    private Model agentModel;
+
     private final KnowledgeCatalogTool knowledgeCatalogTool;
     private final KnowledgeSearchTool knowledgeSearchTool;
     private final CardReadTool cardReadTool;
-
-    @org.springframework.beans.factory.annotation.Autowired
-    @org.springframework.beans.factory.annotation.Qualifier("lightChatModel")
-    private OpenAIChatModel lightChatModel;
 
     @Value("${REDIS_SENTINEL_MASTER:mymaster}")
     private String sentinelMaster;
@@ -105,6 +107,9 @@ public class AgentService {
         toolkit.registerAgentTool(dlqListTool);
         toolkit.registerAgentTool(dlqDetailTool);
         toolkit.registerAgentTool(dlqRedeliverTool);
+        toolkit.registerAgentTool(knowledgeCatalogTool);
+        toolkit.registerAgentTool(knowledgeSearchTool);
+        toolkit.registerAgentTool(cardReadTool);
         // BISECT: temporarily disabled knowledge tools
         registerMcpWithAllowlist(toolkit);
         Set<HostAndPort> sentinels = Arrays.stream(sentinelNodes.split(","))
@@ -144,11 +149,9 @@ public class AgentService {
                 .name("xhs-ai")
                 .description("交易系统运维诊断 Agent（DLQ 死信诊断与重投）")
                 .sysPrompt(SYS_PROMPT)
-                .model(chatModel)
+                .model(agentModel)
                 .toolkit(toolkit)
                 .stateStore(stateStore)
-                .maxRetries(2)
-                .fallbackModel(lightChatModel)
                 .maxIters(12)
                 .checkRunning(true)
                 .generateOptions(io.agentscope.core.model.GenerateOptions.builder()

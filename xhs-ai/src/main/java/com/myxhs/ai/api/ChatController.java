@@ -7,7 +7,7 @@ import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.UserMessage;
 import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
-import io.agentscope.extensions.model.openai.OpenAIChatModel;
+import io.agentscope.core.model.Model;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -36,7 +36,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ChatController {
 
-    private final OpenAIChatModel chatModel;
+    private final Model chatModel;
 
     /** 单轮对话（同步） */
     @PostMapping("/chat")

@@ -1,5 +1,6 @@
 package com.myxhs.ai.agent.tools;
 
+import com.myxhs.ai.audit.AuditService;
 import com.myxhs.ai.knowledge.KnowledgeRepository;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.AgentTool;
@@ -22,6 +23,7 @@ import java.util.Map;
 public class KnowledgeCatalogTool implements AgentTool {
 
     private final KnowledgeRepository knowledgeRepository;
+    private final AuditService auditService;
 
     @Override
     public String getName() {
@@ -50,7 +52,11 @@ public class KnowledgeCatalogTool implements AgentTool {
     public Mono<ToolResultBlock> callAsync(ToolCallParam param) {
         try {
             String layer = ToolSupport.arg(param, "layer");
-            return ToolSupport.result(param, ToolSupport.json(knowledgeRepository.catalog(layer)));
+            Map<String, Object> catalog = knowledgeRepository.catalog(layer);
+            auditService.record(ToolSupport.actor(param), "knowledge.catalog", "layer=" + layer,
+                    Map.of(), "ok", ToolSupport.traceId(param));
+            log.info("[知识] catalog 调用: layer={}", layer);
+            return ToolSupport.result(param, ToolSupport.json(catalog));
         } catch (Exception e) {
             log.warn("[知识] catalog 失败: {}", e.getMessage());
             return ToolSupport.error(param, "知识目录获取失败（内部错误）");

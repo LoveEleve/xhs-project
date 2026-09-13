@@ -46,6 +46,13 @@ ai:
     base-url: ${MYXHS_LLM_BASE_URL:https://siyu.site/v1}
     api-key: ${MYXHS_LLM_API_KEY:}
     name: ${MYXHS_LLM_MODEL:deepseek-v4-pro}
+    agent-name: ${MYXHS_AGENT_MODEL:qwen3.8-flash}
+    retry:
+      max-attempts: 2
+      backoff-ms: 500
+    breaker:
+      threshold: 3
+      cooldown-ms: 60000
   mq:
     namesrv-addr: ${MYXHS_MQ_NAMESRV:127.0.0.1:9876}
   mcp:

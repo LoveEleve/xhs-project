@@ -1,5 +1,6 @@
 package com.myxhs.ai.agent.tools;
 
+import com.myxhs.ai.audit.AuditService;
 import com.myxhs.ai.knowledge.KnowledgeIndexer;
 import io.agentscope.core.message.ToolResultBlock;
 import io.agentscope.core.tool.AgentTool;
@@ -22,6 +23,7 @@ import java.util.Map;
 public class KnowledgeSearchTool implements AgentTool {
 
     private final KnowledgeIndexer knowledgeIndexer;
+    private final AuditService auditService;
 
     @Override
     public String getName() {
@@ -57,6 +59,9 @@ public class KnowledgeSearchTool implements AgentTool {
         try {
             int limit = parseLimit(ToolSupport.arg(param, "limit"));
             List<Map<String, Object>> hits = knowledgeIndexer.search(query, ToolSupport.arg(param, "layer"), limit);
+            auditService.record(ToolSupport.actor(param), "knowledge.search", "query=" + query,
+                    Map.of("hits", hits.size()), "ok", ToolSupport.traceId(param));
+            log.info("[知识] search 调用: query={}, hits={}", query, hits.size());
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("query", query);
             result.put("hits", hits);

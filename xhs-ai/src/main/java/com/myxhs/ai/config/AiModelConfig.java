@@ -1,6 +1,10 @@
 package com.myxhs.ai.config;
 
+import com.myxhs.ai.model.ModelGateway;
+import io.agentscope.core.model.Model;
 import io.agentscope.extensions.model.openai.OpenAIChatModel;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -14,7 +18,6 @@ import org.springframework.context.annotation.Primary;
 public class AiModelConfig {
 
     @Bean
-    @Primary
     public OpenAIChatModel openAIChatModel(
             @Value("${ai.model.base-url}") String baseUrl,
             @Value("${ai.model.api-key}") String apiKey,
@@ -27,7 +30,48 @@ public class AiModelConfig {
                 .build();
     }
 
-    /** 降级/轻量模型（主模型传输失败时由 Agent fallback 使用；M3 模型网关最小落点） */
+    /** 模型网关（D01 最小落地）：主/备 + 传输重试 + 熔断 + 指标 */
+    @Bean
+    @Primary
+    public Model modelGateway(@Qualifier("openAIChatModel") OpenAIChatModel primary,
+                              @Qualifier("lightChatModel") OpenAIChatModel lightChatModel,
+                              MeterRegistry meterRegistry,
+                              @Value("${ai.model.retry.max-attempts:2}") int maxAttempts,
+                              @Value("${ai.model.retry.backoff-ms:500}") long backoffMs,
+                              @Value("${ai.model.breaker.threshold:3}") int breakerThreshold,
+                              @Value("${ai.model.breaker.cooldown-ms:60000}") long breakerCooldownMs) {
+        return new ModelGateway(primary, lightChatModel, meterRegistry,
+                maxAttempts, backoffMs, breakerThreshold, breakerCooldownMs);
+    }
+
+    /** Agent 专用模型（工具循环：低推理、稳定 tool_calls；M3/D01 决策） */
+    @Bean("agentChatModel")
+    public OpenAIChatModel agentChatModel(
+            @Value("${ai.model.base-url}") String baseUrl,
+            @Value("${ai.model.api-key}") String apiKey,
+            @Value("${ai.model.agent-name:qwen3.8-flash}") String modelName) {
+        return OpenAIChatModel.builder()
+                .baseUrl(baseUrl)
+                .apiKey(apiKey)
+                .modelName(modelName)
+                .stream(true)
+                .build();
+    }
+
+    /** Agent 模型网关（工具循环专用；重试/熔断/降级与聊天网关同策略） */
+    @Bean("agentModel")
+    public Model agentModel(@Qualifier("agentChatModel") OpenAIChatModel agentChatModel,
+                            @Qualifier("lightChatModel") OpenAIChatModel lightChatModel,
+                            MeterRegistry meterRegistry,
+                            @Value("${ai.model.retry.max-attempts:2}") int maxAttempts,
+                            @Value("${ai.model.retry.backoff-ms:500}") long backoffMs,
+                            @Value("${ai.model.breaker.threshold:3}") int breakerThreshold,
+                            @Value("${ai.model.breaker.cooldown-ms:60000}") long breakerCooldownMs) {
+        return new ModelGateway(agentChatModel, lightChatModel, meterRegistry,
+                maxAttempts, backoffMs, breakerThreshold, breakerCooldownMs);
+    }
+
+    /** 降级/轻量模型（由模型网关调用） */
     @Bean("lightChatModel")
     public OpenAIChatModel lightChatModel(
             @Value("${ai.model.base-url}") String baseUrl,

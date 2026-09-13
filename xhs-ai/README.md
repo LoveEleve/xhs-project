@@ -32,6 +32,7 @@
 | `docs/reviews/11-cart-dlq-rootcause-fix.md` | **RV11：cart 事件流水 DLQ 根因修复（CLEAR/CHECK_ALL 无 SKU + 测试漏检复盘 + 四道门禁）** | ✅ 2026-09-13 |
 | `docs/reviews/12-search-dlq-rootcause-fix.md` | **RV12：search 两组历史 DLQ 排查（环境期失败）+ 韧性缺陷修复（版本冲突幂等/不可重试分类）** | ✅ 2026-09-13 |
 | `docs/reviews/13-m3-knowledge-progress.md` | **RV13：M3 知识层进展（54 卡入 BM25/Top1 命中）+ 模型网关稳定性评估** | ✅ 2026-09-13 |
+| `docs/reviews/14-model-gateway-and-kb-e2e.md` | **RV14：D01 模型网关（重试/熔断/降级/指标）+ 知识问答端到端打通** | ✅ 2026-09-13 |
 | `docs/requirements/01-scenario-library.md` | 业务场景库（34 场景 + REQ 编号 + 证据形态） | ✅ v0.2 |
 | `docs/requirements/02-nfr-slo-threatmodel.md` | 量化 SLO + STRIDE 威胁模型 + REQ↔AC↔TC | ✅ v0.1 |
 | `docs/requirements/03-legacy-asset-governance.md` | R05 旧资产治理清单与入库白名单 | ✅ v0.1 |
@@ -82,6 +83,7 @@
 - [x] RV06 业务贴合度 + JD 对齐深度 Review（P0/P1 清单 + 规划修订 + JD 矩阵 v2）
 - [x] RV08/RV09/RV10 评审闭环（专家评审/技术必要性/全维度）+ settlement 异步核验 + 审批事务化
 - [x] M3 知识层增量：54 张卡片迁移+catalog+ES BM25+knowledge_* 工具+MCP 白名单（RV13）
+- [x] D01 模型网关（ModelGateway：传输重试/熔断/降级/指标，17 单测）+ Agent 知识问答 E2E（RV14）
 - [x] M1.6 安全与接线（鉴权/工具白名单/Nacos+网关/systemd/traceId/旧模块下线）✅ 2026-09-12
 - [x] M2.0 业务竖切①：DIAG-08+OPS-01 DLQ 诊断→审批→重投→核验→审计 ✅ 2026-09-12（E2E 见 docs/reports/m2.0-dlq-e2e.md）
 - [x] P2 需求工程：SLO/STRIDE/追溯矩阵（RQ02）
