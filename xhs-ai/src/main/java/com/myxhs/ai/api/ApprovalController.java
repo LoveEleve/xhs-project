@@ -1,6 +1,7 @@
 package com.myxhs.ai.api;
 
 import com.myxhs.ai.approval.ApprovalService;
+import com.myxhs.ai.mq.DlqAdminService;
 import com.myxhs.ai.common.R;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -28,6 +29,7 @@ import java.util.Map;
 public class ApprovalController {
 
     private final ApprovalService approvalService;
+    private final DlqAdminService dlqAdminService;
 
     @GetMapping
     public R<List<Map<String, Object>>> list(@RequestParam(required = false) String status,
@@ -56,6 +58,16 @@ public class ApprovalController {
             return ResponseEntity.ok(R.ok(approvalService.retryExecution(userId == null ? 0L : userId, id)));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(R.fail(400, e.getMessage()));
+        }
+    }
+
+    /** 消费组位点诊断（运维/核验验证用） */
+    @GetMapping("/diagnostics/consumer-progress")
+    public R<Map<String, Object>> consumerProgress(@RequestParam("group") String group) {
+        try {
+            return R.ok(dlqAdminService.consumerProgress(group));
+        } catch (Exception e) {
+            return R.fail(500, "消费位点读取失败: " + e.getMessage());
         }
     }
 

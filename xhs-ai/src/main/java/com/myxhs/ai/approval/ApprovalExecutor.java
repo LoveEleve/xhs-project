@@ -40,6 +40,12 @@ public class ApprovalExecutor {
                 rawInput, "running", traceId);
         try {
             long backlogBefore = dlqAdminService.dlqBacklog(group);
+            Long consumerOffsetBefore = null;
+            try {
+                consumerOffsetBefore = dlqAdminService.consumerOffsetSum(group);
+            } catch (Exception e) {
+                log.warn("[审批执行] 消费位点基线获取失败（不影响重投）: {}", e.getMessage());
+            }
             Map<String, Object> effect = dlqAdminService.redeliver(group, msgId, originalTopic);
 
             Map<String, Object> settlement = new LinkedHashMap<>();
@@ -47,6 +53,7 @@ public class ApprovalExecutor {
             settlement.put("backlogBefore", backlogBefore);
             settlement.put("newMsgId", effect.get("newMsgId"));
             settlement.put("group", group);
+            settlement.put("consumerOffsetBefore", consumerOffsetBefore);
             settlement.put("sentAt", System.currentTimeMillis());
             settlement.put("note", "已发送；异步核验器在 10 分钟窗口内检查是否再次进入 DLQ（消费位点核验为 M2.x）");
 

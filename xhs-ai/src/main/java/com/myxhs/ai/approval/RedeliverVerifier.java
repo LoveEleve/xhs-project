@@ -75,8 +75,23 @@ public class RedeliverVerifier {
             settlement.put("status", "reentered_dlq");
             settlement.put("verdict", "重投消息消费失败，已再次进入 DLQ，请排查消费者");
         } else if (System.currentTimeMillis() - sentAt > VERIFY_WINDOW_MS) {
-            settlement.put("status", "verified_no_reentry");
-            settlement.put("verdict", "10 分钟窗口内未再次进入 DLQ（视为消费成功或仍在重试）");
+            // 消费位点核验：位点推进视为已消费
+            Long before = settlement.get("consumerOffsetBefore") == null ? null
+                    : ((Number) settlement.get("consumerOffsetBefore")).longValue();
+            Long after = null;
+            try {
+                after = dlqAdminService.consumerOffsetSum(group);
+            } catch (Exception e) {
+                log.warn("[核验] 消费位点读取失败 group={}: {}", group, e.getMessage());
+            }
+            settlement.put("consumerOffsetAfter", after);
+            if (before != null && after != null && after > before) {
+                settlement.put("status", "verified_consumed");
+                settlement.put("verdict", "消费位点由 " + before + " 推进到 " + after + "，消息已被消费");
+            } else {
+                settlement.put("status", "verified_no_reentry");
+                settlement.put("verdict", "窗口内未再入 DLQ；位点未观察到推进（消费慢或消费者未订阅），建议人工复核");
+            }
         } else {
             return;
         }

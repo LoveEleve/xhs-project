@@ -184,6 +184,29 @@ public class DlqAdminService {
         return java.util.Optional.empty();
     }
 
+    /** 消费组位点进度（消费位点核验用；R3/M2.x） */
+    public Map<String, Object> consumerProgress(String group) throws Exception {
+        org.apache.rocketmq.remoting.protocol.admin.ConsumeStats stats = admin().examineConsumeStats(group);
+        long brokerOffset = 0;
+        long consumerOffset = 0;
+        for (org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper w : stats.getOffsetTable().values()) {
+            brokerOffset += w.getBrokerOffset();
+            consumerOffset += w.getConsumerOffset();
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("group", group);
+        result.put("brokerOffset", brokerOffset);
+        result.put("consumerOffset", consumerOffset);
+        result.put("diff", brokerOffset - consumerOffset);
+        result.put("queues", stats.getOffsetTable().size());
+        return result;
+    }
+
+    /** 消费位点总量（重投执行前/后对比，判断消息是否被消费） */
+    public long consumerOffsetSum(String group) throws Exception {
+        return ((Number) consumerProgress(group).get("consumerOffset")).longValue();
+    }
+
     public long dlqBacklog(String groupOrTopic) throws Exception {
         String topic = groupOrTopic.startsWith(DLQ_PREFIX) ? groupOrTopic : dlqTopic(groupOrTopic);
         TopicStatsTable stats = admin().examineTopicStats(topic);

@@ -36,6 +36,7 @@ public class ApprovalService {
     private final ObjectMapper objectMapper;
     private final AuditService auditService;
     private final ApprovalExecutor approvalExecutor;
+    private final ApprovalEventBus approvalEventBus;
 
     /** 创建待审批（含 raw_input 指纹；同会话同指纹 pending 复用） */
     public Map<String, Object> createPending(Long userId, String sessionId, String tool, String kind,
@@ -158,6 +159,17 @@ public class ApprovalService {
         }
         auditService.record(userId, "approval." + reply, tool + ":" + id, Map.of("sessionId", sessionId),
                 "status=" + newStatus);
+        try {
+            Map<String, Object> event = new LinkedHashMap<>();
+            event.put("approvalId", id);
+            event.put("status", newStatus);
+            event.put("sessionId", sessionId);
+            event.put("tool", tool);
+            event.put("decidedBy", userId);
+            approvalEventBus.publish(objectMapper.writeValueAsString(event));
+        } catch (Exception e) {
+            log.warn("[审批] 决策事件发布失败: {}", e.getMessage());
+        }
         Map<String, Object> response = load(id);
         response.put("execution", execution);
         return response;

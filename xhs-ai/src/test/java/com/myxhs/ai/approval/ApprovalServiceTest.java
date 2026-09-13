@@ -45,12 +45,14 @@ class ApprovalServiceTest {
     private AuditService auditService;
     @Mock
     private ApprovalExecutor approvalExecutor;
+    @Mock
+    private ApprovalEventBus approvalEventBus;
 
     private ApprovalService service;
 
     @BeforeEach
     void setUp() {
-        service = new ApprovalService(jdbcTemplate, transactionTemplate, new ObjectMapper(), auditService, approvalExecutor);
+        service = new ApprovalService(jdbcTemplate, transactionTemplate, new ObjectMapper(), auditService, approvalExecutor, approvalEventBus);
         lenient().when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
         lenient().when(jdbcTemplate.queryForList(anyString(), any(Object[].class))).thenReturn(List.of());
         lenient().when(jdbcTemplate.update(any(PreparedStatementCreator.class), any(KeyHolder.class)))

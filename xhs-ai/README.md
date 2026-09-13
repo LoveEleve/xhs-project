@@ -42,6 +42,7 @@
 | `docs/reviews/14-model-gateway-and-kb-e2e.md` | **RV14：D01 模型网关（重试/熔断/降级/指标）+ 知识问答端到端打通** | ✅ 2026-09-13 |
 | `docs/reviews/15-m3-knowledge-retrieval-complete.md` | **RV15：M3 知识检索闭环（code_locate + 主干完成清单）** | ✅ 2026-09-13 |
 | `docs/reviews/16-full-dimension-review.md` | **RV16：全维度深度 Review（8 个 P1 修复：IDOR/熔断/降级/缓存/守卫）** | ✅ 2026-09-13 |
+| `docs/reviews/17-m2x-approval-and-settlement.md` | **RV17：M2.x 审批超时 fail-closed + 跨实例决策事件 + 消费位点核验（实测）** | ✅ 2026-09-13 |
 | `docs/requirements/01-scenario-library.md` | 业务场景库（34 场景 + REQ 编号 + 证据形态） | ✅ v0.2 |
 | `docs/requirements/02-nfr-slo-threatmodel.md` | 量化 SLO + STRIDE 威胁模型 + REQ↔AC↔TC | ✅ v0.1 |
 | `docs/requirements/03-legacy-asset-governance.md` | R05 旧资产治理清单与入库白名单 | ✅ v0.1 |
@@ -99,6 +100,7 @@
 - [x] MTTR 对照：10 案例实测（9/10 证据完整；Agent 均值 1.58min；保守降幅 92.3%）
 - [x] 答案级评测：KB30+DIAG15+SEC5 共 50 条全过，引用有效性 100%（报告+原始 JSON 入库）
 - [x] 成本周：单次诊断 18.3k in / 1.4k out tokens（≈¥0.012–0.048），较全量直塞降幅 ~74%（估算）
+- [x] M2.x：审批超时 fail-closed + 跨实例 pub/sub 决策事件 + 消费位点核验（19/19 单测）
 - [x] M1.6 安全与接线（鉴权/工具白名单/Nacos+网关/systemd/traceId/旧模块下线）✅ 2026-09-12
 - [x] M2.0 业务竖切①：DIAG-08+OPS-01 DLQ 诊断→审批→重投→核验→审计 ✅ 2026-09-12（E2E 见 docs/reports/m2.0-dlq-e2e.md）
 - [x] P2 需求工程：SLO/STRIDE/追溯矩阵（RQ02）
