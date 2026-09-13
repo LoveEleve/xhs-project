@@ -141,9 +141,15 @@ public class DlqAdminService {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("sendStatus", sendResult.getSendStatus().name());
         result.put("newMsgId", sendResult.getMsgId());
+        result.put("offsetMsgId", sendResult.getOffsetMsgId());
         result.put("originTopic", originTopic);
         result.put("sourceMsgId", msg.getMsgId());
         result.put("sentAt", System.currentTimeMillis());
+        if (sendResult.getMessageQueue() != null) {
+            result.put("brokerName", sendResult.getMessageQueue().getBrokerName());
+            result.put("queueId", sendResult.getMessageQueue().getQueueId());
+            result.put("queueOffset", sendResult.getQueueOffset());
+        }
         return result;
     }
 
@@ -202,7 +208,28 @@ public class DlqAdminService {
         return result;
     }
 
-    /** 消费位点总量（重投执行前/后对比，判断消息是否被消费） */
+    /** 指定队列的消费位点（重投消息所在队列，位点越过 queueOffset 视为已消费） */
+    public Map<String, Object> queueProgress(String group, String topic, String brokerName, int queueId) throws Exception {
+        org.apache.rocketmq.remoting.protocol.admin.ConsumeStats stats = admin().examineConsumeStats(group);
+        for (Map.Entry<MessageQueue, org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper> entry
+                : stats.getOffsetTable().entrySet()) {
+            MessageQueue mq = entry.getKey();
+            if (mq.getTopic().equals(topic) && String.valueOf(mq.getBrokerName()).equals(brokerName)
+                    && mq.getQueueId() == queueId) {
+                Map<String, Object> result = new LinkedHashMap<>();
+                result.put("found", true);
+                result.put("topic", topic);
+                result.put("brokerName", brokerName);
+                result.put("queueId", queueId);
+                result.put("brokerOffset", entry.getValue().getBrokerOffset());
+                result.put("consumerOffset", entry.getValue().getConsumerOffset());
+                return result;
+            }
+        }
+        return Map.of("found", false, "topic", topic, "brokerName", brokerName, "queueId", queueId);
+    }
+
+    /** 消费位点总量（仅诊断用；不用于消息级核验） */
     public long consumerOffsetSum(String group) throws Exception {
         return ((Number) consumerProgress(group).get("consumerOffset")).longValue();
     }

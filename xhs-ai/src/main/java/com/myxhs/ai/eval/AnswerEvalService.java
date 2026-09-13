@@ -126,7 +126,7 @@ public class AnswerEvalService {
             } else {
                 boolean keywordOk = !expectAny.isEmpty() && expectAny.stream().anyMatch(text::contains);
                 boolean citeOk = expectCardIds.stream().anyMatch(cid -> text.contains(cid)
-                        || text.contains(cid.replace("architecture/", "").replace("code-map/", "")));
+                        || text.contains(cid.substring(cid.lastIndexOf('/') + 1)));
                 pass = keywordOk || citeOk;
                 if (!keywordOk && !citeOk) {
                     reasons.add("关键词与引用均未命中");

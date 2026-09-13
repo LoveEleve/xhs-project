@@ -24,7 +24,7 @@ import java.util.Map;
 
 /**
  * HITL 审批服务（M2.0；RV10 修复：主键安全/事务边界/失败可重试/指纹去重）
- * <p>状态机与三段式详见 docs/design/02；超时 fail-closed 与跨实例恢复在 M2.x 补全。</p>
+ * <p>状态机与三段式详见 docs/design/02；超时 fail-closed 与跨实例决策事件已于 RV17 交付。</p>
  */
 @Slf4j
 @Service
@@ -49,6 +49,9 @@ public class ApprovalService {
                             + "ORDER BY id DESC LIMIT 1",
                     sessionId, hash);
             if (!existing.isEmpty()) {
+                // 复用 pending 时刷新时间戳，避免按首次创建时间被超时误过期
+                jdbcTemplate.update("UPDATE ai_approval SET requested_at=CURRENT_TIMESTAMP(3) WHERE id=?",
+                        ((Number) existing.get(0).get("id")).longValue());
                 Map<String, Object> reused = new LinkedHashMap<>();
                 reused.put("approvalId", existing.get(0).get("id"));
                 reused.put("status", "pending");
@@ -188,6 +191,14 @@ public class ApprovalService {
         String previous = executionStatus(row);
         if ("executed".equals(previous)) {
             throw new IllegalStateException("该审批已执行成功，禁止重复执行");
+        }
+        // CAS 抢占执行权：并发 /execute 只有一个能拿到
+        int claimed = jdbcTemplate.update(
+                "UPDATE ai_approval SET result=? WHERE id=? AND status='approved' "
+                        + "AND (result IS NULL OR (result NOT LIKE '%executing%' AND result NOT LIKE '%executed%'))",
+                "{\"executionStatus\":\"executing\"}", id);
+        if (claimed == 0) {
+            throw new IllegalStateException("已有执行正在进行或已完成，禁止重复执行");
         }
         return executeAndRecord(userId, id, row);
     }

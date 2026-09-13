@@ -11,7 +11,7 @@ import java.util.Map;
 
 /**
  * 审批通过后的变更执行器（M2.0；RV10：非阻塞，核验交给 RedeliverVerifier）
- * <p>intent→effect→settlement：本类只做 effect 与"待核验"登记，不在请求线程 sleep。</p>
+ * <p>intent→effect→settlement：本类只做 effect 与"待核验"登记（队列坐标+位点基线），核验由 RedeliverVerifier 完成。</p>
  */
 @Slf4j
 @Service
@@ -52,10 +52,14 @@ public class ApprovalExecutor {
             settlement.put("status", "pending_verification");
             settlement.put("backlogBefore", backlogBefore);
             settlement.put("newMsgId", effect.get("newMsgId"));
+            settlement.put("offsetMsgId", effect.get("offsetMsgId"));
+            settlement.put("originTopic", effect.get("originTopic"));
+            settlement.put("brokerName", effect.get("brokerName"));
+            settlement.put("queueId", effect.get("queueId"));
+            settlement.put("queueOffset", effect.get("queueOffset"));
             settlement.put("group", group);
-            settlement.put("consumerOffsetBefore", consumerOffsetBefore);
             settlement.put("sentAt", System.currentTimeMillis());
-            settlement.put("note", "已发送；异步核验器在 10 分钟窗口内检查是否再次进入 DLQ（消费位点核验为 M2.x）");
+            settlement.put("note", "已发送；核验器在 10 分钟窗口内检查是否再次进入 DLQ，并按消息所落队列的消费位点判断是否已消费");
 
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("effect", effect);

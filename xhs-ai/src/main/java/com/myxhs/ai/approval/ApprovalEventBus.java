@@ -3,6 +3,8 @@ package com.myxhs.ai.approval;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
+import io.micrometer.core.instrument.MeterRegistry;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import redis.clients.jedis.DefaultJedisClientConfig;
@@ -37,7 +39,11 @@ public class ApprovalEventBus {
     @Value("${REDIS_PASSWORD:}")
     private String redisPassword;
 
+    private final String instanceId = java.util.UUID.randomUUID().toString().substring(0, 8);
     private final CopyOnWriteArrayList<Consumer<String>> listeners = new CopyOnWriteArrayList<>();
+
+    @Autowired(required = false)
+    private MeterRegistry meterRegistry;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private JedisSentineled pubJedis;
     private JedisSentineled subJedis;
@@ -55,10 +61,14 @@ public class ApprovalEventBus {
         pubJedis = new JedisSentineled(sentinelMaster, masterConfig, sentinels, sentinelConfig);
         subJedis = new JedisSentineled(sentinelMaster, masterConfig, sentinels, sentinelConfig);
         running.set(true);
+        if (meterRegistry != null) {
+            addListener(msg -> meterRegistry.counter("ai_approval_events_received_total",
+                    "instance", instanceId).increment());
+        }
         subscriberThread = new Thread(this::subscribeLoop, "approval-event-subscriber");
         subscriberThread.setDaemon(true);
         subscriberThread.start();
-        log.info("[审批事件] 订阅已启动 channel={}", CHANNEL);
+        log.info("[审批事件] 订阅已启动 channel={}, instance={}", CHANNEL, instanceId);
     }
 
     public void addListener(Consumer<String> listener) {
@@ -68,13 +78,14 @@ public class ApprovalEventBus {
     public void publish(String payload) {
         try {
             pubJedis.publish(CHANNEL, payload);
-            log.info("[审批事件] 已发布: {}", payload);
+            log.info("[审批事件] 已发布(instance={}): {}", instanceId, payload);
         } catch (Exception e) {
             log.warn("[审批事件] 发布失败（不影响本地流程）: {}", e.getMessage());
         }
     }
 
     private void subscribeLoop() {
+        long backoff = 5000;
         while (running.get()) {
             try {
                 subJedis.subscribe(new JedisPubSub() {
@@ -90,15 +101,18 @@ public class ApprovalEventBus {
                         });
                     }
                 }, CHANNEL);
+                backoff = 5000;
             } catch (Exception e) {
                 if (running.get()) {
-                    log.warn("[审批事件] 订阅中断，5s 后重连: {}", e.getMessage());
+                    long sleepMs = backoff + (long) (Math.random() * 1000);
+                    log.warn("[审批事件] 订阅中断，{}ms 后重连: {}", sleepMs, e.getMessage());
                     try {
-                        Thread.sleep(5000);
+                        Thread.sleep(sleepMs);
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         return;
                     }
+                    backoff = Math.min(backoff * 2, 60000);
                 }
             }
         }
@@ -107,6 +121,13 @@ public class ApprovalEventBus {
     @PreDestroy
     public void destroy() {
         running.set(false);
+        try {
+            if (subscriberThread != null) {
+                subscriberThread.interrupt();
+                subscriberThread.join(3000);
+            }
+        } catch (Exception ignored) {
+        }
         try {
             subJedis.close();
         } catch (Exception ignored) {

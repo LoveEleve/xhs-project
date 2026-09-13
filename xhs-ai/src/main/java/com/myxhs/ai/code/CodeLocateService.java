@@ -35,9 +35,13 @@ public class CodeLocateService {
             return false;
         }
         String norm = ref.startsWith("/") ? ref.substring(1) : ref;
+        if (norm.contains("..")) {
+            return false;
+        }
         try {
             if (norm.contains("/")) {
-                return Files.exists(Path.of(codeRoot, norm));
+                Path resolved = Path.of(codeRoot).resolve(norm).normalize();
+                return resolved.startsWith(Path.of(codeRoot).normalize()) && Files.exists(resolved);
             }
             return fileNames().contains(norm);
         } catch (Exception e) {
@@ -59,6 +63,10 @@ public class CodeLocateService {
                             .forEach(p -> names.add(p.getFileName().toString()));
                 } catch (Exception e) {
                     log.warn("[代码定位] 文件名索引构建失败: {}", e.getMessage());
+                }
+                if (names.isEmpty()) {
+                    log.warn("[代码定位] 文件名索引为空（扫描异常？），本次不缓存");
+                    return names;
                 }
                 fileNameCache = names;
             }

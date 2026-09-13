@@ -15,7 +15,7 @@ import java.util.Map;
 
 /**
  * 重投延迟核验器（RV10 R3：替代 3s 快照，窗口内检测"再次进入 DLQ"）
- * <p>判定：窗口内按 DLQ_ORIGIN_MESSAGE_ID = 重投新 msgId 匹配；命中→消费失败；超窗未命中→视为成功。</p>
+ * <p>判定：窗口内按 offsetMsgId/uniqId 匹配再入 DLQ；超窗后按消息队列消费位点是否越过 queueOffset 判定是否消费。</p>
  */
 @Slf4j
 @Component
@@ -64,33 +64,43 @@ public class RedeliverVerifier {
         }
         String group = String.valueOf(settlement.get("group"));
         String newMsgId = String.valueOf(settlement.get("newMsgId"));
+        String offsetMsgId = settlement.get("offsetMsgId") == null ? null : String.valueOf(settlement.get("offsetMsgId"));
         Object sentAtObj = settlement.get("sentAt");
         if (sentAtObj == null) {
             return;
         }
         long sentAt = ((Number) sentAtObj).longValue();
 
-        boolean reentered = dlqAdminService.findByOriginMsgId(group, newMsgId).isPresent();
+        // 再入检测：兼容 uniqId 与物理 offsetMsgId 两种属性（不同 RocketMQ 回退链路写法不同）
+        boolean reentered = dlqAdminService.findByOriginMsgId(group, offsetMsgId).isPresent()
+                || dlqAdminService.findByOriginMsgId(group, newMsgId).isPresent();
         if (reentered) {
             settlement.put("status", "reentered_dlq");
             settlement.put("verdict", "重投消息消费失败，已再次进入 DLQ，请排查消费者");
         } else if (System.currentTimeMillis() - sentAt > VERIFY_WINDOW_MS) {
-            // 消费位点核验：位点推进视为已消费
-            Long before = settlement.get("consumerOffsetBefore") == null ? null
-                    : ((Number) settlement.get("consumerOffsetBefore")).longValue();
-            Long after = null;
-            try {
-                after = dlqAdminService.consumerOffsetSum(group);
-            } catch (Exception e) {
-                log.warn("[核验] 消费位点读取失败 group={}: {}", group, e.getMessage());
+            // 消息级位点核验：只比较该消息所落队列的 consumerOffset 是否越过 queueOffset
+            String originTopic = settlement.get("originTopic") == null ? null : String.valueOf(settlement.get("originTopic"));
+            String brokerName = settlement.get("brokerName") == null ? null : String.valueOf(settlement.get("brokerName"));
+            Long queueOffset = settlement.get("queueOffset") == null ? null : ((Number) settlement.get("queueOffset")).longValue();
+            Integer queueId = settlement.get("queueId") == null ? null : ((Number) settlement.get("queueId")).intValue();
+            Map<String, Object> queueAfter = null;
+            if (originTopic != null && brokerName != null && queueOffset != null && queueId != null) {
+                try {
+                    queueAfter = dlqAdminService.queueProgress(group, originTopic, brokerName, queueId);
+                } catch (Exception e) {
+                    log.warn("[核验] 队列位点读取失败 group={}: {}", group, e.getMessage());
+                }
             }
-            settlement.put("consumerOffsetAfter", after);
-            if (before != null && after != null && after > before) {
+            settlement.put("queueProgressAfter", queueAfter);
+            Long consumerOffset = queueAfter != null && Boolean.TRUE.equals(queueAfter.get("found"))
+                    ? ((Number) queueAfter.get("consumerOffset")).longValue() : null;
+            if (consumerOffset != null && queueOffset != null && consumerOffset > queueOffset) {
                 settlement.put("status", "verified_consumed");
-                settlement.put("verdict", "消费位点由 " + before + " 推进到 " + after + "，消息已被消费");
+                settlement.put("verdict", "队列 " + brokerName + "#" + queueId + " 消费位点 " + consumerOffset
+                        + " 已越过消息位点 " + queueOffset + "，消息已被消费");
             } else {
                 settlement.put("status", "verified_no_reentry");
-                settlement.put("verdict", "窗口内未再入 DLQ；位点未观察到推进（消费慢或消费者未订阅），建议人工复核");
+                settlement.put("verdict", "窗口内未再入 DLQ；队列位点未越过消息位点（消费慢或消费者未订阅），建议人工复核");
             }
         } else {
             return;
