@@ -1,0 +1,12 @@
+edge_id: order-to-payment
+caller_service: order
+callee_service: payment
+client_class: PaymentFeignClient
+priority: P0
+main_endpoints:
+  - /api/payment/create
+  - /api/payment/status
+  - /api/payment/refund
+semantic_role: 发起支付、查询支付状态、触发退款链
+why_it_matters: payment 负责已成立交易的资金状态推进，不是前置事实收束者
+source: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/feign/PaymentFeignClient.java

@@ -1,0 +1,61 @@
+id: order-inventory-payment-flow
+category: architecture
+priority: P1
+question: 订单、库存、支付三者在主交易链里是怎样衔接的？
+answer_shape: long
+serve_mode: composable
+scope: transaction-mainline-detail
+boundary:
+  - 不展开库存三级扣减内部算法细节
+  - 不替代 transaction-message-anchor 对“第一跳绑定器”的解释
+  - 不回答首页聚合、推荐、通知视图的展示逻辑
+answer: >
+  在 my-xhs 的主交易链里，order 不是单独创建一条订单记录就结束，而是把库存与支付一起拉进一条连续推进链：先由 order 同步收束地址、商品、库存、优惠等事实并创建订单，随后通过事务消息把“订单已合法成立”推进到库存世界做预扣，再由支付链接管资金状态，最后再通过补偿/通知等链路继续收尾。
+structured_points:
+  entry: 用户提交下单请求，order 作为交易编排中心接管
+  sync_chain: 创建订单前，同步校验地址、SKU、库存、优惠券与支付前置条件
+  inventory_handoff: 订单成立后，通过事务消息把库存预扣这一跳交给 inventory consumer
+  payment_handoff: 库存侧预扣成立后，支付链开始接管资金状态推进
+  failure_split: 订单成立前失败属于“订单未成立”；订单成立后失败属于“后续库存/支付/补偿继续收敛”
+  output: 合法订单 + 可推进的库存预扣与支付主链
+why_it_matters: >
+  如果不把 order、inventory、payment 这三者放在同一条主交易链里看，读者就会把它们误解成三个平级 CRUD 服务，
+  从而完全看不见“订单成立”和“库存看见订单”之间那一跳为什么会决定系统复杂度。
+anti_confusion:
+  - 订单创建不是交易链的终点，而是状态锚点
+  - 库存预扣不是订单服务内部一个 if 分支，而是被独立服务接管的关键一跳
+  - 支付不是独立于订单存在的外部附属能力，而是主交易链的后半段状态推进者
+best_for_questions:
+  - 订单、库存、支付在主链里怎么衔接？
+  - 为什么 order / inventory / payment 需要一起分析？
+  - 为什么订单成立和库存预扣不是同一层动作？
+sources:
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/02-order-create.md
+    role: doc-primary
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/03-transaction-message.md
+    role: doc-transaction
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/04-payment-flow.md
+    role: doc-payment
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/service/OrderService.java
+    role: code-orchestration
+  - path: /data/workspace/my-xhs/my-xhs-inventory/src/main/java/com/myxhs/inventory/consumer/OrderTransactionConsumer.java
+    role: code-inventory
+  - path: /data/workspace/my-xhs/my-xhs-payment/src/main/java/com/myxhs/payment/service/PaymentService.java
+    role: code-payment
+source_version: 2026-08-20
+last_verified_at: 2026-08-20
+evidence_level:
+  - L0
+  - L1
+confidence: high
+notes:
+  - 这张卡是 transaction-chain 的细化卡，用来解释 order / inventory / payment 三者的衔接关系，而不是完整讲完一致性收敛策略
+followup_docs:
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/02-order-create.md
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/03-transaction-message.md
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/04-payment-flow.md
+related_cards:
+  - transaction-chain
+  - order-orchestration-role
+  - sync-async-boundary
+  - transaction-message-anchor

@@ -1,0 +1,27 @@
+id: order-transaction-topic
+topic: ORDER_TRANSACTION_TOPIC
+priority: P0
+question: 哪个 topic 负责把订单推进到库存世界？
+answer_shape: short
+serve_mode: direct
+answer: ORDER_TRANSACTION_TOPIC 是订单成立后把“库存应该看见这笔订单”推进到 inventory 世界的第一跳绑定器；producer 是 my-xhs-order，consumer 是 inventory-order-transaction-consumer-group。
+trigger_keywords:
+  - topic
+  - 订单推进到库存
+  - ORDER_TRANSACTION_TOPIC
+  - 库存世界
+  - inventory-order-transaction-consumer-group
+semantic_role: 订单成立后推进库存预扣的第一跳绑定器
+producers:
+  - my-xhs-order (OrderService / 事务消息发送)
+consumers:
+  - inventory-order-transaction-consumer-group (OrderTransactionConsumer)
+main_payload:
+  - orderNo
+  - userId
+  - skuItems
+why_it_matters: 没有这条消息，订单世界和库存世界之间最危险的一跳就会断裂
+sources:
+  - /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/service/OrderService.java
+  - /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/listener/OrderTransactionListener.java
+  - /data/workspace/my-xhs/my-xhs-inventory/src/main/java/com/myxhs/inventory/consumer/OrderTransactionConsumer.java

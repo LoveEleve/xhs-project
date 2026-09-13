@@ -1,0 +1,60 @@
+id: transaction-chain
+category: architecture
+priority: P1
+question: my-xhs 的主交易链是怎样流动的？
+answer_shape: long
+serve_mode: composable
+scope: transaction-mainline
+boundary:
+  - 不展开库存三级扣减的内部 Lua / Redis 细节
+  - 不替代 payment-flow / transaction-message / compensation 这类更细分卡片
+  - 不回答首页聚合或搜索推荐问题
+answer: >
+  my-xhs 的主交易链不是“用户下单 -> 订单表插入 -> 支付”这么简单，而是一条从商品与购物车起步、在 order 服务处同步收束、再向库存/支付/通知等方向推进的复合链路。
+  更准确地说，它的主线是：商品被加入购物车、优惠券参与结算、order 拉齐地址/商品/库存/优惠等事实后创建订单、库存预扣消息推进到下游、支付再接管资金状态，后续通知与首页展示继续在成立后的影响扩散层完成收束。
+structured_points:
+  entry: 商品浏览 / 购物车 / 优惠券是交易动作成立前的准备层
+  sync_chain: order 在创建订单前同步依赖 user / product / inventory / coupon / payment 等事实输入
+  state_anchor: 订单创建是交易主链的状态锚点，后续库存/支付/补偿围绕它展开
+  async_chain: 事务消息、本地消息表、补偿与通知在订单成立后继续向下游推进影响
+  failure_split: 成立前失败更像“订单不成立”，成立后失败更像“订单已成立但后续链路要继续收敛”
+  boundary: 这是一条“同步收束 + 异步推进”复合链，而不是单次本地事务或单次消息投递就能解释清楚的链路
+why_it_matters: >
+  如果不把主交易链先立起来，后面 order、inventory、payment、coupon、notification 的复杂度都会被拆散；
+  读者会看到很多服务在动，但看不出哪些动作属于“订单成立前”，哪些属于“订单成立后”。
+anti_confusion:
+  - 主交易链不是“order 一家服务干完所有事”
+  - 也不是“所有步骤都异步传播”
+  - 订单成立前和订单成立后的失败语义完全不同
+best_for_questions:
+  - my-xhs 的主交易链怎么走？
+  - 为什么 order / inventory / payment 要放在一起讲？
+  - 为什么说交易链是“同步收束 + 异步推进”？
+sources:
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/02-order-create.md
+    role: doc-primary
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/03-transaction-message.md
+    role: doc-transaction
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/service/OrderService.java
+    role: code-orchestration
+  - path: /data/workspace/my-xhs/my-xhs-inventory/src/main/java/com/myxhs/inventory/consumer/OrderTransactionConsumer.java
+    role: code-async
+  - path: /data/workspace/my-xhs/my-xhs-payment/src/main/java/com/myxhs/payment/service/PaymentService.java
+    role: code-payment
+source_version: 2026-08-20
+last_verified_at: 2026-08-20
+evidence_level:
+  - L0
+  - L1
+confidence: high
+notes:
+  - 这张卡是主链总述卡，后续如果要解释消息一致性 / 库存预扣 / 支付状态机，应再跳到更细卡片
+followup_docs:
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/02-order-create.md
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/03-transaction-message.md
+related_cards:
+  - order-orchestration-role
+  - sync-async-boundary
+  - middleware-role
+  - order-inventory-payment-flow
+  - async-event-map

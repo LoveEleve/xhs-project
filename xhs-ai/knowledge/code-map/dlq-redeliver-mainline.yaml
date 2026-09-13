@@ -1,0 +1,46 @@
+id: dlq-redeliver-mainline
+category: call-chain
+priority: P0
+question: DLQ 重投这条链在代码层和系统状态里是怎样推进的？
+answer_shape: long
+serve_mode: direct
+entry:
+  api: /api/runs -> AgentHarness
+  tool: mqDlqQuery / dlq.redeliver
+state_anchor: WAITING_APPROVAL
+sync_boundary: 先由 Agent 调查并确定 originMsgId/retryTopic，再由人 approve，最后执行重投
+async_boundary: 重投后消息重新进入下游消费链，由 MQ / consumer 再次推进
+phases:
+  - name: investigate-dlq
+    description: Agent 调 mqDlqQuery，定位 DLQ 消息及 ORIGIN_MESSAGE_ID
+    components:
+      - DlqRedeliverTool.queryDlqMessages
+      - RocketMQ Dashboard queryDlqMessageByConsumerGroup.query
+  - name: suspend-for-approval
+    description: L3 动作被 PolicyGuard 判定 requiresApproval，Harness 进入 WAITING_APPROVAL
+    components:
+      - PolicyGuard
+      - AgentHarness.suspendForApproval
+      - RunStore approval_json
+  - name: approve-and-resume
+    description: RunController approve 后，RunManager/AgentHarness 恢复执行被审批工具
+    components:
+      - RunController.approve
+      - RunManager.approve
+      - AgentHarness resume
+  - name: redeliver-execution
+    description: dlq.redeliver 真正调用 Dashboard 重投端点
+    components:
+      - DlqRedeliverTool.redeliver
+      - batchResendDlqMessage.do
+failure_hotspots:
+  - 找不到正确 ORIGIN_MESSAGE_ID
+  - WAITING_APPROVAL 后未批准 / 被拒绝
+  - CR_LATER（消息本体仍然坏）
+  - MQ 消费后再次失败进入新一轮重试或 DLQ
+sources:
+  - /data/workspace/my-xhs/my-xhs-ai-app/src/main/java/com/myxhs/ai/app/service/agent/harness/AgentHarness.java
+  - /data/workspace/my-xhs/my-xhs-ai-app/src/main/java/com/myxhs/ai/app/controller/RunController.java
+  - /data/workspace/my-xhs/my-xhs-ai-app/src/main/java/com/myxhs/ai/app/service/run/RunManager.java
+  - /data/workspace/my-xhs/my-xhs-ai-tools/src/main/java/com/myxhs/ai/tools/DlqRedeliverTool.java
+  - /data/workspace/my-xhs/docs/test-3/HANDOFF-TASK14.md

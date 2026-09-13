@@ -1,0 +1,67 @@
+id: gateway-role
+category: architecture
+priority: P0
+question: gateway 的角色是什么？
+answer_shape: medium
+serve_mode: direct
+scope: entry-boundary
+boundary:
+  - 不负责业务真相
+  - 不负责订单/库存/支付等交易编排
+  - 不等同于 home 这种 BFF 聚合层
+answer: >
+  gateway 是 my-xhs 的统一入口层，负责路由、鉴权、限流、连接池治理和不同业务域的超时策略。
+  用户不会直接访问 user、product、order、payment 等服务，而是先进入 gateway，再由 gateway 根据路由规则分发到下游。
+  所以 gateway 的价值不在“转发请求”本身，而在“统一入口治理”。
+structured_points:
+  position: my-xhs 的统一入口与流量治理层
+  depends_on: user / product / order / payment / inventory / content 等下游服务
+  responsibility: 路由、JWT/HMAC 鉴权、白名单、限流、超时与连接池治理
+  failure_mode: 入口 5xx、超时、限流拒绝、鉴权失败；不能直接等同于领域服务故障
+  non_responsibility: 不持有业务事实，不承担订单/库存/支付事务编排
+  output: 将经过入口治理的请求路由到正确的下游服务
+why_it_matters: >
+  如果把 gateway 误看成普通转发器，后面很多 5xx、timeout、白名单、限流问题就会被误诊成领域服务 bug；
+  所以理解 gateway 的真正角色，等于先把“入口层问题”和“业务层问题”分开。
+anti_confusion:
+  - gateway 不是 BFF
+  - gateway 不是业务核心服务
+  - gateway 不是订单事务中心
+  - gateway 的复杂度来自统一入口治理，而不是持有业务数据
+best_for_questions:
+  - gateway 的角色是什么？
+  - 为什么 gateway 不是 BFF？
+  - 为什么入口层问题不能直接归因到 order / payment 服务？
+trigger_keywords:
+  - gateway
+  - 路由
+  - 鉴权
+  - 入口层
+  - 限流
+  - timeout
+  - 白名单
+sources:
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/00-overview-architecture/01-service-topology.md
+    role: doc-primary
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/08-gateway-security-observability/01-gateway-routing.md
+    role: doc-routing
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/08-gateway-security-observability/02-jwt-hmac.md
+    role: doc-auth
+  - path: /data/workspace/my-xhs/my-xhs-gateway/src/main/resources/application.yml
+    role: code-route
+source_version: 2026-08-20
+last_verified_at: 2026-08-20
+evidence_level:
+  - L0
+  - L1
+confidence: high
+notes:
+  - 这张卡适合直接回答“gateway 是什么”类问题，不负责延展到完整交易主链
+followup_docs:
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/08-gateway-security-observability/01-gateway-routing.md
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/08-gateway-security-observability/02-jwt-hmac.md
+related_cards:
+  - service-topology
+  - bff-role
+  - sync-async-boundary
+  - middleware-role

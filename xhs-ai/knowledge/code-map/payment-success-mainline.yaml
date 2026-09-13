@@ -1,0 +1,38 @@
+id: payment-success-mainline
+category: call-chain
+priority: P0
+question: 支付成功后，主交易链在代码层是怎样继续推进的？
+answer_shape: long
+serve_mode: direct
+entry:
+  controller: PaymentController / notify entry
+  service: PaymentService
+state_anchor: 支付状态确认成功，交易从预留态进入完成推进
+sync_boundary: 支付状态更新本身是 payment 域内部收束，后续库存确认/通知属于继续推进
+async_boundary: 支付成功后，通知、补偿、后续视图更新可能继续异步扩散
+phases:
+  - name: payment-state-update
+    description: 支付服务确认支付成功，更新支付状态
+    components:
+      - PaymentService
+  - name: order-followup
+    description: 订单侧感知支付结果并继续推进订单完成态
+    components:
+      - PaymentFeignClient / order follow-up handling
+  - name: inventory-confirm
+    description: 库存从预留推进到最终消耗
+    components:
+      - InventoryFeignClient.confirm
+  - name: downstream-fanout
+    description: 通知、补偿、退款可能继续在后续链路展开
+    components:
+      - notification / compensate / refund paths
+failure_hotspots:
+  - 支付状态已变更但下游确认未完全推进
+  - 通知/补偿链延后失败
+  - 幂等重复通知导致重复推进风险
+sources:
+  - /data/workspace/my-xhs/my-xhs-payment/src/main/java/com/myxhs/payment/service/PaymentService.java
+  - /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/feign/PaymentFeignClient.java
+  - /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/feign/InventoryFeignClient.java
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/04-payment-flow.md

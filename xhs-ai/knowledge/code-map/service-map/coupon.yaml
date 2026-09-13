@@ -1,0 +1,26 @@
+service: coupon
+priority: P0
+role: 优惠券生命周期与交易绑定控制中心
+main_question: coupon 在代码结构里承担什么职责？
+key_controllers:
+  - CouponController
+key_services:
+  - CouponService
+key_feign_clients: []
+key_consumers: []
+key_jobs:
+  - CouponExpireJob
+  - CouponReconcileJob
+key_configs:
+  - my-xhs-coupon/src/main/resources/application.yml
+responsibility:
+  - 查询可用券与折扣
+  - 处理核销/占用/返还
+  - 与订单成败保持一致
+non_responsibility:
+  - 不负责订单编排主链
+  - 不负责库存或支付资金状态推进
+sources:
+  - /data/workspace/my-xhs/my-xhs-coupon/src/main/java/com/myxhs/coupon/service/CouponService.java
+  - /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/feign/CouponFeignClient.java
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/04-cart-coupon-marketing/02-coupon-lifecycle.md

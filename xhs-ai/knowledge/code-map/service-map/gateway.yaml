@@ -1,0 +1,27 @@
+service: gateway
+priority: P0
+role: 统一入口与流量治理层
+main_question: gateway 在代码结构里承担什么职责？
+key_controllers: []
+key_services: []
+key_filters:
+  - JwtAuthenticationFilter
+  - HmacSignatureFilter
+key_routes:
+  - application.yml routes
+key_consumers: []
+key_jobs: []
+key_configs:
+  - my-xhs-gateway/src/main/resources/application.yml
+responsibility:
+  - 路由分发
+  - JWT/HMAC 鉴权
+  - 白名单控制
+  - 限流与超时治理
+non_responsibility:
+  - 不持有业务真相
+  - 不承担订单/库存/支付事务编排
+sources:
+  - /data/workspace/my-xhs/my-xhs-gateway/src/main/resources/application.yml
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/08-gateway-security-observability/01-gateway-routing.md
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/08-gateway-security-observability/02-jwt-hmac.md

@@ -1,0 +1,41 @@
+id: inventory-pre-deduct-mainline
+category: call-chain
+priority: P0
+question: 订单成立后，库存预扣这条链在代码层是怎样推进的？
+answer_shape: long
+serve_mode: direct
+entry:
+  consumer: OrderTransactionConsumer
+  service: InventoryService
+state_anchor: 库存从可售进入预留/预扣语义
+sync_boundary: 订单世界到库存世界的第一跳由事务消息交接，而不是同步本地事务共享
+async_boundary: 订单成立后通过 ORDER_TRANSACTION_TOPIC 异步推进到库存侧 consumer
+phases:
+  - name: consume-order-transaction
+    description: inventory 侧消费 ORDER_TRANSACTION_TOPIC，解析 orderNo / userId / skuItems
+    components:
+      - OrderTransactionConsumer
+  - name: idempotent-and-derive
+    description: 先做 msgId 幂等，再从 orderNo 派生 pseudoOrderId
+    components:
+      - MessageIdempotentHelper
+      - pseudoOrderId derivation
+  - name: prededuct-core
+    description: 调 InventoryService.preDeduct，进入库存预扣主逻辑
+    components:
+      - InventoryService.preDeduct
+      - Redis / MySQL idem / bucket checks
+  - name: result-transition
+    description: 成功则记录预扣，失败则抛异常触发 MQ 重试 / DLQ
+    components:
+      - BizException / RuntimeException
+      - RocketMQ reconsume / DLQ
+failure_hotspots:
+  - SKU 不存在 / 库存未初始化 / 库存不足
+  - 幂等占位残留导致重复消息被短路
+  - Redis key / bucket 状态异常
+sources:
+  - /data/workspace/my-xhs/my-xhs-inventory/src/main/java/com/myxhs/inventory/consumer/OrderTransactionConsumer.java
+  - /data/workspace/my-xhs/my-xhs-inventory/src/main/java/com/myxhs/inventory/service/InventoryService.java
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/01-inventory-three-level.md
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/03-transaction-message.md

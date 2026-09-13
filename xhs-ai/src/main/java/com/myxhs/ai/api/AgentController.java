@@ -49,7 +49,9 @@ public class AgentController {
         String traceId = MDC.get(TraceIdFilter.MDC_KEY);
         return agentService.chat(uid, sessionId, request.message(), traceId)
                 .timeout(Duration.ofSeconds(300))
-                .map(reply -> R.ok(Map.<String, Object>of("sessionId", sessionId, "reply", reply)))
+                .map(reply -> reply == null || reply.isBlank()
+                        ? R.<Map<String, Object>>fail(503, "模型网关未返回内容（可能不稳定），请稍后重试")
+                        : R.ok(Map.<String, Object>of("sessionId", sessionId, "reply", reply)))
                 .onErrorResume(e -> {
                     log.error("[Agent] chat 失败", e);
                     return Mono.just(R.fail(500, "Agent 执行失败，请稍后重试"));
@@ -66,7 +68,9 @@ public class AgentController {
         return agentService.stream(uid, sessionId, request.message(), traceId)
                 .timeout(Duration.ofSeconds(300))
                 .flatMap(event -> Flux.fromIterable(toSse(event, finalText)))
-                .concatWith(Mono.just(sse("done", "{\"sessionId\":\"" + sessionId + "\"}")))
+                .concatWith(Mono.fromSupplier(() -> finalText.length() == 0
+                        ? sse("error", "{\"message\":\"模型网关未返回内容（可能不稳定），请稍后重试\"}")
+                        : sse("done", "{\"sessionId\":\"" + sessionId + "\"}")))
                 .doFinally(signal -> agentService.recordAssistant(sessionId, uid, finalText.toString(), traceId))
                 .onErrorResume(e -> {
                     log.error("[Agent] stream 失败", e);

@@ -1,0 +1,146 @@
+questions:
+  - id: arch-001
+    priority: P0
+    question: my-xhs 的整体架构是什么？
+    type: architecture
+    answer_shape: long
+    needs:
+      - service-topology
+      - domain-groups
+      - gateway-role
+      - sync-async-boundary
+      - middleware-role
+    source_weight:
+      documents: high
+      code: medium
+      runtime: low
+
+  - id: arch-002
+    priority: P0
+    question: my-xhs 的服务是怎么分组的？
+    type: architecture
+    answer_shape: medium
+    needs:
+      - domain-groups
+      - role-difference
+    source_weight:
+      documents: high
+      code: medium
+      runtime: low
+
+  - id: arch-003
+    priority: P0
+    question: gateway、home、order、inventory 各自的边界是什么？
+    type: architecture
+    answer_shape: long
+    needs:
+      - gateway-role
+      - bff-role
+      - order-orchestration-role
+      - inventory-state-role
+    source_weight:
+      documents: high
+      code: high
+      runtime: low
+
+  - id: arch-004
+    priority: P0
+    question: 哪些链路是同步 Feign，哪些是异步 RocketMQ？
+    type: architecture
+    answer_shape: medium
+    needs:
+      - sync-call-map
+      - async-event-map
+      - sync-async-boundary
+    source_weight:
+      documents: high
+      code: high
+      runtime: medium
+
+  - id: arch-005
+    priority: P0
+    question: 为什么订单服务是编排中心？
+    type: architecture
+    answer_shape: long
+    needs:
+      - order-orchestration-role
+      - transaction-chain
+      - feign-dependency-map
+    source_weight:
+      documents: high
+      code: high
+      runtime: medium
+
+  - id: arch-006
+    priority: P1
+    question: 为什么 home 是 BFF，不是事务中心？
+    type: architecture
+    answer_shape: medium
+    needs:
+      - bff-role
+      - read-aggregation-vs-transaction
+    source_weight:
+      documents: high
+      code: medium
+      runtime: low
+
+  - id: arch-007
+    priority: P1
+    question: 为什么 inventory 比 product 更复杂？
+    type: architecture
+    answer_shape: medium
+    needs:
+      - inventory-state-role
+      - product-catalog-role
+      - consistency-burden
+      - stateful-vs-catalog
+    source_weight:
+      documents: high
+      code: medium
+      runtime: medium
+
+  - id: arch-008
+    priority: P1
+    question: 系统的中间件分别承担什么职责？
+    type: architecture
+    answer_shape: short
+    needs:
+      - mysql-role
+      - redis-role
+      - rocketmq-role
+      - nacos-role
+      - xxl-role
+      - es-role
+    source_weight:
+      documents: high
+      code: low
+      runtime: low
+
+  - id: arch-009
+    priority: P0
+    question: 交易主链是怎样流动的？
+    type: architecture
+    answer_shape: long
+    needs:
+      - transaction-chain
+      - order-inventory-payment-flow
+      - async-event-map
+    source_weight:
+      documents: high
+      code: high
+      runtime: medium
+
+  - id: arch-010
+    priority: P1
+    question: 为什么这个系统的复杂度不是来自服务数量，而是来自职责差异？
+    type: architecture
+    answer_shape: long
+    needs:
+      - service-topology
+      - role-difference
+      - sync-async-boundary
+      - read-aggregation-vs-transaction
+    source_weight:
+      documents: high
+      code: medium
+      runtime: low

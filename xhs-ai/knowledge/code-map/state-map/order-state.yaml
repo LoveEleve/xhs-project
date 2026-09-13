@@ -1,0 +1,24 @@
+domain: order
+priority: P0
+question: 订单状态机大致落在哪些类和阶段里？
+answer_shape: medium
+serve_mode: direct
+state_owner: my-xhs-order
+key_classes:
+  - OrderService
+  - OrderTransactionService
+  - OrderCloseJob
+  - LocalMessageRetryJob
+transitions:
+  - created -> pending_payment
+  - pending_payment -> paid | cancelled | timeout_closed
+  - paid -> completed / follow-up
+  - pending/created -> compensation/retry paths
+failure_paths:
+  - 下单前置事实拉齐失败
+  - 订单已成立但后续库存/支付/通知未收敛
+why_it_matters: 订单状态机不是一个枚举说明，而是整条交易链的状态锚点，其他域围绕它继续推进或回滚。
+sources:
+  - /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/service/OrderService.java
+  - /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/job/OrderCloseJob.java
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/02-order-create.md

@@ -1,0 +1,26 @@
+id: order-transaction-service-card
+category: code-structure
+priority: P0
+question: 哪个类负责把订单、本地消息表和事件一起写进本地事务？
+answer_shape: medium
+serve_mode: direct
+answer: 负责把订单主表、订单明细、订单事件和本地消息表一起写进本地事务的核心类是 `OrderTransactionService`。如果你问“订单成立时，本地事务到底落了哪些关键锚点”，应该优先看这个类。
+trigger_keywords:
+  - 本地事务
+  - 本地消息表
+  - OrderTransactionService
+  - 订单事件
+sources:
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/service/OrderTransactionService.java
+    role: code-service
+source_version: 2026-08-20
+last_verified_at: 2026-08-20
+evidence_level:
+  - L0
+confidence: high
+followup_docs:
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/02-order-create.md
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/03-transaction-message.md
+related_cards:
+  - order-create
+  - transaction-message-anchor

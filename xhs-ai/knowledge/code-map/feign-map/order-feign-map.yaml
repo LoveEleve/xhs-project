@@ -1,0 +1,40 @@
+caller_service: order
+priority: P0
+question: order 服务同步依赖了哪些下游，为什么它会成为编排中心？
+answer_shape: long
+serve_mode: direct
+scope: order-sync-dependencies
+boundary:
+  - 不展开每个下游服务内部实现细节
+  - 不替代 transaction-chain / order-create 这种业务规则卡
+  - 不覆盖异步 topic 扩散链
+answer: >
+  order 服务之所以是交易主链的同步编排中心，不是因为它拥有全部业务事实，而是因为它在下单成立前必须同步拉齐多个下游事实：用户地址、商品 SKU、库存状态、优惠券折扣、支付前置条件。也就是说，order 的复杂度不是“代码多”，而是它在同一笔下单里承担了对多个下游领域事实的同步收束责任。
+structured_points:
+  caller: order
+  dependencies: user / product / inventory / coupon / payment
+  semantic_role: 订单成立前的事实收束链
+  risk: 任意一个下游事实缺失或失败，都可能让下单动作不成立或进入补偿语义
+  boundary: 这里只解释同步 Feign 依赖，不解释订单成立后的异步推进
+sources:
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/feign/UserFeignClient.java
+    role: code-feign
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/feign/ProductFeignClient.java
+    role: code-feign
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/feign/InventoryFeignClient.java
+    role: code-feign
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/feign/CouponFeignClient.java
+    role: code-feign
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/feign/PaymentFeignClient.java
+    role: code-feign
+source_version: 2026-08-20
+last_verified_at: 2026-08-20
+evidence_level:
+  - L0
+confidence: high
+related_maps:
+  - order-to-user
+  - order-to-product
+  - order-to-inventory
+  - order-to-coupon
+  - order-to-payment

@@ -1,0 +1,18 @@
+event_network: notification
+priority: P1
+question: 通知相关事件是怎样在系统里扩散的？
+answer_shape: medium
+serve_mode: direct
+main_topics:
+  - NOTIFICATION_TOPIC
+producers:
+  - content(CommentService)
+  - analytics(LikeService/FollowService)
+consumers:
+  - notification(NotificationEventConsumer)
+semantic_role: 动作成立后把“应该告知谁”推进到通知域
+why_it_matters: 说明通知不是原动作同步返回的一部分，而是体验层的异步扩散链。
+sources:
+  - /data/workspace/my-xhs/my-xhs-content/src/main/java/com/myxhs/content/service/CommentService.java
+  - /data/workspace/my-xhs/my-xhs-analytics/src/main/java/com/myxhs/analytics/service/LikeService.java
+  - /data/workspace/my-xhs/my-xhs-notification/src/main/java/com/myxhs/notification/consumer/NotificationEventConsumer.java

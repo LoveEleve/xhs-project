@@ -1,0 +1,33 @@
+service: order
+priority: P0
+role: 交易主链同步编排中心
+main_question: order 在代码结构里承担什么职责？
+key_controllers:
+  - OrderController
+key_services:
+  - OrderService
+  - OrderTransactionService
+key_feign_clients:
+  - UserFeignClient
+  - ProductFeignClient
+  - InventoryFeignClient
+  - CouponFeignClient
+  - PaymentFeignClient
+key_consumers:
+  - OrderCompensationConsumer
+key_jobs:
+  - LocalMessageRetryJob
+  - OrderCloseJob
+key_configs:
+  - my-xhs-order/src/main/resources/application.yml
+responsibility:
+  - 收束地址/商品/库存/券/支付等前置事实
+  - 创建订单与订单明细
+  - 推进事务消息与后续链路
+non_responsibility:
+  - 不拥有库存真相
+  - 不拥有支付真相
+sources:
+  - /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/service/OrderService.java
+  - /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/service/OrderTransactionService.java
+  - /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/job/LocalMessageRetryJob.java

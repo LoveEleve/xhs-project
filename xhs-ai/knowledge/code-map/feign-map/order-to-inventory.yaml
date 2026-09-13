@@ -1,0 +1,12 @@
+edge_id: order-to-inventory
+caller_service: order
+callee_service: inventory
+client_class: InventoryFeignClient
+priority: P0
+main_endpoints:
+  - /api/inventory/check
+  - /api/inventory/release
+  - /api/inventory/confirm
+semantic_role: 在交易链中承担库存校验、释放、确认等同步协作
+why_it_matters: 库存是交易能否成立与后续如何收尾的核心约束之一
+source: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/feign/InventoryFeignClient.java

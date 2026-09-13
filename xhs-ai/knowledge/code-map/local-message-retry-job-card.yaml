@@ -1,0 +1,25 @@
+id: local-message-retry-job-card
+category: code-structure
+priority: P1
+question: 哪个 job 负责本地消息补发与死信扫描？
+answer_shape: medium
+serve_mode: direct
+answer: 负责本地消息补发与死信扫描的核心 job 是 `LocalMessageRetryJob`。它承担两件事：一是扫描待补发/失败的本地消息并重新推送到 MQ，二是扫描死信状态的消息并尝试重新投递。因此如果你问“本地消息表为什么能兜底补发”“死信扫描在哪里做”，应该优先看这个 job。
+trigger_keywords:
+  - 哪个 job
+  - 本地消息补发
+  - 死信扫描
+  - LocalMessageRetryJob
+sources:
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/job/LocalMessageRetryJob.java
+    role: code-job
+source_version: 2026-08-20
+last_verified_at: 2026-08-20
+evidence_level:
+  - L0
+confidence: high
+followup_docs:
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/03-transaction-message.md
+related_cards:
+  - transaction-message-anchor
+  - dlq-redeliver-mainline

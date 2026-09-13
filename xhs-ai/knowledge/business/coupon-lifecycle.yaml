@@ -1,0 +1,53 @@
+id: coupon-lifecycle
+category: business
+priority: P1
+question: 优惠券在主交易链里经历了怎样的生命周期？
+answer_shape: long
+serve_mode: direct
+scope: coupon-lifecycle-boundary
+boundary:
+  - 不展开营销规则组合与复杂促销叠加算法
+  - 不替代 order-create 对下单主线的总述
+  - 不完整覆盖退款后的所有返券细节
+answer: >
+  在 my-xhs 的交易链里，优惠券不是一个独立于订单之外的附属对象，而是会随着“查询可用 -> 参与结算 -> 核销占用 -> 失败返还 / 退款返还”不断变化的一段业务状态。
+  它的复杂度不在“有没有优惠”，而在“优惠已经参与了一笔成立中的交易后，后续链条失败或回滚时如何恢复一致性”。
+structured_points:
+  precheck: 下单前先查询可用券与折扣信息
+  bind_phase: 创建订单时优惠券与订单发生绑定关系，进入待核销语义
+  consume_phase: 订单成立/支付推进后，券进入核销或占用状态
+  rollback_phase: 若交易失败、取消或后续链路回滚，需要把券退回
+  failure_boundary: 券的问题不只是折扣算没算对，更关键是与订单状态收敛是否一致
+  output: 优惠券生命周期最终必须与订单成败保持一致，而不能独立漂移
+why_it_matters: >
+  如果把优惠券理解成“下单时顺便减个钱”，后面为什么需要退券、补偿、幂等和状态回收就会完全讲不通；
+  实际上优惠券是交易链里的一个状态参与者。
+anti_confusion:
+  - 优惠券不是静态折扣值，而是会随交易推进发生状态变化
+  - 券的复杂度不在计算折扣，而在订单失败后如何恢复一致性
+  - 退券不是额外功能，而是生命周期的一部分
+best_for_questions:
+  - 优惠券在主交易链里经历了什么生命周期？
+  - 为什么订单失败后还要退券？
+  - 为什么券是交易状态参与者而不是简单折扣？
+sources:
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/04-cart-coupon-marketing/02-coupon-lifecycle.md
+    role: doc-primary
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/feign/CouponFeignClient.java
+    role: code-feign
+  - path: /data/workspace/my-xhs/my-xhs-coupon/src/main/java/com/myxhs/coupon/service/CouponService.java
+    role: code-core
+source_version: 2026-08-20
+last_verified_at: 2026-08-20
+evidence_level:
+  - L0
+  - L1
+confidence: medium
+notes:
+  - 这张卡解释的是优惠券生命周期在交易链中的语义，不替代营销规则和复杂促销叠加分析
+followup_docs:
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/04-cart-coupon-marketing/02-coupon-lifecycle.md
+related_cards:
+  - order-create
+  - order-orchestration-role
+  - transaction-chain

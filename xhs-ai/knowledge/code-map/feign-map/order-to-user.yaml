@@ -1,0 +1,10 @@
+edge_id: order-to-user
+caller_service: order
+callee_service: user
+client_class: UserFeignClient
+priority: P0
+main_endpoints:
+  - /api/user/address/{id}
+semantic_role: 获取真实收货地址等用户侧前置事实
+why_it_matters: 没有用户地址事实，下单无法形成合法收货语义
+source: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/feign/UserFeignClient.java

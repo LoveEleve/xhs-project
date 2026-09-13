@@ -1,0 +1,65 @@
+id: bff-role
+category: architecture
+priority: P0
+question: 为什么 home 是 BFF，而不是事务中心？
+answer_shape: medium
+serve_mode: direct
+scope: read-aggregation-boundary
+boundary:
+  - 不展开 home 每个接口的具体聚合细节
+  - 不替代 order / inventory / payment 的事务语义解释
+  - 不回答下单链一致性问题
+answer: >
+  home 在 my-xhs 里更像面向页面和体验层的 BFF（Backend For Frontend）：它负责把商品、用户、通知等多个下游结果拼成首页或详情页视图，
+  本身不持有太多权威业务事实，也不承担交易事务推进。因此它的典型失败语义是“降级/少一块展示”，而不是“整条交易链回滚”。
+structured_points:
+  position: 面向页面体验的读聚合层，不是统一入口层
+  depends_on: product / user / notification 等下游服务
+  responsibility: 组装首页、详情页等用户可见视图
+  failure_mode: 更偏展示降级、局部缺块，而不是事务失败
+  non_responsibility: 不承担订单、库存、支付的一致性收束
+  output: 生成面向前端的聚合结果，而不是推进交易状态
+why_it_matters: >
+  如果把 home 和 order 都看成“依赖很多服务的中心节点”，就会把页面聚合误讲成事务中心；
+  更直接的后果是：会把展示层降级问题误诊成交易一致性问题。
+anti_confusion:
+  - home 不是 gateway
+  - home 不是 transaction center
+  - home 复杂在聚合视图，不复杂在强一致状态推进
+best_for_questions:
+  - 为什么 home 是 BFF？
+  - home 和 order 的本质区别是什么？
+  - 为什么页面聚合问题和交易一致性问题不是一类问题？
+trigger_keywords:
+  - home
+  - bff
+  - 聚合层
+  - 事务中心
+  - 页面聚合
+  - 读聚合
+sources:
+  - path: /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/00-overview-architecture/01-service-topology.md
+    role: doc-primary
+  - path: /data/workspace/my-xhs/my-xhs-home/src/main/java/com/myxhs/home/HomeApplication.java
+    role: code-entry
+  - path: /data/workspace/my-xhs/my-xhs-home/src/main/java/com/myxhs/home/feign/ProductFeignClient.java
+    role: code-bff
+  - path: /data/workspace/my-xhs/my-xhs-home/src/main/java/com/myxhs/home/feign/UserFeignClient.java
+    role: code-bff
+  - path: /data/workspace/my-xhs/my-xhs-home/src/main/java/com/myxhs/home/feign/NotificationFeignClient.java
+    role: code-bff
+source_version: 2026-08-20
+last_verified_at: 2026-08-20
+evidence_level:
+  - L0
+  - L1
+confidence: high
+notes:
+  - 这张卡回答的是“聚合中心”的角色，不负责解释下单链事务一致性
+followup_docs:
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/00-overview-architecture/01-service-topology.md
+related_cards:
+  - service-topology
+  - gateway-role
+  - order-orchestration-role
+  - read-aggregation-vs-transaction

@@ -1,0 +1,24 @@
+domain: payment
+priority: P0
+question: 支付状态机大致落在哪些类和阶段里？
+answer_shape: medium
+serve_mode: direct
+state_owner: my-xhs-payment
+key_classes:
+  - PaymentService
+  - RefundService
+  - PaymentTimeoutCheckJob
+  - RefundTimeoutCheckJob
+transitions:
+  - created -> success | fail | timeout
+  - success -> refunding | refunded
+  - fail/timeout -> close/compensation
+failure_paths:
+  - 通知丢失
+  - 超时未确认
+  - 退款逆向链失败
+why_it_matters: 支付不是订单前置事实，而是已成立交易的后半段状态推进者；因此状态机落点非常关键。
+sources:
+  - /data/workspace/my-xhs/my-xhs-payment/src/main/java/com/myxhs/payment/service/PaymentService.java
+  - /data/workspace/my-xhs/my-xhs-payment/src/main/java/com/myxhs/payment/service/RefundService.java
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/04-payment-flow.md

@@ -1,0 +1,13 @@
+topic: RECOMMEND_BEHAVIOR_TOPIC
+priority: P1
+semantic_role: 把用户行为日志推进到推荐侧特征与召回链
+producers:
+  - my-xhs-search (RecommendService)
+consumers:
+  - 推荐/特征工程相关消费链
+main_payload:
+  - user behavior / item interaction / recommendation signal
+why_it_matters: 说明推荐不是在线即算，而是依赖行为事件的异步积累与特征构建
+sources:
+  - /data/workspace/my-xhs/my-xhs-search/src/main/java/com/myxhs/search/service/RecommendService.java
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/06-search-recommendation-home/README.md

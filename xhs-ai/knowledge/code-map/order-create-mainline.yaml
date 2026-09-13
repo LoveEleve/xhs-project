@@ -1,0 +1,42 @@
+id: order-create-mainline
+category: call-chain
+priority: P0
+question: 下单主链在代码层是怎样推进的？
+answer_shape: long
+serve_mode: direct
+entry:
+  controller: OrderController
+  service: OrderService
+state_anchor: 订单创建成功（本地事务提交）
+sync_boundary: 订单成立前同步收束地址 / 商品 / 库存 / 优惠等事实
+async_boundary: 订单成立后通过事务消息推进库存预扣与后续链路
+phases:
+  - name: validate-and-collect-facts
+    description: 下单前先同步拉齐地址、SKU、库存、券等前置事实
+    components:
+      - UserFeignClient
+      - ProductFeignClient
+      - InventoryFeignClient
+      - CouponFeignClient
+  - name: local-transaction
+    description: 写订单主表、明细、事件、本地消息表
+    components:
+      - OrderTransactionService
+      - t_order / t_order_item / t_order_event / t_local_message
+  - name: async-handoff
+    description: 通过事务消息把订单成立推进到库存世界
+    components:
+      - OrderTransactionListener
+      - ORDER_TRANSACTION_TOPIC
+      - OrderTransactionConsumer
+failure_hotspots:
+  - 下游 Feign 事实拉取失败
+  - 本地事务成功但消息状态待回查
+  - 本地消息补发 / 补偿链继续收敛
+sources:
+  - /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/service/OrderService.java
+  - /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/service/OrderTransactionService.java
+  - /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/listener/OrderTransactionListener.java
+  - /data/workspace/my-xhs/my-xhs-inventory/src/main/java/com/myxhs/inventory/consumer/OrderTransactionConsumer.java
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/02-order-create.md
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/03-transaction-message.md

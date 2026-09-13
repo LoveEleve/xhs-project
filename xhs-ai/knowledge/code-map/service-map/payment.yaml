@@ -1,0 +1,28 @@
+service: payment
+priority: P0
+role: 已成立交易的资金状态推进中心
+main_question: payment 在代码结构里承担什么职责？
+key_controllers:
+  - PaymentController
+  - RefundController
+key_services:
+  - PaymentService
+  - RefundService
+key_feign_clients: []
+key_consumers:
+  - PaymentNotifyCompensateConsumer
+  - RefundNotifyCompensateConsumer
+key_jobs:
+  - PaymentTimeoutCheckJob
+  - RefundTimeoutCheckJob
+key_configs:
+  - my-xhs-payment/src/main/resources/application.yml
+responsibility:
+  - 推进支付成功/失败/超时状态
+  - 承担退款链的资金逆向动作
+non_responsibility:
+  - 不负责下单前置事实收束
+  - 不负责库存真相维护
+sources:
+  - /data/workspace/my-xhs/my-xhs-payment/src/main/java/com/myxhs/payment/service/PaymentService.java
+  - /data/workspace/my-xhs/my-xhs-payment/src/main/java/com/myxhs/payment/service/RefundService.java

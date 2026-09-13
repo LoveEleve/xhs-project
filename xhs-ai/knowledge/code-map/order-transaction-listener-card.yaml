@@ -1,0 +1,25 @@
+id: order-transaction-listener-card
+category: code-structure
+priority: P0
+question: 哪个类负责事务消息回查？
+answer_shape: medium
+serve_mode: direct
+answer: 负责事务消息回查的核心类是 `OrderTransactionListener`，关键职责是根据本地事务与本地消息表状态，回答 Broker 对这笔事务消息到底应该 `COMMIT` 还是 `ROLLBACK`。如果你问“事务回查逻辑在哪”，首先就应该看这个类，尤其是 `checkLocalTransaction` 这一段。
+trigger_keywords:
+  - 哪个类
+  - 事务消息回查
+  - OrderTransactionListener
+  - checkLocalTransaction
+sources:
+  - path: /data/workspace/my-xhs/my-xhs-order/src/main/java/com/myxhs/order/listener/OrderTransactionListener.java
+    role: code-listener
+source_version: 2026-08-20
+last_verified_at: 2026-08-20
+evidence_level:
+  - L0
+confidence: high
+followup_docs:
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/05-inventory-order-payment/03-transaction-message.md
+related_cards:
+  - transaction-message-anchor
+  - order-create-mainline

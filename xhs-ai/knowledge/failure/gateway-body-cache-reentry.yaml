@@ -1,0 +1,39 @@
+id: gateway-body-cache-filter-reentry
+category: gateway
+priority: P0
+status: fixed
+symptom:
+  - POST 请求在 Gateway 日志中出现两次入站/出站记录
+  - HMAC 报告 nonce 重复
+  - Redis nonce Lua 执行异常
+  - 下游请求链路被污染或重复执行
+root_cause:
+  component: BodyCacheFilter
+  source: my-xhs-gateway/src/main/java/com/myxhs/gateway/filter/BodyCacheFilter.java
+  detail: switchIfEmpty 将正常完成的 chain.filter Mono<Void> 误判为空结果，再次执行下游 GatewayFilterChain，导致同一请求重复进入 HmacSignatureFilter。
+impact:
+  - 同一 nonce 被重复消费
+  - HMAC 产生 nonce 重复误报
+  - trace 时间线重复
+  - 业务请求可能被重复转发或被入口层异常阻断
+fix:
+  - 请求体读取异常改为返回空 DataBuffer
+  - 删除 BodyCacheFilter 末尾的 switchIfEmpty 重入路径
+  - 保证一次请求只执行一次 chain.filter
+verification:
+  build: mvn -pl my-xhs-gateway -DskipTests clean package
+  restart: bash scripts/restart-service.sh gateway
+  health: gateway actuator health UP
+  runtime:
+    - 新 HMAC 地址请求 HTTP 200
+    - 新订单创建 HTTP 200
+    - 新订单日志出现“本地事务执行成功”和“创建成功(事务消息)”
+    - 修复后日志未出现 NoClassDefFoundError、ClassNotFoundException、Redis nonce去重异常、nonce重复
+  evidence:
+    trace_id: b21059b1a88443b4b451288d1953abc7
+    order_id: 2090746811137445890
+    order_no: ORD2026082118241860061460007
+follow_up:
+  - 保留 Gateway filter 单测，覆盖 BodyCacheFilter 下游只执行一次
+  - 继续验证 gateway -> order -> payment 多服务 trace
+  - 对旧日志中的 nonce 异常与修复后新日志严格分时间窗口

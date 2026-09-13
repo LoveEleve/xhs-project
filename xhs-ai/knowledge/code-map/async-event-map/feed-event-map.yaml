@@ -1,0 +1,16 @@
+event_network: feed
+priority: P1
+question: 内容发布之后，Feed 分发链是怎样被推进的？
+answer_shape: medium
+serve_mode: direct
+main_topics:
+  - FEED_TOPIC
+producers:
+  - content(NoteService)
+consumers:
+  - feed/inbox 相关消费链
+semantic_role: 内容成立后，把“应该被谁看到”推进到 Feed 世界
+why_it_matters: 说明内容发布和 Feed 呈现不是同一动作，而是先成立、后扩散。
+sources:
+  - /data/workspace/my-xhs/my-xhs-content/src/main/java/com/myxhs/content/service/NoteService.java
+  - /data/workspace/source-code/openjdk-book/docs/openjdk/vol-xhs/02-content-feed-interaction/README.md

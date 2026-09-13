@@ -1,0 +1,62 @@
+version: 1
+updated_at: 2026-08-21
+samples:
+  - id: trace_clean_order_payment_20260821
+    trace_id: 5304dc5a8afb4741b8bc74cee49c3980
+    source: remote-es
+    route: gateway -> order -> payment
+    observed_services:
+      - my-xhs-gateway
+      - my-xhs-order
+      - my-xhs-payment
+    expected_verdict: complete
+    expected_verification_status: evidence_sufficient
+    evidence:
+      - gateway HMAC request passed without nonce error after BodyCacheFilter fix
+      - order create/payment request returned success
+      - remote ES returned all three services
+    note: clean multi-service payment trace used for reviewer acceptance
+
+  - id: trace_single_order_error_20260821
+    trace_id: f0d7831997f5442ebacebcb7d2aed1d3
+    source: remote-es
+    route: order only
+    observed_services:
+      - my-xhs-order
+    expected_verdict: uncertain
+    expected_verification_status: hypothesis_only
+    evidence:
+      - order log contained business error code 30008
+      - no downstream service was observed
+    note: single-service error trace must not be promoted to complete
+
+  - id: trace_gateway_hmac_before_fix_20260821
+    trace_id: a429df1005fa43c48d156bd16564deff
+    source: remote-es
+    route: gateway -> order -> payment
+    observed_services:
+      - my-xhs-gateway
+      - my-xhs-order
+      - my-xhs-payment
+    expected_verdict: uncertain
+    expected_verification_status: hypothesis_only
+    evidence:
+      - gateway log contained Redis nonce/replay anomaly
+      - downstream services were observed
+    note: multi-service trace with gateway anomaly must remain uncertain
+
+  - id: trace_gateway_order_payment_clean_20260821
+    trace_id: 5304dc5a8afb4741b8bc74cee49c3980
+    source: remote-es
+    route: gateway -> order -> payment
+    observed_services:
+      - my-xhs-gateway
+      - my-xhs-order
+      - my-xhs-payment
+    expected_verdict: complete
+    expected_verification_status: evidence_sufficient
+    evidence:
+      - gateway hmac request passed without nonce anomaly after BodyCacheFilter fix
+      - order create and pay/create both returned success
+      - remote ES returned gateway/order/payment chain
+    note: clean multi-service payment trace used for complete-path acceptance after gateway fix

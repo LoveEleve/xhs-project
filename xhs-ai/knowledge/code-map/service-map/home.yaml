@@ -1,0 +1,27 @@
+service: home
+priority: P0
+role: 面向页面体验的 BFF 聚合层
+main_question: home 在代码结构里承担什么职责？
+key_controllers:
+  - HomeController
+key_services:
+  - HomeService
+key_feign_clients:
+  - ProductFeignClient
+  - UserFeignClient
+  - NotificationFeignClient
+key_consumers: []
+key_jobs: []
+key_configs:
+  - my-xhs-home/src/main/resources/application.yml
+responsibility:
+  - 聚合商品/用户/通知等数据
+  - 生成首页/详情页视图
+non_responsibility:
+  - 不承担交易事务收束
+  - 不持有权威业务事实
+sources:
+  - /data/workspace/my-xhs/my-xhs-home/src/main/java/com/myxhs/home/HomeApplication.java
+  - /data/workspace/my-xhs/my-xhs-home/src/main/java/com/myxhs/home/feign/ProductFeignClient.java
+  - /data/workspace/my-xhs/my-xhs-home/src/main/java/com/myxhs/home/feign/UserFeignClient.java
+  - /data/workspace/my-xhs/my-xhs-home/src/main/java/com/myxhs/home/feign/NotificationFeignClient.java
