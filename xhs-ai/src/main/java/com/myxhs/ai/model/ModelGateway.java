@@ -88,7 +88,13 @@ public class ModelGateway implements Model {
         return Flux.defer(() -> {
                     AtomicBoolean emitted = new AtomicBoolean(false);
                     return model.stream(messages, tools, options)
-                            .doOnNext(r -> emitted.set(true))
+                            .doOnNext(r -> {
+                                emitted.set(true);
+                                if (r.getUsage() != null) {
+                                    tokens(channel, modelName, "input", r.getUsage().getInputTokens());
+                                    tokens(channel, modelName, "output", r.getUsage().getOutputTokens());
+                                }
+                            })
                             .onErrorMap(e -> emitted.get() ? new PartialStreamException(e) : e);
                 })
                 .retryWhen(Retry.backoff(Math.max(attempts - 1, 0), Duration.ofMillis(backoffMs))
@@ -147,6 +153,13 @@ public class ModelGateway implements Model {
         if (meterRegistry != null) {
             meterRegistry.counter("ai_model_calls_total",
                     "channel", channel, "result", result, "model", getModelName()).increment();
+        }
+    }
+
+    private void tokens(String channel, String modelName, String type, int count) {
+        if (meterRegistry != null && count > 0) {
+            meterRegistry.counter("ai_model_tokens_total",
+                    "channel", channel, "model", modelName, "type", type).increment(count);
         }
     }
 

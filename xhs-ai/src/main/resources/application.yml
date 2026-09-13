@@ -75,7 +75,7 @@ ai:
         command: /opt/mcp-servers/prometheus-mcp-server
         # 收口：web 监听仅本机；工具白名单只放只读（core 工具恒载：query/range_query/label_*/series/metric_metadata/docs_*）
         args:
-          - "--web.listen-address=127.0.0.1:19081"
+          - "--web.listen-address=127.0.0.1:0"   # 随机端口：避免 Agent/直连双实例端口冲突
           - "--mcp.tools=healthy"
           - "--mcp.tools=ready"
           - "--mcp.tools=list_targets"

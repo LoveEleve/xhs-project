@@ -27,6 +27,7 @@ public class McpClientManager {
 
     private final McpProperties properties;
     private final Map<String, McpClientWrapper> clients = new ConcurrentHashMap<>();
+    private final Map<String, Set<String>> toolNames = new ConcurrentHashMap<>();
     private final Map<String, String> errors = new ConcurrentHashMap<>();
 
     public Set<String> serverNames() {
@@ -99,6 +100,10 @@ public class McpClientManager {
     }
 
     public McpSchema.CallToolResult callTool(String name, String tool, Map<String, Object> arguments) {
+        Set<String> names = knownTools(name);
+        if (!names.contains(tool)) {
+            throw new IllegalArgumentException("MCP 工具不存在或未启用: " + name + "/" + tool);
+        }
         McpClientWrapper wrapper = client(name);
         McpSchema.CallToolResult result = wrapper
                 .callTool(tool, arguments == null ? Map.of() : arguments)
@@ -107,6 +112,18 @@ public class McpClientManager {
             throw new IllegalStateException("MCP 调用返回空结果: " + name + "/" + tool);
         }
         return result;
+    }
+
+    /** 工具名集合（每 server 预取一次，未知工具快速失败） */
+    private Set<String> knownTools(String name) {
+        return toolNames.computeIfAbsent(name, key -> {
+            McpClientWrapper wrapper = client(key);
+            List<McpSchema.Tool> tools = wrapper.listTools().block(Duration.ofSeconds(15));
+            Set<String> set = tools == null ? Set.of()
+                    : tools.stream().map(McpSchema.Tool::name).collect(java.util.stream.Collectors.toSet());
+            log.info("[MCP] server={} 工具名缓存: {} 个", key, set.size());
+            return set;
+        });
     }
 
     /** 各 server 状态（供健康检查/排障） */
