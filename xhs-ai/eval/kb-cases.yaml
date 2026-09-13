@@ -1,0 +1,91 @@
+# KB 评测集（问题→期望卡片；BM25 检索命中率门禁）
+- question: DLQ 重投这条链在代码层和系统状态里是怎样推进的？
+  expectedCardId: dlq-redeliver-mainline
+  layer: code-map
+- question: 订单成立后，库存预扣这条链在代码层是怎样推进的？
+  expectedCardId: inventory-pre-deduct-mainline
+  layer: code-map
+- question: 哪个核心类负责库存预扣主逻辑？
+  expectedCardId: inventory-service-prededuct-card
+  layer: code-map
+- question: 哪个 job 负责本地消息补发与死信扫描？
+  expectedCardId: local-message-retry-job-card
+  layer: code-map
+- question: 下单主链在代码层是怎样推进的？
+  expectedCardId: order-create-mainline
+  layer: code-map
+- question: 哪个 consumer 负责库存预扣？
+  expectedCardId: order-transaction-consumer-card
+  layer: code-map
+- question: 哪个类负责事务消息回查？
+  expectedCardId: order-transaction-listener-card
+  layer: code-map
+- question: 哪个类负责把订单、本地消息表和事件一起写进本地事务？
+  expectedCardId: order-transaction-service-card
+  layer: code-map
+- question: 支付成功后，主交易链在代码层是怎样继续推进的？
+  expectedCardId: payment-success-mainline
+  layer: code-map
+- question: 哪个 topic 负责把订单推进到库存世界？
+  expectedCardId: order-transaction-topic
+  layer: code-map
+- question: 为什么 home 是 BFF，而不是事务中心？
+  expectedCardId: bff-role
+  layer: architecture
+- question: 为什么 home 是 BFF？
+  expectedCardId: bff-role
+  layer: architecture
+- question: gateway 的角色是什么？
+  expectedCardId: gateway-role
+  layer: architecture
+- question: 系统里的 MySQL、Redis、RocketMQ、Nacos、XXL-Job、Elasticsearch 分别承担什么职责？
+  expectedCardId: middleware-role
+  layer: architecture
+- question: 这些中间件分别干什么？
+  expectedCardId: middleware-role
+  layer: architecture
+- question: 订单、库存、支付三者在主交易链里是怎样衔接的？
+  expectedCardId: order-inventory-payment-flow
+  layer: architecture
+- question: 订单、库存、支付在主链里怎么衔接？
+  expectedCardId: order-inventory-payment-flow
+  layer: architecture
+- question: 为什么 order 是交易链的编排中心？
+  expectedCardId: order-orchestration-role
+  layer: architecture
+- question: 为什么 order 是编排中心？
+  expectedCardId: order-orchestration-role
+  layer: architecture
+- question: my-xhs 的整体架构是什么？
+  expectedCardId: service-topology
+  layer: architecture
+- question: my-xhs 的关单链路是怎样收尾的？
+  expectedCardId: close-order
+  layer: business
+- question: 关单链路是怎样收尾的？
+  expectedCardId: close-order
+  layer: business
+- question: my-xhs 里的补偿链为什么存在，它到底在收什么残局？
+  expectedCardId: compensation-path
+  layer: business
+- question: 为什么需要补偿链？
+  expectedCardId: compensation-path
+  layer: business
+- question: 优惠券在主交易链里经历了怎样的生命周期？
+  expectedCardId: coupon-lifecycle
+  layer: business
+- question: 优惠券在主交易链里经历了什么生命周期？
+  expectedCardId: coupon-lifecycle
+  layer: business
+- question: 为什么 my-xhs 的库存不是简单扣减，而是三级扣减？
+  expectedCardId: inventory-three-level
+  layer: business
+- question: 为什么库存要三级扣减？
+  expectedCardId: inventory-three-level
+  layer: business
+- question: my-xhs 的下单创建过程到底做了什么？
+  expectedCardId: order-create
+  layer: business
+- question: 下单创建过程到底做了什么？
+  expectedCardId: order-create
+  layer: business

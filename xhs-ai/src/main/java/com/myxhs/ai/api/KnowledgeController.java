@@ -1,6 +1,7 @@
 package com.myxhs.ai.api;
 
 import com.myxhs.ai.common.R;
+import com.myxhs.ai.eval.KbEvalService;
 import com.myxhs.ai.knowledge.KnowledgeIndexer;
 import com.myxhs.ai.knowledge.KnowledgeRepository;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ public class KnowledgeController {
 
     private final KnowledgeRepository knowledgeRepository;
     private final KnowledgeIndexer knowledgeIndexer;
+    private final KbEvalService kbEvalService;
 
     @GetMapping("/stats")
     public R<Map<String, Object>> stats() {
@@ -34,5 +36,11 @@ public class KnowledgeController {
     @PostMapping("/reindex")
     public R<Map<String, Object>> reindex() {
         return R.ok(knowledgeIndexer.reindex());
+    }
+
+    /** KB 检索评测（hit@1/hit@3 门禁；M3 出口） */
+    @PostMapping("/eval")
+    public R<Map<String, Object>> eval() {
+        return R.ok(kbEvalService.run());
     }
 }
