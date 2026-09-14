@@ -125,6 +125,7 @@ public class AgentService {
     @PostConstruct
     public void init() {
         Toolkit toolkit = new Toolkit();
+        this.toolkitRef = toolkit;
         toolkit.registerAgentTool(dlqListTool);
         toolkit.registerAgentTool(dlqDetailTool);
         toolkit.registerAgentTool(dlqRedeliverTool);
@@ -246,13 +247,7 @@ public class AgentService {
 
     /** MCP 工具白名单注册（D05：server-qualified + enableTools；Prometheus 排除 docs_* 防误选） */
     private void registerMcpWithAllowlist(Toolkit toolkit) {
-        java.util.Map<String, McpServerConfig> configs = new java.util.LinkedHashMap<>();
-        putMcpConfig(configs, "elasticsearch", List.of(
-                "list_indices", "get_mappings", "search", "get_shards"));
-        putMcpConfig(configs, "prometheus", List.of(
-                "query", "range_query", "metric_metadata", "label_names", "label_values", "series",
-                "list_targets", "list_alerts", "list_rules", "alertmanagers",
-                "build_info", "config", "flags", "runtime_info", "exemplar_query", "healthy", "ready"));
+        java.util.Map<String, McpServerConfig> configs = mcpConfigs();
         try {
             McpServerRegistrar.register(toolkit, configs);
             log.info("[Agent] MCP 工具已注册（白名单）: {}", configs.keySet());
@@ -260,6 +255,25 @@ public class AgentService {
             log.warn("[Agent] MCP 白名单注册失败: {}", e.getMessage());
         }
     }
+
+    /** Agent 注册的 MCP server 配置（白名单）；供启动注册与健康自愈复用 */
+    public java.util.Map<String, McpServerConfig> mcpConfigs() {
+        java.util.Map<String, McpServerConfig> configs = new java.util.LinkedHashMap<>();
+        putMcpConfig(configs, "elasticsearch", List.of(
+                "list_indices", "get_mappings", "search", "get_shards"));
+        putMcpConfig(configs, "prometheus", List.of(
+                "query", "range_query", "metric_metadata", "label_names", "label_values", "series",
+                "list_targets", "list_alerts", "list_rules", "alertmanagers",
+                "build_info", "config", "flags", "runtime_info", "exemplar_query", "healthy", "ready"));
+        return configs;
+    }
+
+    /** 运行中的 Toolkit（健康自愈需要动态摘除/重挂 MCP server） */
+    public Toolkit toolkit() {
+        return agent != null ? toolkitRef : null;
+    }
+
+    private Toolkit toolkitRef;
 
     private void putMcpConfig(java.util.Map<String, McpServerConfig> target, String name, List<String> allowTools) {
         McpProperties.Server server = mcpProperties.getServers().get(name);
