@@ -2,7 +2,7 @@
 
 > 全新设计与实现（不继承 `my-xhs-ai*` 旧代码，旧模块仅作参考/归档）
 >
-> 版本：v0.5（M1~M4 主体完成；RV08~RV18 闭环）｜日期：2026-09-13
+> 版本：**v1.0（结项）**（M1~M4 全量交付；RV01~RV20 闭环）｜日期：2026-09-14｜结项报告：`docs/reviews/20-project-closure.md`
 
 ## 文档索引
 
@@ -47,6 +47,7 @@
 | `docs/reviews/17-m2x-approval-and-settlement.md` | **RV17：M2.x 审批超时 fail-closed + 跨实例决策事件 + 消费位点核验（实测）** | ✅ 2026-09-13 |
 | `docs/reviews/18-rv18-deep-review.md` | **RV18：四路深审 + P0/P1 修复（重投双 ID 匹配、队列级位点、执行 CAS、诊断鉴权、事件总线落地）** | ✅ 2026-09-13 |
 | `docs/reviews/19-m4-fmea-drills.md` | **RV19：M4 FMEA 演练 4 项 + Agent→ES MCP 权限挂起 P0 修复（MTTR 10/10）** | ✅ 2026-09-14 |
+| `docs/reviews/20-project-closure.md` | **RV20：v1.0 结项（门禁闭环/交付物/显式边界/可选后续）** | ✅ 2026-09-14 |
 | `docs/requirements/01-scenario-library.md` | 业务场景库（34 场景 + REQ 编号 + 证据形态） | ✅ v0.2 |
 | `docs/requirements/02-nfr-slo-threatmodel.md` | 量化 SLO + STRIDE 威胁模型 + REQ↔AC↔TC | ✅ v0.1 |
 | `docs/requirements/03-legacy-asset-governance.md` | R05 旧资产治理清单与入库白名单 | ✅ v0.1 |
@@ -112,11 +113,11 @@
 - [x] M1.6 安全与接线（鉴权/工具白名单/Nacos+网关/systemd/traceId/旧模块下线）✅ 2026-09-12
 - [x] M2.0 业务竖切①：DIAG-08+OPS-01 DLQ 诊断→审批→重投→核验→审计 ✅ 2026-09-12（E2E 见 docs/reports/m2.0-dlq-e2e.md）
 - [x] P2 需求工程：SLO/STRIDE/追溯矩阵（RQ02）
-- [ ] P2 评审（AC 可测试）
+- [x] P2 评审（AC 可测试）→ 由 RQ01/RQ02 + RV06/RV09/RV10 覆盖（RV20 结项）
 - [x] P3 架构 v0.2（折叠全部采纳项）
 - [x] P3 专项设计 9/9（+ 功能驱动生态采纳）
 - [x] RV05 一致性查漏补缺（9 处修正 + 工具集膨胀设计）
 - [x] 多副本 HITL 跨实例恢复设计（D02 §10）
-- [ ] 架构设计评审（02）
-- [ ] 测试设计评审（03）
-- [ ] 工程骨架（M1）验收
+- [x] 架构设计评审（02）→ RV09 修订 + RV10 全维度评审（RV20 结项）
+- [x] 测试设计评审（03）→ TC 矩阵 + 答案级评测/红队/压测/FMEA 实证（RV20 结项）
+- [x] 工程骨架（M1）验收 → 运行态实证（RV20 结项）

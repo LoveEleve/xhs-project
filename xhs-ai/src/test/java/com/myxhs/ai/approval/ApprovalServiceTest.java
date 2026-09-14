@@ -149,6 +149,16 @@ class ApprovalServiceTest {
     }
 
     @Test
+    void retryRejectsTamperedRawInput() {
+        Map<String, Object> tampered = row("approved", "{\"executionStatus\":\"failed\"}");
+        tampered.put("raw_input", "{\"group\":\"g\",\"msgId\":\"TAMPERED\"}");
+        when(jdbcTemplate.queryForList(anyString(), any(Object[].class))).thenReturn(List.of(tampered));
+        IllegalStateException e = assertThrows(IllegalStateException.class,
+                () -> service.retryExecution(1L, 42L));
+        assertEquals("审批原文指纹不匹配，拒绝执行（疑似数据被篡改）", e.getMessage());
+    }
+
+    @Test
     void retryRunsAgainWhenPreviousExecutionFailed() {
         when(jdbcTemplate.queryForList(anyString(), any(Object[].class)))
                 .thenReturn(List.of(row("approved", "{\"executionStatus\":\"failed\"}")));
@@ -165,8 +175,15 @@ class ApprovalServiceTest {
         row.put("tool", "dlq.redeliver");
         row.put("risk", "ask");
         row.put("status", status);
-        row.put("raw_input", "{\"group\":\"g\",\"msgId\":\"m\"}");
+        row.put("raw_input", RAW_INPUT);
+        try {
+            row.put("raw_input_hash", ApprovalFingerprint.of(RAW_INPUT, new ObjectMapper()));
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
         row.put("result", result);
         return row;
     }
+
+    private static final String RAW_INPUT = "{\"group\":\"g\",\"msgId\":\"m\"}";
 }

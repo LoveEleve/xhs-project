@@ -13,11 +13,8 @@ import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -43,7 +40,7 @@ public class ApprovalService {
                                              Map<String, Object> rawInput, String risk, List<String> patterns) {
         try {
             String rawJson = objectMapper.writeValueAsString(rawInput);
-            String hash = sha256(canonical(rawJson));
+            String hash = ApprovalFingerprint.of(rawJson, objectMapper);
             List<Map<String, Object>> existing = jdbcTemplate.queryForList(
                     "SELECT id, risk FROM ai_approval WHERE session_id=? AND status='pending' AND raw_input_hash=? "
                             + "ORDER BY id DESC LIMIT 1",
@@ -213,6 +210,19 @@ public class ApprovalService {
     // ---------- internal ----------
 
     private Map<String, Object> executeAndRecord(Long userId, Long id, Map<String, Object> row) {
+        // RV10 #4：执行前复核原文指纹，审批后篡改原文则 fail-closed
+        String rawJson = row.get("raw_input") == null ? "{}" : String.valueOf(row.get("raw_input"));
+        Object storedHashObj = row.get("raw_input_hash");
+        String storedHash = storedHashObj == null ? null : String.valueOf(storedHashObj);
+        try {
+            if (!ApprovalFingerprint.matches(rawJson, storedHash, objectMapper)) {
+                throw new IllegalStateException("审批原文指纹不匹配，拒绝执行（疑似数据被篡改）");
+            }
+        } catch (IllegalStateException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalStateException("审批指纹校验失败: " + e.getMessage(), e);
+        }
         String tool = String.valueOf(row.get("tool"));
         String sessionId = String.valueOf(row.get("session_id"));
         Map<String, Object> rawInput = parseRawInput(row);
@@ -284,14 +294,4 @@ public class ApprovalService {
         return "session:" + sessionId;
     }
 
-    private String canonical(String json) throws Exception {
-        Map<String, Object> map = objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {
-        });
-        return objectMapper.writeValueAsString(new java.util.TreeMap<>(map));
-    }
-
-    private String sha256(String text) throws Exception {
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        return HexFormat.of().formatHex(digest.digest(text.getBytes(StandardCharsets.UTF_8)));
-    }
 }
