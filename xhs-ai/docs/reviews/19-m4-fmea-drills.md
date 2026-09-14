@@ -31,6 +31,11 @@
 - 实测：kill ES MCP → 60s 判定 → systemd 拉起（8.9s 启动，NRestarts=1）→ Agent `list_indices` 正常返回（≈90s 全恢复）；
 - **运行时热重挂已实测不可行**：`Toolkit.removeMcpClient/registerMcpClient`（含 `registration().mcpClient().apply()` 与显式 `initialize()`）重挂后已注册工具仍绑定旧 client，调用报 `MCP client not initialized`——已记录为 AgentScope 运行时限制，动态 Toolset 热替换留待框架支持。
 
+## 3.1 复盘更正（2026-09-15 实测）
+
+- 进程级自愈在真实运行中出现**误判重启风暴**（NRestarts=24）：存活探测仅扫直接子进程、2 连击即处置，探测抖动被放大。
+- 更正：探测改为**全进程扫描** + **3 连击**，且**默认仅告警不重启**（`myxhs.mcp.self-restart-enabled=false`，需显式开启）；详见 `docs/reports/live-drill-20260915.md` §3。
+
 ## 4. 附带发现
 
 - ES 停机时 `knowledge/stats` 以 `indexed=-1` 表达降级——**受控但语义隐晦**（HTTP 200），后续可考虑附加 `degraded` 标志。

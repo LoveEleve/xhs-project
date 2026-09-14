@@ -22,8 +22,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>检测信号=JVM 直接子进程命令行标记，连续 2 次缺失判定死亡。经实测（RV19）：
  * AgentScope 运行时摘除/重挂 MCP client 后，已注册工具不会重绑新 client
  * （调用报 "MCP client not initialized"），因此采用**进程级自愈**：
- * 确认死亡即 fail-fast 退出，由 systemd（Restart=always）拉起，启动路径全量重建
- * MCP client 与工具绑定。带限流（默认每小时最多 3 次），超限仅告警不退出，避免重启风暴。</p>
+ * 默认**仅告警不重启**（self-restart-enabled=false）：实测 npm exec 包装的进程链存在
+ * 命令行探测抖动，误判会引发重启风暴（RV19 复盘，NRestarts=24）。启用时确认死亡即
+ * fail-fast 退出，由 systemd（Restart=always）拉起，启动路径全量重建 MCP client 与工具绑定；
+ * 带限流（默认每小时最多 3 次），超限仅告警不退出，避免重启风暴。</p>
  */
 @Slf4j
 @Component
@@ -35,7 +37,7 @@ public class McpHealthMonitor {
     @Autowired(required = false)
     private MeterRegistry meterRegistry;
 
-    @org.springframework.beans.factory.annotation.Value("${myxhs.mcp.self-restart-enabled:true}")
+    @org.springframework.beans.factory.annotation.Value("${myxhs.mcp.self-restart-enabled:false}")
     private boolean selfRestartEnabled;
 
     @org.springframework.beans.factory.annotation.Value("${myxhs.mcp.self-restart-max-per-hour:3}")
@@ -43,7 +45,7 @@ public class McpHealthMonitor {
 
     private final Deque<Long> selfRestartTimestamps = new ArrayDeque<>();
 
-    /** 两连击防抖：进程树出现/消失有秒级抖动，连续 2 次缺失才重挂 */
+    /** 三连击防抖：进程树/命令行探测存在抖动，连续 3 次缺失才处置 */
     private final Map<String, Integer> missStreak = new ConcurrentHashMap<>();
 
     @Scheduled(fixedDelayString = "${myxhs.mcp.health-interval-ms:30000}", initialDelay = 45000)
@@ -66,7 +68,7 @@ public class McpHealthMonitor {
             }
             int miss = missStreak.merge(name, 1, Integer::sum);
             log.warn("[MCP自愈] server={} 子进程不存在（第 {} 次）", name, miss);
-            if (miss < 2) {
+            if (miss < 3) {
                 continue;
             }
             missStreak.put(name, 0);
@@ -98,10 +100,10 @@ public class McpHealthMonitor {
         System.exit(70);
     }
 
-    /** 子进程存活判定：命令行包含 server 进程标记（ES npx 包装/ Go 二进制 basename） */
+    /** 存活判定：全进程扫描命令行标记（npm exec 包装退出后 node 会被 init 收养，仅扫子进程会误判） */
     boolean isProcessAlive(McpServerConfig config) {
         String marker = processMarker(config);
-        return ProcessHandle.current().children()
+        return ProcessHandle.allProcesses()
                 .filter(ProcessHandle::isAlive)
                 .anyMatch(p -> p.info().commandLine().map(cl -> cl.contains(marker)).orElse(false));
     }
