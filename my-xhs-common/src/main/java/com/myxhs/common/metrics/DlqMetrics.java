@@ -44,6 +44,8 @@ public class DlqMetrics {
             // order
             "order-close-consumer-group",
             "order-compensation-consumer-group",
+            "order-pay-result-consumer-group",
+            "order-refund-result-consumer-group",
             // payment
             "payment-pay-result-consumer-group",
             "payment-refund-result-consumer-group",
@@ -53,30 +55,32 @@ public class DlqMetrics {
             "inventory-cache-evict-consumer-group",
             // coupon
             "coupon-claim-consumer-group",
+            "coupon-return-redis-repair-consumer-group",
             // cart
             "cart-sync-consumer-group",
+            "cart-event-sink-group",
             // search / sync
             "note-index-sync-consumer-group",
             "product-index-sync-consumer-group",
+            "note-delete-consumer-group",
+            "counter-es-sync-consumer-group",
             // home / feed
             "feed-push-consumer-group",
             // notification
             "notification-event-consumer-group",
             // user
             "user-cache-evict-consumer-group",
-            // product (broadcast)
-            "product-cache-evict-group",
             // analytics
-            "like-consumer-group",
-            "unlike-consumer-group",
-            "favorite-consumer-group",
-            "unfavorite-consumer-group",
+            "like-unlike-consumer-group",
+            "favorite-unlike-consumer-group",
             "follow-consumer-group",
             "unfollow-consumer-group",
             // counter
             "counter-consumer-group",
             // recommend / behavior
             "recommend-behavior-consumer-group"
+            // 维护约定：与各服务 @RocketMQMessageListener(maxReconsumeTimes>0) 的 consumerGroup 保持一致；
+            // 新增消费者时必须同步此列表，否则该组 DLQ 无监控（RV11 cart 死信盲区的同类问题）
     };
 
     public DlqMetrics(MeterRegistry meterRegistry) {
