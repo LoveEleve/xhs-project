@@ -49,6 +49,7 @@ import redis.clients.jedis.JedisSentineled;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -243,6 +244,24 @@ public class AgentService {
             throw new IllegalArgumentException("无权访问该会话");
         }
         sessionRepository.ensureSession(userId, sessionId, message);
+        // F7：Redis 状态丢失时用 ai_message 重建最近对话（无工具状态）
+        String effectiveMessage = message;
+        try {
+            String stateKey = "xhs-ai:state:" + userId + "/" + userId + ":" + sessionId + ":agent_state";
+            boolean stateLost = unifiedJedis == null || !unifiedJedis.exists(stateKey);
+            if (stateLost) {
+                List<Map<String, Object>> history = sessionRepository.listMessages(sessionId, userId, 8);
+                if (history != null && !history.isEmpty()) {
+                    List<Map<String, Object>> asc = new java.util.ArrayList<>(history);
+                    java.util.Collections.reverse(asc);
+                    effectiveMessage = com.myxhs.ai.session.SessionHistoryRebuilder.build(asc, message, 6, 500);
+                    auditService.record(userId, "session.rebuild", "session=" + sessionId,
+                            Map.of("historySize", asc.size()), "ok", traceId);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[会话重建] 失败（按新会话处理）: {}", e.getMessage());
+        }
         sessionRepository.appendMessage(sessionId, userId, "user", message, traceId, null, 0, 0);
         RuntimeContext context = RuntimeContext.builder()
                 .userId(String.valueOf(userId))
@@ -256,7 +275,7 @@ public class AgentService {
                 .build();
         auditService.record(userId, "agent.chat", "session=" + sessionId, null, "start");
         agentConcurrencyGuard.acquire(userId);
-        return agent.stream(List.of(new UserMessage(message)), options, context)
+        return agent.stream(List.of(new UserMessage(effectiveMessage)), options, context)
                 .contextWrite(ctx -> ctx.put(com.myxhs.ai.model.TokenBudget.USER_ID_KEY, userId))
                 .doFinally(signal -> agentConcurrencyGuard.release(userId));
     }
