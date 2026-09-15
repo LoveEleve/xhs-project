@@ -2,6 +2,7 @@ package com.myxhs.ai.api;
 
 import com.myxhs.ai.common.R;
 import com.myxhs.ai.config.McpClientManager;
+import com.myxhs.ai.security.AiRoleResolver;
 import io.modelcontextprotocol.spec.McpSchema;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,14 +31,22 @@ import java.util.Map;
 public class McpController {
 
     private final McpClientManager mcpClientManager;
+    private final AiRoleResolver roleResolver;
 
     @GetMapping("/servers")
-    public R<Map<String, Object>> servers() {
-        return R.ok(mcpClientManager.status());
+    public ResponseEntity<R<Map<String, Object>>> servers(jakarta.servlet.http.HttpServletRequest request) {
+        if (!roleResolver.isAdmin(request)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(R.fail(403, "需要管理权限"));
+        }
+        return ResponseEntity.ok(R.ok(mcpClientManager.status()));
     }
 
     @GetMapping("/servers/{name}/tools")
-    public ResponseEntity<R<List<Map<String, Object>>>> tools(@PathVariable("name") String name) {
+    public ResponseEntity<R<List<Map<String, Object>>>> tools(@PathVariable("name") String name,
+                                                              jakarta.servlet.http.HttpServletRequest request) {
+        if (!roleResolver.isAdmin(request)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(R.fail(403, "需要管理权限"));
+        }
         try {
             return ResponseEntity.ok(R.ok(mcpClientManager.listTools(name)));
         } catch (Exception e) {
@@ -50,7 +59,11 @@ public class McpController {
     @PostMapping("/servers/{name}/tools/{tool}")
     public ResponseEntity<R<McpSchema.CallToolResult>> call(@PathVariable("name") String name,
                                                             @PathVariable("tool") String tool,
-                                                            @RequestBody(required = false) Map<String, Object> arguments) {
+                                                            @RequestBody(required = false) Map<String, Object> arguments,
+                                                            jakarta.servlet.http.HttpServletRequest request) {
+        if (!roleResolver.isAdmin(request)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(R.fail(403, "需要管理权限"));
+        }
         try {
             return ResponseEntity.ok(R.ok(mcpClientManager.callTool(name, tool, arguments)));
         } catch (Exception e) {

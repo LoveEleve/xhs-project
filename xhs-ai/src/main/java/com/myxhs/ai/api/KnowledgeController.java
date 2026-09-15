@@ -6,6 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestHeader;
 import com.myxhs.ai.code.CodeLocateService;
+import com.myxhs.ai.security.AiRoleResolver;
 import com.myxhs.ai.eval.AnswerEvalService;
 import com.myxhs.ai.eval.KbEvalService;
 import com.myxhs.ai.knowledge.KnowledgeIndexer;
@@ -32,6 +33,7 @@ public class KnowledgeController {
     private final KbEvalService kbEvalService;
     private final AnswerEvalService answerEvalService;
     private final CodeLocateService codeLocateService;
+    private final AiRoleResolver roleResolver;
 
     @Value("${myxhs.admin.token:}")
     private String adminToken;
@@ -50,16 +52,12 @@ public class KnowledgeController {
     @PostMapping("/reindex")
     public ResponseEntity<R<Map<String, Object>>> reindex(
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall,
-            @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!privileged(adminCall, internalCall)) {
+            @RequestHeader(value = "X-Internal-Call", required = false) String internalCall,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        if (!roleResolver.isAdmin(adminCall, internalCall, authorization)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(R.fail(403, "需要管理令牌"));
         }
         return ResponseEntity.ok(R.ok(knowledgeIndexer.reindex()));
-    }
-
-    private boolean privileged(String adminCall, String internalCall) {
-        return (adminToken != null && !adminToken.isEmpty() && adminToken.equals(adminCall))
-                || (internalToken != null && !internalToken.isEmpty() && internalToken.equals(internalCall));
     }
 
     /** 代码定位（只读；冒烟/评测入口） */
@@ -76,8 +74,9 @@ public class KnowledgeController {
             @org.springframework.web.bind.annotation.RequestParam(value = "limit", defaultValue = "10") int limit,
             @org.springframework.web.bind.annotation.RequestParam(value = "ids", required = false) String ids,
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall,
-            @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!privileged(adminCall, internalCall)) {
+            @RequestHeader(value = "X-Internal-Call", required = false) String internalCall,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        if (!roleResolver.isAdmin(adminCall, internalCall, authorization)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(R.fail(403, "需要管理令牌"));
         }
         return ResponseEntity.ok(R.ok(answerEvalService.run(type, limit, ids)));
@@ -87,8 +86,9 @@ public class KnowledgeController {
     @PostMapping("/eval")
     public ResponseEntity<R<Map<String, Object>>> eval(
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall,
-            @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!privileged(adminCall, internalCall)) {
+            @RequestHeader(value = "X-Internal-Call", required = false) String internalCall,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        if (!roleResolver.isAdmin(adminCall, internalCall, authorization)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(R.fail(403, "需要管理令牌"));
         }
         return ResponseEntity.ok(R.ok(kbEvalService.run()));

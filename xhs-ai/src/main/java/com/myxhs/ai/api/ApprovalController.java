@@ -2,6 +2,7 @@ package com.myxhs.ai.api;
 
 import com.myxhs.ai.approval.ApprovalService;
 import com.myxhs.ai.mq.DlqAdminService;
+import com.myxhs.ai.security.AiRoleResolver;
 import com.myxhs.ai.common.R;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -33,6 +34,7 @@ public class ApprovalController {
 
     private final ApprovalService approvalService;
     private final DlqAdminService dlqAdminService;
+    private final AiRoleResolver roleResolver;
 
     @Value("${myxhs.admin.token:}")
     private String adminToken;
@@ -75,10 +77,9 @@ public class ApprovalController {
     public ResponseEntity<R<Map<String, Object>>> consumerProgress(
             @RequestParam("group") String group,
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall,
-            @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        boolean privileged = (adminToken != null && !adminToken.isEmpty() && adminToken.equals(adminCall))
-                || (internalToken != null && !internalToken.isEmpty() && internalToken.equals(internalCall));
-        if (!privileged) {
+            @RequestHeader(value = "X-Internal-Call", required = false) String internalCall,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        if (!roleResolver.isAdmin(adminCall, internalCall, authorization)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).body(R.fail(403, "需要管理令牌"));
         }
         try {
