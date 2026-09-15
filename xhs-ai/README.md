@@ -38,6 +38,7 @@
 | `docs/reports/live-drill-20260915.md` | **AI 实测：真实流量+构造数据（DLQ/日志/指标/HITL 重投/消费积压/全链路下单）** | ✅ 2026-09-15 |
 | `docs/reports/tool-selection-eval-20260915.md` | **工具选择评测 12/12；预算默认值按实测校准 20万→50万** | ✅ 2026-09-15 |
 | `docs/reports/trajectory-eval-20260915.md` | **轨迹评测（部分分）+ 稳定性 0.917；审批执行崩溃恢复/回收 + 运行指标** | ✅ 2026-09-15 |
+| `docs/reports/production-gaps-20260915.md` | **审计哈希链/会话摘要/请求幂等（RV29；含篡改检出与状态重建演练）** | ✅ 2026-09-15 |
 | `docs/reviews/08-m2.0-expert-review.md` | **RV08：M2.0 专家评审（harness-skills expert-reviewer 双轴）** | ✅ 2026-09-12 |
 | `docs/reviews/09-tech-necessity-review.md` | **RV09：技术必要性审查（RAG 争论 → 不建朴素 RAG；每项技术的触发/止损）** | ✅ 2026-09-12 |
 | `docs/reviews/10-full-dimension-review.md` | **RV10：全维度深度 Review（代码 P0×2 修复 / settlement 异步闭环 / 文档回写）** | ✅ 2026-09-12 |

@@ -7,8 +7,9 @@ DIR="$(cd "$(dirname "$0")/.." && pwd)"
 FAIL=0
 echo "[1/3] 单元测试"
 mvn -f "$DIR/pom.xml" test >/tmp/opencode/gate-test.log 2>&1 && echo "  ✓ 单测通过（$(grep -aoE 'Tests run: [0-9]+' /tmp/opencode/gate-test.log | tail -1)）" || { echo "  ✗ 单测失败（详见 /tmp/opencode/gate-test.log）"; FAIL=1; }
-echo "[2/3] 审计一致性"
+echo "[2/3] 审计一致性与哈希链"
 bash "$DIR/scripts/audit-gate.sh" || FAIL=1
+bash "$DIR/scripts/audit-verify.sh" || FAIL=1
 echo "[3/3] 评测门禁"
 if [ "$MODE" = "with-eval" ]; then
   set -a; [ -f /data/workspace/xhs-project/.secrets/tokens.env ] && . /data/workspace/xhs-project/.secrets/tokens.env; set +a

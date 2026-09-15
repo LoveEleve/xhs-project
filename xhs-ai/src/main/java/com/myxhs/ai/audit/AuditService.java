@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -26,6 +27,7 @@ public class AuditService {
 
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
+    private final TransactionTemplate transactionTemplate;
 
     public void record(Long actor, String action, String target, Map<String, Object> params, String result) {
         record(actor, action, target, params, result, MDC.get(TraceIdFilter.MDC_KEY));
@@ -35,10 +37,19 @@ public class AuditService {
                        String traceId) {
         try {
             String paramsJson = params == null ? null
-                    : objectMapper.writeValueAsString(sanitize(params));
-            jdbcTemplate.update(
-                    "INSERT INTO ai_audit(trace_id, actor, action, target, params, result) VALUES(?,?,?,?,?,?)",
-                    traceId, actor, action, target, paramsJson, result);
+                    : AuditChain.canonical(objectMapper, sanitize(params));
+            String storedResult = AuditChain.truncateResult(result);
+            transactionTemplate.executeWithoutResult(tx -> {
+                String prev = jdbcTemplate.queryForObject(
+                        "SELECT last_hash FROM ai_audit_chain WHERE id=1 FOR UPDATE", String.class);
+                String entryHash = AuditChain.hash(prev, traceId, actor, action, target, paramsJson, storedResult);
+                jdbcTemplate.update(
+                        "INSERT INTO ai_audit(trace_id, actor, action, target, params, result, prev_hash, entry_hash) "
+                                + "VALUES(?,?,?,?,?,?,?,?) ",
+                        traceId, actor, action, target, paramsJson, storedResult, prev, entryHash);
+                jdbcTemplate.update("UPDATE ai_audit_chain SET last_hash=?, last_id=LAST_INSERT_ID() WHERE id=1",
+                        entryHash);
+            });
         } catch (Exception e) {
             log.warn("[审计] 写入失败 action={}, err={}", action, e.getMessage());
         }

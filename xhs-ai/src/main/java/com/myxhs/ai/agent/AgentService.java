@@ -130,6 +130,7 @@ public class AgentService {
     private final MetricQueryTool metricQueryTool;
     private final EsSearchTool esSearchTool;
     private final MetricLabelsTool metricLabelsTool;
+    private final com.myxhs.ai.session.SessionSummaryService sessionSummaryService;
     private final ConsumerLagTool consumerLagTool;
 
     @Value("${REDIS_SENTINEL_MASTER:mymaster}")
@@ -279,6 +280,10 @@ public class AgentService {
                     List<Map<String, Object>> asc = new java.util.ArrayList<>(history);
                     java.util.Collections.reverse(asc);
                     effectiveMessage = com.myxhs.ai.session.SessionHistoryRebuilder.build(asc, message, 6, 500);
+                    String summary = sessionSummaryService.summaryFor(sessionId);
+                    if (summary != null && !summary.isBlank()) {
+                        effectiveMessage = "【历史摘要】" + summary + "\n" + effectiveMessage;
+                    }
                     auditService.record(userId, "session.rebuild", "session=" + sessionId,
                             Map.of("historySize", asc.size()), "ok", traceId);
                 }

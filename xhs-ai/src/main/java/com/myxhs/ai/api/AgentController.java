@@ -1,6 +1,7 @@
 package com.myxhs.ai.api;
 
 import com.myxhs.ai.agent.AgentService;
+import com.myxhs.ai.web.IdempotencyService;
 import com.myxhs.ai.common.R;
 import com.myxhs.ai.web.TraceIdFilter;
 import io.agentscope.core.agent.Event;
@@ -40,16 +41,40 @@ import java.util.Map;
 public class AgentController {
 
     private final AgentService agentService;
+    private final IdempotencyService idempotencyService;
 
     @PostMapping("/chat")
     public Mono<R<Map<String, Object>>> chat(@Valid @RequestBody AgentChatRequest request,
-                                             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
+                                             @RequestHeader(value = "X-User-Id", required = false) Long userId,
+                                             @RequestHeader(value = "X-Request-Id", required = false) String requestId) {
         long uid = userId == null ? 0L : userId;
         String sessionId = resolveSession(request.sessionId(), uid);
+        if (requestId != null && !requestId.isBlank()) {
+            IdempotencyService.Result idem = idempotencyService.begin(uid, requestId);
+            if (idem.state() == IdempotencyService.State.IN_FLIGHT) {
+                return Mono.just(R.fail(409, "同一请求正在处理中，请勿重复提交"));
+            }
+            if (idem.state() == IdempotencyService.State.DONE) {
+                return Mono.just(R.ok(Map.of("sessionId", idem.sessionId(), "reply", idem.reply(), "idempotent", true)));
+            }
+            return withErrorMapping(uid, sessionId, doChat(uid, sessionId, request)
+                    .doOnNext(reply -> idempotencyService.complete(uid, requestId, sessionId, reply))
+                    .doOnError(e -> idempotencyService.fail(uid, requestId)));
+        }
+        return withErrorMapping(uid, sessionId, doChat(uid, sessionId, request));
+    }
+
+    private Mono<String> doChat(long uid, String sessionId, AgentChatRequest request) {
         String traceId = MDC.get(TraceIdFilter.MDC_KEY);
         return agentService.chat(uid, sessionId, request.message(), traceId)
                 .timeout(Duration.ofSeconds(300))
-                .map(reply -> reply == null || reply.isBlank()
+                .map(reply -> reply == null || reply.isBlank() ? "" : reply);
+    }
+
+    /** 兼容：非幂等路径的错误映射（与 doChat 分离） */
+    private Mono<R<Map<String, Object>>> withErrorMapping(long uid, String sessionId, Mono<String> replyMono) {
+        return replyMono
+                .map(reply -> reply.isBlank()
                         ? R.<Map<String, Object>>fail(503, "模型网关未返回内容（可能不稳定），请稍后重试")
                         : R.ok(Map.<String, Object>of("sessionId", sessionId, "reply", reply)))
                 .onErrorResume(e -> {
