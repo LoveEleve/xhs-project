@@ -63,6 +63,15 @@ Martin Kleppmann（《DDIA》作者）发文《How to do distributed locking》�
 - 正确性：库存 20 并发不超卖、券 10 并发限 2 张、TCC 11 场景全过（test-4 对账报告）、8 个对账 Job 收敛差异。
 - 不选 Redlock 的论证在 D02/RV09（触发/替代/止损三问）。
 
+## 发散追问地图（横向）
+- 锁实现对比：Redis（Redisson）vs ZooKeeper（临时顺序节点）vs etcd（lease+revision）vs DB（行锁/唯一键）——各自的失效语义与延迟。
+- 锁模式：可重入/公平/读写/联锁（MultiLock）/RedLock 的适用与成本。
+- 惊群与排队：Redisson 订阅释放事件 vs 自旋重试 vs 信号量（Semaphore）。
+- 无锁替代：CAS/乐观锁、序列化队列（Actor/单线程化）、Redis 单命令/Lua 串行。
+- 超卖治理套路：预扣+回补、票池、MPSC 队列；与锁的边界。
+- 观测与排查：锁等待/持有时长/失败率指标；死锁排查（thread dump+锁图）。
+- 等价性辨析：锁 vs 幂等 vs 事务 vs 串行化的职责分工。
+
 ## 版本与来源
 Kleppmann《How to do distributed locking》与 antirez 回应；Redisson Watchdog/retry 文档；Redis Sentinel 复制语义；RFC 9293（TCP 生命周期，区分题用）；本项目代码与演练记录。
 

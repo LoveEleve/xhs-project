@@ -47,6 +47,15 @@ TCC（Try-Confirm-Cancel）绕不开三大异常：**空回滚**（Try 未到，
 - `TccFenceService.java:74`（Try INSERT status=1）、`:85-91`（status==3 → SUSPENDED 悬挂拒绝）、`:121`（Confirm `UPDATE ... status=2 WHERE ... AND status=1`）、`:137,165`（Cancel INSERT/UPDATE status=3，空回滚防护）。
 - 测试：**11 场景直接调用实测** `docs/test-4/branch-inventory/business-analysis/99-runtime-reconciliation-report.md:164`（幂等/空回滚/悬挂拒绝/超量拒绝/fence 状态机）；补充 `docs/FINAL-HANDOFF.md:227`（五场景）、`docs/test-3/execution/G5-RERUN-20260816.md:44-45`（G5-02-06/07）；T-074 表结构漂移 `docs/test-3/review/ISSUES.md:417`；超时 Job `TccTimeoutJob.java:47-57`（60s/10min/Redisson 锁）；资源侧幂等见 03 题预扣幂等表。
 
+## 发散追问地图（横向）
+- 分布式事务全景：2PC/3PC、TCC、SAGA、本地消息表、事务消息、最大努力通知的适用场景对比。
+- Seata 模式：AT/TCC/SAGA/XA 的侵入性、锁粒度、补偿方式；为什么自研 fence。
+- TCC 变体：空 Try、异步 Confirm、补偿重试与人工介入；反悬挂的通用做法。
+- SAGA：前向恢复 vs 后向恢复、补偿的幂等与顺序。
+- 事务消息 vs TCC：资金场景与非资金场景的选择依据。
+- 三异常通用解法：幂等键、状态机、超时扫描；fence 表的容量与归档。
+- 一致性级别与业务取舍：强一致/最终一致/人工对账。
+
 ## 版本与来源
 Seata TCC 空回滚/悬挂/幂等官方文档与蚂蚁 fence 表实践；本项目 TccFenceService 代码与测试记录。
 
