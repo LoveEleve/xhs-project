@@ -74,5 +74,7 @@ MTTR 10/10·1.63min·92.1% → `reports/mttr-benchmark-*`；hit@1 100% / 答案�
 
 ## D. 学习 / 准备入口
 - 简历：`docs/resume-final.md`；学习对照：`docs/resume-study-map.md`
+- 深挖素材全集（docs/mining/）：platform-mining（三轮代码考古）、platform-service-deep（服务级）、platform-docs-ci（文档复盘/审查方法论/CI 真相）、platform-config-nacos-sentinel（配置实体）、file-by-file-scan（逐文件 13 点）、data-asset-map（表/Key/Topic/索引）、final-blindspots（IM/Home/通知/运维/文章）、unfixed-issue-fixes（修复台账）、ai-docs-and-platform-ops（AI 文档闭环+平台运维测试）
+- AI 深挖（xhs-ai/docs/mining/）：ai-mining（三轮）、ai-docs-closure（需求→设计→验证）、knowledge-eval-inventory（55 卡要点+题库）、observability-truth-and-gaps（可观测真相与 14 项缺口）
 - 手册：`docs/interview-defense-handbook.md`（18 主题 + 附录 A~U′）
 - 速览：`xhs-ai/docs/PROJECT-ONE-PAGER.md`
