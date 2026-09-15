@@ -34,7 +34,8 @@ public class TokenBudgetService {
     @Value("${REDIS_PASSWORD:}")
     private String redisPassword;
 
-    @Value("${MYXHS_BUDGET_DAILY_TOKENS:200000}")
+    // 实测校准：单次重诊断（含工具循环/大结果）约 4 万 tokens；默认 50 万 ≈ 12 次重诊断/人/天
+    @Value("${MYXHS_BUDGET_DAILY_TOKENS:500000}")
     private long dailyTokens;
 
     @Value("${MYXHS_BUDGET_SOFT_RATIO:0.8}")

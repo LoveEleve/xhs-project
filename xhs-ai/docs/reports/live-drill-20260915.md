@@ -77,6 +77,7 @@
 | 软限切换 | 软限 80%（16 万）自动切轻量模型 | 预置 17 万 → 正常答复，`soft_switch=1`，日志标记 Token预算切换 |
 | 真实计量 | 模型网关 usage 双通道累计，Redis TTL 2 天 | 正常问答后 `GET budget:99:YYYYMMDD`=**5577**，TTL=172799s |
 | 工具 schema 预算 | 启动估算 schema tokens，Gauge + 软限 12k 告警 | `ai_agent_tool_schema_tokens=3428`（32 工具），远低于阈值 |
+| 预算校准（RV25） | 评测实测单次重诊断≈4 万 tokens，20 万/日仅够 5 次 | 默认调至 **50 万/日**（≈12 次），仍可 env 覆盖 |
 
 > 边界：预算仅覆盖 Agent 路径（`/chat` 无用户上下文不计量）；Redis 读取失败 fail-open（只影响成本控制，不阻断诊断）。
 

@@ -1,0 +1,38 @@
+# 工具选择评测集：question → expected（任一命中即通过；none 表示不应调用工具）
+cases:
+  - id: TS-01
+    question: "当前有哪些 DLQ 消费组有积压？积压量分别多少？"
+    expected: [dlq_topic_list]
+  - id: TS-02
+    question: "cart-sync-consumer-group 的死信为什么失败？给出详情"
+    expected: [dlq_message_detail, dlq_topic_list]
+  - id: TS-03
+    question: "最近1小时 ERROR 日志最多的服务是哪个？给证据"
+    expected: [log_top_services]
+  - id: TS-04
+    question: "查一下 my-xhs-cart 最近30分钟有没有 ERROR 日志，关键词 timeout"
+    expected: [log_search]
+  - id: TS-05
+    question: "最近5分钟各服务 5xx 错误率 Top3，给出证据"
+    expected: [metric_top]
+  - id: TS-06
+    question: "最近5分钟 P95 延迟最慢的 5 个接口，给出数值"
+    expected: [metric_top]
+  - id: TS-07
+    question: "看下 my-xhs-order 最近30分钟的 QPS 趋势，判断是突发还是持续"
+    expected: [metric_trend]
+  - id: TS-08
+    question: "现在哪个消费组积压最多？积压多少？"
+    expected: [consumer_lag_top]
+  - id: TS-09
+    question: "订单为什么是交易链的编排中心？给出来源"
+    expected: [knowledge_catalog, knowledge_search, card_read]
+  - id: TS-10
+    question: "库存预扣的核心方法在哪个类？给出文件:行号"
+    expected: [code_locate]
+  - id: TS-11
+    question: "用 Prometheus 查当前 up=0 的实例"
+    expected: [query, list_targets, metric_top]
+  - id: TS-12
+    question: "回答：1+1 等于几？只回数字"
+    expected: [none]

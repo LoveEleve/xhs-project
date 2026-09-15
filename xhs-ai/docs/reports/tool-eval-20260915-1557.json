@@ -1,0 +1,13 @@
+id	result	expected	actual	ms
+TS-01	PASS	dlq_topic_list	dlq_topic_list	51892
+TS-02	PASS	dlq_message_detail|dlq_topic_list	dlq_topic_list|dlq_message_detail|log_search|knowledge_search	48995
+TS-03	PASS	log_top_services	log_top_services|log_search	151006
+TS-04	PASS	log_search	log_search|get_mappings|list_indices|search	30159
+TS-05	PASS	metric_top	metric_top	12518
+TS-06	FAIL	metric_top	none	2434
+TS-07	FAIL	metric_trend	none	95
+TS-08	FAIL	consumer_lag_top	none	100
+TS-09	FAIL	knowledge_catalog|knowledge_search|card_read	none	96
+TS-10	FAIL	code_locate	none	87
+TS-11	FAIL	query|list_targets|metric_top	none	95
+TS-12	PASS	none	none	103
