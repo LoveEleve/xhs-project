@@ -34,6 +34,10 @@ public class PrometheusClient {
         return get("/api/v1/query?query=" + encode(promql));
     }
 
+    public JsonNode getJson(String path) throws Exception {
+        return get(path);
+    }
+
     public JsonNode queryRange(String promql, long startEpochSec, long endEpochSec, int stepSec) throws Exception {
         return get("/api/v1/query_range?query=" + encode(promql)
                 + "&start=" + startEpochSec + "&end=" + endEpochSec + "&step=" + stepSec);

@@ -15,7 +15,7 @@ PY
 PASS=0; TOTAL=0; echo -e "id\tresult\texpected\tactual\tms" > /tmp/opencode/tool-eval.tsv
 while IFS=$'\t' read -r id expected question; do
   TOTAL=$((TOTAL+1))
-  sid="tool-eval-$id"
+  sid="tool-eval-$id-$(date +%s)"
   T0=$(date +%s%3N)
   for attempt in 1 2; do
     curl -s --max-time 240 -H "Content-Type: application/json" -H "X-Internal-Call: $INTERNAL_TOKEN" -H "X-User-Id: 99" \

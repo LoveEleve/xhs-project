@@ -130,6 +130,29 @@ public final class MetricQueryBuilder {
         }
     }
 
+    private static final Pattern LABEL_NAME = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_]{0,63}$");
+
+    /** label 查询路径（name 为空则列全部 label 名；match 为 series 匹配器） */
+    public static String labelPath(String name, String match) {
+        StringBuilder path = new StringBuilder();
+        if (name == null || name.isBlank()) {
+            path.append("/api/v1/labels");
+        } else {
+            if (!LABEL_NAME.matcher(name).matches()) {
+                throw new IllegalArgumentException("label 名非法");
+            }
+            path.append("/api/v1/label/").append(name).append("/values");
+        }
+        if (match != null && !match.isBlank()) {
+            try {
+                path.append("?match%5B%5D=").append(java.net.URLEncoder.encode(match, java.nio.charset.StandardCharsets.UTF_8));
+            } catch (Exception e) {
+                throw new IllegalArgumentException("match 参数非法");
+            }
+        }
+        return path.toString();
+    }
+
     public static int clampMinutes(int minutes) {
         return Math.max(5, Math.min(1440, minutes));
     }

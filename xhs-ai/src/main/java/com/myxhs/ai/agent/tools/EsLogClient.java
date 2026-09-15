@@ -52,8 +52,12 @@ public class EsLogClient {
     }
 
     public String search(String bodyJson) throws Exception {
+        return searchIndex(INDEX, bodyJson);
+    }
+
+    public String searchIndex(String index, String bodyJson) throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + "/" + INDEX + "/_search"))
+                .uri(URI.create(baseUrl + "/" + index + "/_search"))
                 .timeout(Duration.ofSeconds(15))
                 .header("Content-Type", "application/json")
                 .header("Authorization", "Basic " + Base64.getEncoder()

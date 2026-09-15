@@ -14,6 +14,8 @@ import com.myxhs.ai.agent.tools.MetricTrendTool;
 import com.myxhs.ai.agent.tools.ConsumerLagTool;
 import com.myxhs.ai.agent.tools.EsIndexListTool;
 import com.myxhs.ai.agent.tools.MetricQueryTool;
+import com.myxhs.ai.agent.tools.EsSearchTool;
+import com.myxhs.ai.agent.tools.MetricLabelsTool;
 import com.myxhs.ai.audit.AuditService;
 import com.myxhs.ai.config.McpClientManager;
 import com.myxhs.ai.config.McpProperties;
@@ -91,9 +93,8 @@ public class AgentService {
                 - log_top_services：定位"哪个服务日志最多"，参数 level(默认ERROR)/minutes(默认60)/topN(默认10)；
                 - log_search：检索日志明细，参数 service(可选)/level(默认ERROR)/keyword(可选)/minutes(默认60)/size(默认20)。
                 仅当需要复杂 DSL（嵌套聚合/自定义排序）时才用 ES 的 search 工具，且必须同时传 index（如 myxhs-logs-*）与 queryBody（完整 DSL）；缺参会报 required property not found。
-            12.0 工具优先级：自研业务/兜底工具 > MCP 工具（后者依赖子进程，可能不可用）：
-                - 列 ES 索引用 es_index_list；复杂 PromQL 用 metric_query（自研、只读、带白名单）；
-                - 仅当自研工具不覆盖时才调用 MCP 的 search/query 等。
+            12.0 工具均为自研（不依赖 MCP 子进程）：ES 索引用 es_index_list、复杂 DSL 用 es_search（queryBody 传 JSON 字符串）、
+                PromQL 用 metric_query、标签探索用 metric_labels；简单日志/指标优先 log_*/metric_top/metric_trend。
             12.2 指标类问题优先用业务级工具（参数扁平，首选）：
                 - metric_top：metric 取 error_rate(5xx错误率%)/qps/latency_p95/slow_uri(最慢接口)/heap_mb，可选 service/topN；
                 - metric_trend：metric 取 error_rate/qps/latency_p95 + service + minutes（判断突发还是持续）。
@@ -127,6 +128,8 @@ public class AgentService {
     private final AgentConcurrencyGuard agentConcurrencyGuard;
     private final EsIndexListTool esIndexListTool;
     private final MetricQueryTool metricQueryTool;
+    private final EsSearchTool esSearchTool;
+    private final MetricLabelsTool metricLabelsTool;
     private final ConsumerLagTool consumerLagTool;
 
     @Value("${REDIS_SENTINEL_MASTER:mymaster}")
@@ -137,6 +140,9 @@ public class AgentService {
 
     @Value("${REDIS_PASSWORD:}")
     private String redisPassword;
+
+    @Value("${myxhs.agent.mcp-tools-enabled:false}")
+    private boolean mcpToolsEnabled;
 
     @Value("${myxhs.agent.tool-soft-budget:36}")
     private int toolSoftBudget;
@@ -171,7 +177,13 @@ public class AgentService {
         toolkit.registerAgentTool(consumerLagTool);
         toolkit.registerAgentTool(esIndexListTool);
         toolkit.registerAgentTool(metricQueryTool);
-        registerMcpWithAllowlist(toolkit);
+        toolkit.registerAgentTool(esSearchTool);
+        toolkit.registerAgentTool(metricLabelsTool);
+        if (mcpToolsEnabled) {
+            registerMcpWithAllowlist(toolkit);
+        } else {
+            log.info("[Agent] MCP 工具未注册（mcp-tools-enabled=false；全部工具自研，MCP 仅供运维直连 /api/ai/mcp/**）");
+        }
         Set<HostAndPort> sentinels = Arrays.stream(sentinelNodes.split(","))
                 .map(String::trim).filter(s -> !s.isBlank())
                 .map(HostAndPort::from).collect(Collectors.toSet());

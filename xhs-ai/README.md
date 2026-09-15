@@ -113,7 +113,8 @@
 - [x] M4 压测 N=100（C=5 全成，P50/P95/P99 入库）+ 工具预算护栏（软32/硬40，Gauge `ai_agent_tools_total`）
 - [x] 按用户 token 预算（F13）：真实 usage 计量 + 软限切轻量 + 硬限 429；工具 schema token 指标（RV24）
 - [x] 生产化：并发护栏（2/8）、保留清理 Job、7 条告警规则、门禁脚本+CI（RV25/RV26）
-- [x] F7 会话重建 + 自研兜底工具（MCP 全挂仍可诊断，34 工具）（RV26）
+- [x] F7 会话重建 + 自研兜底工具（MCP 全挂仍可诊断）（RV26）
+- [x] RBAC（JWT role claim）收敛管理端点 + 去 MCP 化（Agent 16 全自研工具，MCP 仅运维直连）（RV27）
 - [x] M4 FMEA 演练 4 项（停 ES / Redis failover / 滚动重启 / kill MCP）→ 修复 **Agent→ES MCP 工具挂起 P0** + 交付 **MCP 进程级自愈**（RV19）
 - [x] M1.6 安全与接线（鉴权/工具白名单/Nacos+网关/systemd/traceId/旧模块下线）✅ 2026-09-12
 - [x] M2.0 业务竖切①：DIAG-08+OPS-01 DLQ 诊断→审批→重投→核验→审计 ✅ 2026-09-12（E2E 见 docs/reports/m2.0-dlq-e2e.md）

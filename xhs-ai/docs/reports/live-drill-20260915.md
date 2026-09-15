@@ -93,6 +93,19 @@
 - Prom MCP 死 → 问"up=0 实例"：**39s** 命中 `metric_query`（24 target 全 up）
 - 工具总数 34（14 自研 + 20 MCP），软预算 32→36；重启后 MCP 子进程恢复（es=3/prom=1）
 
+## 4.6 去 MCP 化：工具级热替换问题的架构解法（RV27，已交付）
+
+框架不支持运行时工具级热替换（实测重挂后工具不重绑）。解法不是绕过框架，而是**移除依赖**：Agent 工具集全部自研（16 个），MCP 20 个工具保留给运维经 `/api/ai/mcp/**` 直连。
+
+| 新增自研工具 | 补位能力 |
+|-------------|---------|
+| `es_search` | 复杂 ES DSL 兜底（queryBody 传 JSON 字符串；索引白名单前缀校验 + size 注入） |
+| `metric_labels` | Prometheus 标签/取值探索（match 过滤） |
+
+- 配置 `myxhs.agent.mcp-tools-enabled=false`（默认）：不注册 MCP，健康探测同步跳过；MCP 子进程不再影响 Agent 可用性
+- 验证：重启后 `tools=16` 全自研；tool-eval 4/4（时间戳独立会话，仅出现自研工具）；MCP 直连 admin→200
+- 单测 55/55
+
 ## 5. 证据
 
 - 原始响应：`/tmp/opencode/drill-dlq-{1,2}.json`、`drill-log-{1,2,3}.json`、`drill-prom-1.json`、`drill-redeliver-1.json`、`approval-21-reply.json`（本机临时目录，关键结论已摘录本报告）

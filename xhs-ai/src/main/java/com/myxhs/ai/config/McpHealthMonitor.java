@@ -7,6 +7,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -37,6 +38,9 @@ public class McpHealthMonitor {
     @Autowired(required = false)
     private MeterRegistry meterRegistry;
 
+    @Value("${myxhs.agent.mcp-tools-enabled:false}")
+    private boolean mcpToolsEnabled;
+
     @org.springframework.beans.factory.annotation.Value("${myxhs.mcp.self-restart-enabled:false}")
     private boolean selfRestartEnabled;
 
@@ -50,6 +54,9 @@ public class McpHealthMonitor {
 
     @Scheduled(fixedDelayString = "${myxhs.mcp.health-interval-ms:30000}", initialDelay = 45000)
     public void checkAndHeal() {
+        if (!mcpToolsEnabled) {
+            return; // 去 MCP 化后无 Agent 注册的 MCP 进程，无需探测（直连端点自管理）
+        }
         Toolkit toolkit = agentService.toolkit();
         if (toolkit == null) {
             return;

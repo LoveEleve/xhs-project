@@ -24,7 +24,7 @@
 ## 3. 显式边界（不夸大、可兜底）
 
 1. ~~用户级 Token 预算（F13）~~ ✅ 已交付（2026-09-15）：按用户日预算（默认 20 万 tokens，`MYXHS_BUDGET_DAILY_TOKENS`）+ 软限 80% 自动切轻量模型 + 硬限 429 fail-closed；计量取模型网关真实 usage，Redis 2 天 TTL；新增工具 schema token 预算指标（软 12k）。**边界**：仅 Agent 路径覆盖（无用户上下文的 `/chat` 不计量）；Redis 读取失败 fail-open。
-2. **MCP 工具级热替换受框架限制**：运行时重挂 client 后已注册工具不重绑（实测 `MCP client not initialized`），故采用进程级自愈（fail-fast + systemd 拉起，≈90s 全恢复）。
+2. ~~MCP 工具级热替换受框架限制~~ ✅ 已解法（RV27）：**去 MCP 化**——Agent 工具 16 个全自研（含 es_search/metric_labels），MCP 20 工具仅保留运维直连；框架限制不再影响可用性。
 3. 单机测试环境，不宣称生产容量；对账/DDL 等平台侧结论以平台设计边界为准。
 
 ## 4. 可选后续（不影响结项）

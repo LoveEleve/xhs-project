@@ -1,0 +1,5 @@
+id	result	expected	actual	ms
+TS-01	PASS	dlq_topic_list	dlq_topic_list	21148
+TS-02	PASS	dlq_message_detail|dlq_topic_list	dlq_topic_list|dlq_message_detail|log_search|knowledge_search	39843
+TS-03	PASS	log_top_services	log_top_services|log_search	20720
+TS-04	PASS	log_search	log_search|get_mappings|list_indices|search|log_top_services|metric_trend	20383
