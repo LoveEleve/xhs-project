@@ -111,3 +111,40 @@
 - chaos：ChaosBlade 7 场景（Redis pause/延迟、MQ pause、CPU 满载、磁盘 burn、MySQL pause、优雅停机）+ 应用级 chaos（DELAY/EXCEPTION/RETURN_NULL + probability，@RefreshScope）
 - 慢下游实录：UserService DELAY 11s → 网关 504；listener 75s → 回查恰好一次；iptables 断 Redis/MQ
 - wrk 归档：product1020/note1096/home764/recommend761/search683；ES 0.5→2 核后 search 175→683 RPS（3.9x）、P50 115→29ms
+
+---
+# 第三轮：文档层与复盘（设计决策/踩坑/量化）
+
+## 12. 运行态对账复盘（99-runtime-reconciliation-report，最强故事源）
+- 核心论断：「中间件进程在跑 ≠ 链路就绪」；此前全是源码级+Mockito，从未业务级端到端
+- **XXL-Job 全缺失**（10 executor 在线但 0 任务，兜底从未运行）→ 全量注册 19 任务；**RocketMQ 业务 topic 全缺失**（autoCreate=false，发送全报 No route）→ 补建 18 topic
+- **资损级**：RefundNotifyCompensateJob 把部分退款误判全额，释放全部库存+退券 → 只补偿 `t_payment.status=3`
+- **根因级**：JacksonConfig 全局 Long→String 导致 MQ 跨模块解析断裂（预扣断链）→ 4 个消费端兼容字符串/数字 id
+- **TransactionConfig 类级 `@ConditionalOnBean` 评估过早 → 所有读写分离服务 `@Transactional` 静默失效（脏数据）**；移到 @Bean 方法级后复发（home 无 DataSource 又能启动）→ jcmd 确认 15 服务全加载
+- ES JavaTimeModule 缺失 + 单条脏数据阻塞整批 → 单条 try-catch 跳过；地址获取失败降级空地址 → 改为拒绝下单（ADDRESS_NOT_FOUND）
+- 并行 `mvn -am package` 本地仓库竞争致部分服务内嵌旧 common → 串行 clean + 先 install common
+- 量化：20 并发预扣 149→129 不超卖；10 并发券 remain 98→96（限领 2）；点赞 Set 化重复不重复；事务回查 75s 延迟后预扣恰好一次 118→117
+- 混沌发现：gateway 下游超时返回 500 而非 504（ResponseStatusException cause 链未识别）→ 修复；chaos 对 Mapper 永不命中（JDK 代理 `$Proxy128`）→ `getSignature().getDeclaringType()` 修复；借此制造"Redis 成功/MySQL 失败"半成功验证 FollowCounterRepair 补插 1 条
+- **Buffer 刷盘 3 次全败即丢增量、对账以 DB 为基准不覆盖"DB 无行"** → 修复=全失败回写缓冲
+- **DLQ 指标恒 0**：`searchOffset(now)-maxOffset` 同队列恒等 → 改 `maxOffset-minOffset`
+- 性能：ES 容器 CPU 配额 0.5 核致 P50 115ms（非查询慢）→ 扩 2 核后 search 175→683 RPS（3.9x）、P99 313→96ms；限流校准保留 ≥40% 余量
+- 收官：117/117 矩阵收口 + 21 运行态修复 + 15 服务 UP
+
+## 13. 测试方法论（可讲"怎么保证质量"）
+- 四层递进不可越层：L1 业务→L2 数据→L3 生产级→L4 可观测；L1 每端点三问+ASCII 流转图；L3 五透镜（性能/可扩展/微服务/并发/安全）；L2 七层数据验证（HTTP/Redis/MySQL/MQ/ES/SW/Prom）禁"HTTP 200 即通过"
+- 时间矩阵原则"测试不依赖真实时间"：xxl 手动触发/短周期等待/长窗操纵数据/TTL 直查；40 项时间机制总表，兜底优先级"投消息>操纵>API>等待>审查"
+- 审查发现：xxl executor_timeout 全 0（悬挂风险）、misfire DO_NOTHING；独立复核"成熟度中等偏上"但列 1 资损+2 高危正确性+1 高危一致性
+
+## 14. 四服务深机制（analytics/counter/notification/search）
+- analytics：点赞双向 Set（正向+用户反向，评论仅正向省内存），选 Set 抗乱序；版本 key TTL 24h；收藏 ZSet（score=时间）取消用原 score 回滚；FollowCounterRepair 以 ZSet ZCARD 为权威、单向 Redis→MySQL，盲区=全丢则不触发
+- counter：双 Buffer（`@Contended` 防伪共享）+ 满 100/5s 触发；先 snapshot 再换 buffer 无丢失窗口；批量按 (target,type) 排序防行锁死锁；upsert 用增量语义 `count=count+VALUES` 防多实例丢增量；量化：10000 次点赞合并 2000 key/1 次批量 SQL，**DB 写压力 -80%**；对账 Redis 为权威
+- notification：聚合窗口 300s、Lua SETNX 占位再回填（原 INSERT-first 撞唯一键 DuplicateKey → SETNX-first + 唯一约束降普通索引）；未读三 Lua（SAFE_DECR/HDECR/RESET）防负数；对账每 5min batch500/LIMIT5000+sleep50ms 限速，DB 为源单向覆盖；**免打扰未实现**；口径冲突：文档 5min vs 代码"当天剩余"
+- search：热搜 `Score=Σ(count×e^(-λΔt))` λ=0.1、窗口 60min、Top50、5min 重算 + tmp key RENAME 原子换榜；衰减量化 5min0.61/30min0.05/60min0.002；反作弊三合一 Lua（屏蔽词+IP 10 次/分+用户幂等 300s）；推荐 5 路召回 500→粗排 100（权重 1.0/0.9/0.8/0.6/0.5）→精排 50（来源 25%+偏好 25%+质量 30%+时效 e^(-h/24) 20%）→重排 20（Seen 7 天/同品类≤2）；ItemCF 近 7 天行为、交互≥5、cos=co/sqrt(A*B)
+
+## 15. 运维复盘（现象→根因→修复→沉淀）
+1. Canal 在跑不下发：1.1.7 与 JDK17 不兼容、decoder 静默罢工 → 切 Kona JDK 8 并对位点；沉淀"勿换回 JDK17"
+2. SkyWalking 业务链路全无：真根因=gateway 插件在 optional-plugins 未移入 plugins（此前误判 SCG 盲区）→ 移 5 插件；22 span、跨进程/跨线程 refs 完整
+3. ES 查不到 traceId：15 模块 logback 缺 `<includeMdcKeyName>` → 补 3 个 MDC 字段
+4. Prometheus 自身 DOWN/Grafana 认证失败：self-scrape target 写错机器 + basicAuth 未存密码 → 修复后 16/16 UP
+5. 两个被撤回的误判：`t_order` 缺失实为 4×4 分片正常；改 OAP 时区为 CST 会污染 time_bucket → UTC 窗口是正确实践
+6. SC 2023.0.1 Feign/LB 连环坑：LoadBalancer hashCode NPE + contextId 冲突 + serviceId=default → URL override 等 6 条清单
