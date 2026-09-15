@@ -18,6 +18,13 @@ public final class ToolSupport {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
+    /** 工具错误计数（Agent 启动时注入 MeterRegistry；无注册中心时降级为 no-op） */
+    private static volatile io.micrometer.core.instrument.MeterRegistry METER_REGISTRY;
+
+    public static void bindMeterRegistry(io.micrometer.core.instrument.MeterRegistry registry) {
+        METER_REGISTRY = registry;
+    }
+
     private ToolSupport() {
     }
 
@@ -28,6 +35,14 @@ public final class ToolSupport {
     }
 
     public static Mono<ToolResultBlock> error(ToolCallParam param, String message) {
+        try {
+            if (METER_REGISTRY != null && param != null && param.getToolUseBlock() != null) {
+                METER_REGISTRY.counter("ai_tool_errors_total", "tool",
+                        param.getToolUseBlock().getName() == null ? "unknown" : param.getToolUseBlock().getName())
+                        .increment();
+            }
+        } catch (Exception ignored) {
+        }
         return result(param, "{\"error\":\"" + escape(message) + "\"}");
     }
 

@@ -237,6 +237,9 @@ public class AgentService {
                         .maxTokens(8192)
                         .build())
                 .build();
+        if (meterRegistry != null) {
+            com.myxhs.ai.agent.tools.ToolSupport.bindMeterRegistry(meterRegistry);
+        }
         Set<String> toolNames = toolkit.getToolNames();
         ToolBudget.Level level = ToolBudget.evaluate(toolNames.size(), toolSoftBudget, toolHardBudget);
         if (meterRegistry != null) {
@@ -296,9 +299,30 @@ public class AgentService {
                 .build();
         auditService.record(userId, "agent.chat", "session=" + sessionId, null, "start");
         agentConcurrencyGuard.acquire(userId);
-        return agent.stream(List.of(new UserMessage(effectiveMessage)), options, context)
-                .contextWrite(ctx -> ctx.put(com.myxhs.ai.model.TokenBudget.USER_ID_KEY, userId))
-                .doFinally(signal -> agentConcurrencyGuard.release(userId));
+        final String messageForAgent = effectiveMessage;
+        return reactor.core.publisher.Flux.defer(() -> {
+            long startedAt = System.currentTimeMillis();
+            return agent.stream(List.of(new UserMessage(messageForAgent)), options, context)
+                    .doOnNext(event -> {
+                        if (meterRegistry != null && event.getType() == EventType.TOOL_RESULT) {
+                            meterRegistry.counter("ai_tool_calls_total").increment();
+                            String text = extractText(event.getMessage());
+                            if (text.startsWith("Error") || text.contains("\"error\"")) {
+                                meterRegistry.counter("ai_tool_calls_total", "result", "error").increment();
+                            }
+                        }
+                    })
+                    .contextWrite(ctx -> ctx.put(com.myxhs.ai.model.TokenBudget.USER_ID_KEY, userId))
+                    .doFinally(signal -> {
+                        agentConcurrencyGuard.release(userId);
+                        if (meterRegistry != null) {
+                            meterRegistry.counter("ai_agent_runs_total", "result", signal.name()).increment();
+                            meterRegistry.timer("ai_agent_duration_seconds")
+                                    .record(System.currentTimeMillis() - startedAt,
+                                            java.util.concurrent.TimeUnit.MILLISECONDS);
+                        }
+                    });
+        });
     }
 
     /** 同步执行（收集最终答复并归档） */

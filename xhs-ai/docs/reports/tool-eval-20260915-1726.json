@@ -1,0 +1,102 @@
+{
+  "avgScore": 0.917,
+  "runs": 12,
+  "rows": [
+    {
+      "case": "TS-03",
+      "run": 1,
+      "score": 1.0,
+      "matched": "1/1",
+      "extra": 1,
+      "tools": "log_top_services|log_search"
+    },
+    {
+      "case": "TS-03",
+      "run": 2,
+      "score": 1.0,
+      "matched": "1/1",
+      "extra": 1,
+      "tools": "log_top_services|log_search"
+    },
+    {
+      "case": "TS-03",
+      "run": 3,
+      "score": 1.0,
+      "matched": "1/1",
+      "extra": 1,
+      "tools": "log_top_services|log_search"
+    },
+    {
+      "case": "TS-05",
+      "run": 1,
+      "score": 1.0,
+      "matched": "1/1",
+      "extra": 2,
+      "tools": "metric_top|metric_query|log_top_services"
+    },
+    {
+      "case": "TS-05",
+      "run": 2,
+      "score": 0.0,
+      "matched": "0/1",
+      "extra": 0,
+      "tools": ""
+    },
+    {
+      "case": "TS-05",
+      "run": 3,
+      "score": 1.0,
+      "matched": "1/1",
+      "extra": 1,
+      "tools": "metric_top|metric_query"
+    },
+    {
+      "case": "TS-08",
+      "run": 1,
+      "score": 1.0,
+      "matched": "1/1",
+      "extra": 1,
+      "tools": "consumer_lag_top|dlq_topic_list"
+    },
+    {
+      "case": "TS-08",
+      "run": 2,
+      "score": 1.0,
+      "matched": "1/1",
+      "extra": 0,
+      "tools": "consumer_lag_top"
+    },
+    {
+      "case": "TS-08",
+      "run": 3,
+      "score": 1.0,
+      "matched": "1/1",
+      "extra": 1,
+      "tools": "consumer_lag_top|dlq_topic_list"
+    },
+    {
+      "case": "TS-13",
+      "run": 1,
+      "score": 1.0,
+      "matched": "2/2",
+      "extra": 1,
+      "tools": "dlq_topic_list|dlq_message_detail|log_search"
+    },
+    {
+      "case": "TS-13",
+      "run": 2,
+      "score": 1.0,
+      "matched": "2/2",
+      "extra": 1,
+      "tools": "dlq_topic_list|dlq_message_detail|log_search"
+    },
+    {
+      "case": "TS-13",
+      "run": 3,
+      "score": 1.0,
+      "matched": "2/2",
+      "extra": 2,
+      "tools": "dlq_topic_list|dlq_message_detail|log_search|knowledge_search"
+    }
+  ]
+}

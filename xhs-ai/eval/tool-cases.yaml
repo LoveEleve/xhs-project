@@ -32,7 +32,14 @@ cases:
     expected: [code_locate]
   - id: TS-11
     question: "用 Prometheus 查当前 up=0 的实例"
-    expected: [query, list_targets, metric_top]
+    expected: [metric_query, metric_labels]
   - id: TS-12
     question: "回答：1+1 等于几？只回数字"
     expected: [none]
+  # 轨迹用例：sequence 为有序子序列（部分分），set 用例用 expected 表示集合匹配
+  - id: TS-13
+    question: "先看下现在哪些消费组有死信积压，再看其中一条死信的具体内容和失败原因"
+    sequence: [dlq_topic_list, dlq_message_detail]
+  - id: TS-14
+    question: "最近5分钟哪个服务 ERROR 日志最多？接着看该服务最近30分钟的 QPS 趋势是突发还是持续"
+    sequence: [log_top_services, metric_trend]
