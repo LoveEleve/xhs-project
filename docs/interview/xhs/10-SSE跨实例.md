@@ -1,7 +1,7 @@
 # 第10题 | SSE 跨实例与断线处理
 
 > 难度：★★★☆☆｜频率：★★★☆☆｜区分度：中
-> 关键词：SseEmitter、心跳 10s、Redis 路由、Pub/Sub、断线重连、连接回收
+> 关键词：SseEmitter、ticket 两步法、心跳 10s、Redis 路由 30s TTL、共享 Channel 广播、连接替换守卫、落库拉取
 
 ## 问题
 问题：站内通知用 SSE 推送，多实例下用户连在别的实例上怎么推？断了怎么办？
@@ -9,41 +9,45 @@
 ## 面试可讲版（五段式）
 
 **① 业界背景**
-服务端推送三条路：WebSocket（双向、重）、SSE（单向、基于 HTTP、自动重连语义、企业通知首选）、长轮询（最兼容、最费）。SSE 的工程难点有两个：多实例路由（连接在哪个实例）与断线恢复（重连后不丢消息）。
+服务端推送三条路：WebSocket（双向、重）、SSE（单向、基于 HTTP、浏览器自动重连、企业通知首选）、长轮询（最兼容、最费）。SSE 的工程难点有两个：多实例路由（连接在哪个实例）与断线恢复（重连后不丢消息）；还有一个常被忽略的：**EventSource 不能自定义 Header，token 只能放 URL**——URL 会进日志/Referer，属安全反模式。
 
 **② 项目选择**
-`SseEmitterManager`：用户连接注册到本地 emitter map + Redis 路由 `notify:sse:{userId}` → serverId（30s TTL，10s 心跳续期）；推送时先查路由——本实例直接推，否则发 **Redis Pub/Sub**（独立 channel），目标实例收到后校验并推给本地连接；重连按 `Last-Event-ID`/游标补拉未读。
+`SseEmitterManager`：**ticket 两步法**解决鉴权——`POST /sse/ticket` 发 30s 一次性 ticket，`GET /sse?ticket=` 建立连接（token 不进 URL）；连接注册本地 emitter map + Redis 路由 `myxhs:notification:sse:{userId}` → serverId（host:port，**30s TTL，`@Scheduled` 每 10s 批量续期**）；推送先查路由——本实例直推，否则发**共享 Channel** `myxhs:notification:sse:channel`（所有实例都收，持有该用户连接的实例命中处理）；emitter 超时 30 分钟兜底。
 
 **③ 坑**
-- 旧连接未完成时新连接进来：直接覆盖会**双推**或泄漏——实现里新连接注册时先 complete 旧 emitter，并用删除守卫避免旧连接的 complete 回调误删**新**路由（经典竞态）；
-- SSE 连接数是长连接资源：容器线程/内存要限额，超时与异常回调必须统一清理（onCompletion/onTimeout/onError 三处）；
-- 网关超时（如 60s）会掐断长连接 → 心跳 10s 保活 + 客户端自动重连。
+- **连接替换竞态**：新连接进来时先 complete 旧 emitter，但旧连接的 complete 回调可能把**新连接**的 Redis 路由删掉——用删除守卫（先比对 emitter 身份再删）+ 推送失败清理用 `emitters.remove(key, value)` 双参数防误删；
+- **发后即忘**：Pub/Sub 不可靠（订阅端重启窗口丢失）→ 推送只是尽力而为，可靠性靠通知落库 + 拉取；
+- **长连接资源**：容器线程/内存有限额，超时与异常回调必须统一清理（onCompletion/onTimeout/onError 三处都要清）；
+- SSE 鉴权别把 token 塞 URL（日志泄漏）——所以有 ticket 两步法。
 
 **④ 兜底**
-- 路由表过期（30s）后查不到就按"离线"处理：消息落库，用户下次上线拉；
-- Pub/Sub 丢推送的窗口由"落库 + 重连补拉"兜底；
-- 连接替换竞态用删除守卫（比对当前 emitter 身份再删）。
+- 通知**先落库**（`t_notification`），用户可通过 `/list`、`/unread-count`、`/read-by-type`、`/read-all` 拉取与补偿——不依赖 SSE 送达；
+- 路由表 30s 过期 → 视为离线，推送返回失败并清理连接；
+- 跨实例发布失败返回 false，由业务侧重试/落库兜底；
+- 服务重启后所有连接断，客户端重连到任意实例，未读以 DB 为准。
 
 **⑤ 话术**
-> "SSE 推送是尽力而为，可靠的是'落库 + 重连补拉'。跨实例用路由表定位、Pub/Sub 转发；连接替换的竞态必须用守卫，否则旧连接的 close 回调会把新连接的路由删掉。"
+> "SSE 推送是尽力而为，可靠性在'落库 + 拉取'：跨实例用路由表定位、共享 channel 转发；连接替换必须用守卫，否则旧连接的 close 回调会把新连接的路由删掉。鉴权用 ticket 两步法，不把 token 放进 URL。"
 
 ## 追问与参考回答
 **追问1：SSE 和 WebSocket 怎么选？** 单向通知 SSE 足够且实现便宜（HTTP 语义/自动重连）；双向聊天还是要 WebSocket（IM 模块就是）。
-**追问2：路由表怎么知道连接还活着？** 10s 心跳续期 30s TTL；过期即视为不可达，走离线路径。
-**追问3：为什么不用 MQ 扇出？** Pub/Sub 广播语义天然匹配（所有实例都收到，只有一个实例命中用户）；MQ 需要消费组与堆积管理，收益低。
-**追问4：服务重启怎么办？** 所有连接断，客户端重连到任意实例；未读以 DB 为准补拉，不依赖内存状态。
+**追问2：路由表怎么知道连接还活着？** 10s 心跳批量续期 30s TTL；过期即视为不可达，走离线/拉取路径。
+**追问3：为什么用共享 channel，不用 IM 那种实例专属 channel？** SSE 推送前已经查过路由，只有"跨实例"时才发；共享 channel 所有实例都收、本地命中者处理，实现更简单。IM 是每条消息都要定向，所以用 `im:route:{serverId}` 专属 channel。
+**追问4：为什么不用 Last-Event-ID 补推？** SSE 标准支持 `Last-Event-ID`，但我们的补偿走"通知落库 + 拉取列表"，不依赖事件 ID 重放——更简单也更可靠（拉取天然幂等）。这是明确的设计取舍，不是遗漏。
+**追问5：新连接替换旧连接怎么防双推？** 新连接注册时 complete 旧 emitter（旧连接收到终止），删除守卫保证旧回调不误删新路由；推送目标始终以本地 map 当前值为准。
 
 ## 面试官评分点
-**高级开发级**：能说清路由表+转发的链路；知道三处回调清理与替换竞态。
-**架构师加分**：长连接容量与网关超时、离线补拉的游标设计、SSE vs WebSocket 选型依据。
-**危险信号**：无路由直接本地推；连接替换无守卫；断线无补拉。
+**高级开发级**：能说清路由表+转发的链路；知道三处回调清理与替换竞态；会用 ticket 解决 SSE 鉴权。
+**架构师加分**：长连接容量与网关超时、离线补拉 model（落库拉取 vs Last-Event-ID）、共享 channel vs 定向 channel 的取舍、SSE/WS/长轮询选型。
+**危险信号**：无路由直接本地推；连接替换无守卫；断线无补拉；token 放 URL 且无 ticket。
 
 ## 本项目真实证据
-- `notification/sse/SseEmitterManager`：心跳 10s + Redis 30s TTL 续期、`notify:sse:{userId}` 路由、Pub/Sub 跨实例（NOTIFY_SSE_CHANNEL）、旧连接 complete 与删除守卫注释（"避免旧连接 complete 回调误删已替换的新连接"）。
-- 连接生命周期三回调清理（onCompletion/onTimeout/onError）与超时设置。
+- `SseEmitterManager`：`SSE_KEY_PREFIX=myxhs:notification:sse:`、`SSE_TTL=30s`(:56-57)、`NOTIFY_SSE_CHANNEL=myxhs:notification:sse:channel`(:60)、心跳 `@Scheduled(fixedRate=10000)` 批量续期(:255-269)、emitter `30 分钟超时`(:73)、serverId=host:port(:311-317)、发布 `convertAndSend`(:239)、推送失败 `emitters.remove(userId, emitter)` 双参数守卫(:217-223)、旧连接 complete + 删除守卫(:80-103)。
+- `NotificationController`：`/sse/ticket`(:46)、`/sse`(:59)、`/list`(:73)、`/unread-count`(:88)、`/read-by-type`(:109)、`/read-all`(:120)、`/sse/online-count`(:132)。
+- 实测：test-4 双实例（19013/19023）SSE 连 inst1、两实例共同消费，客户端收聚合事件。
 
 ## 版本与来源
-SSE 规范与 Spring `SseEmitter` 文档；本项目 notification 模块代码。
+SSE 规范（EventSource/Last-Event-ID）与 Spring `SseEmitter` 文档；本项目 notification 模块代码、test-4 运行态对账报告。
 
 ## 真实性说明
-心跳/路由/TTL/守卫均为代码注释与实现事实；"Last-Event-ID 补拉"以实际实现为准（若为普通游标，按游标口径讲）。
+ticket 两步法、双键/TTL/心跳/守卫/超时均为代码事实；"网关超时"未在本轮核实，不写具体数值（emitter 自身 30min 兜底）；Last-Event-ID 未实现（用落库拉取替代，属有意取舍）。
