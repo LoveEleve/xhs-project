@@ -11,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -48,6 +49,8 @@ import java.nio.charset.StandardCharsets;
         maxReconsumeTimes = 5
 )
 public class OrderTransactionConsumer implements RocketMQListener<MessageExt> {
+
+    private final StringRedisTemplate stringRedisTemplate;
 
     private final InventoryService inventoryService;
     private final ObjectMapper objectMapper;
@@ -122,9 +125,18 @@ public class OrderTransactionConsumer implements RocketMQListener<MessageExt> {
                             orderNo, skuId, quantity);
                     } catch (com.myxhs.common.exception.BizException e) {
                         if ("SKU不存在".equals(e.getMessage())) {
-                            log.error("[库存-事务消费] 不可恢复坏消息，SKU不存在，停止重试: orderNo={}, skuId={}, qty={}",
+                            // RV31：原实现静默 return（消息被 ACK、订单已提交但库存未扣且不可见）。
+                            // 改为写异常集合（供对账/人工处理）+ 抛错进入重试→DLQ（死信监控可见+可审批处置）。
+                            log.error("[库存-事务消费] 不可恢复坏消息，SKU不存在: orderNo={}, skuId={}, qty={}",
                                     orderNo, skuId, quantity, e);
-                            return;
+                            try {
+                                stringRedisTemplate.opsForSet().add("myxhs:inventory:anomaly:sku-missing", orderNo);
+                                stringRedisTemplate.expire("myxhs:inventory:anomaly:sku-missing",
+                                        java.time.Duration.ofDays(7));
+                            } catch (Exception ignore) {
+                                // 标记失败不影响主流程
+                            }
+                            throw new RuntimeException("库存预扣减失败(不可恢复): SKU不存在 skuId=" + skuId, e);
                         }
                         log.error("[库存-事务消费] 预扣减失败: orderNo={}, skuId={}, qty={}",
                                 orderNo, skuId, quantity, e);

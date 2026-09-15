@@ -54,7 +54,8 @@ public class ProductController {
      * 创建 SPU
      */
     @PostMapping("/spu")
-    @Idempotent(key = "'spu:create:' + #request.name + ':' + #request.categoryId", expireSeconds = 10)
+    // RV31: 幂等键加入 userId，避免不同管理员创建同名同类目商品被误判重复（原键=名称+类目）
+    @Idempotent(key = "'spu:create:' + #userId + ':' + #request.name + ':' + #request.categoryId", expireSeconds = 10)
     @RateLimit(prefix = "myxhs:product:create", maxRequests = 5, windowSeconds = 60, perUser = true)
     public R<Map<String, Long>> createSpu(
             @RequestHeader("X-User-Id") Long userId,

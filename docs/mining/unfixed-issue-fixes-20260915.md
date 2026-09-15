@@ -18,10 +18,18 @@
 - `t_product_behavior` 建表语句存在于 `sql/init-all.sql` 与部署包 SQL
 - 读写分离：`ReadWriteRoutingDataSource` 已实现"手动指定 / @Transactional(readOnly) / 默认主库"三策略；SQL 前缀分析仅保留工具方法（不再作为默认路由）——不是"未实现"，但**只读路由依赖 readOnly 注解覆盖**，待核查热点读路径覆盖率（列入第二批）
 
-## 第二批（待修复清单）
-1. product：Canal `t_sku` 变更不进 ES（SKU 价格/状态变化不同步）→ 需按 spu_id 触发 SPU 重建
-2. product：SPU 创建幂等键=名称+类目（缺用户/请求指纹，同名商品误判）
-3. gateway：WebFlux 内同步 Redis（黑名单/密钥/nonce）阻塞 EventLoop → 需改响应式或隔离线程
+## 第二批（进行中）
+| # | 问题 | 状态 |
+|---|------|------|
+| 1 | product：Canal `t_sku` 变更不进 ES | 待修（需按 spu_id 触发 SPU 重建） |
+| 2 | product：SPU 幂等键=名称+类目 | ✅ 已修（键加 userId，`ProductController:57`），已部署 |
+| 3 | gateway：WebFlux 内同步 Redis 阻塞 EventLoop | 待修（改响应式或 boundedElastic 隔离+压测） |
+| 6 | inventory：SKU 不存在静默 ACK（单成未扣且不可见） | ✅ 已修（写异常集合 + 抛错入 DLQ 可见），已部署 |
+| 10 | user：验证码 Redis 写失败仍 200 | ✅ 误报（CaptchaService 用 StringRedisTemplate 直写，失败会抛错） |
+| 7 | cart：Product 降级 fail-open | ✅ 取舍保留（可用性优先，列表层 valid 标记兜底；代码注释已说明） |
+| 12/13 | order 广播截断 / payment P-2~P-5 | ✅ 取舍保留（已有论证） |
+| 5 | common：readOnly 覆盖为 0（读写分离未真正生效） | ⚠️ 决策：暂不启用读从库（读己之写延迟风险），保留三策略骨架并在台账说明开启条件 |
+
 4. content：审核状态机流转不真实（AUDITING/REJECTED 无流转）→ 补真实流转
 5. common：核查/补齐热点读路径 `@Transactional(readOnly=true)` 覆盖率
 6. inventory：SKU 不存在时消费者直接确认（可能"单成未扣"）

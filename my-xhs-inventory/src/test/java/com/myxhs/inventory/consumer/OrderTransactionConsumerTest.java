@@ -22,12 +22,13 @@ class OrderTransactionConsumerTest {
 
     @Mock private InventoryService inventoryService;
     @Mock private MessageIdempotentHelper idempotentHelper;
+    @Mock private org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
 
     private OrderTransactionConsumer consumer;
 
     @BeforeEach
     void setUp() {
-        consumer = new OrderTransactionConsumer(inventoryService, new ObjectMapper(), idempotentHelper);
+        consumer = new OrderTransactionConsumer(stringRedisTemplate, inventoryService, new ObjectMapper(), idempotentHelper);
     }
 
     @Test
