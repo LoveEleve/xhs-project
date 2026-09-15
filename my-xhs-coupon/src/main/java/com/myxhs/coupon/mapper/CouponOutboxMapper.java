@@ -34,6 +34,10 @@ public interface CouponOutboxMapper {
     List<Map<String, Object>> selectPendingOutbox(@Param("cutoff") LocalDateTime cutoff,
             @Param("limit") int limit);
 
+    /** RV32：清理已发送的历史 Outbox 记录（防表无限增长；失败态保留） */
+    @org.apache.ibatis.annotations.Delete("DELETE FROM t_coupon_outbox WHERE status = 1 AND created_at < #{cutoff} LIMIT 5000")
+    int deleteSentBefore(@org.apache.ibatis.annotations.Param("cutoff") LocalDateTime cutoff);
+
     /**
      * 标记 Outbox 事件已发送
      */

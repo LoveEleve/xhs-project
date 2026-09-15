@@ -139,6 +139,18 @@ public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
             version = canalMsg.getLongValue("es", System.currentTimeMillis());
         }
 
+        // RV32：t_sku 变更（价格/状态/删除）需反映到商品文档 → 按 spu_id 重新索引父 SPU
+        if ("t_sku".equals(table)) {
+            JSONArray skuRows = canalMsg.getJSONArray("data");
+            if (skuRows != null && !skuRows.isEmpty()) {
+                Long spuId = skuRows.getJSONObject(0).getLong("spu_id");
+                if (spuId != null) {
+                    indexProductBySpuId(spuId, version);
+                }
+            }
+            return;
+        }
+
         // 只处理 t_spu 表（SPU 维度索引）
         if (!"t_spu".equals(table)) {
             log.debug("[商品索引同步] 忽略非 SPU 表变更: table={}", table);
@@ -258,6 +270,28 @@ public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
         }
 
         log.info("[商品索引同步] Canal 索引成功: spuId={}, version={}", spuId, version);
+    }
+
+    /** RV32：按 spuId 拉取商品详情并复用 canal 索引路径（用于 t_sku 变更） */
+    private void indexProductBySpuId(Long spuId, long version) throws Exception {
+        com.myxhs.common.response.R<Map<String, Object>> response = productFeignClient.getSpuDetail(spuId);
+        if (response == null || !response.isSuccess() || response.getData() == null) {
+            if (response != null && response.getCode() == ResultCode.PRODUCT_NOT_FOUND.getCode()) {
+                deleteProduct(spuId, version);
+                return;
+            }
+            throw new IllegalStateException("SKU 变更触发的商品详情获取失败: spuId=" + spuId);
+        }
+        Map<String, Object> detail = response.getData();
+        JSONObject row = new JSONObject();
+        row.put("id", spuId);
+        row.put("deleted", 0);
+        row.put("name", detail.getOrDefault("name", ""));
+        row.put("category_id", detail.containsKey("categoryId") ? detail.get("categoryId") : detail.get("category_id"));
+        row.put("status", detail.containsKey("status") ? detail.get("status") : 1);
+        row.put("created_at", detail.containsKey("createdAt") ? detail.get("createdAt") : detail.get("created_at"));
+        row.put("brand_id", detail.containsKey("brandId") ? detail.get("brandId") : detail.get("brand_id"));
+        indexProductFromCanal(spuId, row, version);
     }
 
     /**

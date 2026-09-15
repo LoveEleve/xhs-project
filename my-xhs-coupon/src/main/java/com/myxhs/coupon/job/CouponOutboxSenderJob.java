@@ -32,6 +32,19 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class CouponOutboxSenderJob {
 
+    /** RV32：每小时清理 7 天前已发送的 Outbox 记录，控制表增长（失败记录保留待人工） */
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelay = 3_600_000L, initialDelay = 300_000L)
+    public void cleanupSent() {
+        try {
+            int deleted = outboxMapper.deleteSentBefore(java.time.LocalDateTime.now().minusDays(7));
+            if (deleted > 0) {
+                log.info("[优惠券Outbox] 清理已发送记录 {} 条", deleted);
+            }
+        } catch (Exception e) {
+            log.warn("[优惠券Outbox] 清理失败: {}", e.getMessage());
+        }
+    }
+
     private final CouponOutboxMapper outboxMapper;
     private final RocketMQTemplate rocketMQTemplate;
     private final ObjectMapper objectMapper;

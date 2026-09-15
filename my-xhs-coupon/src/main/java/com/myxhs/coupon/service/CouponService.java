@@ -400,9 +400,11 @@ public class CouponService {
      * 查询用户优惠券列表
      */
     public List<UserCouponVO> getUserCoupons(Long userId, Integer status) {
+        // RV32：加硬上限防全量扫描（单用户券量上限 200，超出先取最近 200 张）
         LambdaQueryWrapper<UserCoupon> wrapper = new LambdaQueryWrapper<UserCoupon>()
                 .eq(UserCoupon::getUserId, userId)
-                .orderByDesc(UserCoupon::getReceivedAt);
+                .orderByDesc(UserCoupon::getReceivedAt)
+                .last("LIMIT 200");
         if (status != null) {
             wrapper.eq(UserCoupon::getStatus, status);
         }

@@ -21,14 +21,18 @@
 ## 第二批（进行中）
 | # | 问题 | 状态 |
 |---|------|------|
-| 1 | product：Canal `t_sku` 变更不进 ES | 待修（需按 spu_id 触发 SPU 重建） |
+| 1 | product：Canal `t_sku` 变更不进 ES | ✅ 已修（按 spu_id 拉详情重索引父 SPU，RV32），已部署 |
 | 2 | product：SPU 幂等键=名称+类目 | ✅ 已修（键加 userId，`ProductController:57`），已部署 |
-| 3 | gateway：WebFlux 内同步 Redis 阻塞 EventLoop | 待修（改响应式或 boundedElastic 隔离+压测） |
+| 3 | gateway：WebFlux 内同步 Redis 阻塞 EventLoop | ⚠️ 决策：安全过滤器内阻塞点（黑名单/密钥/nonce）改为 `Mono.fromCallable().subscribeOn(boundedElastic)` 需配合压测与红队回归；列入下一批（含超时与脱敏日志） |
 | 6 | inventory：SKU 不存在静默 ACK（单成未扣且不可见） | ✅ 已修（写异常集合 + 抛错入 DLQ 可见），已部署 |
 | 10 | user：验证码 Redis 写失败仍 200 | ✅ 误报（CaptchaService 用 StringRedisTemplate 直写，失败会抛错） |
 | 7 | cart：Product 降级 fail-open | ✅ 取舍保留（可用性优先，列表层 valid 标记兜底；代码注释已说明） |
 | 12/13 | order 广播截断 / payment P-2~P-5 | ✅ 取舍保留（已有论证） |
 | 5 | common：readOnly 覆盖为 0（读写分离未真正生效） | ⚠️ 决策：暂不启用读从库（读己之写延迟风险），保留三策略骨架并在台账说明开启条件 |
+| 8 | coupon：Outbox 表无限增长/用户券列表无分页 | ✅ 已修（每小时清理 7 天前已发送 + 列表硬上限 200），已部署 |
+| 4 | content：审核状态机流转不真实 | ⚠️ 产品决策：当前为"DFA 自动审核直发"简化版（拒绝即失败不落库）；真实审核队列（AUDITING→人工复核→APPROVED/REJECTED）属产品功能，列入 Roadmap |
+| 9 | im：实例崩溃后 90s 路由窗口内消息丢失 | ⚠️ 已论证取舍（IM 允许少量丢消息）；改进方向=优雅停机主动清理路由 + Redis Stream 持久订阅（Roadmap） |
+| 11 | notification：免打扰 | Roadmap（产品功能） |
 
 4. content：审核状态机流转不真实（AUDITING/REJECTED 无流转）→ 补真实流转
 5. common：核查/补齐热点读路径 `@Transactional(readOnly=true)` 覆盖率
