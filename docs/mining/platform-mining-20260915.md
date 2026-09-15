@@ -65,3 +65,49 @@
 - SQL 熔断器：慢 SQL 200ms/连续 5 次/冷却 30s（`SqlGuardInterceptor.java:37-43`）
 - 优雅停机：Nacos 注销 → sleep 10s → Counter 刷盘 → 线程池收敛（`GracefulShutdownListener.java:20-46`）
 - Jackson 安全白名单曾漏 `java.math` 致 BigDecimal 反序列化失败/L2 恒穿 DB（T-046）
+
+---
+# 第二轮：盲区补全（状态机/网关/缓存/调度/告警/部署/测试资产）
+
+## 6. 状态机与枚举（条件 UPDATE = 合法迁移）
+- 订单：0待付/1已付/2已发/3完成/4取消/5退款（`OrderService.java:1077-1086`）；事件映射 `OrderEventService.java:37-46`（ORDER_CREATED→-1，修复原值 0 与初始态相同致事件永不落库 T-110）；原子迁移 `OrderMapper.java:49-53`（WHERE id+user_id+status+deleted）；时间戳列各要求状态（cancelled=4/payed=1/delivered=2/completed=3）；动作约束：取消仅 0、支付仅 0、发货仅 1、确认仅 2、退款仅 {1,3}（5 幂等）；超时扫描 status=0+deadline（`:66-67`）；支付回调竞态不抛 500 防误退款（`:752-758`）
+- 内容：NoteStatus 显式迁移表 DRAFT→{AUDITING,PUBLISHED}、AUDITING→{PUBLISHED,OFFLINE}、PUBLISHED→{OFFLINE}（`NoteStatus.java:20-48`）
+- 券：0未用/1已用/2过期；核销 `WHERE id AND status=0`、退券 `WHERE id AND status=1 AND used_order_id=同单`（防跨单退）、过期批处理派生表绕 LIMIT（`UserCouponMapper.java:21-59`，T-058）
+- 支付/退款：0待付/1成功/2失败/3退款；回调 `WHERE order_id AND status=当前`；退款 `WHERE refund_no AND status=0`；状态 key TTL 7 天
+- 本地消息/推送/补偿/TCC 状态编码（`init-all.sql:500-512,659-674,817-864`）；TCC 明细迁移 `WHERE xid AND branch_id AND sku_id AND status=from`（`InventoryMapper.java:114-115`）
+
+## 7. 网关 8 过滤器（逐一）
+| # | 过滤器(order) | 关键点 |
+|---|---|---|
+| 1 | BodyCache(+0) | 1MB 上限 413、multipart 跳过（T-041）、空 body defaultIfEmpty（T-130） |
+| 2 | RequestLog(+100) | 32hex traceId、nanoTime 计时、sw8 同 trace（T-099）、不记 body |
+| 3 | GatewayAuth(+1000) | JWT type=access、黑名单 Redis 故障 fail-closed、X-User-Id/X-User-Role set 覆盖防伪造 |
+| 4 | TrafficColoring(+1200) | 6 染色头、AB=hash%3、压测标记仅 10.x 客户端、XFF 追加真实 IP（P0-7） |
+| 5 | Hmac(+1500) | 默认关；±5min、nonce SET NX EX 300、签名 `method|path|query|ts|nonce|bodyHash`、per-session 密钥、缺钥 fail-closed、常量时间比较 |
+| 6 | RateLimit(+2500) | Sentinel 固定 1s 窗；各路由阈值：user50/order10/payment5/inventory30/cart50/coupon30/notification50/im100/search300/ai100/content·product500/home·recommend300；Nacos 真空 30s 兜底；双 BlockHandler（T-106） |
+| 7 | GrayRoute(+3000) | GRAY_PERCENT=10（userId hash%100） |
+| 8 | ApiVersion(+3100) | X-Api-Version 默认 v1、未知版本降级不拒绝 |
+
+## 8. 缓存体系
+- API：`getWithCacheAside`（miss 回填；Redis 挂降级 DB 不回填）、带锁版（`tryLock(3,10s)` 双检+100ms 重读）、`deleteAfterUpdate`（3×50ms）、`delayDoubleDelete`（500ms + MQ 兜底 `CACHE_EVICT_TOPIC`）
+- 空值占位 TTL 2min；防雪崩 TTL+rand(timeout/6)；布隆 100 万/1% + 空值缓存双层防穿透；L2 逻辑过期 30min/物理 120min（商品）
+- 失效通道：CACHE_EVICT_TOPIC（user 组 3 次重试）；库存走 Canal → INVENTORY_CACHE_TOPIC（版本号 Lua 防乱序、SCAN 64 删三类 key）；索引 NOTE/PRODUCT_INDEX_TOPIC 各 3 分区
+- 预热：热搜 Top50/热门笔记 Top100/分类树，TTL 1h
+
+## 9. 调度与告警
+- XXL-Job：admin 192.168.0.142:18080、executor 端口 order9991/payment9992/cart9993/home9994/coupon9995/inventory9996/search9997/counter9998/analytics9999/notification9990；默认 misfire DO_NOTHING/路由 FIRST/SERIAL；18 个任务（频率见上文）
+- **Prometheus 28 条规则**（顶级几条）：ServiceDown(up==0,1m,P0)、HighErrorRate(5xx>1%,2m,crash)、HighJvm>0.85、HighHikari>0.9、Redis 内存/连接、ES 非 green、Canal 延迟>60s、DlqMessageDetected>0、OrderHighLatency P99>2s、PaymentHighErrorRate>2%(P0)、TrafficSurge(>3×)、MysqlDown、RocketmqDlqBacklog、节点 CPU/内存/磁盘>90%；3 条注释态未启用
+- Grafana 10 看板（api/biz/jvm31/node33/mysql18/hikari10/redis12/mq11/es11/tomcat4 面板）
+- SkyWalking：采样 10%、recordDataTTL 3d、metricsTTL 7d；ELK：Logstash 15044/15045 → ES，ILM **30 天删除**、1 分片 0 副本
+
+## 10. 部署与日志
+- docker compose 27 服务（全部 host 网络）：端口清单见正文；Nacos namespace my-xhs，仅 3 个 dataId（common/gateway/redis）
+- JVM 三档 512m/256m(GW)/1024m(HEAVY)，G1 MaxGCPause 200ms，挂 SkyWalking agent；容器模板 MaxRAMPercentage=75
+- 日志主链路：logback→TCP 15044→Logstash→ES `myxhs-logs-*`；中间件 stdout→Filebeat→15045；防火墙白名单 25 端口
+
+## 11. 测试与演练资产
+- 测试矩阵分层法 L1 业务/L2 数据/L3 生产级/L4 可观测（禁越层）；现行分支 L1 135/L2 74/L3 84/L4 47=340 行；用例库 G1~G8（15 文件）+ 时间矩阵（20 个 xxl + 14 个 @Scheduled）
+- 脚本：scripts/test-07~14-*.py（8 个服务断言）、full-chain-test v1/v2/v3（v3 单 traceId 串 15 服务）
+- chaos：ChaosBlade 7 场景（Redis pause/延迟、MQ pause、CPU 满载、磁盘 burn、MySQL pause、优雅停机）+ 应用级 chaos（DELAY/EXCEPTION/RETURN_NULL + probability，@RefreshScope）
+- 慢下游实录：UserService DELAY 11s → 网关 504；listener 75s → 回查恰好一次；iptables 断 Redis/MQ
+- wrk 归档：product1020/note1096/home764/recommend761/search683；ES 0.5→2 核后 search 175→683 RPS（3.9x）、P50 115→29ms
