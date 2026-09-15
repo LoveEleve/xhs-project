@@ -27,9 +27,19 @@
 |------|------|------|------|
 | P0 | MCP 自愈误判引发**重启风暴**（NRestarts=24） | 存活探测只看直接子进程且 2 连击即处置，进程树/命令行抖动误伤 | 改为全进程扫描 + 3 连击；**默认仅告警不重启**（`self-restart-enabled=false`），需显式开启；已部署验证 NRestarts=0 |
 | P1 | ES `search` 工具连续 3 次参数校验失败（缺 index/queryBody） | qwen3.8-flash 不会填嵌套 DSL schema | 系统提示补 12.1 显式示例；修复后同一问题成功（并在提问中加"只查一次"约束稳定耗时） |
-| P2 | 日志类问题耗时波动（107s~240s+） | 模型多轮试错 | Backlog：自建简化参数 ES 查询工具（index/关键词/时间窗），替代裸 DSL |
+| P2 | 日志类问题耗时波动（107s~240s+） | 模型多轮试错 | ✅ 当日已交付：新增 `log_top_services` / `log_search` 两个业务级工具（服务内部拼 DSL、参数扁平），复测 130s 且输出含"突发 vs 持续"定性分析（见 §5） |
 
-## 4. 证据
+## 4.1 简化版 ES 查询工具（RV21，已交付）
+
+| 工具 | 参数 | 能力 |
+|------|------|------|
+| `log_top_services` | level(默认ERROR)/minutes(默认60)/topN(默认10) | 按 `APP_NAME.keyword` 聚合日志条数 TopN |
+| `log_search` | service?/level?/keyword?/minutes?/size? | 时间倒序明细（时间/服务/级别/logger/消息，消息截断 300 字） |
+
+- 设计：业务参数 → 服务端拼 DSL（`LogQueryBuilder`，参数强校验 clamp），ES DSL 不再暴露给模型；REST 调用复用 `MYXHS_ES_*` 凭据；工具只读 + 审计留痕。
+- 验证：单测 3 例（聚合字段/过滤器/默认值），总计 33/33；Agent 复测 130s 正确输出（并主动区分启动突发与持续报错）。
+
+## 5. 证据
 
 - 原始响应：`/tmp/opencode/drill-dlq-{1,2}.json`、`drill-log-{1,2,3}.json`、`drill-prom-1.json`、`drill-redeliver-1.json`、`approval-21-reply.json`（本机临时目录，关键结论已摘录本报告）
 - 审批链：`ai_approval id=21`（approved→executed→verification reentered_dlq）；审计与 settlement 全量入库

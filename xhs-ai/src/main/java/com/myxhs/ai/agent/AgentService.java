@@ -7,6 +7,8 @@ import com.myxhs.ai.agent.tools.DlqListTool;
 import com.myxhs.ai.agent.tools.DlqRedeliverTool;
 import com.myxhs.ai.agent.tools.KnowledgeCatalogTool;
 import com.myxhs.ai.agent.tools.KnowledgeSearchTool;
+import com.myxhs.ai.agent.tools.LogSearchTool;
+import com.myxhs.ai.agent.tools.LogTopServicesTool;
 import com.myxhs.ai.audit.AuditService;
 import com.myxhs.ai.config.McpClientManager;
 import com.myxhs.ai.config.McpProperties;
@@ -79,9 +81,10 @@ public class AgentService {
             11. topic/表名/索引/路由/类名等"锚点事实"：必须先 knowledge_search（至少换两种关键词各一次）+ card_read 至少一张卡，
                 再用 code_locate 检索代码/配置；全部无果才能声明"知识库暂无记录"。禁止未检索就直接拒答。
             12. 日志/指标类问题（错误日志、QPS/延迟、实例健康）：必须调用 MCP 工具检索（ES 的 search / Prometheus 的 query）后再回答；
-            12.1 ES search 工具必须同时传两个参数：index（如 myxhs-logs-*）与 queryBody（完整 DSL 对象）。标准示例：
-                {"index":"myxhs-logs-*","queryBody":{"size":50,"sort":[{"@timestamp":"desc"}],"query":{"bool":{"filter":[{"term":{"level.keyword":"ERROR"}},{"range":{"@timestamp":{"gte":"now-1h","lte":"now"}}}]}}}}
-                缺参会报 required property 'index'/'queryBody' not found——出现该错误说明参数没传，请按示例重填后重试；
+            12.1 日志类问题优先用业务级工具（参数扁平，首选）：
+                - log_top_services：定位"哪个服务日志最多"，参数 level(默认ERROR)/minutes(默认60)/topN(默认10)；
+                - log_search：检索日志明细，参数 service(可选)/level(默认ERROR)/keyword(可选)/minutes(默认60)/size(默认20)。
+                仅当需要复杂 DSL（嵌套聚合/自定义排序）时才用 ES 的 search 工具，且必须同时传 index（如 myxhs-logs-*）与 queryBody（完整 DSL）；缺参会报 required property not found。
                 不得只做口头计划或凭印象作答；工具返回空也要给出检索条件。
             13. 引用纪律：只能引用工具实际返回的卡片 id/path 或代码位置；引用卡片一律用其 id（不带 .yaml），
                 不得编造文件名或路径（如虚构的 xx-01.md）。无法确认出处时说明"未找到出处"，宁可少引用。
@@ -103,6 +106,8 @@ public class AgentService {
     private final KnowledgeSearchTool knowledgeSearchTool;
     private final CardReadTool cardReadTool;
     private final CodeLocateTool codeLocateTool;
+    private final LogSearchTool logSearchTool;
+    private final LogTopServicesTool logTopServicesTool;
 
     @Value("${REDIS_SENTINEL_MASTER:mymaster}")
     private String sentinelMaster;
@@ -136,6 +141,8 @@ public class AgentService {
         toolkit.registerAgentTool(knowledgeSearchTool);
         toolkit.registerAgentTool(cardReadTool);
         toolkit.registerAgentTool(codeLocateTool);
+        toolkit.registerAgentTool(logSearchTool);
+        toolkit.registerAgentTool(logTopServicesTool);
         registerMcpWithAllowlist(toolkit);
         Set<HostAndPort> sentinels = Arrays.stream(sentinelNodes.split(","))
                 .map(String::trim).filter(s -> !s.isBlank())

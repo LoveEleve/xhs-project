@@ -67,6 +67,19 @@ public final class ToolSupport {
         return value == null ? null : String.valueOf(value);
     }
 
+    public static int intArg(ToolCallParam param, String key, int defaultValue) {
+        Map<String, Object> input = param.getInput();
+        Object value = input == null ? null : input.get(key);
+        if (value == null) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(String.valueOf(value).trim());
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
+    }
+
     public static Map<String, Object> schema(Map<String, Object> properties, List<String> required) {
         return Map.of("type", "object", "properties", properties, "required", required);
     }
