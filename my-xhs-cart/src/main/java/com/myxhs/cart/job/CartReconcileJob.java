@@ -62,8 +62,11 @@ public class CartReconcileJob {
     @XxlJob("cartReconcileJob")
     public void reconcile() {
         // 分布式锁: 防定时任务+手动端点并发对账(XXL-Job多实例/广播模式)
+        // RV30：锁值用随机 token 并以 Lua 比对删除，避免误删他人重新获取的锁
+        String lockKey = "myxhs:lock:cart:reconcile";
+        String token = java.util.UUID.randomUUID().toString();
         Boolean locked = stringRedisTemplate.opsForValue()
-                .setIfAbsent("myxhs:lock:cart:reconcile", "1", 600, java.util.concurrent.TimeUnit.SECONDS);
+                .setIfAbsent(lockKey, token, 600, java.util.concurrent.TimeUnit.SECONDS);
         if (locked == null || !locked) {
             log.info("[购物车对账] 已有实例执行中，跳过");
             return;
@@ -71,7 +74,9 @@ public class CartReconcileJob {
         try {
             doReconcile();
         } finally {
-            stringRedisTemplate.delete("myxhs:lock:cart:reconcile");
+            stringRedisTemplate.execute(new org.springframework.data.redis.core.script.DefaultRedisScript<>(
+                    "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+                    Long.class), java.util.List.of(lockKey), token);
         }
     }
 

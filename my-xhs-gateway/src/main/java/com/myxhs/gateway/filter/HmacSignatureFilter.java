@@ -146,23 +146,6 @@ public class HmacSignatureFilter implements GlobalFilter, Ordered {
             return forbidden(exchange, "签名校验失败：请求已过期");
         }
 
-        // 4. 校验 nonce 防重放（Redis SET NX 原子操作）
-        try {
-            String nonceKey = NONCE_KEY_PREFIX + nonce;
-            Boolean isNew = stringRedisTemplate.execute(
-                    NONCE_SET_SCRIPT,
-                    Collections.singletonList(nonceKey),
-                    String.valueOf(TimeUnit.MINUTES.toSeconds(5))
-            );
-            if (Boolean.FALSE.equals(isNew)) {
-                log.info("[Gateway-HMAC] 签名校验失败, nonce重复, nonce={}, path={}", nonce, path);
-                return forbidden(exchange, "签名校验失败：重复请求");
-            }
-        } catch (Exception e) {
-            // Redis 异常降级：放行请求（签名校验是安全增强，不能因 Redis 故障阻断正常流量）
-            log.error("[Gateway-HMAC] Redis nonce去重异常, nonce={}, path={}", nonce, path, e);
-        }
-
         // 5. 获取 per-session HMAC 密钥（从 GatewayAuthFilter 注入的 X-User-Id 取 userId）
         // 【设计改进】不再用全局 hmacSecretKey（配置文件硬编码，前端知道=签名失效），
         // 改为登录时生成 per-session secret 存 Redis，前端从登录响应获取，gateway 从 Redis 取验签。
@@ -212,6 +195,22 @@ public class HmacSignatureFilter implements GlobalFilter, Ordered {
             log.debug("[Gateway-HMAC] 签名校验失败, 签名不匹配, method={}, path={}, timestamp={}, nonce={}, userId={}",
                     method, path, timestamp, nonce, userId);
             return forbidden(exchange, "签名校验失败：签名不匹配");
+        }
+
+        // 7. 验签通过后再消费 nonce（RV30：原顺序为先占 nonce 再验签，错误签名可抢占合法 nonce 造成重放误判/DoS）
+        try {
+            Boolean isNew = stringRedisTemplate.execute(
+                    NONCE_SET_SCRIPT,
+                    Collections.singletonList(NONCE_KEY_PREFIX + nonce),
+                    String.valueOf(TimeUnit.MINUTES.toSeconds(5))
+            );
+            if (Boolean.FALSE.equals(isNew)) {
+                log.info("[Gateway-HMAC] 签名校验失败, nonce重复, nonce={}, path={}", nonce, path);
+                return forbidden(exchange, "签名校验失败：重复请求");
+            }
+        } catch (Exception e) {
+            // Redis 异常降级：放行请求（签名校验是安全增强，不能因 Redis 故障阻断正常流量）
+            log.error("[Gateway-HMAC] Redis nonce去重异常, nonce={}, path={}", nonce, path, e);
         }
 
         log.debug("[Gateway-HMAC] 签名校验通过, path={}, nonce={}, userId={}", path, nonce, userId);

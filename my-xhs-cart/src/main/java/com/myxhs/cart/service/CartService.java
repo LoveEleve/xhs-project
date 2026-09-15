@@ -63,6 +63,7 @@ public class CartService {
     private final DefaultRedisScript<Long> cartRemoveScript;
     private final DefaultRedisScript<Long> cartCheckAllScript;
     private final DefaultRedisScript<Long> cartUpdateQuantityScript;
+    private final DefaultRedisScript<Long> cartClearScript;
     private final DefaultRedisScript<Long> cartMergeItemScript;
     private final DefaultRedisScript<Long> cartCheckItemScript;
 
@@ -586,13 +587,11 @@ public class CartService {
         String checkedKey = checkedKey(userId);
         String sortKey = sortKey(userId);
 
-        List<String> keys = List.of(itemsKey, checkedKey, sortKey);
-        stringRedisTemplate.delete(keys);
-        try {
-            stringRedisTemplate.opsForValue().set(clearedMarkerKey(userId), "1", CART_TTL);
-        } catch (Exception e) {
-            log.warn("[购物车] 写入清空标记失败: userId={}", userId, e);
-        }
+        // RV30：三结构删除 + 清空标记写入收敛到单个 Lua，避免并发加购在两步之间写回被覆盖
+        stringRedisTemplate.execute(
+                cartClearScript,
+                List.of(itemsKey, checkedKey, sortKey, clearedMarkerKey(userId)),
+                String.valueOf(CART_TTL.getSeconds()));
 
         log.info("[购物车] 清空成功: userId={}", userId);
 

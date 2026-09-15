@@ -342,8 +342,10 @@ public class NoteService {
         Note note = cacheHelper.getWithCacheAside(cacheKey, () -> {
             cacheMiss.set(true);
             Note dbNote = noteMapper.selectById(noteId);
-            // 只返回已发布的笔记
-            if (dbNote != null && dbNote.getStatus() == NoteStatus.PUBLISHED.getCode()) {
+            // RV30：只返回"已发布且审核通过"的笔记（原实现只看 status，审核态异常数据会外泄）
+            if (dbNote != null && dbNote.getStatus() == NoteStatus.PUBLISHED.getCode()
+                    && dbNote.getAuditStatus() != null
+                    && dbNote.getAuditStatus() == com.myxhs.content.enums.AuditStatus.APPROVED.getCode()) {
                 businessMetrics.recordFeedPush("cache_miss");
                 return dbNote;
             }

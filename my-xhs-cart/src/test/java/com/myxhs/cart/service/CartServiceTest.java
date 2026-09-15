@@ -66,6 +66,9 @@ class CartServiceTest {
     private DefaultRedisScript<Long> cartUpdateQuantityScript;
 
     @Mock
+    private DefaultRedisScript<Long> cartClearScript;
+
+    @Mock
     private DefaultRedisScript<Long> cartMergeItemScript;
 
     @Mock
@@ -93,6 +96,7 @@ class CartServiceTest {
                 cartRemoveScript,
                 cartCheckAllScript,
                 cartUpdateQuantityScript,
+                cartClearScript,
                 cartMergeItemScript,
                 cartCheckItemScript
         );

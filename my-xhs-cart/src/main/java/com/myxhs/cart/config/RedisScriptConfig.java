@@ -28,6 +28,15 @@ public class RedisScriptConfig {
      * 原子操作：检查上限 + HINCRBY 累加 + 截断上限 + SADD 选中 + ZADD 排序
      */
     @Bean
+    public DefaultRedisScript<Long> cartClearScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptSource(new org.springframework.scripting.support.ResourceScriptSource(
+                new org.springframework.core.io.ClassPathResource("lua/cart_clear.lua")));
+        script.setResultType(Long.class);
+        return script;
+    }
+
+    @Bean
     public DefaultRedisScript<Long> cartAddScript() {
         DefaultRedisScript<Long> script = new DefaultRedisScript<>();
         script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/cart_add.lua")));

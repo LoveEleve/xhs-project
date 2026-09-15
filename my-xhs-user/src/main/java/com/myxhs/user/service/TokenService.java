@@ -201,7 +201,10 @@ public class TokenService {
      * 注销（将 Access Token 和 Refresh Token 都加入黑名单）
      */
     public void logout(String accessToken, String refreshToken) {
-        blacklistToken(accessToken);
+        // RV30：允许 access 为空（refresh-only 注销）
+        if (accessToken != null && !accessToken.isBlank()) {
+            blacklistToken(accessToken);
+        }
         if (refreshToken != null) {
             blacklistToken(refreshToken);
         }

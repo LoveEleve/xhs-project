@@ -128,6 +128,11 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
         // Gateway 集成（2026-08-17）：X-User-Role 从 JWT role claim 注入（set 覆盖防伪造），
         // role 由 my-xhs-user 登录时写入（t_user.role 真源）
         final String uid = claims.getSubject();
+        // RV30：sub 为空仍注入空 X-User-Id 会让下游拿到空身份，必须拒绝
+        if (uid == null || uid.isBlank()) {
+            log.info("[Gateway] 鉴权失败, Token 缺少 sub: path={}", path);
+            return unauthorized(exchange, "Token 无效：缺少用户标识");
+        }
         final String role = claims.get("role", String.class);
         log.info("[Gateway] 鉴权通过, userId={}, role={}, path={}, method={}, traceId={}", uid, role, path, method, traceId);
 

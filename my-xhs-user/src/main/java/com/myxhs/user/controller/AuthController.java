@@ -80,7 +80,8 @@ public class AuthController {
         if (authorization != null && authorization.startsWith("Bearer ")) {
             accessToken = authorization.substring(7);
         }
-        if (accessToken != null) {
+        // RV30：access 缺失但 refresh 存在时也允许注销（原实现静默返回成功但会话未撤销）
+        if (accessToken != null || (refreshToken != null && !refreshToken.isBlank())) {
             userService.logout(accessToken, refreshToken);
         }
         return R.ok();

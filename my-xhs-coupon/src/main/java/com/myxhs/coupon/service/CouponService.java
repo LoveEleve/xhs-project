@@ -386,33 +386,12 @@ public class CouponService {
             return; // 幂等：已退回或状态不匹配，不报错
         }
 
-        // 3. MySQL 原子回退模板剩余数量（SQL 原子操作，避免并发 ABA 问题）
-        // 与步骤2在同一 @Transactional 事务中，保证原子性
-        templateMapper.incrementRemainCount(userCoupon.getCouponId());
-
-        // 4. Redis 回退库存 + 减少领取次数 — 移至事务提交后执行
-        // 防: Redis已+1但MySQL事务回滚 → 不一致
-        final String stockKey = stockKey(userCoupon.getCouponId());
-        final String claimedKey = claimedKey(userCoupon.getCouponId(), userId);
-        final Long couponId = userCoupon.getCouponId();
-
-        org.springframework.transaction.support.TransactionSynchronizationManager
-                .registerSynchronization(new org.springframework.transaction.support.TransactionSynchronization() {
-                    @Override
-                    public void afterCommit() {
-                        try {
-                            Long result = stringRedisTemplate.execute(
-                                    returnCouponScript,
-                                    List.of(stockKey, claimedKey)
-                            );
-                            log.info("[优惠券] 退券Redis回退: couponId={}, userId={}, result={}", couponId, userId, result);
-                            evictTemplateCache(couponId);
-                        } catch (Exception e) {
-                            log.error("[优惠券] 退券Redis回退失败，发送补偿消息: couponId={}, userId={}", couponId, userId, e);
-                            sendReturnCouponRedisRepairEvent(userId, couponId);
-                        }
-                    }
-                });
+        // 3. 语义修正（RV30）：退券只把用户券恢复为"未使用"，不回补模板 stock/remain，也不减少 claimed。
+        //    原因：核销（useCoupon）不扣 remain；若退券回补，会形成 remain+已发>total 的超发敞口，
+        //    且用户可"领→用→退→再领"绕过 perUserLimit。用户仍持有该券，领取次数不应回退。
+        log.info("[优惠券] 退券完成(仅恢复用户券状态): couponId={}, userId={}, userCouponId={}",
+                userCoupon.getCouponId(), userId, userCoupon.getId());
+        evictTemplateCache(userCoupon.getCouponId());
     }
 
     // ==================== 查询 ====================
