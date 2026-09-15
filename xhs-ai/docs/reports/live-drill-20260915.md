@@ -39,6 +39,24 @@
 - 设计：业务参数 → 服务端拼 DSL（`LogQueryBuilder`，参数强校验 clamp），ES DSL 不再暴露给模型；REST 调用复用 `MYXHS_ES_*` 凭据；工具只读 + 审计留痕。
 - 验证：单测 3 例（聚合字段/过滤器/默认值），总计 33/33；Agent 复测 130s 正确输出（并主动区分启动突发与持续报错）。
 
+## 4.2 简化版 Prometheus 指标工具（RV22，已交付）
+
+| 工具 | 参数 | 能力 |
+|------|------|------|
+| `metric_top` | metric(error_rate/qps/latency_p95/slow_uri/heap_mb) + service? + topN? | 近 5m TopN（错误率%/QPS/P95 ms/慢接口/堆 MB） |
+| `metric_trend` | metric(error_rate/qps/latency_p95) + service + minutes? | 时间序列趋势 + min/max/avg/last（判断突发/持续） |
+
+- 设计：白名单指标目录 → `MetricQueryBuilder` 拼 PromQL（参数 clamp + 服务名白名单字符集），PromQL 不暴露给模型；REST 只读 + 审计。
+- 前后对比（同题）：
+
+| 问题 | 裸 PromQL（改前） | 业务级工具（改后） |
+|------|------------------|------------------|
+| 各服务 5xx Top3 | 63s | **52s** |
+| P95 最慢接口 Top5 | 98s 且只查到 actuator 端点 | **50s**，`/api/order/refund-success` P95≈11.9ms |
+| QPS 趋势（新增能力） | 无（模型不会 range 聚合） | **33s**，正确区分冷启动爬坡与平台期 |
+
+- 测试：`MetricQueryBuilderTest` 6 例；累计 **39/39**；工具总数 31（11 自研 + ES 3 + Prom 17）。
+
 ## 5. 证据
 
 - 原始响应：`/tmp/opencode/drill-dlq-{1,2}.json`、`drill-log-{1,2,3}.json`、`drill-prom-1.json`、`drill-redeliver-1.json`、`approval-21-reply.json`（本机临时目录，关键结论已摘录本报告）

@@ -9,6 +9,8 @@ import com.myxhs.ai.agent.tools.KnowledgeCatalogTool;
 import com.myxhs.ai.agent.tools.KnowledgeSearchTool;
 import com.myxhs.ai.agent.tools.LogSearchTool;
 import com.myxhs.ai.agent.tools.LogTopServicesTool;
+import com.myxhs.ai.agent.tools.MetricTopTool;
+import com.myxhs.ai.agent.tools.MetricTrendTool;
 import com.myxhs.ai.audit.AuditService;
 import com.myxhs.ai.config.McpClientManager;
 import com.myxhs.ai.config.McpProperties;
@@ -85,6 +87,10 @@ public class AgentService {
                 - log_top_services：定位"哪个服务日志最多"，参数 level(默认ERROR)/minutes(默认60)/topN(默认10)；
                 - log_search：检索日志明细，参数 service(可选)/level(默认ERROR)/keyword(可选)/minutes(默认60)/size(默认20)。
                 仅当需要复杂 DSL（嵌套聚合/自定义排序）时才用 ES 的 search 工具，且必须同时传 index（如 myxhs-logs-*）与 queryBody（完整 DSL）；缺参会报 required property not found。
+            12.2 指标类问题优先用业务级工具（参数扁平，首选）：
+                - metric_top：metric 取 error_rate(5xx错误率%)/qps/latency_p95/slow_uri(最慢接口)/heap_mb，可选 service/topN；
+                - metric_trend：metric 取 error_rate/qps/latency_p95 + service + minutes（判断突发还是持续）。
+                仅当需要复杂 PromQL（多标签聚合/自定义函数）时才用 Prometheus 的 query/range_query。
                 不得只做口头计划或凭印象作答；工具返回空也要给出检索条件。
             13. 引用纪律：只能引用工具实际返回的卡片 id/path 或代码位置；引用卡片一律用其 id（不带 .yaml），
                 不得编造文件名或路径（如虚构的 xx-01.md）。无法确认出处时说明"未找到出处"，宁可少引用。
@@ -108,6 +114,8 @@ public class AgentService {
     private final CodeLocateTool codeLocateTool;
     private final LogSearchTool logSearchTool;
     private final LogTopServicesTool logTopServicesTool;
+    private final MetricTopTool metricTopTool;
+    private final MetricTrendTool metricTrendTool;
 
     @Value("${REDIS_SENTINEL_MASTER:mymaster}")
     private String sentinelMaster;
@@ -143,6 +151,8 @@ public class AgentService {
         toolkit.registerAgentTool(codeLocateTool);
         toolkit.registerAgentTool(logSearchTool);
         toolkit.registerAgentTool(logTopServicesTool);
+        toolkit.registerAgentTool(metricTopTool);
+        toolkit.registerAgentTool(metricTrendTool);
         registerMcpWithAllowlist(toolkit);
         Set<HostAndPort> sentinels = Arrays.stream(sentinelNodes.split(","))
                 .map(String::trim).filter(s -> !s.isBlank())
