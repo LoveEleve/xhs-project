@@ -15,7 +15,7 @@ Martin Kleppmann（《DDIA》作者）发文《How to do distributed locking》�
 - 业界共识：锁分两种用途——**效率（efficiency）和正确性（correctness）**。Redis/Redlock 只适合前者；正确性要么用共识存储（ZK 临时顺序节点/zxid、etcd revision）提供有序性做 fencing，要么让下游幂等 + 唯一约束兜底。Kleppmann 推荐 ZK 不是因为 ZK 锁"更好用"，而是因为它能天然给出单调 token。
 
 **② 项目选择**
-项目里是 **Redisson RLock（Sentinel 模式 + Watchdog 续期：`leaseTime=-1` 才启用 watchdog，15s 续期）**，锁切面 `@Order(50)` 落在"消息幂等(10)→限流(50)→锁(50)→业务幂等(100)"的切面序里。两条失败语义**不一样**（答辩必须说准）：
+项目里是 **Redisson RLock（Sentinel 模式 + Watchdog 续期：`leaseTime=-1` 才启用 watchdog，15s 续期）**，锁切面 `@Order(50)` 落在"**消息幂等(1) → 限流(10) → 锁(50) → 业务幂等(100)**"的切面序里。两条失败语义**不一样**（答辩必须说准）：
 - **抢锁失败**（等待超时、他人持锁）→ 抛 `LOCK_ACQUIRE_FAIL` 业务异常，**拒绝本次请求**（防重复提交，对调用方 fail-closed）；
 - **Redis 连接异常** → catch 后**降级放行**（`DistributedLockAspect:68-74`），把锁让位于下游兜底——这才叫"效率锁"。
 不做 Redlock：运维复杂、时钟假设苛刻，且正确性本来就不靠锁。
@@ -60,7 +60,7 @@ Martin Kleppmann（《DDIA》作者）发文《How to do distributed locking》�
 - `RedissonConfig`：`lock-watchdog-timeout=15000`（注释：Sentinel 切换窗口 5-30s 取 15s）、retryAttempts=5/retryInterval=1000ms、master/slave 连接池 16；文件头即"Redisson Sentinel + DB 乐观锁"的取舍论证。
 - `DistributedLockAspect`：SpEL 动态 key、`@Order(50)`、`leaseTime=-1` 走 watchdog、Redis 异常 fail-open(:68-74)、抢锁失败抛 `LOCK_ACQUIRE_FAIL`(:76-78)、`isHeldByCurrentThread()` 防误放(:89-93)。
 - RV19 演练：Sentinel 6379→6380 切换 2.3s、458 状态键无损、会话无错乱。
-- 正确性：库存 20 并发不超卖、券 10 并发限 2 张、TCC 11 场景全过、8 个对账 Job 收敛差异。
+- 正确性：库存 20 并发不超卖、券 10 并发限 2 张、TCC 11 场景全过（test-4 对账报告）、8 个对账 Job 收敛差异。
 - 不选 Redlock 的论证在 D02/RV09（触发/替代/止损三问）。
 
 ## 版本与来源

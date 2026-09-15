@@ -44,7 +44,7 @@
 - **设计**：仿 Seata TCC Fence：`t_tcc_fence` 唯一键插入 + 状态机 1(Try)→2(Confirm)/3(Cancel)；Try 遇 3 判悬挂拒绝；Confirm/Cancel 用 `UPDATE ... AND status=1` 幂等。
 - **争议**：Seata AT/TCC/Saga vs 裸 TCC+Fence；Fence 独立表 vs 复用业务行状态；超时取消按 xid 明细 vs 按 SKU 聚合（旧实现已淘汰）。
 - **坑**：Confirm/Cancel 对影响行数与库存状态校验不足；**TCC 与普通分桶是两本账**，对账 Job 有可能覆盖 TCC 状态。
-- **兜底**：迟到 Confirm 被 fence 拒；并发双 Cancel 只有一次执行；超时 Job 先写 fence 再解冻；实测覆盖三态/重复幂等/超量 400/空回滚/悬挂/超时解冻（FINAL-HANDOFF §6 五场景 + test-3 G5-02-06/07）。
+- **兜底**：迟到 Confirm 被 fence 拒；并发双 Cancel 只有一次执行；超时 Job 先写 fence 再解冻；**11 场景（幂等/空回滚/悬挂拒绝/超量拒绝/fence 状态机 1→2/3）直接调用实测通过**（test-4 运行态对账报告第六轮），另有 FINAL-HANDOFF 五场景与 test-3 G5-02-06/07 佐证。
 - **话术**：
   > “TCC 只用在专项链路，和普通分桶库存确实是两本账，文档里也标了风险。面试里我会主动说这是已知边界：混用场景必须靠对账隔离，而不是假装统一。”
 
@@ -264,7 +264,7 @@
 
 **③ 已知坑（主动承认）。** 第一，**TCC 与普通分桶库存是两本账**：TCC 走独立冻结账本，普通链路走 Redis 分桶+DB，混用场景对账 Job 有可能覆盖 TCC 状态——文档里明确标了风险，靠对账隔离而不是假装统一。第二，Confirm/Cancel 如果只写 fence 不校验业务行数与库存状态，异常路径会静默漏处理。第三，这个机制没有"绝不出错"的保证：它保证的是 Try/Cancel 的**相对顺序语义**，不是跨系统的因果序。
 
-**④ 兜底手段。** 状态机条件 UPDATE（`UPDATE ... WHERE status=1`）保证并发双 Cancel 只有一次真正执行；超时 Job（`TccTimeoutJob`，60s 一轮）扫描 status=1 明细逐条 cancelFence(1→3) 再解冻；迟到 Confirm 被 fence 拒绝（status=3）；实测覆盖：三态流转、重复 Try 幂等、超量 400、空回滚、悬挂、超时自动解冻（FINAL-HANDOFF §6 + test-3 G5-02-06/07）；Redisson 锁保证多实例只有一个 Job 实例执行。
+**④ 兜底手段。** 状态机条件 UPDATE（`UPDATE ... WHERE status=1`）保证并发双 Cancel 只有一次真正执行；超时 Job（`TccTimeoutJob`，60s 一轮）扫描 status=1 明细逐条 cancelFence(1→3) 再解冻；迟到 Confirm 被 fence 拒绝（status=3）；**11 场景（幂等/空回滚/悬挂拒绝/超量拒绝/fence 状态机 1→2/3）直接调用实测通过**（test-4 运行态对账报告），并有 FINAL-HANDOFF §6 与 test-3 G5-02-06/07 佐证；Redisson 锁保证多实例只有一个 Job 实例执行。
 
 **⑤ 话术（30 秒版）。** "TCC 只用在库存专项链路，因为我们没有引入 Seata，fence 表解决空回滚/悬挂/幂等三件事。它最大的边界是和普通分桶库存两本账，文档里明确标了，靠对账隔离——面试我会主动说这个，而不是等追问。如果重来，要么全线 Seata，要么把冻结账本和分桶库存做成互斥使用。"
 
