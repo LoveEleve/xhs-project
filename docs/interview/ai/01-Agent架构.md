@@ -49,6 +49,15 @@ Anthropic《Building effective agents》把"工作流"和"Agent"做了清晰区�
 - 预算/并发：50 万/软 80%/硬 429；护栏 2/8；ToolBudget 软 36/硬 40。
 - 去 MCP 化实测（live-drill）：ES MCP 死后问"文档数 top3 索引" **19s** 命中 `es_index_list`；Prom MCP 死后问"up=0 实例" **39s** 命中 `metric_query`。
 
+## 发散追问地图（横向）
+- workflow vs agent 边界：确定性编排优先；什么场景必须上 Agent。
+- 框架选型：AgentScope（Java+Hariess）vs LangGraph vs Spring AI vs AutoGen 的生态/能力/代价。
+- 单 Agent vs 多 Agent：成本、不确定性、收益边界；subagent 的适用场景。
+- 记忆体系：短期（会话）/长期（摘要/画像）/向量记忆的选择与风险。
+- 安全执行：沙箱、工具权限分级、网络与文件隔离。
+- 可观测与评测：轨迹、成本、P95；离线评测与在线指标。
+- 成本工程：模型路由（强/弱/降级）、Prompt 缓存、预算与限流。
+
 ## 版本与来源
 Anthropic《Building effective agents》；AgentScope 2.0 Java 文档与源码核验（R02）；本项目 `docs/02-architecture.md`（23 条 ADR）、RV19/RV27。
 

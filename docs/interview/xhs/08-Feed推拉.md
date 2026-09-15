@@ -42,6 +42,15 @@ ZADD 幂等可重推；content 侧 30s 本地消息补发 + 60s 推送未完成�
 - 实测：500 粉丝推送压缩到一次往返（约 100x）；断点续推预置 cursor=2 只推剩余（终态 cursor=502/completed）。
 - `FeedCleanupJob.java`：`inbox-max-days:7`/`inbox-max-size:500`(:34-37)、ZREMRANGEBYRANK 裁剪(:69)；`NoteDeleteConsumer.java:52,84` 删除时同清 outbox 与 FOLLOWING 召回键；`FeedService.java:64` 大 V 关注列表缓存 5min。
 
+## 发散追问地图（横向）
+- 推拉取舍：写扩散（推）/读扩散（拉）/混合阈值；阈值如何随容量调整。
+- 收件箱结构：ZSet vs List、游标分页、深分页与裁剪策略。
+- 大 V 治理：拉模式多级缓存、异步合并、关注列表缓存与失效。
+- 排序与召回：时间序 vs 策略序、多召回源合并去重、实验（A/B）。
+- 存储选型：Redis vs 图存储 vs 专用 Feed 服务（自建 vs 托管）。
+- 删除与合规：撤回/墓碑、缓存与索引同步清理、删除窗口。
+- 容量估算：粉丝数×发文频率、写放大、内存水位与分区。
+
 ## 版本与来源
 Twitter/微博 Feed 推拉模型公开资料；本项目 `FeedPushConsumer`/`FeedService`/`FeedCleanupJob`、test-2 Feed 分析文档。
 

@@ -46,6 +46,15 @@
 - `NotificationController`：`/sse/ticket`(:46)、`/sse`(:59)、`/list`(:73)、`/unread-count`(:88)、`/read-by-type`(:109)、`/read-all`(:120)、`/sse/online-count`(:132)。
 - 实测：test-4 双实例（19013/19023）SSE 连 inst1、两实例共同消费，客户端收聚合事件。
 
+## 发散追问地图（横向）
+- 推送协议对比：SSE/WebSocket/长轮询/HTTP2 push 的适用面。
+- 连接治理：心跳、超时、自动重连、Last-Event-ID 语义与取舍。
+- 跨实例：路由表定位、共享/专属 channel、MQ 扇出对比。
+- 鉴权：EventSource 无自定义 Header → ticket/一次性 token/Cookie 方案对比。
+- 断线恢复：落库+游标拉取 vs 事件重放；幂等与顺序。
+- 网关/LB 配置：idle timeout、缓冲、压缩、连接数上限。
+- 推送治理：合并批次、降频、优先级、静默时段。
+
 ## 版本与来源
 SSE 规范（EventSource/Last-Event-ID）与 Spring `SseEmitter` 文档；本项目 notification 模块代码、test-4 运行态对账报告。
 

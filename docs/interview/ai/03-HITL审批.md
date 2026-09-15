@@ -48,6 +48,15 @@ HITL（human-in-the-loop）是 Agent 安全共识：高风险动作必须人工�
 - `ApprovalService.java:45,133-135,150-151`：status='pending' 查询与 CAS、级联拒绝 SQL；`ApprovalExpiryJob.java:37-55`（超时 expired + fail-closed 注释）；`ApprovalExecutionRecoveryJob.java:46,68-76`（补执行/回收）。
 - 实测：SSE `approval_required` → 批准 → 重投 → 核验全链路跑通；重复提交被幂等拦截。
 
+## 发散追问地图（横向）
+- 人机协作模式：in-the-loop（逐次审批）vs on-the-loop（事后可撤）；适用场景。
+- 审批粒度与体验：批量、复用（同指纹）、级联、超时策略。
+- 状态机工程：CAS、指纹、崩溃补执行、卡死回收、幂等。
+- 安全边界：提示注入、权限最小化、工具白名单、参数校验。
+- 合规审计：谁批/何时/为什么/结果，防篡改（哈希链）。
+- 失败语义：fail-closed、人工重试路径、灰度和回滚。
+- 多租户/权限：审批人与执行人的权限边界、操作者身份传递。
+
 ## 版本与来源
 LangGraph interrupt / Anthropic HITL 模式公开资料；本项目 approval 模块代码与生产化报告。
 
