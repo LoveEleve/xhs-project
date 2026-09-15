@@ -33,7 +33,7 @@ Anthropic《Building effective agents》把"工作流"和"Agent"做了清晰区�
 ## 追问与参考回答
 **追问1：Agent 和 workflow 的边界？** 看路径是否可预知、是否跨系统取证；Anthropic 的观点我也认同——能用确定性的别用 Agent。
 **追问2：为什么不用 LangGraph？** 栈不匹配（跨进程桥接成本高）、HITL/状态要多写一层；AgentScope Java 原生内置 Harness。图编排优势在单 Agent 工具循环场景用不上。
-**追问3：工具数量怎么控？** 双护栏——工具数软 36/硬 40（超硬拒绝启动）+ schema token 软 12k（实测 3428）；再涨上 tool_search。当前工具选择评测 12/12。
+**追问3：工具数量怎么控？** 双护栏——工具数软 36/硬 40（超硬拒绝启动）+ schema token 软 12k（历史实测 3428 tokens，当时 32 工具含 MCP 口径）；再涨上 tool_search。当前工具选择评测 12/12。
 **追问4：Agent 崩了怎么办？** 状态在 Redis 可续聊；状态丢从消息表+摘要恢复；审批卡死有回收 Job；变更有 settlement+核验，不假设"发出去就成功"。
 **追问5：为什么单 Agent 不搞多智能体？** 问题域不需要，多 Agent 成本×3 而收益不显著；我们按用户计量预算，多 Agent 会成倍消耗。当前 10 个真实案例已验证单 Agent 够用。
 
@@ -47,7 +47,7 @@ Anthropic《Building effective agents》把"工作流"和"Agent"做了清晰区�
 - `api/AgentController:46,90`：同步 300s / SSE（delta/tool/approval_required/final）+ X-Request-Id 幂等。
 - 状态：`RedisAgentStateStore`；F7 重建 + 滚动摘要实测（删状态仍能答历史事实）。
 - 预算/并发：50 万/软 80%/硬 429；护栏 2/8；ToolBudget 软 36/硬 40。
-- 去 MCP 化实测：kill 两个 MCP 进程后 ES/Prom 诊断 19s/39s 正常。
+- 去 MCP 化实测（live-drill）：ES MCP 死后问"文档数 top3 索引" **19s** 命中 `es_index_list`；Prom MCP 死后问"up=0 实例" **39s** 命中 `metric_query`。
 
 ## 版本与来源
 Anthropic《Building effective agents》；AgentScope 2.0 Java 文档与源码核验（R02）；本项目 `docs/02-architecture.md`（23 条 ADR）、RV19/RV27。
