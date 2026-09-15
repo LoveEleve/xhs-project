@@ -2,7 +2,7 @@
 
 > 全新设计与实现（不继承 `my-xhs-ai*` 旧代码，旧模块仅作参考/归档）
 >
-> 版本：**v1.0（结项）**（M1~M4 全量交付；RV01~RV20 闭环）｜日期：2026-09-14｜结项报告：`docs/reviews/20-project-closure.md`
+> 版本：**v1.1（冻结）**（M1~M4 + 生产化补差 RV21~RV29；RV01~RV29 闭环）｜日期：2026-09-15｜结项报告：`docs/reviews/20-project-closure.md`｜一页速览：`docs/PROJECT-ONE-PAGER.md`
 
 ## 文档索引
 
