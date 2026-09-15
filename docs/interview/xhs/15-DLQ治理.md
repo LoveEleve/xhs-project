@@ -19,7 +19,7 @@
 **③ 坑（都是真事故）**
 - **指标恒为 0**（运行态 #21）：原实现用 `searchOffset(now)` 与 `maxOffset` 相减——两者恒等，指标永远是 0，整整一个监控盲区；直到做 AI 诊断时才发现。修复为 `minOffset/maxOffset` 差值（`DlqMetrics:137-141` 注释原话）；
 - **`-1` 不是"没积压"**：它是"无 DLQ / 查询失败"的哨兵值，直接求和会把"查不到"混进"没积压"——必须区分处理；
-- **22→26 组**：监控清单漏了 8 个组（扩容后新增消费组没登记），修复后重建 14 个服务；"监控覆盖不到 = 不存在"是 DLQ 治理最常见的系统性盲区；
+- **覆盖差 8 组**（RV18 发现）：监控清单与真实消费组不一致——补 8 个缺失组（cart-event-sink-group/order-pay-result/order-refund/note-delete/counter-es-sync/coupon-return-redis-repair/like-unlike/favorite-unlike）+ 移除 5 个陈旧组，**清单对齐为 26 组**；my-xhs-cart 灰度重启验证 26 组全暴露，其余 14 个服务用修复版 common 全量重建；"监控覆盖不到 = 不存在"是 DLQ 治理最常见的系统性盲区；
 - order 补偿消息进 DLQ 曾**没有重放通道**（只有进没有出）——后补"异常集合 + 对账 + 审批重投"链路；
 - 死信里可能全是**毒丸消息**（反序列化失败）：重投必然再进 DLQ——核验器把这种情况识别为 `reentered_dlq` 而不是假装成功。
 
@@ -56,7 +56,7 @@
 - `DlqMetrics.java:43,101,137-141`：`CONSUMER_GROUPS` 26 组、30s 采样启动日志、`searchOffset(now)` 恒等 bug 与 `minOffset/maxOffset` 修复注释。
 - 消费端：`OrderCompensationConsumer.java:33`（maxReconsumeTimes=3 进 DLQ，:136 无消费者则永久泄漏 → 补链路）、`PayResultConsumer.java:28`、`InventoryOutboxSenderJob.java:65`（序列化 snake_case 导致 NPE→DLQ 的坑）、`OrderTransactionConsumer.java:129`（异常集合+DLQ 可见可审批）。
 - AI 侧：`dlq_list`/`dlq_detail`/`dlq_redeliver` 工具 + HITL 审批 + `RedeliverVerifier` 核验（见 ai 03/04 题）。
-- 治理记录：三组历史死信清账；监控补 22→26 组后重建 14 个服务。
+- 治理记录：三组历史死信清账；清单对齐 26 组（补 8 缺/除 5 旧）后 14 个服务重建（`xhs-ai/docs/reviews/18-rv18-deep-review.md:42`）。
 
 ## 版本与来源
 RocketMQ 重试/DLQ 官方文档；SRE 变更管理实践；本项目 DlqMetrics/消费者代码与运行态 #21 修复记录。
