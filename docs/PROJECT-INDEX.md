@@ -62,7 +62,17 @@ MTTR 10/10·1.63min·92.1% → `reports/mttr-benchmark-*`；hit@1 100% / 答案�
 5. 诚实的"未接线"清单（跨实例事件无业务订阅者、capture_mode/ai_feedback 死列）—— AI §6
 6. DLQ 尾部扫描边界（200/100 条）与 jdtls 未实现 —— AI §6
 
-## C. 学习 / 准备入口
+## C. 项目三 · 开源技能包（huazai-harness-skills）
+| 模块 | 入口 | 深挖素材 |
+|------|------|---------|
+| 技能清单（41 core + 13 包/入口） | `skills/harness-core/skills/` | `docs/mining/harness-skills-mining-20260915.md` §2 |
+| 六阶段门禁 | `harness-core/skills/{harnessing,coding-skill,unit-test-write,expert-reviewer,unit-test-ci,deploy-verify}/SKILL.md` | §3 |
+| 评审体系（10 维度/双轴/A1-A5） | `expert-reviewer/SKILL.md` | §4 |
+| DLQ 门禁 10 条 | `rocketmq-toolkit/SKILL.md:155-175` | §4 |
+| 工程化（校验/版本/CI/分发） | `scripts/*.mjs`、`.github/workflows/check.yml`、`install-skill/SKILL.md` | §3/§6 |
+| 实战案例 | `docs/case-studies/xhs-ai-m2.0-review.md` | §5 |
+
+## D. 学习 / 准备入口
 - 简历：`docs/resume-final.md`；学习对照：`docs/resume-study-map.md`
 - 手册：`docs/interview-defense-handbook.md`（18 主题 + 附录 A~U′）
 - 速览：`xhs-ai/docs/PROJECT-ONE-PAGER.md`
