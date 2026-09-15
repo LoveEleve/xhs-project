@@ -12,7 +12,7 @@
 链路追踪两派：**APM 自动埋点**（SkyWalking/Zipkin/OTel，跨进程自动传播）vs **业务 traceId + MDC**（日志级最小方案）。跨协议传播是共同难点：HTTP 有 Header、MQ 要放消息头、长连接要握手带、**线程池复用会丢 ThreadLocal**。标准侧有 W3C `traceparent`、B3 等。染色标记（灰度/压测）常与 traceId 一起透传，但用途不同：traceId 找链路，染色是路由依据。
 
 **② 项目选择**
-- 入口：网关 `RequestLogFilter` 生成/透传 **32 位无横线 UUID 的 `X-Trace-Id`**（上游有则透传不覆盖）；
+- 入口：网关 `RequestLogFilter` 生成/透传 **32 位无横线 UUID 的 `X-Trace-Id`**（上游有则透传不覆盖）；`TrafficColoringFilter` 负责把 4 个染色标记写入 `TraceContext`（grayTag / apiVersion 默认 v1 / abGroup 按 userId 自动分组 / pressureTest）；
 - 上下文：`TraceContextHolder`（ThreadLocal）+ `TraceContext` **6 个染色标记**：traceId/userId/grayTag/apiVersion/abGroup/pressureTest；
 - 跨服务：`FeignTraceInterceptorConfig` 从 **TraceContext 取** 6 标记透传 Header（不是从 HttpServletRequest 取——MQ 消费触发的 Feign 没有 request）；
 - 跨 MQ：`MqTraceHelper` Producer 注入 Message Header、Consumer 恢复 TraceContext + MDC；
@@ -28,7 +28,7 @@
 **④ 兜底**
 - "有则透传、无则生成"保证上游接入零改造；MDC 必须 finally 清理（防内存泄漏/串日志）；
 - 异步任务与线程池统一走包装类；证据侧：SkyWalking 跨服务 22 span、test-4 IM 双实例同一 traceId、ES 可按 traceId 检索（traceid-es 问题单处理过）。
-- 压测标记/灰度标记随 traceId 一起透传，影子表改写依赖它避免污染真实数据。
+- 压测标记/灰度标记随 traceId 一起透传：`ShadowTableInterceptor` 读 `TraceContextHolder.isPressureTest()` 决定是否改写影子表（避免压测污染真实数据），`GrayRouteFilter`/`ApiVersionFilter` 消费对应标记做路由。
 
 **⑤ 话术**
 > "traceId 的难点不在生成，在'断链点'：MQ 的 Header、线程池的 ThreadLocal、长连接的握手。我们把 6 个标记装进 TraceContext，Feign/MQ/线程池/WS 各做一个透传适配，原则是'有则透传、无则生成、用完必清'。"
@@ -54,7 +54,7 @@
 
 ## 本项目真实证据
 - `TraceContext.java:9,12,15,18,21,24`（6 字段）；`TraceContextHolder`（ThreadLocal）。
-- `RequestLogFilter:21,27,32-33,39`（生成/透传 X-Trace-Id、32 位 UUID、不覆盖上游）。
+- `RequestLogFilter:21,27,32-33,39`（生成/透传 X-Trace-Id、32 位 UUID、不覆盖上游）；`TrafficColoringFilter:58-96`（grayTag/apiVersion/abGroup/pressureTest 写入 TraceContext）。
 - `FeignTraceInterceptorConfig`（6 标记从 TraceContext 透传）；`MqTraceHelper`（Producer 注入/Consumer 恢复）；`MdcAwareExecutorService`（O2 修复注释：缓存刷新/双删/布隆/补偿防断链）。
 - `ImHandshakeInterceptor:58-66`（Header→URL→生成三取一，落 attributes/MDC）；`ImRouteSubscriber` pub/sub 传 traceId；test-4 双实例同一 traceId。
 - 旁证：FINAL-HANDOFF SkyWalking 22 span；`docs/traceid-es-issue.md`。

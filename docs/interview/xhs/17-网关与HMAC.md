@@ -13,7 +13,7 @@
 
 **② 项目选择**
 - **过滤器顺序**（以 `getOrder()` 实测为准）：`BodyCache(0，先缓存 body)` → `RequestLog(+100)` → `Auth(+1000，JWT)` → `HMAC(+1500)` → `RateLimit(+2500)` → `Gray(+3000)` → `ApiVersion(+3100)`；
-- HMAC 规则：`sign = Base64(HmacSHA256(secret, Method + Path + Timestamp + Nonce))`，三个 Header：`X-Timestamp`/`X-Nonce`/`X-Signature`；
+- HMAC 规则（**以代码为准**）：`sign = HmacSHA256(perUserSecret, method|path|query|timestamp|nonce|bodyHash)`——**含 query 与 body 摘要**（`bodyHash=sha256Hex(body)`，multipart 按空 hash）；三个 Header：`X-Timestamp`/`X-Nonce`/`X-Signature`；注意类顶部注释还是旧版四项（method+path+ts+nonce），代码 T-009/010/011 已扩展——又一处注释漂移；
 - 防重放：时间戳容忍 **5 分钟**；nonce 用 **Redis SETNX + TTL 5min**（Lua 保证原子），多实例共享去重状态；
 - **密钥不用全局硬编码**：改为**登录时生成 per-session secret 存 Redis**（`myxhs:user:hmac:secret:{userId}`，前端从登录响应取，网关从 Redis 取验签）——代码注释原话"配置文件硬编码，前端知道=签名失效"；
 - 白名单路径跳过（注册/登录）；**默认关闭**（`hmac-enabled: false`）；Redis 异常时**放行**（签名是安全增强，不是核心鉴权）。
@@ -22,7 +22,7 @@
 - **全局密钥硬编码**：放配置文件里的密钥等于公开（前端/测试客户端都能拿到）→ 改 per-session secret，网关反查 Redis；
 - **nonce 占用时机**（RV31 修复）：必须**验签通过后再占 nonce**——先占后验会让无效签名也能消耗 nonce 窗口/干扰重放判定；
 - **body 读一次就没了**：所以 BodyCacheFilter 必须最先执行并缓存 body（multipart 特殊处理按空 bodyHash 口径）；
-- **注释漂移**：HMAC 过滤器注释写"在 +1000 之前"，而实际 `getOrder()=+1500`（+1000 是 Auth）——答辩以代码为准，这类"注释与实现不一致"正是 review 要抓的；
+- **注释漂移×2**：① 过滤器注释写"在 +1000 之前"，实际 `getOrder()=+1500`（+1000 是 Auth）；② 签名规则注释是旧四项、实现已是六段（含 query/bodyHash）——答辩以代码为准，这类"注释与实现不一致"正是 review 要抓的；
 - 默认关闭是**兼容与测试口径**（本地/压测/HMAC 未启用时全链路不带签名），别把它讲成"已经全量防护"。
 
 **④ 兜底**
