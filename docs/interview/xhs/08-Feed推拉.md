@@ -38,9 +38,9 @@ ZADD 幂等可重推；content 侧 30s 本地消息补发 + 60s 推送未完成�
 **危险信号**：说"全推"或"全拉"；断点进度不落 Redis；推送失败直接丢。
 
 ## 本项目真实证据
-- `FeedPushConsumer.java`：`big-v-threshold:100000`(:53-54)、粉丝 `>50000` 降级发件箱(:150)、批 500(:145)、cursor key `myxhs:feed:push:progress:{localMsgId}` TTL 1h(:134)、一次 Pipeline 批量 ZADD(:187)、大 V 标记缓存 10min + 写入风暴注释(:239-248)。
+- `FeedPushConsumer.java`：`big-v-threshold:100000`(:53-54)、粉丝 `>50000` 降级发件箱(:150)、批 500(:145)、cursor key `myxhs:feed:push:progress:{localMsgId}` TTL 1h(:134)、一次 Pipeline 批量 ZADD(:187)、**同一批同时写 `recommend:following:latest:{followerId}`（:196-197 注释：原实现无任何写入方导致 FOLLOWING 召回恒空）**、大 V 标记缓存 10min + 写入风暴注释(:239-248)。
 - 实测：500 粉丝推送压缩到一次往返（约 100x）；断点续推预置 cursor=2 只推剩余（终态 cursor=502/completed）。
-- `FeedCleanupJob.java`：`inbox-max-days:7`/`inbox-max-size:500`(:34-37)、ZREMRANGEBYRANK 裁剪(:69)；`NoteDeleteConsumer` 清理收件箱与 FOLLOWING ZSet。
+- `FeedCleanupJob.java`：`inbox-max-days:7`/`inbox-max-size:500`(:34-37)、ZREMRANGEBYRANK 裁剪(:69)；`NoteDeleteConsumer.java:52,84` 删除时同清 outbox 与 FOLLOWING 召回键；`FeedService.java:64` 大 V 关注列表缓存 5min。
 
 ## 版本与来源
 Twitter/微博 Feed 推拉模型公开资料；本项目 `FeedPushConsumer`/`FeedService`/`FeedCleanupJob`、test-2 Feed 分析文档。
