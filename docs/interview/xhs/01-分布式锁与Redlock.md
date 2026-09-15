@@ -15,12 +15,15 @@ Martin Kleppmann（《DDIA》作者）发文《How to do distributed locking》�
 - 业界共识：锁分两种用途——**效率（efficiency）和正确性（correctness）**。Redis/Redlock 只适合前者；正确性要么用共识存储（ZK 临时顺序节点/zxid、etcd revision）提供有序性做 fencing，要么让下游幂等 + 唯一约束兜底。Kleppmann 推荐 ZK 不是因为 ZK 锁"更好用"，而是因为它能天然给出单调 token。
 
 **② 项目选择**
-项目里是 **Redisson RLock（Sentinel 模式 + Watchdog 续期）**；锁获取失败/Redis 不可用时**降级放行**（`DistributedLockAspect:70`）——也就是把它明确定义为"效率锁"。不做 Redlock：运维复杂、时钟假设苛刻，且正确性本来就不靠锁。
+项目里是 **Redisson RLock（Sentinel 模式 + Watchdog 续期：`leaseTime=-1` 才启用 watchdog，15s 续期）**，锁切面 `@Order(50)` 落在"消息幂等(10)→限流(50)→锁(50)→业务幂等(100)"的切面序里。两条失败语义**不一样**（答辩必须说准）：
+- **抢锁失败**（等待超时、他人持锁）→ 抛 `LOCK_ACQUIRE_FAIL` 业务异常，**拒绝本次请求**（防重复提交，对调用方 fail-closed）；
+- **Redis 连接异常** → catch 后**降级放行**（`DistributedLockAspect:68-74`），把锁让位于下游兜底——这才叫"效率锁"。
+不做 Redlock：运维复杂、时钟假设苛刻，且正确性本来就不靠锁。
 
 **③ 项目怎么兜底（这段就是答案）**
 | 层 | 机制 | 证据 |
 |----|------|------|
-| 效率锁 | Redisson RLock + Watchdog，防重复执行；Redis 不可用降级放行，不假装它保证正确性 | `DistributedLockAspect:70` |
+| 效率锁 | Redisson RLock + Watchdog 防重复执行；**抢锁失败拒绝请求、Redis 故障降级放行**，不假装它保证正确性 | `DistributedLockAspect:68-78,89-93` |
 | 唯一约束 | uk_order_event_seq、uk_claim_no、outbox uk_order_sku_action、uk_user_sku 等，重复写直接冲突 | 各模块 Mapper/DDL |
 | 乐观锁 | `UPDATE ... WHERE status=<期望值>`（订单状态机、券核销、支付单） | OrderEventService、CouponService |
 | Fence 状态机 | `t_tcc_fence` status 1→2/3，`UPDATE ... AND status=1`；Cancel 先插 3 防空回滚、Try 遇 Cancel 判悬挂（等价于资源侧单调状态校验） | `TccFenceService:77-165` |
@@ -31,7 +34,7 @@ Martin Kleppmann（《DDIA》作者）发文《How to do distributed locking》�
 **④ 坑（主动承认）**
 - Sentinel 切主实测 2.3s，窗口内锁可能没同步到新主，出现"双持锁"——我们接受，因为锁丢了数据也不会错。
 - Watchdog 只能续"进程活着"的锁；长 GC/进程被 kill 后锁会按 TTL 释放，下游兜底必须永远在位。
-- 解锁早期不加 owner 校验会误删他人锁 → 一律 Lua `GET==ARGV 才 DEL`；对账锁 RV30 改成随机 token + CAS。
+- 解锁防误放：Redisson 内置解锁用 Lua 校验锁 owner（线程标识），切面再包 `isHeldByCurrentThread()` 防误释放（`DistributedLockAspect:89-93`，unlock 失败由 Watchdog/TTL 兜底）；对账类锁 RV30 改成随机 token + CAS（不靠锁身份判断）。
 
 **⑤ 话术**
 > "Redis 锁在我们这儿是效率工具，不是正确性保证；正确性由 DB 唯一键、乐观锁、fence 状态机和版本控制承担，Redis 挂掉锁降级放行也不会产生脏数据。这跟 Kleppmann 的建议一致——要用多节点多数派（Redlock）才谈 fencing，我们评估后没走这条路。"
@@ -44,7 +47,7 @@ Martin Kleppmann（《DDIA》作者）发文《How to do distributed locking》�
 **追问3：什么场景必须上 ZK/etcd？**
 临界区无法幂等、必须严格串行（全局唯一资源分配、选主、任务只跑一次）。ZK 临时顺序节点天然给出单调序列，etcd 有 lease+revision。代价是运维与延迟，只在真正需要 CP 的地方用。
 **追问4：fail-open 会不会让并发失控？**
-会短暂增加冲突，但不会错（条件更新拦住）。Redis 不可用时业务本身就降级，锁再 fail-closed 只会扩大可用性问题。对"降级放行"计数告警，事后看异常并发。
+会短暂增加冲突，但不会错（条件更新拦住）。Redis 不可用时业务本身就降级，锁再 fail-closed 只会扩大可用性问题。对"降级放行"计数告警，事后看异常并发。**注意区分**：抢锁失败 → 拒绝请求；Redis 故障 → 放行——两种语义答辩时要分开讲。
 **追问5：如果下游完全不能幂等呢？**
 那就必须给下游加 fencing：全局单调序列（DB/发号器/状态机版本号），资源端拒绝比当前版本旧的 token；或者用 DB 行锁把临界区收进单库事务。此时 Redis 锁不适合承担该职责。
 
@@ -54,7 +57,8 @@ Martin Kleppmann（《DDIA》作者）发文《How to do distributed locking》�
 **危险信号**：一上来调 TTL 或上 Redlock；认为"有锁就不会超卖"；解锁不校验 owner。
 
 ## 本项目真实证据
-- `RedissonConfig`：Watchdog 15s、retryAttempts=5/1000ms、主从池 16；`DistributedLockAspect` 按 SpEL key 加锁、Redis 异常 fail-open。
+- `RedissonConfig`：`lock-watchdog-timeout=15000`（注释：Sentinel 切换窗口 5-30s 取 15s）、retryAttempts=5/retryInterval=1000ms、master/slave 连接池 16；文件头即"Redisson Sentinel + DB 乐观锁"的取舍论证。
+- `DistributedLockAspect`：SpEL 动态 key、`@Order(50)`、`leaseTime=-1` 走 watchdog、Redis 异常 fail-open(:68-74)、抢锁失败抛 `LOCK_ACQUIRE_FAIL`(:76-78)、`isHeldByCurrentThread()` 防误放(:89-93)。
 - RV19 演练：Sentinel 6379→6380 切换 2.3s、458 状态键无损、会话无错乱。
 - 正确性：库存 20 并发不超卖、券 10 并发限 2 张、TCC 11 场景全过、8 个对账 Job 收敛差异。
 - 不选 Redlock 的论证在 D02/RV09（触发/替代/止损三问）。
