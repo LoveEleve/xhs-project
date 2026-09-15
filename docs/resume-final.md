@@ -20,6 +20,7 @@ xhs 是一个内容与交易并重的社交电商平台，共 15 个 Spring Clou
 - 库存：Redis 分桶 + Lua 原子预扣 + DB 账本 + TCC fence 状态机的组合方案；预扣幂等表、Outbox 唯一键（order+sku+action）防动作覆盖；超时回补、补偿与对账任务。
 - 订单：ShardingSphere 4 库 × 4 表分片 + 订单号映射表支持非分片键反查；事务消息 + 本地消息表 + Broker 回查保证下单与预扣一致；延迟消息关单 + 状态机 + 事件溯源（序号唯一键 + 乐观锁收敛）。
 - 优惠券：单 Lua 脚本完成库存校验、限领与扣减，msgId + 唯一键双层幂等；核销/退回、Outbox 补偿、过期与对账任务。
+- 支付：发起支付与渠道策略（Mock/支付宝/微信）、回调验签与幂等（重复回调不改状态）、退款单与退款回调、支付/退款超时检测、通知补偿（5 分钟窗口、最多 10 次、批量 100）与每日对账；事件表记录支付状态变迁。
 - 商品：分类树与 SPU/SKU 管理；SPU 详情多级缓存（布隆过滤器前置 + Redis 逻辑过期 + DB 回源，异步单飞刷新，空值占位防穿透），更新后事务提交再失效缓存；创建带幂等键与接口限流。
 - 计数：点赞/收藏/关注等 10 类计数走 Redis，msgId 去重 + 5 秒攒批刷盘，DB 故障重试后回写缓冲、恢复自动补刷；计数对账以 Redis 为准修 DB，并支持从 analytics 权威 Set 重建。
 - 对账与兜底：沉淀 8 个对账/修复任务（库存、券、购物车、未读、关注、本地消息补发、超时关单、订单映射补录），Redis 与 MySQL 差异可自动收敛。
@@ -27,6 +28,9 @@ xhs 是一个内容与交易并重的社交电商平台，共 15 个 Spring Clou
 - 推荐与 Feed：行为上报 → 特征、热池、ItemCF 三个离线任务预计算，线上 6 种召回策略；Feed 推拉结合，大 V 走发件箱拉模式，普通用户按粉丝批量写收件箱并支持 cursor 断点续推。
 - IM 与通知：WebSocket 一致性哈希（150 虚拟节点）把会话固定到实例，跨实例走 Redis pub/sub，离线消息上线补发，ticket 两步握手；通知按自然日窗口聚合（Redis SETNX+Lua，"等 N 人"），SSE 跨实例推送，未读对账限速防雪崩。
 - 网关：8 个过滤器按序组链（BodyCache → 日志 → 鉴权 → 染色 → HMAC → 限流 → 灰度 → 版本）；JWT 注入用户身份并覆盖伪造头，HMAC（默认关闭、按需启用）以 method/path/query/时间戳/nonce/bodyHash 生成签名并用 Lua 防重放。
+- 公共组件（扩展）：号段 ID 生成器（DB 段号 + 双 Buffer 预加载）、读写分离路由（MyBatis 拦截器按 query/update 路由 + @Transactional(readOnly)）、Zone 多活路由与最少连接负载均衡、HTTP ETag/304、Sentinel 舱壁隔离。
+- 部署与运维：27 个容器的 Docker 编排（全部 restart:always + healthcheck 覆盖 + 9 组 depends_on 时序），并核验 compose 配置与运行时零漂移；备份体系（MySQL 每日全量 + binlog 保留 30 天、Redis 每 6 小时 BGSAVE、ES 每日快照）；日志 ILM 30 天滚动删除；沉淀 22 条部署踩坑与开机自愈脚本。
+- 覆盖审计与测试治理：在 117 项矩阵之外做文件级覆盖审计（购物车 34 个文件、内容 38/38、网关 11 个核心类），识别并修复"假修复/假测试"（注释冒充、非原子称原子、测试未真正执行等），补跑 common 53 + user 14 个单测全绿。
 - 公共组件与稳定性：限流、分布式锁、幂等切面按序执行（消息幂等→限流→锁→业务幂等）；MQ 透传 traceId/灰度/压测标记；优雅停机（先摘流量再停、缓冲刷盘）；沉淀 20 个 @XxlJob 兜底任务与 18 个业务 topic；搭建 117 项测试矩阵，用混沌注入框架（Nacos 动态开关）+ iptables 做故障注入，完成容量压测与限流校准、traceId 全链路与 DLQ 治理。
 
 ## 关键结果（Key Achievements）
@@ -42,6 +46,8 @@ xhs 是一个内容与交易并重的社交电商平台，共 15 个 Spring Clou
 - 商品与缓存：布隆过滤器（100 万容量/1% 误判）+ 空值缓存双层防穿透，逻辑过期 30min、物理 TTL 120min；SPU 详情缓存命中时 DB 零回源。
 - 计数刷盘：1 万次点赞合并为约 2000 个计数 key、一次批量 SQL 落库；DB 故障注入后重试转回写缓冲，表恢复自动补刷，计数不丢。
 - 网关与安全：HMAC 合法 200 / 缺签与篡改 403 / 重放 403；Redis 故障鉴权 fail-closed 并自愈；限流按实测容量校准（content/product 500、home/recommend 300），超限精确拒绝。
+- 支付与退款：重复支付回调、重复退款回调均不改状态；退款回补库存与退券走幂等路径，通知补偿失败可自动补发；支付、退款、库存、券每日对账可收敛差异。
+- 部署与备份：27 个容器 healthcheck 全覆盖、依赖时序就绪；备份任务上线（MySQL 每日全量 + binlog 30 天、Redis 每 6 小时、ES 每日快照），并有开机自愈脚本。
 - 性能与容量：product 1020、note 1096、home 764、recommend 761、search 683 RPS 基线；6 秒慢下游注入下首页仍返回 200、约 2 秒降级；ES 从 0.5 核扩到 2 核后搜索 175→683 RPS（P50 115→29ms）；Redis 切主 2.3 秒会话无错乱。
 - 稳定性与可观测：15 个服务健康、117 项测试收口、21 项运行态缺口修复并附回归；traceId 覆盖服务、MQ 与长连接三跳；DLQ 积压按 26 个消费组可见；三组历史死信清账。
 
@@ -50,17 +56,18 @@ xhs 是一个内容与交易并重的社交电商平台，共 15 个 Spring Clou
 # 项目二 · 小红书 AI 运维诊断与知识问答 Agent（【时间】 | 独立开发）
 
 ## 项目介绍
-xhs-ai 是面向上述 15 微服务交易系统的 AIOps 诊断与知识问答 Agent，从零设计并实现。以自然语言为入口，自动编排 DLQ / 日志 / 指标 / 知识 / 代码五类共 16 个自研工具，输出可回链的定位结论；对死信重投等危险变更实施 HITL 审批与可校验审计；配套检索/答案/Agent 三层评测体系与按用户 token 预算治理。技术栈 AgentScope 2.0 Java（Harness / HITL / Redis 状态存储）、Spring Boot 3.2.5、JDK 17，接入 RocketMQ Admin / Elasticsearch / Prometheus / MySQL / Redis，单机 systemd 托管，接入 ELK 与 Prometheus 告警。
+xhs-ai 是面向上述 15 微服务交易系统的 AIOps 诊断与知识问答 Agent，从零设计并实现。以自然语言为入口，自动编排 DLQ / 日志 / 指标 / 知识 / 代码五类共 16 个自研工具，输出可回链的定位结论；对死信重投等危险变更实施 HITL 审批与可校验审计；配套检索/答案/Agent 三层评测体系与按用户 token 预算治理。技术栈 AgentScope 2.0 Java（Harness / HITL / Redis 状态存储）、Spring Boot 3.2.5、JDK 17；模型走双通道——聊天 deepseek-v4-pro、Agent 工具循环 qwen3.8-flash、降级 deepseek-v4-flash；接入 RocketMQ Admin / Elasticsearch / Prometheus / MySQL / Redis，单机 systemd 托管，接入 ELK 与 Prometheus 告警。
 
 ## 职责描述（Responsibilities）
 - 需求与架构：主导需求工程（34 个业务场景，REQ→AC→TC 全链路追溯，含 NFR/STRIDE 威胁模型）；确定分层架构与 23 条 ADR（AgentScope 选型、Redis 状态存储、BM25 先行、模型网关、策略引擎、观测合规、扩展框架等）；划清框架边界（Flyway 只管 ai_*，不碰 agentscope_*）。
 - 测试与工程规范：设计六层测试矩阵——单测 14 / 契约 17（LLM 桩 + fixture 录制回放）/ 集成 13 / E2E 10 / 评测 50 / 红队 6 + 性能 4；落地 E1~E7 工程规范（依赖 BOM+Enforcer、出网仅两个域名、受控只读 SQL 三层、审计只追加不可改、灰度回滚 ≤5min）。
-- 工具与编排：设计 16 个自研工具（DLQ 诊断/重投、日志检索/Top 服务、指标 Top/趋势/PromQL 兜底、标签探索、消费积压、ES 索引/DSL 兜底、代码定位、知识卡目录/检索/读取）；ES DSL 与 PromQL 全部在服务端拼装，模型只填业务参数，并对参数做 clamp、服务名/索引/PromQL 白名单校验；统一错误返回与只读标记。
+- 工具与编排：设计 16 个自研工具（DLQ 诊断/重投、日志检索/Top 服务、指标 Top/趋势/PromQL 兜底、标签探索、消费积压、ES 索引/DSL 兜底、代码定位、知识卡目录/检索/读取）；ES DSL 与 PromQL 全部在服务端拼装，模型只填业务参数，并对参数做 clamp、服务名/索引/PromQL 白名单校验；统一错误返回与只读标记。16 个工具：dlq_topic_list / dlq_message_detail / dlq_redeliver / consumer_lag_top / log_search / log_top_services / es_search / es_index_list / metric_top / metric_trend / metric_query / metric_labels / knowledge_catalog / knowledge_search / card_read / code_locate。
 - 提示词与行为约束：系统提示 13 条硬约束（同一工具最多 1 次、参数报错禁止重调、总工具调用 ≤4、系统本体问题必须走知识检索、锚点事实两关键词各查一次并读卡、引用只允许卡片 id），配合 ReAct 循环（maxIters=12、温度 0.2）控制行为边界。
 - HITL 审批闭环：设计"诊断→提案→审批→执行→核验→审计"状态机；审批超时 fail-closed、同会话同指纹 pending 复用、原文指纹执行前复核；审批决策跨实例 pub/sub 事件通知（业务续跑订阅未接线）；重投后按消息所在队列的消费位点核验是否真被消费，可区分 reentered_dlq / verified_consumed / 无位点证据；always 授权写会话授权表（先撤销旧授权，后续同工具直执）、reject 级联拒绝同会话其余待审；审批执行崩溃自动补执行、卡在 executing 超时回收为失败交人工重试。
 - 评测体系：检索级（30 条 hit@1）、答案级（50 条关键词 + 引用存在性硬校验，SEC 拒答用例）、Agent 级（工具选择 12 题、轨迹部分分、4 例 × 3 次稳定性）；KB 门禁 hit@1≥90%、答案门禁通过率≥90% 且引用必须全部有效；评测与单测、审计一致性、审计哈希链组成门禁脚本（本地一键），评测集 14 条轨迹用例 + 50 条答案用例 + 8 项红队断言。
 - 模型网关与成本：网关实现传输重试（仅连接超时/重置/流中断，已出流不降级重放）、熔断半开（冷却后放行探测、成功清零）、备用与轻量模型降级、调用/耗时/Token 指标；按用户 token 预算三段（真实 usage 计量 → 软限 80% 切轻量模型 → 硬限 429），工具 schema token 预算指标（软 12k），单用户/全局并发护栏，请求幂等（X-Request-Id，重复提交回放、处理中 409）。
 - 可靠性与恢复：Agent 状态存 Redis（进程重启可续聊）；状态丢失时从 ai_message 重建最近对话 + 滚动摘要注入；会话摘要任务（保留最近 20 条、超 50 条触发、轻量模型压缩 ≤300 字）；数据保留清理（消息 90 天 / 审计 365 天 / 状态空闲 30 天后过期）；MCP 子进程自愈（探测 + 三连击 + 限流 + systemd 拉起，默认仅告警）；去 MCP 化后 16 个工具全部自研，kill 两个 MCP 进程仍可完成 ES/Prom 诊断。
+- 接口与部署：对外提供 7 组 REST 接口（对话、Agent、审批、知识、MCP 直连、会话、评测），三级鉴权（内部令牌 / 平台 JWT / 管理令牌 ADMIN），未授权一律 401；systemd 托管，JSON 日志 100MB 滚动保留 7 天，Prometheus 指标仅本机回环抓取。
 - 安全与权限：RBAC 消费平台 JWT 角色（ADMIN/OPERATOR/VIEWER），管理端点（重索引/评测/诊断/MCP 直连）收敛 ADMIN；审计只追加 + 哈希链防篡改（SHA-256 前向链 + 链头行锁）+ 参数脱敏与密钥形态打码；敏感数据出网默认脱敏；红队 8 项回归（未授权/注入/密钥诱导/越权审批/危险工具/洪水/方法混淆/直调）；MCP 白名单与工具名缓存（TTL 10min，未知工具快速失败），管理端点全部收敛 ADMIN。
 - 可观测与运营：17 个自定义指标（工具数/schema token/工具调用与失败率/运行时长/模型调用与 Token/熔断/预算决策/审批事件与恢复/MCP 健康/清理量）；7 条 Prometheus 告警（实例可用/5xx/熔断/预算拒绝/MCP 健康/P95/schema 预算）；traceId 贯穿 HTTP、工具调用与审计；会话按 (userId, sessionId) 归属校验防越权读取；ADMIN 运维端点（消费位点诊断、会话摘要、知识重索引）。
 - 知识层：55 张结构化知识卡（架构 11 / 业务 7 / 代码导航 36 / 失败模式 1）+ ES BM25 检索 + 卡片目录/检索/整卡读取工具 + code_locate 文件行号定位；不建默认 RAG：以 BM25 为基线（hit@1=100%），向量方案按"触发 + 止损"规则不启动（触发：hit@1<90% 且失败以词汇不匹配为主；止损：无 ≥5% 提升即删除向量路径）。
