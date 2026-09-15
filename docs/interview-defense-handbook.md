@@ -233,7 +233,7 @@
 4. **Feed 推拉模型**（Twitter/微博写扩散 vs 读扩散、大V阈值、断点续推）；
 5. **TCC fence**（附录 D′）；6. **消息乱序与版本**（附录 G′）；7. **对账体系**（附录 R′）；
 8. **分库分表**（附录 M′）；9. **IM/SSE 跨实例**（附录 I′+J′）；10. **计数 Buffer**（附录 K′）；
-11. **限流**（附录 L′）；12. **网关 HMAC**（附录 Q′）；13. **DLQ 治理**（附录 O′）；14. **traceId 跨协议**（附录 P′）。
+11. **限流**（附录 L′）；12. **网关 HMAC**（附录 Q′）；13. **DLQ 治理**（附录 O′）；14. **traceId 跨协议**（附录 P′）；15. **LLM 工具设计**（附录 T′）。
 
 ## 待展开清单（按"最容易被追问"排序）
 
@@ -375,4 +375,16 @@
 **④ 兜底手段。** 入口必生成；Feign/MQ/WS 三条通道各自透传；线程池包装器 finish 时 finally clear；实测 order→MQ→inventory 同一 trace、双 IM 实例两端同 trace。
 
 **⑤ 话术（30 秒版）。** "traceId 的难点在跨线程和跨协议：HTTP 有 header，MQ 要自己包，WebSocket 要放消息体里；线程池复用必须 finally clear，否则串号——这个坑我们踩过，现在三条通道都有兜底和实测。"
+
+## T′. LLM 工具设计：给模型的接口不是给程序员的接口
+
+**① 业界背景。** Function Calling / MCP 生态里，工具 schema 直接决定模型的选择准确率与调用成功率。Anthropic/OpenAI 的工具设计指南反复强调：参数少而扁平、命名语义化、描述里写"何时用/何时不用"、示例优于解释。业界另一个趋势是**渐进加载**（tool_search / 懒加载技能），因为工具数量膨胀会同时抬高 token 成本与误选率——我们 32 个工具虽未到阈值，但已在 Agent 侧设了软 32/硬 40 的预算护栏。
+
+**② 项目选型与理由。** 我们最初把数据源原样暴露：ES 的 `search` 要 `index` + 完整 DSL，Prometheus 的 `query` 要手写 PromQL。实测 qwen3.8-flash 在嵌套 schema 上**连续 3 次缺参**（`required property 'index' not found`）、P95 聚合**答非所问**（98s）。于是把查询组装收回到服务端，向模型暴露**业务级工具**：`log_top_services(level,minutes,topN)`、`log_search(service,level,keyword,minutes,size)`、`metric_top(metric,service?,topN)`、`metric_trend(metric,service,minutes)`、`consumer_lag_top(topN)`。模型只填业务语义参数，DSL/PromQL 由 `LogQueryBuilder`/`MetricQueryBuilder` 白名单生成。同题对比：5xx 63s→52s，P95 98s(答偏)→50s，趋势从"做不到"到 33s 且能区分冷启动与平台期。
+
+**③ 已知坑（主动承认）。** 工具**注册成功 ≠ 可用**：ES 工具因框架权限默认 ASK 挂起过（`MCP client not initialized`/空答复）；子进程被 kill 后需进程级自愈；工具数量到 32 已触及软预算，再涨必须先做 token 预算与 tool_search；业务级工具覆盖面有限（复杂聚合仍要回退裸 query）；模型偶发不按"只查一次"的约束执行，靠 prompt + 工具内部超时兜。
+
+**④ 兜底手段。** 参数 clamp（minutes≤1440/size≤100/topN≤50）+ 服务名校验正则；白名单指标目录（非法 metric 直接报错给模型纠错）；只读工具 + 审计留痕；每个工具有单测（当前 40/40）；工具总数指标 `ai_agent_tools_total` + 软硬预算；裸查询工具保留作兜底并在 prompt 里标明适用边界。
+
+**⑤ 话术（30 秒版）。** "给 LLM 的工具接口要按任务设计，不是按数据源。我们踩过模型填不对 ES DSL 的坑，所以把 DSL/PromQL 收回服务端，只暴露业务参数——P95 查询从 98 秒答偏变成 50 秒答对。工具不是越多越好，32 个已到软预算，下一步是 tool_search 渐进加载。如果重来，我会从第一天就用业务级工具目录 + 单测守着。"
 

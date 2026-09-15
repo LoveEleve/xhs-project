@@ -57,6 +57,18 @@
 
 - 测试：`MetricQueryBuilderTest` 6 例；累计 **39/39**；工具总数 31（11 自研 + ES 3 + Prom 17）。
 
+## 4.3 消费积压诊断工具 + 全链路下单支付（RV23，已交付）
+
+| 项 | 方式 | 结果 |
+|----|------|------|
+| 新增工具 | `consumer_lag_top(topN)`：按 `%RETRY%<group>` 自动发现消费组、汇总 broker/consumer 位点差 | 单测覆盖组解析；累计 40/40 |
+| 造积压 | 停 my-xhs-counter → broker 容器内注入器发 80 条 LIKE 消息 | `mqadmin consumerProgress` 独立核验 Diff=80 |
+| AI 诊断 | 问"哪个消费组积压最多/可能原因" | ✅ 113s 命中 `counter-consumer-group` lag=80（9 队列/maxQueueLag=10），并排除队列倾斜 |
+| 恢复 | 重启 counter | 积压 80→0，消费无死信 |
+| 全链路数据 | `scripts/order-flow.sh`：登录→地址→5 单创建→Mock 支付 | ✅ 5/5 单支付成功（orderId/orderNo/金额入库） |
+
+> 工具总数 32（12 自研 + 20 MCP），已达软预算 32——下一项工具前须先做 token 预算或 tool_search。
+
 ## 5. 证据
 
 - 原始响应：`/tmp/opencode/drill-dlq-{1,2}.json`、`drill-log-{1,2,3}.json`、`drill-prom-1.json`、`drill-redeliver-1.json`、`approval-21-reply.json`（本机临时目录，关键结论已摘录本报告）

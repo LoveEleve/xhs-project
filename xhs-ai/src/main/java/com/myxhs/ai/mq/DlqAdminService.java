@@ -34,6 +34,7 @@ import java.util.Map;
 public class DlqAdminService {
 
     private static final String DLQ_PREFIX = "%DLQ%";
+    private static final String RETRY_PREFIX = "%RETRY%";
     private static final int BODY_TRUNCATE = 4000;
 
     @Value("${ai.mq.namesrv-addr:127.0.0.1:9876}")
@@ -206,6 +207,53 @@ public class DlqAdminService {
         result.put("diff", brokerOffset - consumerOffset);
         result.put("queues", stats.getOffsetTable().size());
         return result;
+    }
+
+    /** 消费积压 TopN：按 %RETRY%<group> 自动发现消费组并汇总各队列 lag（不硬编码组名） */
+    public List<Map<String, Object>> consumerLagTop(int topN) throws Exception {
+        List<String> groups = retryGroups(admin().fetchAllTopicList().getTopicList());
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (String group : groups) {
+            try {
+                org.apache.rocketmq.remoting.protocol.admin.ConsumeStats stats = admin().examineConsumeStats(group);
+                long lag = 0;
+                long maxQueueLag = 0;
+                int queues = 0;
+                for (Map.Entry<MessageQueue, org.apache.rocketmq.remoting.protocol.admin.OffsetWrapper> entry
+                        : stats.getOffsetTable().entrySet()) {
+                    long diff = entry.getValue().getBrokerOffset() - entry.getValue().getConsumerOffset();
+                    if (diff > 0) {
+                        lag += diff;
+                        maxQueueLag = Math.max(maxQueueLag, diff);
+                    }
+                    queues++;
+                }
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("group", group);
+                item.put("lag", lag);
+                item.put("maxQueueLag", maxQueueLag);
+                item.put("queues", queues);
+                result.add(item);
+            } catch (Exception e) {
+                log.debug("[消费积压] 组查询跳过 group={}: {}", group, e.getMessage());
+            }
+        }
+        result.sort((a, b) -> Long.compare(((Number) b.get("lag")).longValue(), ((Number) a.get("lag")).longValue()));
+        return result.size() > topN ? result.subList(0, topN) : result;
+    }
+
+    /** %RETRY%<group> topic → 消费组名（去重排序） */
+    public static List<String> retryGroups(java.util.Collection<String> topics) {
+        List<String> groups = new ArrayList<>();
+        for (String topic : topics) {
+            if (topic != null && topic.startsWith(RETRY_PREFIX) && topic.length() > RETRY_PREFIX.length()) {
+                String group = topic.substring(RETRY_PREFIX.length());
+                if (!groups.contains(group)) {
+                    groups.add(group);
+                }
+            }
+        }
+        return groups;
     }
 
     /** 指定队列的消费位点（重投消息所在队列，位点越过 queueOffset 视为已消费） */

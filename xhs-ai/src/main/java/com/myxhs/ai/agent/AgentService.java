@@ -11,6 +11,7 @@ import com.myxhs.ai.agent.tools.LogSearchTool;
 import com.myxhs.ai.agent.tools.LogTopServicesTool;
 import com.myxhs.ai.agent.tools.MetricTopTool;
 import com.myxhs.ai.agent.tools.MetricTrendTool;
+import com.myxhs.ai.agent.tools.ConsumerLagTool;
 import com.myxhs.ai.audit.AuditService;
 import com.myxhs.ai.config.McpClientManager;
 import com.myxhs.ai.config.McpProperties;
@@ -91,6 +92,7 @@ public class AgentService {
                 - metric_top：metric 取 error_rate(5xx错误率%)/qps/latency_p95/slow_uri(最慢接口)/heap_mb，可选 service/topN；
                 - metric_trend：metric 取 error_rate/qps/latency_p95 + service + minutes（判断突发还是持续）。
                 仅当需要复杂 PromQL（多标签聚合/自定义函数）时才用 Prometheus 的 query/range_query。
+            12.3 消费积压/消费延迟/消费者离线类问题：调用 consumer_lag_top（broker 位点与消费位点差值 TopN），不要逐组分页查。
                 不得只做口头计划或凭印象作答；工具返回空也要给出检索条件。
             13. 引用纪律：只能引用工具实际返回的卡片 id/path 或代码位置；引用卡片一律用其 id（不带 .yaml），
                 不得编造文件名或路径（如虚构的 xx-01.md）。无法确认出处时说明"未找到出处"，宁可少引用。
@@ -116,6 +118,7 @@ public class AgentService {
     private final LogTopServicesTool logTopServicesTool;
     private final MetricTopTool metricTopTool;
     private final MetricTrendTool metricTrendTool;
+    private final ConsumerLagTool consumerLagTool;
 
     @Value("${REDIS_SENTINEL_MASTER:mymaster}")
     private String sentinelMaster;
@@ -153,6 +156,7 @@ public class AgentService {
         toolkit.registerAgentTool(logTopServicesTool);
         toolkit.registerAgentTool(metricTopTool);
         toolkit.registerAgentTool(metricTrendTool);
+        toolkit.registerAgentTool(consumerLagTool);
         registerMcpWithAllowlist(toolkit);
         Set<HostAndPort> sentinels = Arrays.stream(sentinelNodes.split(","))
                 .map(String::trim).filter(s -> !s.isBlank())

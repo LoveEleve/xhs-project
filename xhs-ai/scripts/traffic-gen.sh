@@ -56,7 +56,7 @@ for i in $(seq 1 "$ROUNDS"); do
     count "$(api -X POST -H 'Content-Type: application/json' -d "{\"bizType\":1,\"bizId\":$((RANDOM % 5 + 1))}" http://localhost:19003/api/social/like)"
     count "$(api -X POST -H 'Content-Type: application/json' -d "{\"noteId\":$((RANDOM % 5 + 1))}" http://localhost:19003/api/social/favorite)"
   fi
-  if [ $((i % NOTE_EVERY)) -eq 0 ]; then
+  if [ "$NOTE_EVERY" -gt 0 ] && [ $((i % NOTE_EVERY)) -eq 0 ]; then
     count "$(api -X POST -H 'Content-Type: application/json' -d "{\"title\":\"流量构造 $TID_PREFIX-$i\",\"content\":\"AI 实测流量构造笔记\",\"noteType\":0}" http://localhost:19002/api/note/publish)"
     count "$(api -X POST -H 'Content-Type: application/json' -d "{\"noteId\":$((RANDOM % 5 + 1)),\"content\":\"流量评论 $i\"}" http://localhost:19002/api/comment)"
   fi
