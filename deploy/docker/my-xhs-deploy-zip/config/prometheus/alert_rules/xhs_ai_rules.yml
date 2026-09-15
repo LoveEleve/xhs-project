@@ -1,0 +1,67 @@
+groups:
+  - name: xhs-ai
+    rules:
+      - alert: XhsAiDown
+        expr: up{instance=~"127.0.0.1:19020"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "xhs-ai 实例不可达"
+          description: "Prometheus 连续 2 分钟抓取不到 xhs-ai（{{ $labels.instance }}）"
+
+      - alert: XhsAiHigh5xx
+        expr: |
+          sum(rate(http_server_requests_seconds_count{application="xhs-ai",status=~"5.."}[5m]))
+            / clamp_min(sum(rate(http_server_requests_seconds_count{application="xhs-ai"}[5m])), 0.001) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "xhs-ai 5xx 比例 >10%"
+          description: "近 5 分钟 5xx 占比 {{ $value | humanizePercentage }}"
+
+      - alert: XhsAiModelBreakerOpen
+        expr: increase(ai_model_calls_total{result="breaker_open"}[10m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "模型网关熔断被打开"
+          description: "10 分钟内 {{ $value }} 次请求因熔断走备用/快失败"
+
+      - alert: XhsAiBudgetHardReject
+        expr: increase(ai_model_budget_total{result="hard_reject"}[15m]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "用户 token 预算硬限拒绝增多"
+          description: "15 分钟内 {{ $value }} 次预算拒绝，可能需调预算或排查异常调用"
+
+      - alert: XhsAiMcpUnhealthy
+        expr: ai_mcp_health == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MCP server 不健康（{{ $labels.server }}）"
+          description: "MCP 子进程探测失败，相关工具不可用；检查自愈/重启"
+
+      - alert: XhsAiAgentLatencyP95High
+        expr: histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{application="xhs-ai",uri="/api/ai/agent/chat"}[10m]))) > 60
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Agent 诊断 P95 延迟 >60s"
+          description: "近 10 分钟 P95={{ $value }}s，检查模型网关/工具超时"
+
+      - alert: XhsAiToolSchemaBudget
+        expr: ai_agent_tool_schema_tokens > 12000
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: "工具 schema token 超软预算"
+          description: "schema≈{{ $value }} tokens，考虑精简工具或工具检索"

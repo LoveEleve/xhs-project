@@ -118,6 +118,7 @@ public class AgentService {
     private final LogTopServicesTool logTopServicesTool;
     private final MetricTopTool metricTopTool;
     private final MetricTrendTool metricTrendTool;
+    private final AgentConcurrencyGuard agentConcurrencyGuard;
     private final ConsumerLagTool consumerLagTool;
 
     @Value("${REDIS_SENTINEL_MASTER:mymaster}")
@@ -254,8 +255,10 @@ public class AgentService {
                 .includeReasoningChunk(true)
                 .build();
         auditService.record(userId, "agent.chat", "session=" + sessionId, null, "start");
+        agentConcurrencyGuard.acquire(userId);
         return agent.stream(List.of(new UserMessage(message)), options, context)
-                .contextWrite(ctx -> ctx.put(com.myxhs.ai.model.TokenBudget.USER_ID_KEY, userId));
+                .contextWrite(ctx -> ctx.put(com.myxhs.ai.model.TokenBudget.USER_ID_KEY, userId))
+                .doFinally(signal -> agentConcurrencyGuard.release(userId));
     }
 
     /** 同步执行（收集最终答复并归档） */

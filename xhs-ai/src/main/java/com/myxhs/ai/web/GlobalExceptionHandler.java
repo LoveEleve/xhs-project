@@ -16,6 +16,13 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @org.springframework.web.bind.annotation.ExceptionHandler(
+            com.myxhs.ai.agent.AgentConcurrencyGuard.TooManyRequestsException.class)
+    @org.springframework.web.bind.annotation.ResponseStatus(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS)
+    public R<Void> handleTooManyRequests(com.myxhs.ai.agent.AgentConcurrencyGuard.TooManyRequestsException e) {
+        return R.fail(429, e.getMessage());
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<R<Void>> handleValidation(MethodArgumentNotValidException e) {
         String message = e.getBindingResult().getFieldErrors().stream()
