@@ -1,0 +1,46 @@
+{
+  "avgScore": 0.7,
+  "runs": 5,
+  "rows": [
+    {
+      "case": "TS-02",
+      "run": 1,
+      "score": 1.0,
+      "matched": "2/2",
+      "extra": 2,
+      "tools": "dlq_topic_list|dlq_message_detail|log_search|knowledge_search"
+    },
+    {
+      "case": "TS-05",
+      "run": 1,
+      "score": 1.0,
+      "matched": "1/1",
+      "extra": 1,
+      "tools": "metric_top|metric_query"
+    },
+    {
+      "case": "TS-11",
+      "run": 1,
+      "score": 0.0,
+      "matched": "0/3",
+      "extra": 2,
+      "tools": "metric_query|metric_labels"
+    },
+    {
+      "case": "TS-13",
+      "run": 1,
+      "score": 1.0,
+      "matched": "2/2",
+      "extra": 1,
+      "tools": "dlq_topic_list|dlq_message_detail|log_search"
+    },
+    {
+      "case": "TS-14",
+      "run": 1,
+      "score": 0.5,
+      "matched": "1/2",
+      "extra": 2,
+      "tools": "log_top_services|log_search|es_search"
+    }
+  ]
+}

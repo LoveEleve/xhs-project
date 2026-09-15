@@ -1,0 +1,14 @@
+{
+  "avgScore": 0.5,
+  "runs": 1,
+  "rows": [
+    {
+      "case": "TS-14",
+      "run": 1,
+      "score": 0.5,
+      "matched": "1/2",
+      "extra": 2,
+      "tools": "log_top_services|es_search|log_search"
+    }
+  ]
+}
