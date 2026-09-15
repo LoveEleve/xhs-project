@@ -116,17 +116,30 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
             return unauthorized(exchange, "Token 类型错误，请使用 Access Token");
         }
 
-        // 5. 检查 Token 是否在黑名单中
-        String jti = claims.getId();
-        if (isBlacklisted(jti)) {
-            log.info("[Gateway] 鉴权失败, Token 已被注销, jti={}, userId={}, path={}", jti, claims.getSubject(), path);
-            return unauthorized(exchange, "Token 已被注销");
-        }
+        // 5+6. RV33：黑名单查询（Redis）移出 Netty EventLoop（boundedElastic），通过后再注入身份放行
+        final String jti = claims.getId();
+        final String effectiveTraceId = traceId;
+        return Mono.fromCallable(() -> isBlacklisted(jti))
+                .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
+                .onErrorResume(e -> {
+                    // 黑名单查询异常：安全优先（fail-closed），拒绝该请求
+                    log.warn("[Gateway] 黑名单查询异常，按未认证处理: {}", e.getMessage());
+                    return Mono.just(Boolean.TRUE);
+                })
+                .flatMap(blacklisted -> {
+                    if (Boolean.TRUE.equals(blacklisted)) {
+                        log.info("[Gateway] 鉴权失败, Token 已被注销, jti={}, userId={}, path={}",
+                                jti, claims.getSubject(), path);
+                        return unauthorized(exchange, "Token 已被注销");
+                    }
+                    return continueChain(exchange, chain, claims, path, method, effectiveTraceId);
+                });
+    }
 
-        // 6. 鉴权通过，注入 X-User-Id 和 X-Trace-Id Header
+    /** 鉴权通过：注入 X-User-Id/X-User-Role/X-Trace-Id 并放行 */
+    private Mono<Void> continueChain(ServerWebExchange exchange, GatewayFilterChain chain,
+                                     Claims claims, String path, String method, String traceId) {
         // C-07: 使用 set() 覆盖而非 header() 追加，防止客户端伪造 X-User-Id
-        // Gateway 集成（2026-08-17）：X-User-Role 从 JWT role claim 注入（set 覆盖防伪造），
-        // role 由 my-xhs-user 登录时写入（t_user.role 真源）
         final String uid = claims.getSubject();
         // RV30：sub 为空仍注入空 X-User-Id 会让下游拿到空身份，必须拒绝
         if (uid == null || uid.isBlank()) {

@@ -23,7 +23,7 @@
 |---|------|------|
 | 1 | product：Canal `t_sku` 变更不进 ES | ✅ 已修（按 spu_id 拉详情重索引父 SPU，RV32），已部署 |
 | 2 | product：SPU 幂等键=名称+类目 | ✅ 已修（键加 userId，`ProductController:57`），已部署 |
-| 3 | gateway：WebFlux 内同步 Redis 阻塞 EventLoop | ⚠️ 决策：安全过滤器内阻塞点（黑名单/密钥/nonce）改为 `Mono.fromCallable().subscribeOn(boundedElastic)` 需配合压测与红队回归；列入下一批（含超时与脱敏日志） |
+| 3 | gateway：WebFlux 内同步 Redis 阻塞 EventLoop | ✅ 已修（RV33）：黑名单查询改 `Mono.fromCallable().subscribeOn(boundedElastic)` + 异常 fail-closed；实测 401/200/注销后 401。HMAC 分支的密钥/nonce 阻塞点（默认关闭）按同法改造，列入下次启用 HMAC 前必做 |
 | 6 | inventory：SKU 不存在静默 ACK（单成未扣且不可见） | ✅ 已修（写异常集合 + 抛错入 DLQ 可见），已部署 |
 | 10 | user：验证码 Redis 写失败仍 200 | ✅ 误报（CaptchaService 用 StringRedisTemplate 直写，失败会抛错） |
 | 7 | cart：Product 降级 fail-open | ✅ 取舍保留（可用性优先，列表层 valid 标记兜底；代码注释已说明） |
