@@ -27,8 +27,8 @@ xhs 是一个内容与交易并重的社交电商平台，共 15 个 Spring Clou
 - 搜索：Canal + MQ 双通道同步 ES，外部版本号拒绝陈旧写、tombstone 防旧消息复活；搜索建议（completion+前缀缓存）、热搜榜（实时+快照+置顶/屏蔽+反作弊）、搜索历史（去重截断+TTL）、search_after 深分页、增量补偿与全量重建（别名切换）。
 - 推荐与 Feed：行为上报 → 特征、热池、ItemCF 三个离线任务预计算，线上 6 种召回策略；Feed 推拉结合，大 V 走发件箱拉模式，普通用户按粉丝批量写收件箱并支持 cursor 断点续推。
 - IM 与通知：WebSocket 一致性哈希（150 虚拟节点）把会话固定到实例，跨实例走 Redis pub/sub，离线消息上线补发（上限 1000 条/7 天），已读/未读同步，多端登录踢旧连接，ticket 两步握手；通知按自然日窗口聚合（Redis SETNX+Lua，"等 N 人"），SSE 跨实例推送，未读对账限速防雪崩。
-- 网关：8 个过滤器按序组链（BodyCache → 日志 → 鉴权 → 染色 → HMAC → 限流 → 灰度 → 版本）；JWT 注入用户身份并覆盖伪造头，HMAC（默认关闭、按需启用）以 method/path/query/时间戳/nonce/bodyHash 生成签名并用 Lua 防重放；维护 17 条服务路由，灰度按用户哈希 10% 分流、版本头默认 v1 未知降级。
-- 公共组件（扩展）：号段 ID 生成器（DB 段号 + 双 Buffer 预加载）、读写分离路由（MyBatis 拦截器按 query/update 路由 + @Transactional(readOnly)）、Zone 多活路由与最少连接负载均衡、HTTP ETag/304、Sentinel 舱壁隔离。
+- 网关：8 个过滤器按序组链（BodyCache → 日志 → 鉴权 → 染色 → HMAC → 限流 → 灰度 → 版本）；JWT 注入用户身份并覆盖伪造头，HMAC（默认关闭、按需启用）以 method/path/query/时间戳/nonce/bodyHash 生成签名并用 Lua 防重放；维护 16 条服务路由；灰度按用户哈希 10% 打标（实例过滤未实现）、版本头默认 v1、未知版本降级。
+- 公共组件（扩展）：号段 ID 生成器（DB 段号 + 双 Buffer 预加载）、读写分离路由（inventory 已启用；MyBatis 拦截器 + readOnly 事务路由）、Zone 多活路由与最少连接负载均衡、HTTP ETag/304、Sentinel 客户端接入（网关兜底规则 + Dashboard，规则经控制台导入）。
 - 部署与运维：27 个容器的 Docker 编排（全部 restart:always + healthcheck 覆盖 + 9 组 depends_on 时序），并核验 compose 配置与运行时零漂移；备份体系（MySQL 每日全量 + binlog 保留 30 天、Redis 每 6 小时 BGSAVE、ES 每日快照）；日志 ILM 30 天滚动删除；沉淀 22 条部署踩坑与开机自愈脚本。
 - 覆盖审计与测试治理：在 117 项矩阵之外做文件级覆盖审计（购物车 34 个文件、内容 38/38、网关 11 个核心类），识别并修复"假修复/假测试"（注释冒充、非原子称原子、测试未真正执行等），补跑 common 53 + user 14 个单测全绿。
 - 公共组件与稳定性：限流、分布式锁、幂等切面按序执行（消息幂等→限流→锁→业务幂等）；MQ 透传 traceId/灰度/压测标记；优雅停机（先摘流量再停、缓冲刷盘）；沉淀 20 个 @XxlJob 兜底任务与 18 个业务 topic；搭建 117 项测试矩阵，用混沌注入框架（Nacos 动态开关）+ iptables 做故障注入，完成容量压测与限流校准、traceId 全链路与 DLQ 治理。
@@ -60,7 +60,7 @@ xhs-ai 是面向上述 15 微服务交易系统的 AIOps 诊断与知识问答 A
 
 ## 职责描述（Responsibilities）
 - 需求与架构：主导需求工程（34 个业务场景，REQ→AC→TC 全链路追溯，含 NFR/STRIDE 威胁模型）；确定分层架构与 23 条 ADR（AgentScope 选型、Redis 状态存储、BM25 先行、模型网关、策略引擎、观测合规、扩展框架等）；划清框架边界（Flyway 只管 ai_*，不碰 agentscope_*）。
-- 测试与工程规范：设计六层测试矩阵——单测 14 / 契约 17（LLM 桩 + fixture 录制回放）/ 集成 13 / E2E 10 / 评测 50 / 红队 6 + 性能 4；落地 E1~E7 工程规范（依赖 BOM+Enforcer、出网仅两个域名、受控只读 SQL 三层、审计只追加不可改、灰度回滚 ≤5min）。
+- 测试与工程规范：设计六层测试矩阵——单测 14 / 契约 17（LLM 桩 + fixture 录制回放）/ 集成 13 / E2E 10 / 评测 50 / 红队 6 + 性能 4；按 E1~E7 工程规范执行（依赖 BOM+Enforcer、出网收敛到两个域名、受控只读 SQL 三层、审计只追加、灰度与回滚流程）。
 - 工具与编排：设计 16 个自研工具（DLQ 诊断/重投、日志检索/Top 服务、指标 Top/趋势/PromQL 兜底、标签探索、消费积压、ES 索引/DSL 兜底、代码定位、知识卡目录/检索/读取）；ES DSL 与 PromQL 全部在服务端拼装，模型只填业务参数，并对参数做 clamp、服务名/索引/PromQL 白名单校验；统一错误返回与只读标记。16 个工具：dlq_topic_list / dlq_message_detail / dlq_redeliver / consumer_lag_top / log_search / log_top_services / es_search / es_index_list / metric_top / metric_trend / metric_query / metric_labels / knowledge_catalog / knowledge_search / card_read / code_locate。
 - 提示词与行为约束：系统提示 13 条硬约束（同一工具最多 1 次、参数报错禁止重调、总工具调用 ≤4、系统本体问题必须走知识检索、锚点事实两关键词各查一次并读卡、引用只允许卡片 id），配合 ReAct 循环（maxIters=12、温度 0.2）控制行为边界。
 - HITL 审批闭环：设计"诊断→提案→审批→执行→核验→审计"状态机；审批超时 fail-closed、同会话同指纹 pending 复用、原文指纹执行前复核；审批决策跨实例 pub/sub 事件通知（业务续跑订阅未接线）；重投后按消息所在队列的消费位点核验是否真被消费，可区分 reentered_dlq / verified_consumed / 无位点证据；always 授权写会话授权表（先撤销旧授权，后续同工具直执）、reject 级联拒绝同会话其余待审；审批执行崩溃自动补执行、卡在 executing 超时回收为失败交人工重试。

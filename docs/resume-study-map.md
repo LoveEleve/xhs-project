@@ -73,3 +73,14 @@
 | FMEA 18 项演练 | 实做 4+5 场景 | "18 项是设计清单，实做 9 个场景（含 4 个依赖故障 + 5 个真实流量场景），其余按需触发" |
 
 > 平台侧提醒：13 个服务共 236 个 @Test 方法（未验证当前全绿，简历不写）；覆盖率未采集（CI 声明了 JaCoCo 产物但 pom 未配插件）。
+
+## 第七轮：AI 缺口清单（"你们还差什么"标准答法）
+> 素材：`xhs-ai/docs/mining/observability-truth-and-gaps-20260915.md`
+
+OTel/Langfuse 未接（设计在 D03，实际用 Prometheus+traceId 替代）｜capture 三模式表结构在、代码未读写｜DLP 只做密钥/关键字段脱敏，无手机邮箱身份证｜成本只有 token 计量，无成本指标与费率表｜Prompt 未版本化｜无契约测试与 CI 分层（CI 只跑单测）｜无多租户（仅 user_id 隔离）｜沙箱有意不做（ADR-6）｜jdtls/JGit 为 v1.1 触发项｜长期记忆/Skill/subagent 未接线｜LLM-judge kappa 未做。
+> 答法模板："这块设计写了但没落地——因为（配额/收益/取舍），落点是什么；如果要做，第一步是 X。"
+
+## 第七轮补充：平台配置口径
+- 网关路由 **16 条**（不是 17；旧 /ai-api 已删，仅留白名单）
+- Sentinel 规则是控制台手工导入制品；服务端 degrade JSON 无代码加载器；实际生效=网关按路由 metadata 兜底（缺省 100 QPS）
+- 灰度只打标签，GrayLoadBalancer 实例过滤未实现；HMAC 默认关闭；Feign 全局 NEVER_RETRY；SqlGuard 200ms 仅告警不阻塞
