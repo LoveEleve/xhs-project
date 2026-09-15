@@ -48,8 +48,8 @@
 **危险信号**：只答"用 Redis 计数"；重复消息靠重试不靠幂等；刷盘失败无重试无对账。
 
 ## 本项目真实证据
-- `CounterService`：原子去重+增减 Lua(:54-64)、Set-based Like/Unlike Lua 解决乱序虚增(:99)、归零保护 Lua(m11)(:42)、写链路 INCR→Buffer(:147-159)。
-- `CounterBuffer`：`BATCH_SIZE=500`(:65)、`@Scheduled(fixedRate=5000)`(:121)、双 Buffer 交换说明(:34-50)、`flushLock`(:68)。
+- `CounterService`：原子去重+增减 Lua(:54-64)、Set-based Like/Unlike Lua 解决乱序虚增(:99)、归零保护 Lua(m11)(:42)、写链路 INCR→Buffer(:147-159)、MQ 去重 TTL 2h(:93)。
+- `CounterBuffer`：`BATCH_SIZE=500`(:65)、`MAX_RETRY=3`(:61-62)、`@Scheduled(fixedRate=5000)`(:121)、双 Buffer 交换说明(:34-50)、`flushLock`(:68)、`retryFlush` 失败回写缓冲(:208-221)、跨代写防护(:85-95)。
 - 实测：test-4 resetOffset 回放同 offsetMsgId → dedup 拦截；rename table 注入 → 重试 3 次→回写缓冲→自动补刷 DB=1。
 
 ## 版本与来源
