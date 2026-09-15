@@ -54,6 +54,7 @@ public class SearchController {
         return CompletableFuture.supplyAsync(() -> {
             // 记录搜索词到热搜窗口
             if (request.getKeyword() != null && !request.getKeyword().isBlank()) {
+                searchHistoryService.addHistory(userId, request.getKeyword());
                 hotSearchService.recordSearchKeyword(request.getKeyword(), userId,
                         ip != null ? ip : "unknown");
             }
@@ -74,6 +75,7 @@ public class SearchController {
             @RequestHeader(value = "X-Forwarded-For", required = false) String ip) {
         return CompletableFuture.supplyAsync(() -> {
             if (request.getKeyword() != null && !request.getKeyword().isBlank()) {
+                searchHistoryService.addHistory(userId, request.getKeyword());
                 hotSearchService.recordSearchKeyword(request.getKeyword(), userId,
                         ip != null ? ip : "unknown");
             }

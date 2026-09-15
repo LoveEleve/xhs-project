@@ -27,7 +27,29 @@ public class SearchHistoryService {
     @Value("${search.history.max-size:20}")
     private int maxSize;
 
+    @Value("${search.history.ttl-days:30}")
+    private int ttlDays;
+
     private static final String HISTORY_KEY_PREFIX = "myxhs:search:history:";
+
+    /**
+     * 记录搜索历史（RV34：补齐写入路径——原实现只有读/删，历史从未落 Redis）
+     * LPUSH + LTRIM 裁剪 + LREM 去重 + EXPIRE（ttl-days）
+     */
+    public void addHistory(Long userId, String keyword) {
+        if (userId == null || userId <= 0 || keyword == null || keyword.isBlank()) {
+            return;
+        }
+        String key = HISTORY_KEY_PREFIX + userId;
+        try {
+            stringRedisTemplate.opsForList().remove(key, 0, keyword);
+            stringRedisTemplate.opsForList().leftPush(key, keyword);
+            stringRedisTemplate.opsForList().trim(key, 0, maxSize - 1);
+            stringRedisTemplate.expire(key, java.time.Duration.ofDays(ttlDays));
+        } catch (Exception e) {
+            log.warn("[搜索历史] 写入失败: userId={}, err={}", userId, e.getMessage());
+        }
+    }
 
     /**
      * 获取搜索历史（最近 20 条）
