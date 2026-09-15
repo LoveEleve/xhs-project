@@ -69,6 +69,17 @@
 
 > 工具总数 32（12 自研 + 20 MCP），已达软预算 32——下一项工具前须先做 token 预算或 tool_search。
 
+## 4.4 按用户 Token 预算 + 工具 schema 预算（RV24，已交付）
+
+| 能力 | 设计 | 实测 |
+|------|------|------|
+| 硬限拒绝 | 日预算 20 万，用尽返回 429 + 明确文案 | 预置 99.9 万 → `429 今日 AI 用量已用完（999999999/200000 tokens）`，指标 `hard_reject=1` |
+| 软限切换 | 软限 80%（16 万）自动切轻量模型 | 预置 17 万 → 正常答复，`soft_switch=1`，日志标记 Token预算切换 |
+| 真实计量 | 模型网关 usage 双通道累计，Redis TTL 2 天 | 正常问答后 `GET budget:99:YYYYMMDD`=**5577**，TTL=172799s |
+| 工具 schema 预算 | 启动估算 schema tokens，Gauge + 软限 12k 告警 | `ai_agent_tool_schema_tokens=3428`（32 工具），远低于阈值 |
+
+> 边界：预算仅覆盖 Agent 路径（`/chat` 无用户上下文不计量）；Redis 读取失败 fail-open（只影响成本控制，不阻断诊断）。
+
 ## 5. 证据
 
 - 原始响应：`/tmp/opencode/drill-dlq-{1,2}.json`、`drill-log-{1,2,3}.json`、`drill-prom-1.json`、`drill-redeliver-1.json`、`approval-21-reply.json`（本机临时目录，关键结论已摘录本报告）

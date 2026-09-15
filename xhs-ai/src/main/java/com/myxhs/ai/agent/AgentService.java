@@ -135,6 +135,9 @@ public class AgentService {
     @Value("${myxhs.agent.tool-hard-budget:40}")
     private int toolHardBudget;
 
+    @Value("${myxhs.agent.tool-schema-soft-tokens:12000}")
+    private int toolSchemaSoftTokens;
+
     @Autowired(required = false)
     private io.micrometer.core.instrument.MeterRegistry meterRegistry;
 
@@ -221,7 +224,16 @@ public class AgentService {
         } else if (level == ToolBudget.Level.FAIL) {
             throw new IllegalStateException(ToolBudget.failMessage(toolNames.size(), toolSoftBudget, toolHardBudget));
         }
-        log.info("[Agent] 装配完成: tools={}, budget={}", toolNames.size(), level);
+        int schemaTokens = com.myxhs.ai.agent.tools.ToolSupport.json(toolkit.getToolSchemas()).length() / 4;
+        toolSchemaTokensGauge.set(schemaTokens);
+        if (meterRegistry != null) {
+            meterRegistry.gauge("ai_agent_tool_schema_tokens", toolSchemaTokensGauge);
+        }
+        if (schemaTokens > toolSchemaSoftTokens) {
+            log.warn("[Agent] 工具 schema 约 {} tokens 超过软预算 {}，请评估工具目录/按需加载",
+                    schemaTokens, toolSchemaSoftTokens);
+        }
+        log.info("[Agent] 装配完成: tools={}, budget={}, schemaTokens≈{}", toolNames.size(), level, schemaTokens);
     }
 
     /** 流式执行（不负责 assistant 归档，由调用方调 recordAssistant） */
@@ -242,7 +254,8 @@ public class AgentService {
                 .includeReasoningChunk(true)
                 .build();
         auditService.record(userId, "agent.chat", "session=" + sessionId, null, "start");
-        return agent.stream(List.of(new UserMessage(message)), options, context);
+        return agent.stream(List.of(new UserMessage(message)), options, context)
+                .contextWrite(ctx -> ctx.put(com.myxhs.ai.model.TokenBudget.USER_ID_KEY, userId));
     }
 
     /** 同步执行（收集最终答复并归档） */
@@ -298,6 +311,9 @@ public class AgentService {
     }
 
     private Toolkit toolkitRef;
+
+    /** 工具 schema token 估算（gauge 需强引用，Micrometer Number 弱引用会变成 NaN） */
+    private final java.util.concurrent.atomic.AtomicInteger toolSchemaTokensGauge = new java.util.concurrent.atomic.AtomicInteger();
 
     private void putMcpConfig(java.util.Map<String, McpServerConfig> target, String name, List<String> allowTools) {
         McpProperties.Server server = mcpProperties.getServers().get(name);

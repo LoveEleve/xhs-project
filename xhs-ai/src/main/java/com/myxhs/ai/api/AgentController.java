@@ -53,6 +53,10 @@ public class AgentController {
                         ? R.<Map<String, Object>>fail(503, "模型网关未返回内容（可能不稳定），请稍后重试")
                         : R.ok(Map.<String, Object>of("sessionId", sessionId, "reply", reply)))
                 .onErrorResume(e -> {
+                    if (e instanceof com.myxhs.ai.model.TokenBudget.ExceededException) {
+                        log.warn("[Agent] 预算拒绝: {}", e.getMessage());
+                        return Mono.just(R.fail(429, e.getMessage()));
+                    }
                     log.error("[Agent] chat 失败", e);
                     return Mono.just(R.fail(500, "Agent 执行失败，请稍后重试"));
                 });

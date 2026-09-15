@@ -110,6 +110,7 @@
 - [x] M2.x：审批超时 fail-closed + 跨实例 pub/sub 决策事件 + 队列级消费位点核验（RV17 交付，RV18 修正；22/22 单测）
 - [x] RV18 四路深审：文档口径/SRE 运行态/跨项目一致性/代码第四轮 + P0/P1 修复闭环
 - [x] M4 压测 N=100（C=5 全成，P50/P95/P99 入库）+ 工具预算护栏（软32/硬40，Gauge `ai_agent_tools_total`）
+- [x] 按用户 token 预算（F13）：真实 usage 计量 + 软限切轻量 + 硬限 429；工具 schema token 指标（RV24）
 - [x] M4 FMEA 演练 4 项（停 ES / Redis failover / 滚动重启 / kill MCP）→ 修复 **Agent→ES MCP 工具挂起 P0** + 交付 **MCP 进程级自愈**（RV19）
 - [x] M1.6 安全与接线（鉴权/工具白名单/Nacos+网关/systemd/traceId/旧模块下线）✅ 2026-09-12
 - [x] M2.0 业务竖切①：DIAG-08+OPS-01 DLQ 诊断→审批→重投→核验→审计 ✅ 2026-09-12（E2E 见 docs/reports/m2.0-dlq-e2e.md）

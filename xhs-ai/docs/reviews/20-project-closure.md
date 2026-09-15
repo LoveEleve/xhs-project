@@ -23,7 +23,7 @@
 
 ## 3. 显式边界（不夸大、可兜底）
 
-1. **用户级 Token 预算/限流（F13 完整形态）未实现**：当前为单用户内测场景；已有网关侧 token 计量、工具结果截断、上下文预算（≤8K 注入）与模型降级链。多租户上线前必须补"预算计数→切 flash→只读模式"三段。
+1. ~~用户级 Token 预算（F13）~~ ✅ 已交付（2026-09-15）：按用户日预算（默认 20 万 tokens，`MYXHS_BUDGET_DAILY_TOKENS`）+ 软限 80% 自动切轻量模型 + 硬限 429 fail-closed；计量取模型网关真实 usage，Redis 2 天 TTL；新增工具 schema token 预算指标（软 12k）。**边界**：仅 Agent 路径覆盖（无用户上下文的 `/chat` 不计量）；Redis 读取失败 fail-open。
 2. **MCP 工具级热替换受框架限制**：运行时重挂 client 后已注册工具不重绑（实测 `MCP client not initialized`），故采用进程级自愈（fail-fast + systemd 拉起，≈90s 全恢复）。
 3. 单机测试环境，不宣称生产容量；对账/DDL 等平台侧结论以平台设计边界为准。
 

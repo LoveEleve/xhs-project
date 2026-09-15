@@ -5,6 +5,7 @@ import io.agentscope.core.model.ChatResponse;
 import io.agentscope.core.model.GenerateOptions;
 import io.agentscope.core.model.Model;
 import io.agentscope.core.model.ToolSchema;
+import reactor.util.context.ContextView;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Flux;
@@ -32,6 +33,7 @@ public class ModelGateway implements Model {
 
     private final Model primary;
     private final Model fallback;
+    private final TokenBudgetService tokenBudgetService;
     private final MeterRegistry meterRegistry;
     private final int maxAttempts;
     private final long backoffMs;
@@ -41,10 +43,12 @@ public class ModelGateway implements Model {
     private final AtomicInteger consecutiveFailures = new AtomicInteger();
     private final AtomicLong breakerOpenUntil = new AtomicLong(0);
 
-    public ModelGateway(Model primary, Model fallback, MeterRegistry meterRegistry,
+    public ModelGateway(Model primary, Model fallback, TokenBudgetService tokenBudgetService,
+                        MeterRegistry meterRegistry,
                         int maxAttempts, long backoffMs, int breakerThreshold, long breakerCooldownMs) {
         this.primary = primary;
         this.fallback = fallback;
+        this.tokenBudgetService = tokenBudgetService;
         this.meterRegistry = meterRegistry;
         this.maxAttempts = Math.max(maxAttempts, 1);
         this.backoffMs = backoffMs;
@@ -59,6 +63,42 @@ public class ModelGateway implements Model {
 
     @Override
     public Flux<ChatResponse> stream(List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
+        return Flux.deferContextual(ctx -> streamWithBudget(ctx, messages, tools, options));
+    }
+
+    /** 预算判定（F13）：软限切轻量通道、硬限拒绝；用量按真实 usage 计入 Redis */
+    private Flux<ChatResponse> streamWithBudget(ContextView ctx, List<Msg> messages,
+                                                List<ToolSchema> tools, GenerateOptions options) {
+        Long userId = ctx.getOrEmpty(TokenBudget.USER_ID_KEY)
+                .map(v -> ((Number) v).longValue()).orElse(null);
+        if (userId == null) {
+            return doStream(messages, tools, options);
+        }
+        long used = tokenBudgetService.usedToday(userId);
+        TokenBudget.Decision decision = TokenBudget.decide(used, tokenBudgetService.softLimit(),
+                tokenBudgetService.hardLimit());
+        if (decision == TokenBudget.Decision.HARD) {
+            meterRegistry.counter("ai_model_budget_total", "result", "hard_reject").increment();
+            log.warn("[Token预算] 用户 {} 今日用量 {}/{}，拒绝请求", userId, used, tokenBudgetService.hardLimit());
+            return Flux.error(new TokenBudget.ExceededException(
+                    "今日 AI 用量已用完（" + used + "/" + tokenBudgetService.hardLimit() + " tokens），请明日再试"));
+        }
+        Flux<ChatResponse> flux = decision == TokenBudget.Decision.SOFT
+                ? callWithRetry(fallback, "fallback", messages, tools, options, 1)
+                        .doOnSubscribe(sub -> {
+                            meterRegistry.counter("ai_model_budget_total", "result", "soft_switch").increment();
+                            log.info("[Token预算] 用户 {} 今日用量 {}/{}，切换轻量模型", userId, used,
+                                    tokenBudgetService.hardLimit());
+                        })
+                : doStream(messages, tools, options);
+        return flux.doOnNext(r -> {
+            if (r.getUsage() != null) {
+                tokenBudgetService.add(userId, r.getUsage().getInputTokens() + r.getUsage().getOutputTokens());
+            }
+        });
+    }
+
+    private Flux<ChatResponse> doStream(List<Msg> messages, List<ToolSchema> tools, GenerateOptions options) {
         long openUntil = breakerOpenUntil.get();
         if (openUntil > 0 && System.currentTimeMillis() >= openUntil) {
             // 冷却结束：半开——清空计数放行本请求作为探测

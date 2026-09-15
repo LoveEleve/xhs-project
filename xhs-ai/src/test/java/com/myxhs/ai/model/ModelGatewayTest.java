@@ -63,7 +63,7 @@ class ModelGatewayTest {
     void retriesTransportErrorThenSucceeds() {
         FakeModel primary = new FakeModel("p", List.of(transportError(), Flux.just(ok())));
         FakeModel fallback = new FakeModel("f", List.of(Flux.just(ok())));
-        ModelGateway gateway = new ModelGateway(primary, fallback, new SimpleMeterRegistry(), 2, 10, 3, 1000);
+        ModelGateway gateway = new ModelGateway(primary, fallback, org.mockito.Mockito.mock(TokenBudgetService.class), new SimpleMeterRegistry(), 2, 10, 3, 1000);
 
         ChatResponse response = gateway.stream(MSGS, List.of(), null).blockLast();
 
@@ -76,7 +76,7 @@ class ModelGatewayTest {
     void fallsBackWhenPrimaryExhausted() {
         FakeModel primary = new FakeModel("p", List.of(socketError()));
         FakeModel fallback = new FakeModel("f", List.of(Flux.just(ok())));
-        ModelGateway gateway = new ModelGateway(primary, fallback, new SimpleMeterRegistry(), 2, 10, 3, 1000);
+        ModelGateway gateway = new ModelGateway(primary, fallback, org.mockito.Mockito.mock(TokenBudgetService.class), new SimpleMeterRegistry(), 2, 10, 3, 1000);
 
         ChatResponse response = gateway.stream(MSGS, List.of(), null).blockLast();
 
@@ -89,7 +89,7 @@ class ModelGatewayTest {
     void opensBreakerAfterConsecutiveFailures() {
         FakeModel primary = new FakeModel("p", List.of(socketError()));
         FakeModel fallback = new FakeModel("f", List.of(Flux.just(ok())));
-        ModelGateway gateway = new ModelGateway(primary, fallback, new SimpleMeterRegistry(), 1, 10, 2, 60000);
+        ModelGateway gateway = new ModelGateway(primary, fallback, org.mockito.Mockito.mock(TokenBudgetService.class), new SimpleMeterRegistry(), 1, 10, 2, 60000);
 
         gateway.stream(MSGS, List.of(), null).blockLast();
         gateway.stream(MSGS, List.of(), null).blockLast();
@@ -105,7 +105,7 @@ class ModelGatewayTest {
     void propagatesWhenBothChannelsFail() {
         FakeModel primary = new FakeModel("p", List.of(socketError()));
         FakeModel fallback = new FakeModel("f", List.of(socketError()));
-        ModelGateway gateway = new ModelGateway(primary, fallback, new SimpleMeterRegistry(), 1, 10, 5, 1000);
+        ModelGateway gateway = new ModelGateway(primary, fallback, org.mockito.Mockito.mock(TokenBudgetService.class), new SimpleMeterRegistry(), 1, 10, 5, 1000);
 
         assertThrows(ModelGateway.ModelUnavailableException.class,
                 () -> gateway.stream(MSGS, List.of(), null).blockLast());
@@ -117,7 +117,7 @@ class ModelGatewayTest {
         FakeModel primary = new FakeModel("p",
                 List.of(Flux.concat(Flux.just(partial), transportError())));
         FakeModel fallback = new FakeModel("f", List.of(Flux.just(ok())));
-        ModelGateway gateway = new ModelGateway(primary, fallback, new SimpleMeterRegistry(), 3, 10, 3, 1000);
+        ModelGateway gateway = new ModelGateway(primary, fallback, org.mockito.Mockito.mock(TokenBudgetService.class), new SimpleMeterRegistry(), 3, 10, 3, 1000);
 
         // 已出流后的失败：不重试、不降级重放，直接报错
         assertThrows(ModelGateway.ModelUnavailableException.class,
@@ -130,7 +130,7 @@ class ModelGatewayTest {
     void breakerResetsCountersOnPrimarySuccess() {
         FakeModel primary = new FakeModel("p", List.of(Flux.just(ok()), socketError(), socketError(), Flux.just(ok())));
         FakeModel fallback = new FakeModel("f", List.of(Flux.just(ok())));
-        ModelGateway gateway = new ModelGateway(primary, fallback, new SimpleMeterRegistry(), 1, 10, 3, 60000);
+        ModelGateway gateway = new ModelGateway(primary, fallback, org.mockito.Mockito.mock(TokenBudgetService.class), new SimpleMeterRegistry(), 1, 10, 3, 60000);
         gateway.stream(MSGS, List.of(), null).blockLast();   // success -> reset
         gateway.stream(MSGS, List.of(), null).blockLast();   // fail 1
         gateway.stream(MSGS, List.of(), null).blockLast();   // fail 2 (threshold 3 not reached)

@@ -35,12 +35,13 @@ public class AiModelConfig {
     @Primary
     public Model modelGateway(@Qualifier("openAIChatModel") OpenAIChatModel primary,
                               @Qualifier("lightChatModel") OpenAIChatModel lightChatModel,
+                              com.myxhs.ai.model.TokenBudgetService tokenBudgetService,
                               MeterRegistry meterRegistry,
                               @Value("${ai.model.retry.max-attempts:2}") int maxAttempts,
                               @Value("${ai.model.retry.backoff-ms:500}") long backoffMs,
                               @Value("${ai.model.breaker.threshold:3}") int breakerThreshold,
                               @Value("${ai.model.breaker.cooldown-ms:60000}") long breakerCooldownMs) {
-        return new ModelGateway(primary, lightChatModel, meterRegistry,
+        return new ModelGateway(primary, lightChatModel, tokenBudgetService, meterRegistry,
                 maxAttempts, backoffMs, breakerThreshold, breakerCooldownMs);
     }
 
@@ -62,12 +63,13 @@ public class AiModelConfig {
     @Bean("agentModel")
     public Model agentModel(@Qualifier("agentChatModel") OpenAIChatModel agentChatModel,
                             @Qualifier("lightChatModel") OpenAIChatModel lightChatModel,
+                            com.myxhs.ai.model.TokenBudgetService tokenBudgetService,
                             MeterRegistry meterRegistry,
                             @Value("${ai.model.retry.max-attempts:2}") int maxAttempts,
                             @Value("${ai.model.retry.backoff-ms:500}") long backoffMs,
                             @Value("${ai.model.breaker.threshold:3}") int breakerThreshold,
                             @Value("${ai.model.breaker.cooldown-ms:60000}") long breakerCooldownMs) {
-        return new ModelGateway(agentChatModel, lightChatModel, meterRegistry,
+        return new ModelGateway(agentChatModel, lightChatModel, tokenBudgetService, meterRegistry,
                 maxAttempts, backoffMs, breakerThreshold, breakerCooldownMs);
     }
 
