@@ -35,6 +35,22 @@ public class EsLogClient {
             .connectTimeout(Duration.ofSeconds(5))
             .build();
 
+    public String getJson(String path) throws Exception {
+        String base = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(base + path))
+                .timeout(Duration.ofSeconds(15))
+                .header("Authorization", "Basic " + Base64.getEncoder()
+                        .encodeToString((user + ":" + password).getBytes(StandardCharsets.UTF_8)))
+                .GET()
+                .build();
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (response.statusCode() / 100 != 2) {
+            throw new IllegalStateException("ES 请求失败 HTTP " + response.statusCode());
+        }
+        return response.body();
+    }
+
     public String search(String bodyJson) throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + "/" + INDEX + "/_search"))

@@ -81,6 +81,18 @@
 
 > 边界：预算仅覆盖 Agent 路径（`/chat` 无用户上下文不计量）；Redis 读取失败 fail-open（只影响成本控制，不阻断诊断）。
 
+## 4.5 自研兜底工具：MCP 挂掉仍可诊断（RV26，已交付）
+
+| 工具 | 说明 |
+|------|------|
+| `es_index_list` | 自研 REST 列索引（名称/健康/文档数），不依赖 MCP 子进程 |
+| `metric_query` | 自研 PromQL 兜底（长度≤600 + 指标白名单校验，只读），覆盖复杂聚合 |
+
+演练（kill 两个 MCP 子进程，自愈默认关闭→保持死亡）：
+- ES MCP 死 → 问"文档数最多前 3 索引"：**19s** 命中 `es_index_list`（34 索引，top1 653 万文档）
+- Prom MCP 死 → 问"up=0 实例"：**39s** 命中 `metric_query`（24 target 全 up）
+- 工具总数 34（14 自研 + 20 MCP），软预算 32→36；重启后 MCP 子进程恢复（es=3/prom=1）
+
 ## 5. 证据
 
 - 原始响应：`/tmp/opencode/drill-dlq-{1,2}.json`、`drill-log-{1,2,3}.json`、`drill-prom-1.json`、`drill-redeliver-1.json`、`approval-21-reply.json`（本机临时目录，关键结论已摘录本报告）

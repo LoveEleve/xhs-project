@@ -113,6 +113,23 @@ public final class MetricQueryBuilder {
         return base;
     }
 
+    private static final java.util.regex.Pattern PROMQL_METRIC = java.util.regex.Pattern.compile(
+            "\\b(http_server_requests_seconds|http_client_requests_seconds|jvm_[a-z_]+|hikaricp_[a-z_]+|"
+            + "system_[a-z_]+|process_[a-z_]+|prometheus_[a-z_]+|rocketmq_[a-z_]+|ai_[a-z_]+|up|node_[a-z_]+)");
+
+    /** 裸 PromQL 兜底（自研 metric_query）校验：长度 + 已知指标白名单，拒绝空查询 */
+    public static void validatePromql(String promql) {
+        if (promql == null || promql.isBlank()) {
+            throw new IllegalArgumentException("promql 必填");
+        }
+        if (promql.length() > 600) {
+            throw new IllegalArgumentException("promql 过长（>600 字符）");
+        }
+        if (!PROMQL_METRIC.matcher(promql).find()) {
+            throw new IllegalArgumentException("promql 未包含已知指标名，请使用业务级工具或检查指标名");
+        }
+    }
+
     public static int clampMinutes(int minutes) {
         return Math.max(5, Math.min(1440, minutes));
     }
