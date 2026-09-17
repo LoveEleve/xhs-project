@@ -1,0 +1,27 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "要发布的模块（留空=只跑门禁）"
+        required: false
+        default: ""
+jobs:
+  gate:
+    runs-on: local
+    steps:
+      - uses: actions/checkout@v4
+      - name: 环境信息
+        run: java -version 2>&1 | head -2 && mvn -version 2>&1 | head -2
+      - name: 执行门禁（编译+单测+规范扫描）
+        run: bash scripts/ci-gate.sh
+  deploy:
+    runs-on: local
+    needs: gate
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.deploy != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: 蓝绿发布（含自动回滚）
+        run: bash scripts/release-service.sh ${{ github.event.inputs.deploy }}
