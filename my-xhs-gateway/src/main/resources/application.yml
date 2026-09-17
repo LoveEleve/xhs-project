@@ -77,6 +77,18 @@ spring:
         port: 8719
       # 取消懒加载，启动时立即初始化 Sentinel
       eager: true
+      # 限流规则持久化：Nacos 数据源（Sentinel 监听推送，动态生效）
+      # 说明：规则 JSON 存放于 Nacos 命名空间 my-xhs；未配置/拉取失败时
+      # RateLimitFilter 会在 30s 真空期后回退到 yml 路由 metadata 兜底规则。
+      datasource:
+        flow:
+          nacos:
+            server-addr: 192.168.0.142:18848
+            namespace: my-xhs
+            group-id: DEFAULT_GROUP
+            data-id: my-xhs-gateway-sentinel-flow.json
+            data-type: json
+            rule-type: gw-flow
     gateway:
       httpclient:
         connect-timeout: 2000       # 全局默认连接超时 2s
