@@ -46,7 +46,11 @@ public class ChatController {
                 .timeout(Duration.ofSeconds(120))
                 .map(this::extractText)
                 .collect(Collectors.joining())
-                .map(R::ok)
+                .map(text -> text == null || text.isBlank()
+                        // RV-fix：reasoning 模型可能把 maxTokens 全耗在思考上（finish=length），
+                        // 此时 content 为空——显式报错，绝不静默返回空字符串
+                        ? R.<String>fail(503, "模型未返回有效内容（推理可能被截断），请重试或换个问法")
+                        : R.ok(text))
                 .onErrorResume(e -> {
                     log.error("[AI] 对话失败", e);
                     return Mono.just(R.fail(500, "模型调用失败，请稍后重试"));
@@ -73,7 +77,8 @@ public class ChatController {
     private GenerateOptions defaultOptions() {
         return GenerateOptions.builder()
                 .temperature(0.3)
-                .maxTokens(1024)
+                // RV-fix：1024 对 reasoning 模型不够（推理吃满后 content 为空），提升到 4096
+                .maxTokens(4096)
                 .stream(true)
                 .build();
     }

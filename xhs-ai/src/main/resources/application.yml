@@ -53,6 +53,13 @@ ai:
     breaker:
       threshold: 3
       cooldown-ms: 60000
+    # HTTP 传输层显式超时（RV-fix：默认读/响应 5 分钟过长，挂起会拖到 MVC async 300s 才失败）
+    http:
+      connect-timeout-ms: 10000
+      read-timeout-ms: 90000
+      write-timeout-ms: 30000
+      stream-idle-timeout-ms: 90000
+      response-timeout-ms: 240000
   mq:
     namesrv-addr: ${MYXHS_MQ_NAMESRV:127.0.0.1:9876}
   mcp:
