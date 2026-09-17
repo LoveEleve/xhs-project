@@ -348,6 +348,7 @@ groups:
       - alert: MysqlDown
         expr: mysql_up == 0
         for: 1m
+        keep_firing_for: 2m   # 演练发现：短暂宕机+恢复会被 group_wait 吞掉通知，保留 2m 确保送达
         labels: { severity: critical, level: P0 }
         annotations:
           summary: "MySQL 主库不可达"
@@ -441,3 +442,14 @@ groups:
         annotations:
           summary: "应用侧 MySQL 连接数 > 250"
           description: "当前 {{ $value }}，排查池空闲回收/僵尸连接，Runbook: docs/ops/alert-runbook.md"
+
+  # ==================== 告警管道心跳（Watchdog，SRE 标准做法） ====================
+  - name: myxhs_meta_alerts
+    rules:
+      - alert: Watchdog
+        expr: vector(1)
+        for: 1m
+        labels: { severity: none, level: P3 }
+        annotations:
+          summary: "告警管道心跳（收到即代表 Prometheus→Alertmanager→sink 全链路正常）"
+          description: "常鸣告警；若长时间收不到，说明通知链路故障（silence/挂掉）"

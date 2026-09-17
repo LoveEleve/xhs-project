@@ -39,7 +39,12 @@
 | CanalHighDelay | canal 实例状态、binlog 位点、JDBC 连接 |
 | SearchHighLatency | ES CPU 配额/慢查询（当日案例：2 核打满 → 6 核，508→1,448 RPS） |
 
-## 三、验证与维护
+## 三、短命告警与心跳（2026-09-17 演练发现）
+- **短命告警可能被吞**：`MysqlDown` 在故障演练中 firing ~75s 即恢复，因 `group_wait=30s` 未完成分组即 resolve，**通知丢失**；
+- 处置：① `MysqlDown` 增加 `keep_firing_for: 2m`（短暂宕机保持 firing 确保送达）；② Alertmanager `group_wait: 30s → 10s`；③ 新增 **Watchdog**（常鸣心跳）——长时间收不到即代表通知链路故障；
+- 验证：Watchdog 心跳 23:11:09 已落盘；`MysqlDown` 规则已带 keepFiringFor=120s。
+
+## 四、验证与维护
 - 端到端验证：注入 `SELECT SLEEP(600)` → firing（22:34:25）→ resolved（22:39:25）均落盘（2026-09-17 实测）。
 - `EsClusterNotGreen`：单节点集群 yellow 属预期，建议将索引副本数设为 0 或调整告警仅 red 触发（待决策）。
 - 规则位置：`deploy/docker/my-xhs-deploy-zip/config/prometheus/alert_rules/myxhs_rules.yml`（live）与 `config/prometheus/alert_rules/myxhs_rules.yml`（仓库副本）。
