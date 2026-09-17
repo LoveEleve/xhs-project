@@ -406,3 +406,38 @@ groups:
         annotations:
           summary: "根分区磁盘使用率超过 90%"
           description: "当前 {{ $value | humanizePercentage }}"
+
+  # ==================== MySQL 连接与复制韧性（2026-09-17 僵尸连接事故复盘后补） ====================
+  - name: myxhs_mysql_conn_alerts
+    rules:
+      - alert: MysqlConnectionUsageHigh
+        expr: mysql_global_status_threads_connected / mysql_global_variables_max_connections > 0.8
+        for: 2m
+        labels: { severity: warning, level: P1 }
+        annotations:
+          summary: "MySQL 连接使用率 > 80%"
+          description: "threads_connected/max_connections={{ $value | humanizePercentage }}；排查僵尸连接/泄漏，Runbook: docs/ops/alert-runbook.md"
+
+      - alert: MysqlReplicaLagHigh
+        expr: mysql_slave_status_seconds_behind_master > 30
+        for: 2m
+        labels: { severity: warning, level: P1 }
+        annotations:
+          summary: "MySQL 从库复制延迟 > 30s"
+          description: "Seconds_Behind_Master={{ $value }}s；检查大事务/批量 DML/从库负载，Runbook: docs/ops/alert-runbook.md"
+
+      - alert: MysqlLongRunningQueries
+        expr: mysql_info_schema_processlist_seconds{command=~"query|execute"} > 60
+        for: 1m
+        labels: { severity: critical, level: P1 }
+        annotations:
+          summary: "MySQL 存在 >60s 活跃查询"
+          description: "最长执行 {{ $value }}s（僵尸连接事故同特征）；processlist 定位后 KILL，Runbook: docs/ops/alert-runbook.md"
+
+      - alert: MysqlAppConnectionsHigh
+        expr: mysql_info_schema_processlist_processes_by_host{client_host="192.168.0.142"} > 250
+        for: 5m
+        labels: { severity: warning, level: P2 }
+        annotations:
+          summary: "应用侧 MySQL 连接数 > 250"
+          description: "当前 {{ $value }}，排查池空闲回收/僵尸连接，Runbook: docs/ops/alert-runbook.md"

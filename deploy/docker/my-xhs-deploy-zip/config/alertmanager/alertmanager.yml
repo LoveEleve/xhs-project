@@ -1,25 +1,15 @@
-# Alertmanager 配置（P-D13 告警出口）
-# 通知渠道：当前未接入真实告警渠道，使用空接收器（只落日志、不调用任何 webhook）。
-# 后续如需通知（企业微信/钉钉/邮箱），替换 receivers[0] 为对应配置即可。
 global:
   resolve_timeout: 5m
-
 route:
   group_by: ['alertname', 'service']
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 4h
-  receiver: 'default-noop'
-
+  receiver: 'default-webhook'
 receivers:
-  - name: 'default-noop'
-
-# 邮箱示例（如需）：
-# receivers:
-#   - name: 'default-webhook'
-#     email_configs:
-#       - to: 'ops@example.com'
-#         from: 'alert@example.com'
-#         smarthost: 'smtp.example.com:465'
-#         auth_username: 'alert@example.com'
-#         auth_password: '<密码>'
+  - name: 'default-webhook'
+    webhook_configs:
+      # 本地告警落地器（systemd: alert-sink.service；落盘 /data2/logs/alerts.jsonl）
+      # 如需接企业微信/飞书，替换 URL 或在此增加 receiver 并调整 route
+      - url: 'http://127.0.0.1:19099/alert'
+        send_resolved: true

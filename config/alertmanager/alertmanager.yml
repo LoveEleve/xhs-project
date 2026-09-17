@@ -14,7 +14,7 @@ route:
 receivers:
   - name: 'default-webhook'
     webhook_configs:
-      - url: 'http://127.0.0.1:19000/api/alert/hook'   # 占位地址：替换为内部通知端点或企业微信机器人
+      - url: 'http://127.0.0.1:19099/alert'   # 占位地址：替换为内部通知端点或企业微信机器人
         send_resolved: true
 
 # 邮箱示例（如需）：
