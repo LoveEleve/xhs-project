@@ -14,8 +14,8 @@
 ## Track A：性能与容量（对应 1/2/5）
 | # | 事项 | 现状 | 目标/动作 | 验收证据 | 工作量 | 优先级 |
 |---|---|---|---|---|---|---|
-| A1 | 全链路压测与容量模型 | 单点基线：product c=32 1060 RPS（饱和 1058）；note/search 等数字未复测 | 用 wrk/GoReplay 复测 product/note/search/home/cart；画"并发-RPS-延迟"曲线；找瓶颈（CPU/GC/DB/Redis） | `docs/reports/capacity-*.md`：各服务饱和点+P99+瓶颈归因 | 2-3天 | P0 |
-| A2 | JVM/线程池/内核调优闭环 | 参数已知（512m/1024m、G1、Metaspace256m）；无 GC/火焰图证据 | 开 GC 日志+jcmd/Arthas 火焰图；调线程池（Tomcat/Lettuce/Hikari）；内核（somaxconn/tw_reuse/文件句柄）；**前后对比** | 调优报告：GC 停顿/吞吐、P99 变化、CPU 水位 | 2天 | P0 |
+| A1 | 全链路压测与容量模型 | ✅ **首轮完成**（2026-09-17）：直连 6 接口容量 + 网关代理开销≈0 + 限流修正；缺口=note详情（无数据）/home/recommend | 补数据后复测 note/home/recommend；画饱和曲线 | `docs/reports/capacity-20260917.md` | 剩余1天 | P0 |
+| A2 | JVM/线程池/内核调优闭环 | ⏳ 首轮画像已出：YGC 开销可忽略/无 FGC；**Metaspace 99.36% 风险项**；Tomcat busy=并发 | 修 Metaspace（调大/排查）→ GC 日志+火焰图 → 线程池/内核 → 前后对比 | 调优报告 | 1.5天 | P0 |
 | A3 | SLO 与降级矩阵 | 7 条告警、SkyWalking/Prometheus 在跑；无 SLO | 核心接口定 SLO（P99/可用性）；错误预算；降级矩阵（依赖挂了怎么办） | SLO 看板 + 降级矩阵文档 + 一次预算燃烧演练 | 2天 | P0 |
 | A4 | 网关性能专项 | 网关池参数已调（2s/10s/45s） | 网关 vs 直连压测对比；Netty/epoll/HTTP2/背压评估 | 网关压测报告（RPS/P99/资源） | 1天 | P1 |
 | A5 | 热点治理 | 双删/Bloom/逻辑过期已有 | 热 key/大 key 探测；命中率与回源体系 | 热点清单+处置记录 | 1-2天 | P2 |
