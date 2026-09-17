@@ -170,6 +170,23 @@ myxhs:
     token: ${ADMIN_TOKEN:}
   internal:
     token: ${INTERNAL_TOKEN:}
+  rpc:
+    dubbo-enabled: false   # B2 试点开关：true 时 SKU 查询走 Dubbo，异常自动回退 Feign
+
+# ==================== B2 试点：Dubbo RPC（nacos 注册中心） ====================
+dubbo:
+  scan:
+    base-packages: com.myxhs.cart   # 扫描 @DubboService/@DubboReference
+  application:
+    name: my-xhs-cart-rpc
+    qos-enable: false
+  registry:
+    address: nacos://192.168.0.142:18848
+    parameters:
+      namespace: my-xhs
+  consumer:
+    timeout: 3000
+    retries: 0
 
 jwt:
   secret: "MyXhs@2026#JwtSecretKey!ForTokenSign"

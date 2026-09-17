@@ -107,7 +107,13 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
-        </dependencies>
+                <!-- B2 试点：Dubbo 双协议（Feign 保留，开关控制） -->
+        <dependency>
+            <groupId>org.apache.dubbo</groupId>
+            <artifactId>dubbo-spring-boot-starter</artifactId>
+            <version>3.3.0</version>
+        </dependency>
+    </dependencies>
 
     <build>
         <plugins>

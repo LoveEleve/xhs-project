@@ -154,3 +154,20 @@ myxhs:
 
 jwt:
   secret: "MyXhs@2026#JwtSecretKey!ForTokenSign"
+
+# ==================== B2 试点：Dubbo RPC（nacos 注册中心） ====================
+dubbo:
+  scan:
+    base-packages: com.myxhs.product   # 扫描 @DubboService/@DubboReference
+  application:
+    # 注意：不要与 spring.application.name 同名，否则 Dubbo provider 会混入 Spring Cloud 实例列表（Feign 误打二进制端口）
+    name: my-xhs-product-rpc
+    qos-enable: false
+  registry:
+    address: nacos://192.168.0.142:18848
+    parameters:
+      namespace: my-xhs
+  protocol:
+    name: dubbo
+    host: 192.168.0.142   # 绑定主机网卡，避免注册 docker0/172.17.0.1
+    port: 20886

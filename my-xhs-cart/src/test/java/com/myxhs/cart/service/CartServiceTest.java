@@ -6,6 +6,7 @@ import com.myxhs.cart.dto.request.CartAddRequest;
 import com.myxhs.cart.dto.request.CartUpdateQuantityRequest;
 import com.myxhs.cart.dto.response.CartListVO;
 import com.myxhs.cart.feign.ProductFeignClient;
+import com.myxhs.cart.rpc.ProductSkuRpcClient;
 import com.myxhs.cart.mapper.CartItemMapper;
 import com.myxhs.common.exception.BizException;
 import com.myxhs.common.response.R;
@@ -53,6 +54,9 @@ class CartServiceTest {
     @Mock
     private ProductFeignClient productFeignClient;
 
+    /** B2 试点：真实双协议客户端（dubboEnabled 默认 false → 走 Feign，桩仍生效） */
+    private ProductSkuRpcClient productSkuRpcClient;
+
     @Mock
     private DefaultRedisScript<Long> cartAddScript;
 
@@ -86,10 +90,11 @@ class CartServiceTest {
     void setUp() {
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
+        productSkuRpcClient = new ProductSkuRpcClient(productFeignClient);
         cartService = new CartService(
                 stringRedisTemplate,
                 rocketMQTemplate,
-                productFeignClient,
+                productSkuRpcClient,
                 objectMapper,
                 cartAddScript,
                 cartItemMapper,
@@ -355,19 +360,21 @@ class CartServiceTest {
     // ==================== 清空购物车 ====================
 
     @Test
-    @DisplayName("清空购物车 - 成功清空且验证 Redis DEL 被调用")
+    @DisplayName("清空购物车 - 成功清空且验证原子 Lua 脚本被调用（RV30：三结构+清空标记）")
     void clearCartSuccess() {
-        when(stringRedisTemplate.delete(anyCollection())).thenReturn(3L);
-
         org.springframework.data.redis.core.ValueOperations<String, String> valueOps = mock(org.springframework.data.redis.core.ValueOperations.class);
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOps);
 
         assertThatCode(() -> cartService.clearCart(USER_ID))
                 .doesNotThrowAnyException();
 
-        verify(stringRedisTemplate).delete(argThat((Collection<String> keys) -> keys.size() == 3
-                && keys.stream().allMatch(k -> k.contains("myxhs:cart:{" + USER_ID + "}")
-                        && (k.contains(":items") || k.contains(":checked") || k.contains(":sort")))));
+        // RV30：clearCart 收敛为单个 Lua（4 个 key：items/checked/sort/cleared，TTL=30 天）
+        verify(stringRedisTemplate).execute(
+                eq(cartClearScript),
+                argThat((java.util.List<String> keys) -> keys != null && keys.size() == 4
+                        && keys.stream().allMatch(k -> k.contains("myxhs:cart:{" + USER_ID + "}")
+                                && (k.endsWith(":items") || k.endsWith(":checked") || k.endsWith(":sort") || k.endsWith(":cleared")))),
+                eq(String.valueOf(java.time.Duration.ofDays(30).getSeconds())));
     }
 
     // ==================== 获取购物车数量 ====================
