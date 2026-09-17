@@ -123,6 +123,7 @@ services:
     image: elasticsearch:8.12.2
     container_name: my-xhs-elasticsearch
     network_mode: host
+    cpus: "6"   # A2 调优：2 核配额是搜索吞吐瓶颈（500→1450 RPS）
     environment:
       - discovery.type=single-node
       - xpack.security.enabled=true
