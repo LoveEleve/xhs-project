@@ -42,16 +42,17 @@ public interface CommentMapper extends BaseMapper<Comment> {
      * </p>
      */
     @Select("<script>" +
-            "SELECT c.id, c.note_id, c.user_id, c.parent_id, c.reply_to_id, c.content, c.like_count, c.deleted, c.created_at, c.updated_at " +
-            "FROM t_comment c " +
-            "WHERE c.parent_id IN " +
+            // A2 性能：ROW_NUMBER 替代相关子查询计数。
+            // 实测（5,202 子评论/根）：旧实现单发 >30s 超时 500（O(N²) 索引扫描）；
+            // 窗口函数 + idx_parent_deleted_id 后单发毫秒级（见 docs/reports/comment-sql-tuning-20260917.md）。
+            "SELECT id, note_id, user_id, parent_id, reply_to_id, content, like_count, deleted, created_at, updated_at FROM (" +
+            "  SELECT c.id, c.note_id, c.user_id, c.parent_id, c.reply_to_id, c.content, c.like_count, c.deleted, c.created_at, c.updated_at, " +
+            "         ROW_NUMBER() OVER (PARTITION BY c.parent_id ORDER BY c.id) AS rn " +
+            "  FROM t_comment c " +
+            "  WHERE c.parent_id IN " +
             "<foreach collection='parentIds' item='id' open='(' close=')' separator=','>#{id}</foreach> " +
-            "AND c.deleted = 0 " +
-            "AND (" +
-            "  SELECT COUNT(1) FROM t_comment c2 " +
-            "  WHERE c2.parent_id = c.parent_id AND c2.deleted = 0 AND c2.id &lt;= c.id" +
-            ") &lt;= #{maxPerParent} " +
-            "ORDER BY c.id" +
+            "  AND c.deleted = 0 " +
+            ") t WHERE t.rn &lt;= #{maxPerParent} ORDER BY t.id" +
             "</script>")
     List<Comment> selectTopChildrenByParentIds(@Param("parentIds") List<Long> parentIds,
                                                @Param("maxPerParent") int maxPerParent);
