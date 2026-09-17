@@ -222,6 +222,8 @@ class NoteServiceTest {
         note.setContent(content);
         note.setStatus(status);
         note.setNoteType(0);
+        // RV30：详情读取要求"已发布且审核通过"，测试数据补齐审核态
+        note.setAuditStatus(com.myxhs.content.enums.AuditStatus.APPROVED.getCode());
         return note;
     }
 

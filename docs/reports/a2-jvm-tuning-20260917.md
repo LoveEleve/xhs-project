@@ -34,7 +34,7 @@ agent 未加载时零开销。
 ## 三、附带修复与事故复盘
 1. **home 线程池饥饿**（A3）：外层请求与内层 Feign 共用池 → 内层饿死；改独立 `batchFeignPool`，5.6→430 RPS，P99 1.6s→307ms。
 2. **发布脚本三连修**：① `readlink -f` 对不存在路径返回自身 → 自引用软链（home 停机 2-3min，记入 SLO 燃烧账本）；② 优雅停机 >3s 导致新进程 `Port already in use`（product 发布失败）→ 增加"等端口释放（≤60s）"；③ 按模块 Xmx + dev profile + 版本保留 5 份。
-3. **L1 Caffeine 本地缓存**（product 3s TTL）：保留（降低 Redis 压力、防击穿），但本轮的吞吐瓶颈证明不在缓存层——**先 profile 再优化**的教科书案例。
+3. ~~L1 Caffeine 本地缓存~~：**已按技术决策移除**（不做本地缓存；一致性/多实例/内存坑）。当前 product 无 L1 基线 = 4,871 RPS / P99 50ms。
 
 ## 四、待办（收敛）
 - 批量发布 15 服务（携带本次 common 修复）并**重测容量基线**（A1 数字作废）；
