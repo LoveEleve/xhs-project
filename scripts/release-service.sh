@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# 蓝绿发布（符号链接切换 + 健康校验 + 自动回滚）
+# 版本化发布（停机切换 + 健康校验 + 自动回滚）
+# 说明：当前是"停旧-起新"的有损发布（约 15-20s 窗口）；真蓝绿（双实例+流量切换）未实现。
 # 用法: bash scripts/release-service.sh <module> [jar_path]
 set -u
 MODULE=${1:?usage: release-service.sh <module> [jar]}
@@ -16,6 +17,10 @@ PORT[counter]=19004; PORT[product]=19006; PORT[cart]=19008; PORT[inventory]=1900
 PORT[coupon]=19010; PORT[order]=19011; PORT[payment]=19012; PORT[notification]=19013
 PORT[im]=19014; PORT[home]=19015; PORT[search]=19016
 P=${PORT[$MODULE]:?unknown module: $MODULE}
+
+declare -A XMX
+XMX[inventory]=1024m; XMX[order]=1024m; XMX[search]=1024m
+MX=${XMX[$MODULE]:-512m}
 
 [ -n "$JAR_SRC" ] || JAR_SRC=$ROOT/my-xhs-$MODULE/target/my-xhs-$MODULE-1.0-SNAPSHOT.jar
 [ -f "$JAR_SRC" ] || { echo "❌ jar 不存在: $JAR_SRC"; exit 1; }
@@ -35,7 +40,7 @@ stop() {
   sleep 3
 }
 start() {
-  nohup setsid java -Xmx512m -jar "$1/app.jar" > "/data2/logs/release-$MODULE.log" 2>&1 < /dev/null &
+  nohup setsid java -Xmx$MX -jar "$1/app.jar" > "/data2/logs/release-$MODULE.log" 2>&1 < /dev/null &
   echo "   已启动: $1/app.jar"
 }
 health() {
@@ -49,7 +54,10 @@ health() {
 
 stop; start "$CURRENT"
 if health; then
-  echo "== ✅ 发布成功: $MODULE (端口 $P) =="; exit 0
+  # 版本保留：仅保留最近 5 个版本
+  mapfile -t OLD < <(find "$RELEASE_ROOT" -maxdepth 1 -mindepth 1 -type d ! -name current -printf '%f\n' | sort | head -n -5)
+  for d in "${OLD[@]:-}"; do [ -n "$d" ] && rm -rf "$RELEASE_ROOT/$d"; done
+  echo "== ✅ 发布成功: $MODULE (端口 $P, Xmx$MX) =="; exit 0
 fi
 echo "== ❌ 健康检查失败，准备回滚 =="
 if [ -n "$PREV" ] && [ -d "$PREV" ]; then
