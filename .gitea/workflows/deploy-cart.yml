@@ -1,0 +1,9 @@
+name: deploy-cart
+on: [workflow_dispatch]
+jobs:
+  deploy:
+    runs-on: local
+    steps:
+      - uses: actions/checkout@v4
+      - name: 蓝绿发布 cart（含自动回滚）
+        run: bash scripts/release-service.sh cart
