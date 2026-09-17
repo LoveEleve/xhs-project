@@ -82,5 +82,5 @@ OTel/Langfuse 未接（设计在 D03，实际用 Prometheus+traceId 替代）｜
 
 ## 第七轮补充：平台配置口径
 - 网关路由 **16 条**（不是 17；旧 /ai-api 已删，仅留白名单）
-- Sentinel 规则是控制台手工导入制品；服务端 degrade JSON 无代码加载器；实际生效=网关按路由 metadata 兜底（缺省 100 QPS）
-- 灰度只打标签，GrayLoadBalancer 实例过滤未实现；HMAC 默认关闭；Feign 全局 NEVER_RETRY；SqlGuard 200ms 仅告警不阻塞
+- Sentinel 规则已托管 Nacos（网关 datasource.flow 配置 + 动态推送，2026-09-17 加固并实测 3QPS→429）；metadata 仅作 30s 真空期兜底（缺省 100 QPS）
+- 灰度只打标签，GrayLoadBalancer 实例过滤未实现；HMAC 默认关闭；Feign 全局 NEVER_RETRY；SqlGuard = 200ms 告警 + 5 次熔断判定，阻断为白名单可配置（默认关闭，2026-09-17 真机验证：白名单开启后第 2 次请求即阻断）
