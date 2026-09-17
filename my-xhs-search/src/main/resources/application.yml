@@ -96,6 +96,10 @@ elasticsearch:
   username: elastic
   password: Xhs@2026#Elastic
   connect-timeout: 5000
+  # A2-2 调优：4 IO 线程会在高并发下成为响应解析瓶颈（实测限速 ~500 RPS）
+  io-thread-count: 16
+  max-conn-total: 400
+  max-conn-per-route: 200
   socket-timeout: 30000
 
 # RocketMQ 配置

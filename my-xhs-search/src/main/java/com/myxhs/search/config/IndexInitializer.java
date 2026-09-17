@@ -26,6 +26,10 @@ public class IndexInitializer implements ApplicationRunner {
 
     private final ElasticsearchClient esClient;
 
+    /** 索引副本数（默认 0：单节点集群无法分配副本，1 会导致 yellow/告警常鸣；多节点环境可配 >0） */
+    @Value("${search.index.replicas:0}")
+    private int indexReplicas;
+
     @Value("${search.note.index-name:note_index}")
     private String noteIndexName;
 
@@ -44,6 +48,8 @@ public class IndexInitializer implements ApplicationRunner {
 
     private void createIndexIfNotExists(String indexName, String mapping) {
         try {
+            // 副本数可配（默认 0：单节点无法分配副本；多节点环境可调大）
+            final String effectiveMapping = mapping.replace("%REPLICAS%", String.valueOf(indexReplicas));
             boolean exists = esClient.indices().exists(
                     ExistsRequest.of(e -> e.index(indexName))).value();
             if (exists) {
@@ -53,7 +59,7 @@ public class IndexInitializer implements ApplicationRunner {
 
             esClient.indices().create(CreateIndexRequest.of(c -> c
                     .index(indexName)
-                    .withJson(new StringReader(mapping))));
+                    .withJson(new StringReader(effectiveMapping))));
 
             log.info("[ES索引] 创建成功: {}", indexName);
         } catch (Exception e) {
@@ -67,7 +73,7 @@ public class IndexInitializer implements ApplicationRunner {
             {
               "settings": {
                 "number_of_shards": 3,
-                "number_of_replicas": 1,
+                "number_of_replicas": %REPLICAS%,
                 "analysis": {
                   "analyzer": {
                     "ik_smart": {
@@ -102,7 +108,7 @@ public class IndexInitializer implements ApplicationRunner {
             {
               "settings": {
                 "number_of_shards": 3,
-                "number_of_replicas": 1
+                "number_of_replicas": %REPLICAS%
               },
               "mappings": {
                 "properties": {
@@ -126,7 +132,7 @@ public class IndexInitializer implements ApplicationRunner {
             {
               "settings": {
                 "number_of_shards": 1,
-                "number_of_replicas": 1
+                "number_of_replicas": %REPLICAS%
               },
               "mappings": {
                 "properties": {

@@ -1,4 +1,4 @@
-# Alertmanager 配置（P-D13 告警出口）
+# Alertmanager 配置（P-D13 告警出口；live 副本与仓库副本保持一致，URL 指向本地 sink）
 # 通知渠道：默认 webhook 占位——部署后按实际渠道配置（企业微信/钉钉/邮箱 webhook 任选）
 # 若用邮箱通知，去掉下面 route/receivers 注释并按需修改
 global:
@@ -14,7 +14,7 @@ route:
 receivers:
   - name: 'default-webhook'
     webhook_configs:
-      - url: 'http://127.0.0.1:19099/alert'   # 占位地址：替换为内部通知端点或企业微信机器人
+      - url: 'http://127.0.0.1:19099/alert'   # 本地 sink（alert-sink.service）；生产可替换为企业微信/钉钉/邮箱
         send_resolved: true
 
 # 邮箱示例（如需）：

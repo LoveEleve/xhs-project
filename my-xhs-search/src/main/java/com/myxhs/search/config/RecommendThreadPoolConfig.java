@@ -30,12 +30,21 @@ public class RecommendThreadPoolConfig {
      * 拒绝策略：CallerRunsPolicy，降级为调用线程执行（不丢弃）。
      * </p>
      */
+    @org.springframework.beans.factory.annotation.Value("${search.recall.core-pool-size:32}")
+    private int recallCore;
+
+    @org.springframework.beans.factory.annotation.Value("${search.recall.max-pool-size:64}")
+    private int recallMax;
+
+    @org.springframework.beans.factory.annotation.Value("${search.recall.queue-capacity:200}")
+    private int recallQueue;
+
     @Bean("recallExecutor")
     public ExecutorService recallExecutor() {
         ThreadPoolExecutor executor = new ThreadPoolExecutor(
-                10, 20,
+                recallCore, recallMax,
                 60, TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(100),
+                new LinkedBlockingQueue<>(recallQueue),
                 new ThreadFactory() {
                     private final AtomicInteger count = new AtomicInteger(0);
                     @Override
