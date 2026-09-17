@@ -16,11 +16,16 @@
 | comment 列表 | 1,064 | **2,469** | 2.3x | 96ms | DB 占比高（下一调优点） |
 | gateway→note 详情（放行后） | 1,058 | **4,640** | 4.4x | 27ms | 代理≈0（>直连） |
 | home 聚合 | 430 | **552** | +28% | 433ms | 聚合受限；P99 略超 SLO 400ms（观察项） |
-| search（8 命中） | ~392-575 | **~500** | ~持平 | 192ms | **ES-bound**（0 Non-2xx；ab 失败全为长度不匹配） |
+| search（8 命中） | ~392-575 | **1,448** | **2.9x** | 61ms | 调优：ES 容器 CPU 配额 2→6 核（压测中打满 202%）+ 客户端 IO 线程 4→16/连接 400 + recall 池 32/64 |
+
+## 二·补：search 专项调优（2026-09-17 晚）
+- 定位：服务侧线程全部 WAITING 在 ES 客户端 `BasicFuture.get`，而 **ES 容器 CPU 打满 202%（配额 2 核）**；
+- 动作：① `docker update --cpus=6`（并写入 compose）；② ES 客户端 `io-thread-count 4→16`、`max-conn-total 400`、`per-route 200`；③ `recallExecutor 10/20 → 32/64`（可配）；
+- 结果：**508 → 1,448 RPS（2.9x）**，P99 191 → 61ms。
 
 ## 三、结论与遗留
 1. 平台原真实吞吐被类加载锁压在 ~1k RPS；修复后 **product 达 2.7 万 RPS**，全链路为原基线的 2-25 倍；
-2. 新的瓶颈层浮出：**search（ES）~500 RPS**、**comment（DB）~2.5k RPS**、**home 聚合 P99 433ms**；
+2. 新的瓶颈层浮出：~~search（ES）~~（已调优至 1,448 RPS）、**comment（DB）~2.5k RPS**、**home 聚合 P99 433ms**；
 3. A1 报告中的所有数字（除 search 外）已作废，以本报告为准；SLO 基线同步更新；
 4. 待办：搜索的 ES 调优（分片/refresh/查询精简）、comment 的 DB 索引/JOIN 优化、home 聚合超时与扇出收敛。
 
