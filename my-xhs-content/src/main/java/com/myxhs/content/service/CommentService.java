@@ -56,6 +56,24 @@ public class CommentService {
     private final RocketMQTemplate rocketMQTemplate;
     private final com.myxhs.content.feign.UserFeignClient userFeignClient;
 
+    /**
+     * L1 首屏评论缓存（A2 性能：热读加速）。
+     * 3s TTL；发布/删除评论时按 noteId 前缀失效；仅缓存 lastId 为空的首页。
+     */
+    private final com.github.benmanes.caffeine.cache.Cache<String, java.util.List<CommentVO>> firstPageCache =
+            com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
+                    .maximumSize(10_000)
+                    .expireAfterWrite(3, java.util.concurrent.TimeUnit.SECONDS)
+                    .build();
+
+    private void invalidateCommentCache(Long noteId) {
+        if (noteId == null) {
+            return;
+        }
+        String prefix = noteId + ":";
+        firstPageCache.asMap().keySet().removeIf(k -> k.startsWith(prefix));
+    }
+
     /** 一级评论每页最大条数 */
     private static final int MAX_PAGE_SIZE = 20;
 
@@ -130,6 +148,7 @@ public class CommentService {
         comment.setLikeCount(0);
 
         commentMapper.insert(comment);
+        invalidateCommentCache(comment.getNoteId());
         log.info("[评论] 发表成功: commentId={}, noteId={}, userId={}, parentId={}",
                 comment.getId(), request.getNoteId(), userId, parentId);
 
@@ -243,6 +262,7 @@ public class CommentService {
 
         // 4. 逻辑删除父评论
         commentMapper.deleteById(commentId);
+        invalidateCommentCache(comment.getNoteId());
         log.info("[评论] 删除成功: commentId={}, userId={}, 级联删除{}条子评论", commentId, userId, childDeleted);
 
         // 5. 事务提交后清除缓存 + 发送 counter 事件
@@ -278,6 +298,15 @@ public class CommentService {
     public List<CommentVO> getCommentList(Long noteId, Long lastId, int pageSize) {
         pageSize = Math.max(1, Math.min(pageSize, MAX_PAGE_SIZE));
 
+        boolean firstPage = (lastId == null || lastId <= 0);
+        String cacheKey = noteId + ":" + pageSize;
+        if (firstPage) {
+            java.util.List<CommentVO> cached = firstPageCache.getIfPresent(cacheKey);
+            if (cached != null) {
+                return cached;
+            }
+        }
+
         // 1. 游标分页查询一级评论
         LambdaQueryWrapper<Comment> wrapper = new LambdaQueryWrapper<Comment>()
                 .eq(Comment::getNoteId, noteId)
@@ -294,6 +323,10 @@ public class CommentService {
         List<Comment> rootComments = commentMapper.selectList(wrapper);
 
         if (rootComments.isEmpty()) {
+            // A2：空结果同样入缓存（否则空笔记每次仍打 DB；3s TTL + 写路径失效保证一致性）
+            if (firstPage) {
+                firstPageCache.put(cacheKey, Collections.emptyList());
+            }
             return Collections.emptyList();
         }
 
@@ -335,7 +368,7 @@ public class CommentService {
 
         // 4. 组装 VO
         final Map<Long, Long> countMap = exactCountMap;
-        return rootComments.stream().map(root -> {
+        List<CommentVO> result = rootComments.stream().map(root -> {
             CommentVO vo = toCommentVO(root);
 
             List<Comment> children = childrenMap.getOrDefault(root.getId(), Collections.emptyList());
@@ -352,6 +385,10 @@ public class CommentService {
 
             return vo;
         }).collect(Collectors.toList());
+        if (firstPage) {
+            firstPageCache.put(cacheKey, result);
+        }
+        return result;
     }
 
     // ==================== 查询子评论列表（游标分页） ====================
