@@ -4,7 +4,12 @@ jobs:
   gate:
     runs-on: local
     steps:
-      - uses: actions/checkout@v4
+      - name: 拉取代码（shell，避免 JS action 依赖 node）
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git clone --depth 1 --branch main "http://x-access-token:${GH_TOKEN}@192.168.0.142:3000/ci/my-xhs.git" .
+          git log --oneline -1
       - name: 环境信息
         run: java -version 2>&1 | head -2 && mvn -version 2>&1 | head -2
       - name: 执行门禁（编译+单测+规范扫描）
