@@ -1,0 +1,195 @@
+2026-09-17T10:26:13.9779053Z local-runner(version:v0.6.1) received task 4 of job 4, be triggered by event: push
+2026-09-17T10:26:13.9785675Z workflow prepared
+2026-09-17T10:26:13.9786359Z evaluating expression 'success()'
+2026-09-17T10:26:13.9786911Z expression 'success()' evaluated to 'true'
+2026-09-17T10:26:13.9787081Z 🚀  Start image=maven:3.9-eclipse-temurin-17
+2026-09-17T10:26:13.9856207Z   🐳  docker pull image=maven:3.9-eclipse-temurin-17 platform= username= forcePull=false
+2026-09-17T10:26:13.9856373Z   🐳  docker pull maven:3.9-eclipse-temurin-17
+2026-09-17T10:26:14.0118741Z Image exists? true
+2026-09-17T10:26:14.0642527Z Cleaning up network for job gate, and network name is: GITEA-ACTIONS-TASK-4-WORKFLOW-ci-JOB-gate-09f1bfd979823d7417553c10a8fd1519958e9ba7e435290275a3ced3c9738047-gate-network
+2026-09-17T10:26:14.0950921Z   🐳  docker create image=maven:3.9-eclipse-temurin-17 platform= entrypoint=["/bin/sleep" "1800"] cmd=[] network="GITEA-ACTIONS-TASK-4-WORKFLOW-ci-JOB-gate-09f1bfd979823d7417553c10a8fd1519958e9ba7e435290275a3ced3c9738047-gate-network"
+2026-09-17T10:26:14.1491685Z Custom container.Config from options ==> &{Hostname: Domainname: User: AttachStdin:false AttachStdout:true AttachStderr:true ExposedPorts:map[] Tty:false OpenStdin:false StdinOnce:false Env:[] Cmd:[] Healthcheck:<nil> ArgsEscaped:false Image: Volumes:map[] WorkingDir: Entrypoint:[] NetworkDisabled:false MacAddress: OnBuild:[] Labels:map[] StopSignal: StopTimeout:<nil> Shell:[]}
+2026-09-17T10:26:14.1492325Z Merged container.Config ==> &{Hostname: Domainname: User: AttachStdin:false AttachStdout:true AttachStderr:true ExposedPorts:map[] Tty:false OpenStdin:false StdinOnce:false Env:[RUNNER_TOOL_CACHE=/opt/hostedtoolcache RUNNER_OS=Linux RUNNER_ARCH=X64 RUNNER_TEMP=/tmp LANG=C.UTF-8] Cmd:[] Healthcheck:<nil> ArgsEscaped:false Image:maven:3.9-eclipse-temurin-17 Volumes:map[] WorkingDir:/workspace/ci/my-xhs Entrypoint:[/bin/sleep 1800] NetworkDisabled:false MacAddress: OnBuild:[] Labels:map[] StopSignal: StopTimeout:<nil> Shell:[]}
+2026-09-17T10:26:14.1492746Z Custom container.HostConfig from options ==> &{Binds:[/data2/.m2:/root/.m2] ContainerIDFile: LogConfig:{Type: Config:map[]} NetworkMode:GITEA-ACTIONS-TASK-4-WORKFLOW-ci-JOB-gate-09f1bfd979823d7417553c10a8fd1519958e9ba7e435290275a3ced3c9738047-gate-network PortBindings:map[] RestartPolicy:{Name:no MaximumRetryCount:0} AutoRemove:false VolumeDriver: VolumesFrom:[] ConsoleSize:[0 0] Annotations:map[] CapAdd:[] CapDrop:[] CgroupnsMode: DNS:[] DNSOptions:[] DNSSearch:[] ExtraHosts:[] GroupAdd:[] IpcMode: Cgroup: Links:[] OomScoreAdj:0 PidMode: Privileged:false PublishAllPorts:false ReadonlyRootfs:false SecurityOpt:[] StorageOpt:map[] Tmpfs:map[] UTSMode: UsernsMode: ShmSize:0 Sysctls:map[] Runtime: Isolation: Resources:{CPUShares:0 Memory:0 NanoCPUs:0 CgroupParent: BlkioWeight:0 BlkioWeightDevice:[] BlkioDeviceReadBps:[] BlkioDeviceWriteBps:[] BlkioDeviceReadIOps:[] BlkioDeviceWriteIOps:[] CPUPeriod:0 CPUQuota:0 CPURealtimePeriod:0 CPURealtimeRuntime:0 CpusetCpus: CpusetMems: Devices:[] DeviceCgroupRules:[] DeviceRequests:[] KernelMemory:0 KernelMemoryTCP:0 MemoryReservation:0 MemorySwap:0 MemorySwappiness:0x2f5ad6bde3c8 OomKillDisable:0x2f5ad6bde2c3 PidsLimit:0x2f5ad6bde428 Ulimits:[] CPUCount:0 CPUPercent:0 IOMaximumIOps:0 IOMaximumBandwidth:0} Mounts:[] MaskedPaths:[] ReadonlyPaths:[] Init:<nil>}
+2026-09-17T10:26:14.1493279Z --network and --net in the options will be ignored.
+2026-09-17T10:26:14.1493577Z Merged container.HostConfig ==> &{Binds:[/var/run/docker.sock:/var/run/docker.sock /data2/.m2:/root/.m2] ContainerIDFile: LogConfig:{Type: Config:map[]} NetworkMode:GITEA-ACTIONS-TASK-4-WORKFLOW-ci-JOB-gate-09f1bfd979823d7417553c10a8fd1519958e9ba7e435290275a3ced3c9738047-gate-network PortBindings:map[] RestartPolicy:{Name:no MaximumRetryCount:0} AutoRemove:true VolumeDriver: VolumesFrom:[] ConsoleSize:[0 0] Annotations:map[] CapAdd:[] CapDrop:[] CgroupnsMode: DNS:[] DNSOptions:[] DNSSearch:[] ExtraHosts:[] GroupAdd:[] IpcMode: Cgroup: Links:[] OomScoreAdj:0 PidMode: Privileged:false PublishAllPorts:false ReadonlyRootfs:false SecurityOpt:[] StorageOpt:map[] Tmpfs:map[] UTSMode: UsernsMode: ShmSize:0 Sysctls:map[] Runtime: Isolation: Resources:{CPUShares:0 Memory:0 NanoCPUs:0 CgroupParent: BlkioWeight:0 BlkioWeightDevice:[] BlkioDeviceReadBps:[] BlkioDeviceWriteBps:[] BlkioDeviceReadIOps:[] BlkioDeviceWriteIOps:[] CPUPeriod:0 CPUQuota:0 CPURealtimePeriod:0 CPURealtimeRuntime:0 CpusetCpus: CpusetMems: Devices:[] DeviceCgroupRules:[] DeviceRequests:[] KernelMemory:0 KernelMemoryTCP:0 MemoryReservation:0 MemorySwap:0 MemorySwappiness:0x2f5ad6bde3c8 OomKillDisable:0x2f5ad6bde2c3 PidsLimit:0x2f5ad6bde428 Ulimits:[] CPUCount:0 CPUPercent:0 IOMaximumIOps:0 IOMaximumBandwidth:0} Mounts:[{Type:volume Source:act-toolcache Target:/opt/hostedtoolcache ReadOnly:false Consistency: BindOptions:<nil> VolumeOptions:<nil> TmpfsOptions:<nil> ClusterOptions:<nil>} {Type:volume Source:GITEA-ACTIONS-TASK-4-WORKFLOW-ci-JOB-gate-09f1bfd979823d7417553c10a8fd1519958e9ba7e435290275a3ced3c9738047-env Target:/var/run/act ReadOnly:false Consistency: BindOptions:<nil> VolumeOptions:<nil> TmpfsOptions:<nil> ClusterOptions:<nil>} {Type:volume Source:GITEA-ACTIONS-TASK-4-WORKFLOW-ci-JOB-gate-09f1bfd979823d7417553c10a8fd1519958e9ba7e435290275a3ced3c9738047 Target:/workspace/ci/my-xhs ReadOnly:false Consistency: BindOptions:<nil> VolumeOptions:<nil> TmpfsOptions:<nil> ClusterOptions:<nil>}] MaskedPaths:[] ReadonlyPaths:[] Init:<nil>}
+2026-09-17T10:26:14.1494657Z [/data2/.m2] is not a valid volume, will be ignored
+2026-09-17T10:26:14.2508281Z Created container name=GITEA-ACTIONS-TASK-4-WORKFLOW-ci-JOB-gate-09f1bfd979823d7417553c10a8fd1519958e9ba7e435290275a3ced3c9738047 id=44fac4789a02dad22299c42f9e26ebf4e101094e42e2275d1dd06ea6d03fa0c6 from image maven:3.9-eclipse-temurin-17 (platform: )
+2026-09-17T10:26:14.2508663Z ENV ==> [RUNNER_TOOL_CACHE=/opt/hostedtoolcache RUNNER_OS=Linux RUNNER_ARCH=X64 RUNNER_TEMP=/tmp LANG=C.UTF-8]
+2026-09-17T10:26:14.2508833Z   🐳  docker run image=maven:3.9-eclipse-temurin-17 platform= entrypoint=["/bin/sleep" "1800"] cmd=[] network="GITEA-ACTIONS-TASK-4-WORKFLOW-ci-JOB-gate-09f1bfd979823d7417553c10a8fd1519958e9ba7e435290275a3ced3c9738047-gate-network"
+2026-09-17T10:26:14.2509008Z Starting container: 44fac4789a02dad22299c42f9e26ebf4e101094e42e2275d1dd06ea6d03fa0c6
+2026-09-17T10:26:14.4108611Z Started container: 44fac4789a02dad22299c42f9e26ebf4e101094e42e2275d1dd06ea6d03fa0c6
+2026-09-17T10:26:14.4844518Z Writing entry to tarball workflow/event.json len:4567
+2026-09-17T10:26:14.4844984Z Writing entry to tarball workflow/envs.txt len:0
+2026-09-17T10:26:14.4845103Z Extracting content to '/var/run/act/'
+2026-09-17T10:26:14.5026563Z expression '${{ secrets.GITHUB_TOKEN }}' rewritten to 'format('{0}', secrets.GITHUB_TOKEN)'
+2026-09-17T10:26:14.5026959Z evaluating expression 'format('{0}', secrets.GITHUB_TOKEN)'
+2026-09-17T10:26:14.5027280Z expression 'format('{0}', secrets.GITHUB_TOKEN)' evaluated to '%!t(string=***)'
+2026-09-17T10:26:14.5152315Z evaluating expression ''
+2026-09-17T10:26:14.5152883Z expression '' evaluated to 'true'
+2026-09-17T10:26:14.5152996Z ⭐ Run Main 拉取代码（shell，避免 JS action 依赖 node）
+2026-09-17T10:26:14.5153189Z Writing entry to tarball workflow/outputcmd.txt len:0
+2026-09-17T10:26:14.5153348Z Writing entry to tarball workflow/statecmd.txt len:0
+2026-09-17T10:26:14.5153440Z Writing entry to tarball workflow/pathcmd.txt len:0
+2026-09-17T10:26:14.5153541Z Writing entry to tarball workflow/envs.txt len:0
+2026-09-17T10:26:14.5153618Z Writing entry to tarball workflow/SUMMARY.md len:0
+2026-09-17T10:26:14.5153710Z Extracting content to '/var/run/act'
+2026-09-17T10:26:14.5405451Z Wrote command \n\ngit clone --depth 1 --branch main "http://x-access-token:***@192.168.0.142:3000/ci/my-xhs.git" .\ngit log --oneline -1\n\n\n to 'workflow/0'
+2026-09-17T10:26:14.5405978Z Writing entry to tarball workflow/0 len:128
+2026-09-17T10:26:14.5406165Z Extracting content to '/var/run/act'
+2026-09-17T10:26:14.5452430Z ::group::Run git clone --depth 1 --branch main "http://x-access-token:***@192.168.0.142:3000/ci/my-xhs.git" .
+2026-09-17T10:26:14.5452918Z git clone --depth 1 --branch main "http://x-access-token:***@192.168.0.142:3000/ci/my-xhs.git" .
+2026-09-17T10:26:14.5453092Z git log --oneline -1
+2026-09-17T10:26:14.5453213Z shell: bash --noprofile --norc -e -o pipefail {0}
+2026-09-17T10:26:14.5453360Z env:
+2026-09-17T10:26:14.5453457Z   GH_TOKEN: ***
+2026-09-17T10:26:14.5453545Z ::endgroup::
+2026-09-17T10:26:14.5929368Z Cloning into '.'...
+2026-09-17T10:26:34.1272648Z Updating files:  34% (2477/7127)Updating files:  35% (2495/7127)Updating files:  36% (2566/7127)Updating files:  37% (2637/7127)Updating files:  38% (2709/7127)Updating files:  39% (2780/7127)Updating files:  40% (2851/7127)Updating files:  41% (2923/7127)Updating files:  42% (2994/7127)Updating files:  43% (3065/7127)Updating files:  44% (3136/7127)Updating files:  45% (3208/7127)Updating files:  45% (3264/7127)Updating files:  46% (3279/7127)Updating files:  47% (3350/7127)Updating files:  48% (3421/7127)Updating files:  49% (3493/7127)Updating files:  50% (3564/7127)Updating files:  51% (3635/7127)Updating files:  52% (3707/7127)Updating files:  53% (3778/7127)Updating files:  54% (3849/7127)Updating files:  55% (3920/7127)Updating files:  56% (3992/7127)Updating files:  56% (4058/7127)Updating files:  57% (4063/7127)Updating files:  58% (4134/7127)Updating files:  59% (4205/7127)Updating files:  60% (4277/7127)Updating files:  61% (4348/7127)Updating files:  62% (4419/7127)Updating files:  63% (4491/7127)Updating files:  64% (4562/7127)Updating files:  65% (4633/7127)Updating files:  66% (4704/7127)Updating files:  67% (4776/7127)Updating files:  68% (4847/7127)Updating files:  69% (4918/7127)Updating files:  70% (4989/7127)Updating files:  71% (5061/7127)Updating files:  72% (5132/7127)Updating files:  73% (5203/7127)Updating files:  74% (5274/7127)Updating files:  75% (5346/7127)Updating files:  76% (5417/7127)Updating files:  77% (5488/7127)Updating files:  78% (5560/7127)Updating files:  79% (5631/7127)Updating files:  80% (5702/7127)Updating files:  81% (5773/7127)Updating files:  82% (5845/7127)Updating files:  83% (5916/7127)Updating files:  84% (5987/7127)Updating files:  84% (6031/7127)Updating files:  84% (6034/7127)Updating files:  85% (6058/7127)Updating files:  86% (6130/7127)Updating files:  87% (6201/7127)Updating files:  88% (6272/7127)Updating files:  89% (6344/7127)Updating files:  90% (6415/7127)Updating files:  91% (6486/7127)Updating files:  92% (6557/7127)Updating files:  93% (6629/7127)Updating files:  94% (6700/7127)Updating files:  95% (6771/7127)Updating files:  96% (6842/7127)Updating files:  97% (6914/7127)Updating files:  98% (6985/7127)Updating files:  99% (7056/7127)Updating files: 100% (7127/7127)Updating files: 100% (7127/7127), done.
+2026-09-17T10:26:34.1547599Z b32f0ba demo: 故意违规（printStackTrace）验证门禁拦截
+2026-09-17T10:26:34.2274076Z ::group::Run java -version 2>&1 | head -2 && mvn -version 2>&1 | head -2
+2026-09-17T10:26:34.2274482Z java -version 2>&1 | head -2 && mvn -version 2>&1 | head -2
+2026-09-17T10:26:34.2274589Z shell: bash --noprofile --norc -e -o pipefail {0}
+2026-09-17T10:26:34.2274681Z ::endgroup::
+2026-09-17T10:26:34.3046420Z openjdk version "17.0.20" 2026-07-21
+2026-09-17T10:26:34.3047085Z OpenJDK Runtime Environment Temurin-17.0.20+8 (build 17.0.20+8)
+2026-09-17T10:26:34.5078845Z Apache Maven 3.9.16 (2bdd9fddda4b155ebf8000e807eb73fd829a51d5)
+2026-09-17T10:26:34.5079344Z Maven home: /usr/share/maven
+2026-09-17T10:26:35.0107411Z ::group::Run bash scripts/ci-gate.sh
+2026-09-17T10:26:35.0108004Z bash scripts/ci-gate.sh
+2026-09-17T10:26:35.0108153Z shell: bash --noprofile --norc -e -o pipefail {0}
+2026-09-17T10:26:35.0108298Z ::endgroup::
+2026-09-17T10:26:35.0595571Z == [1/3] 编译公共模块 ==
+2026-09-17T10:27:32.1345772Z == [2/3] 公共模块单测 ==
+2026-09-17T10:27:36.3946268Z OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+2026-09-17T10:27:37.1771731Z 10:27:37.106 [main] INFO com.myxhs.common.id.SegmentIdGenerator -- [号段] 加载成功, bizTag=user, range=(0, 1000], step=1000
+2026-09-17T10:27:37.1772365Z 10:27:37.110 [main] INFO com.myxhs.common.id.SegmentIdGenerator -- [号段] 加载成功, bizTag=order, range=(100, 600], step=500
+2026-09-17T10:27:37.1930837Z 10:27:37.182 [main] INFO com.myxhs.common.id.SegmentIdGenerator -- [号段] 加载成功, bizTag=user, range=(0, 1000], step=1000
+2026-09-17T10:27:37.1992600Z 10:27:37.196 [main] WARN com.myxhs.common.id.SegmentIdGenerator -- [号段] 乐观锁冲突, bizTag=retry, retry=1
+2026-09-17T10:27:37.1993140Z 10:27:37.197 [main] WARN com.myxhs.common.id.SegmentIdGenerator -- [号段] 乐观锁冲突, bizTag=retry, retry=2
+2026-09-17T10:27:37.1993300Z 10:27:37.197 [main] INFO com.myxhs.common.id.SegmentIdGenerator -- [号段] 加载成功, bizTag=retry, range=(0, 1000], step=1000
+2026-09-17T10:27:37.2047684Z 10:27:37.201 [main] INFO com.myxhs.common.id.SegmentIdGenerator -- [号段] 加载成功, bizTag=note, range=(0, 5], step=5
+2026-09-17T10:27:37.2048285Z 10:27:37.202 [main] WARN com.myxhs.common.id.SegmentIdGenerator -- [号段] next未就绪，降级为同步加载, bizTag=note
+2026-09-17T10:27:37.2048530Z 10:27:37.202 [main] INFO com.myxhs.common.id.SegmentIdGenerator -- [号段] 加载成功, bizTag=note, range=(5, 10], step=5
+2026-09-17T10:27:37.2048789Z 10:27:37.203 [id-segment-preload] INFO com.myxhs.common.id.SegmentIdGenerator -- [号段] 加载成功, bizTag=note, range=(10, 15], step=5
+2026-09-17T10:27:37.2048947Z 10:27:37.203 [id-segment-preload] INFO com.myxhs.common.id.SegmentIdGenerator -- [号段] 异步预加载完成, bizTag=note
+2026-09-17T10:27:37.2111606Z 10:27:37.208 [main] WARN com.myxhs.common.id.SegmentIdGenerator -- [号段] 乐观锁冲突, bizTag=fail, retry=1
+2026-09-17T10:27:37.2112050Z 10:27:37.208 [main] WARN com.myxhs.common.id.SegmentIdGenerator -- [号段] 乐观锁冲突, bizTag=fail, retry=2
+2026-09-17T10:27:37.2112244Z 10:27:37.208 [main] WARN com.myxhs.common.id.SegmentIdGenerator -- [号段] 乐观锁冲突, bizTag=fail, retry=3
+2026-09-17T10:27:37.2224141Z 10:27:37.215 [pool-2-thread-1] INFO com.myxhs.common.id.SegmentIdGenerator -- [号段] 加载成功, bizTag=order, range=(0, 10000], step=10000
+2026-09-17T10:27:38.4691466Z Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
+2026-09-17T10:27:38.4691977Z 10:27:38.464 [main] WARN com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] 慢SQL检测: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, elapsed=0ms, consecutiveSlows=1, sql=SELECT * FROM t_order WHERE id = ?
+2026-09-17T10:27:38.4692213Z 10:27:38.465 [main] ERROR com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] SQL熔断触发: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, consecutiveSlows=1, elapsed=0ms
+2026-09-17T10:27:38.4692457Z 10:27:38.467 [main] ERROR com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] SQL阻断: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, consecutiveSlows=1, sql=SELECT * FROM t_order WHERE id = ?
+2026-09-17T10:27:38.4734716Z 10:27:38.470 [main] WARN com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] 慢SQL检测: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, elapsed=0ms, consecutiveSlows=1, sql=SELECT * FROM t_order WHERE id = ?
+2026-09-17T10:27:38.4735230Z 10:27:38.470 [main] ERROR com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] SQL熔断触发: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, consecutiveSlows=1, elapsed=0ms
+2026-09-17T10:27:38.4735524Z 10:27:38.471 [main] ERROR com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] SQL已熔断(observe-only): fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, consecutiveSlows=1
+2026-09-17T10:27:38.4735639Z 10:27:38.472 [main] WARN com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] 慢SQL检测: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, elapsed=0ms, consecutiveSlows=2, sql=SELECT * FROM t_order WHERE id = ?
+2026-09-17T10:27:38.4735747Z 10:27:38.472 [main] ERROR com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] SQL熔断触发: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, consecutiveSlows=2, elapsed=0ms
+2026-09-17T10:27:38.4836843Z 10:27:38.481 [main] WARN com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] 慢SQL检测: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, elapsed=0ms, consecutiveSlows=1, sql=SELECT * FROM t_order WHERE id = ?
+2026-09-17T10:27:38.4837352Z 10:27:38.481 [main] ERROR com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] SQL熔断触发: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, consecutiveSlows=1, elapsed=0ms
+2026-09-17T10:27:38.4837529Z 10:27:38.482 [main] ERROR com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] SQL已熔断(observe-only): fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, consecutiveSlows=1
+2026-09-17T10:27:38.4837851Z 10:27:38.482 [main] WARN com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] 慢SQL检测: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, elapsed=0ms, consecutiveSlows=2, sql=SELECT * FROM t_order WHERE id = ?
+2026-09-17T10:27:38.4837967Z 10:27:38.482 [main] ERROR com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] SQL熔断触发: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, consecutiveSlows=2, elapsed=0ms
+2026-09-17T10:27:38.5295059Z 10:27:38.484 [main] WARN com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] 慢SQL检测: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, elapsed=0ms, consecutiveSlows=1, sql=SELECT * FROM t_order WHERE id = ?
+2026-09-17T10:27:38.5295625Z 10:27:38.484 [main] ERROR com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] SQL熔断触发: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, consecutiveSlows=1, elapsed=0ms
+2026-09-17T10:27:38.5295865Z 10:27:38.486 [main] ERROR com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] SQL阻断: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, consecutiveSlows=1, sql=SELECT * FROM t_order WHERE id = ?
+2026-09-17T10:27:38.5296027Z 10:27:38.527 [main] WARN com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] 熔断冷却到期，恢复: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?
+2026-09-17T10:27:38.5296244Z 10:27:38.528 [main] WARN com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] 慢SQL检测: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, elapsed=0ms, consecutiveSlows=1, sql=SELECT * FROM t_order WHERE id = ?
+2026-09-17T10:27:38.5296472Z 10:27:38.528 [main] ERROR com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] SQL熔断触发: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, consecutiveSlows=1, elapsed=0ms
+2026-09-17T10:27:38.5461654Z 10:27:38.543 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone1'
+2026-09-17T10:27:38.5497992Z 10:27:38.547 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone1' -> 'defaultZone'
+2026-09-17T10:27:38.5498487Z 10:27:38.548 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'false' -> 'true'
+2026-09-17T10:27:38.5498615Z 10:27:38.548 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone1'
+2026-09-17T10:27:38.5498765Z 10:27:38.548 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamDisabledZone' changed: 'null' -> 'zone1,zone2'
+2026-09-17T10:27:38.5498964Z 10:27:38.548 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '5' -> '1'
+2026-09-17T10:27:38.5511043Z 10:27:38.549 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone1' -> 'defaultZone'
+2026-09-17T10:27:38.5511495Z 10:27:38.550 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'true' -> 'false'
+2026-09-17T10:27:38.5514164Z 10:27:38.550 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '1' -> '5'
+2026-09-17T10:27:38.5514458Z 10:27:38.550 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamDisabledZone' changed: 'zone1,zone2' -> 'null'
+2026-09-17T10:27:38.5514735Z 10:27:38.550 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceFilterOrder' changed: '10' -> '5'
+2026-09-17T10:27:38.5526234Z 10:27:38.551 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceFilterOrder' changed: '5' -> '10'
+2026-09-17T10:27:38.5526547Z 10:27:38.551 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'false' -> 'true'
+2026-09-17T10:27:38.5526707Z 10:27:38.551 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone3'
+2026-09-17T10:27:38.5526977Z 10:27:38.551 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '5' -> '1'
+2026-09-17T10:27:38.5539450Z 10:27:38.552 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone3' -> 'defaultZone'
+2026-09-17T10:27:38.5539868Z 10:27:38.553 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'true' -> 'false'
+2026-09-17T10:27:38.5540039Z 10:27:38.553 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '1' -> '5'
+2026-09-17T10:27:38.5540363Z 10:27:38.553 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'enabled' changed: 'true' -> 'false'
+2026-09-17T10:27:38.5556237Z 10:27:38.554 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'enabled' changed: 'false' -> 'true'
+2026-09-17T10:27:38.5580503Z 10:27:38.556 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'false' -> 'true'
+2026-09-17T10:27:38.5580747Z 10:27:38.556 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone1'
+2026-09-17T10:27:38.5580873Z 10:27:38.556 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '5' -> '1'
+2026-09-17T10:27:38.5603571Z 10:27:38.558 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone1' -> 'defaultZone'
+2026-09-17T10:27:38.5604155Z 10:27:38.558 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'true' -> 'false'
+2026-09-17T10:27:38.5604319Z 10:27:38.558 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '1' -> '5'
+2026-09-17T10:27:38.5604460Z 10:27:38.558 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'false' -> 'true'
+2026-09-17T10:27:38.5604700Z 10:27:38.558 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone1'
+2026-09-17T10:27:38.5604954Z 10:27:38.558 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamDisabledZone' changed: 'null' -> 'zone2'
+2026-09-17T10:27:38.5605124Z 10:27:38.558 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '5' -> '1'
+2026-09-17T10:27:38.5605259Z 10:27:38.559 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamZoneReadyPercentage' changed: '100' -> '75'
+2026-09-17T10:27:38.5614470Z 10:27:38.560 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone1' -> 'defaultZone'
+2026-09-17T10:27:38.5614940Z 10:27:38.560 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'true' -> 'false'
+2026-09-17T10:27:38.5615080Z 10:27:38.560 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamZoneReadyPercentage' changed: '75' -> '100'
+2026-09-17T10:27:38.5615337Z 10:27:38.560 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '1' -> '5'
+2026-09-17T10:27:38.5615473Z 10:27:38.560 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamDisabledZone' changed: 'zone2' -> 'null'
+2026-09-17T10:27:38.5615618Z 10:27:38.560 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'false' -> 'true'
+2026-09-17T10:27:38.5615719Z 10:27:38.560 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone1'
+2026-09-17T10:27:38.5627269Z 10:27:38.561 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone1' -> 'defaultZone'
+2026-09-17T10:27:38.5627556Z 10:27:38.561 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'true' -> 'false'
+2026-09-17T10:27:38.5627667Z 10:27:38.561 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'false' -> 'true'
+2026-09-17T10:27:38.5627781Z 10:27:38.562 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone1'
+2026-09-17T10:27:38.5627872Z 10:27:38.562 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '5' -> '1'
+2026-09-17T10:27:38.5641704Z 10:27:38.562 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone1' -> 'defaultZone'
+2026-09-17T10:27:38.5642085Z 10:27:38.563 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'true' -> 'false'
+2026-09-17T10:27:38.5642187Z 10:27:38.563 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '1' -> '5'
+2026-09-17T10:27:38.5642365Z 10:27:38.563 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'false' -> 'true'
+2026-09-17T10:27:38.5642463Z 10:27:38.563 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone1'
+2026-09-17T10:27:38.5642543Z 10:27:38.563 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '5' -> '3'
+2026-09-17T10:27:38.5642639Z 10:27:38.563 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamZoneReadyPercentage' changed: '100' -> '80'
+2026-09-17T10:27:38.5653073Z 10:27:38.564 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone1' -> 'defaultZone'
+2026-09-17T10:27:38.5653339Z 10:27:38.564 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'true' -> 'false'
+2026-09-17T10:27:38.5653437Z 10:27:38.564 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamZoneReadyPercentage' changed: '80' -> '100'
+2026-09-17T10:27:38.5653530Z 10:27:38.564 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '3' -> '5'
+2026-09-17T10:27:38.5691406Z 10:27:38.568 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'false' -> 'true'
+2026-09-17T10:27:38.5892402Z 10:27:38.579 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'true' -> 'false'
+2026-09-17T10:27:38.5894404Z 10:27:38.580 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'false' -> 'true'
+2026-09-17T10:27:38.5894942Z 10:27:38.580 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'true' -> 'false'
+2026-09-17T10:27:38.5895117Z 10:27:38.581 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamDisabledZone' changed: 'null' -> 'zone1,zone2'
+2026-09-17T10:27:38.5896573Z 10:27:38.581 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamDisabledZone' changed: 'zone1,zone2' -> 'null'
+2026-09-17T10:27:38.5898910Z 10:27:38.584 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone-shanghai'
+2026-09-17T10:27:38.5899166Z 10:27:38.584 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'enabled' changed: 'true' -> 'false'
+2026-09-17T10:27:38.5899307Z 10:27:38.585 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'false' -> 'true'
+2026-09-17T10:27:38.5899539Z 10:27:38.585 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceFilterOrder' changed: '10' -> '20'
+2026-09-17T10:27:38.5899715Z 10:27:38.585 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'enabled' changed: 'false' -> 'true'
+2026-09-17T10:27:38.5899870Z 10:27:38.585 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone-shanghai' -> 'defaultZone'
+2026-09-17T10:27:38.5900015Z 10:27:38.585 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'true' -> 'false'
+2026-09-17T10:27:38.5900378Z 10:27:38.585 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceFilterOrder' changed: '20' -> '10'
+2026-09-17T10:27:38.5901492Z 10:27:38.585 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '5' -> '3'
+2026-09-17T10:27:38.5902489Z 10:27:38.586 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '3' -> '5'
+2026-09-17T10:27:38.5902727Z 10:27:38.586 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone-beijing'
+2026-09-17T10:27:38.5904139Z 10:27:38.587 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone-beijing' -> 'defaultZone'
+2026-09-17T10:27:38.5904448Z 10:27:38.587 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamZoneReadyPercentage' changed: '100' -> '80'
+2026-09-17T10:27:38.5905326Z 10:27:38.588 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamZoneReadyPercentage' changed: '80' -> '100'
+2026-09-17T10:27:38.5905486Z 10:27:38.588 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'enabled' changed: 'true' -> 'false'
+2026-09-17T10:27:38.5906738Z 10:27:38.588 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'enabled' changed: 'false' -> 'true'
+2026-09-17T10:27:38.5906910Z 10:27:38.589 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceFilterOrder' changed: '10' -> '5'
+2026-09-17T10:27:38.5908326Z 10:27:38.589 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceFilterOrder' changed: '5' -> '10'
+2026-09-17T10:27:38.5908642Z 10:27:38.589 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'enabled' changed: 'true' -> 'false'
+2026-09-17T10:27:38.5908964Z 10:27:38.589 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'enabled' changed: 'false' -> 'true'
+2026-09-17T10:27:38.5914142Z 10:27:38.590 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone-shanghai'
+2026-09-17T10:27:38.5926853Z 10:27:38.591 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone-shanghai' -> 'defaultZone'
+2026-09-17T10:27:38.5927097Z 10:27:38.592 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamDisabledZone' changed: 'null' -> ' zone1 , zone2 '
+2026-09-17T10:27:38.6737699Z == [3/3] 规范扫描（my-xhs-common） ==
+2026-09-17T10:27:38.6762546Z my-xhs-common/src/main/java/com/myxhs/common/zone/ZoneBootstrapDemo.java:9:            e.printStackTrace();
+2026-09-17T10:27:38.6763744Z ❌ 禁止 printStackTrace()
+2026-09-17T10:27:38.6802478Z == ❌ 门禁失败 ==
+2026-09-17T10:27:38.6815875Z   ❌  Failure - Main 执行门禁（编译+单测+规范扫描）
+2026-09-17T10:27:38.6990435Z exitcode '1': failure
+2026-09-17T10:27:38.6991231Z Cleaning up container for job gate
+2026-09-17T10:27:39.1178669Z Removed container: 44fac4789a02dad22299c42f9e26ebf4e101094e42e2275d1dd06ea6d03fa0c6
+2026-09-17T10:27:39.1188577Z   🐳  docker volume rm GITEA-ACTIONS-TASK-4-WORKFLOW-ci-JOB-gate-09f1bfd979823d7417553c10a8fd1519958e9ba7e435290275a3ced3c9738047
+2026-09-17T10:27:39.4918995Z   🐳  docker volume rm GITEA-ACTIONS-TASK-4-WORKFLOW-ci-JOB-gate-09f1bfd979823d7417553c10a8fd1519958e9ba7e435290275a3ced3c9738047-env
+2026-09-17T10:27:39.4947364Z Cleaning up network for job gate, and network name is: GITEA-ACTIONS-TASK-4-WORKFLOW-ci-JOB-gate-09f1bfd979823d7417553c10a8fd1519958e9ba7e435290275a3ced3c9738047-gate-network
+2026-09-17T10:27:39.6383302Z 🏁  Job failed
+2026-09-17T10:27:39.6460744Z Job 'gate' failed
