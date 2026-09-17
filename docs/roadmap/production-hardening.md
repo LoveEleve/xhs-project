@@ -40,8 +40,22 @@
 | D0 | 骨架审计 | ✅ 完成（`docs/multi-active/p0-zone-audit.md`） | — | P0 报告 | — | ✅ |
 | D1 | 路由层启用+观测+试点 | LB 已接线但未开；无指标 | 补 `myxhs_zone_route_total`+日志；product 双实例（zone-a/b，19006/19026）；cart 开 preference | 路由命中指标；kill zone-a → RTO 数字 | 2天 | P0 |
 | D2 | 数据面接线 | `DynamicDataSource` 类完整未接；Redis 事件消费端未实现 | 按 zone 定义数据源并注册；Redis 命令事件消费（跨 zone 同步/审计） | 数据源热切换演示 + 事件消费记录 | 3天 | P1 |
-| D3 | 组件级多活清单 | Spring Cloud LB ✅骨架；其余未做 | 逐项：网关（zone 路由）、Spring REST Client、Dubbo、MySQL JDBC/Server、Redis Client/Server、动态 JDBC/Spring 组件——按"可仿真"排期 | 每项一页设计+验证 | 3-5天 | P1 |
-| D4 | 切流/回切演练 | — | 隔离 zone → 切流 → 回切；RPO/RTO；冲突策略（LWW/幂等/CRDT 评估） | 演练报告（含仿真 vs 生产差距章节） | 2天 | P0 |
+| D3 | **组件级多活矩阵（10 项）** | 逐项状态见下 | 按"可仿真"逐项：设计+验证+边界 | 每项一页设计+验证 | 3-5天 | P1 |
+| D4 | 切流/回切演练 | — | 隔离 zone → 切流 → 回切；RTO/RPO；冲突策略（LWW/幂等/CRDT 评估） | 演练报告（含仿真 vs 生产差距章节） | 2天 | P0 |
+
+### D3 组件级多活矩阵（对应你列的 10 项）
+| # | 组件 | 现状 | 计划 | 状态 |
+|---|---|---|---|---|
+| 1 | Spring Cloud LoadBalancer 多活 | ✅ 双 zone 路由实证 + 切换 RTO≈0.9s（`docs/reports/zone-pilot-20260918.md`） | 补路由指标/日志；重复与分区演练 | **基本完成（待观测增强）** |
+| 2 | Spring REST Client 多活 | 未做（`RestTemplate`/`RestClient` 使用面小） | 若使用面扩大再评估 zone 拦截器 | 待评估 |
+| 3 | Apache Dubbo 多活 | **决策不引入**（见 rpc-upgrade.md） | 仅理论储备（Dubbo 自带 zone/region 路由） | 排除 |
+| 4 | Spring Cloud Gateway 多活 | 网关已有 zone 标记（TrafficColoring）+ GrayRoute | 评估"zone 就近转发/zone 故障切流"（本地双实例仿真） | P1 |
+| 5 | MySQL Server 多活 | 单主一从（3307），已做故障转移演练（C1） | 双 zone 仿真：主从分属 zone-a/b，读就近+主故障切换 | P1 |
+| 6 | MySQL JDBC 多活 | `ReadWriteRoutingDataSourceConfig`（写主读从）+ zone 骨架 `DynamicDataSource`（未接线） | 接 zone 感知数据源（写本 zone 主、跨 zone 读兜底） | P1 |
+| 7 | Redis Client 多活 | 业务/缓存双实例 + Sentinel；zone 骨架含 `RedisTemplateWrapper`/`RedisCommandEvent`（默认关） | 接 zone 感知路由 + 跨 zone 同步事件消费 | P2 |
+| 8 | Redis Server 多活 | 单主一从 + Sentinel（切主 2.3s 已演练） | 双 zone 仿真：两主各管本 zone 数据 + 冲突策略 | P2 |
+| 9 | 动态 JDBC 组件多活 | `DynamicDataSource` 类完整（含 TCC 事务安全），未接入服务 | 接线到 1 个服务试点（如 cart） | P2 |
+| 10 | 动态 Spring 组件多活 | `ZoneContext` PropertyChange + `ZoneProperties` 已具备 | 动态切换演示（不改配置热切 zone） | P2 |
 
 ## Track E：可观测与稳定性（对应 6/7/8）
 | # | 事项 | 现状 | 目标/动作 | 验收证据 | 优先级 |
