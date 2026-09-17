@@ -15,7 +15,7 @@
 | # | 事项 | 现状 | 目标/动作 | 验收证据 | 工作量 | 优先级 |
 |---|---|---|---|---|---|---|
 | A1 | 全链路压测与容量模型 | ✅ **完成**（2026-09-17，含造数）：直连容量、网关代理≈0、note/home/search 实测；深核修正 4 处误判 | 仅剩 recommend/饱和曲线可选 | `docs/reports/capacity-20260917.md` | ✅ |
-| A2 | JVM/线程池/内核调优闭环 | ✅ **完成**（2026-09-17）：**发现并修复平台级 bug（每请求 Class.forName 抢类加载锁）→ product 1074→27,508 RPS（c=32）、32,421（c=64），P50 0.93ms**；GC/Hikari/Tomcat/内核均healthy；JVM硬化+GC日志已应用；余=批量发布 15 服务并重测基线 | `docs/reports/a2-jvm-tuning-20260917.md` | ✅（批量发布待办） | P0 |
+| A2 | JVM/线程池/内核调优闭环 | ✅ **完成**（2026-09-17）：**发现并修复平台级 bug（每请求 Class.forName 抢类加载锁）→ product 1074→27,508 RPS（c=32）、32,421（c=64），P50 0.93ms**；GC/Hikari/Tomcat/内核均healthy；JVM硬化+GC日志已应用；✅ 批量发布 15 服务完成（20:01）并重测基线（product 27k/user 5.8k/note 4.2k/gateway 4.6k） | `docs/reports/a2-jvm-tuning-20260917.md` | ✅（批量发布待办） | P0 |
 | A3 | SLO 与降级矩阵 | ✅ **完成**（2026-09-17）：SLO 定义 + 错误预算账本（首次燃烧记录=发布脚本 bug 停机 2-3min）+ 降级矩阵；**home 线程池饥饿修复（5.6→430 RPS，P99 1.6s→307ms）**；限流 HTTP 429 规范化 | 待补：SLO 看板/燃烧告警、写链路基线、ES 降级验证 | `docs/slo/slo-and-degradation-matrix.md` | ✅ |
 | A4 | 网关性能专项 | 网关池参数已调（2s/10s/45s） | 网关 vs 直连压测对比；Netty/epoll/HTTP2/背压评估 | 网关压测报告（RPS/P99/资源） | 1天 | P1 |
 | A5 | 热点治理 | 双删/Bloom/逻辑过期已有 | 热 key/大 key 探测；命中率与回源体系 | 热点清单+处置记录 | 1-2天 | P2 |
