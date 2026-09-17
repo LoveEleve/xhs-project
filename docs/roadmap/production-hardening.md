@@ -23,9 +23,9 @@
 ## Track B：RPC 架构升级（对应 3）
 | # | 事项 | 现状 | 目标/动作 | 验收证据 | 工作量 | 优先级 |
 |---|---|---|---|---|---|---|
-| B1 | 选型对比 | 全 Feign（同步 HTTP、NEVER_RETRY） | Dubbo vs gRPC vs Feign 对比表：协议/序列化/线程模型/LB/超时重试/异步/生态/迁移成本 | `docs/design/rpc-upgrade.md`（含压测计划） | 1天 | P0 |
-| B2 | 试点（1-2 条调用） | — | cart→product、order→inventory 改 Dubbo（保留 Feign 双协议）；tag 灰度切流 | 双协议共存；灰度切换记录 | 3-4天 | P0 |
-| B3 | 压测对比与迁移方案 | — | 同机型同场景 Feign vs Dubbo（RPS/P99/CPU/线程数）；回滚方案 | 对比报告 + 迁移/回滚 SOP | 1-2天 | P0 |
+| B1 | 选型对比 | ✅ **完成并决策：不引入**（2026-09-17）。对比表+双协议试点+实测（+4.9% RPS/P50-19%）+踩坑记录保留为选型储备；Dubbo 转个人学习 | — | `docs/design/rpc-upgrade.md` | ✅ |
+
+
 
 ## Track C：数据高可用（对应 4）
 | # | 事项 | 现状 | 目标/动作 | 验收证据 | 工作量 | 优先级 |

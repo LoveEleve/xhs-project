@@ -6,7 +6,6 @@ import com.myxhs.cart.dto.request.CartAddRequest;
 import com.myxhs.cart.dto.request.CartUpdateQuantityRequest;
 import com.myxhs.cart.dto.response.CartListVO;
 import com.myxhs.cart.feign.ProductFeignClient;
-import com.myxhs.cart.rpc.ProductSkuRpcClient;
 import com.myxhs.cart.mapper.CartItemMapper;
 import com.myxhs.common.exception.BizException;
 import com.myxhs.common.response.R;
@@ -54,8 +53,6 @@ class CartServiceTest {
     @Mock
     private ProductFeignClient productFeignClient;
 
-    /** B2 试点：真实双协议客户端（dubboEnabled 默认 false → 走 Feign，桩仍生效） */
-    private ProductSkuRpcClient productSkuRpcClient;
 
     @Mock
     private DefaultRedisScript<Long> cartAddScript;
@@ -90,11 +87,10 @@ class CartServiceTest {
     void setUp() {
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
-        productSkuRpcClient = new ProductSkuRpcClient(productFeignClient);
         cartService = new CartService(
                 stringRedisTemplate,
                 rocketMQTemplate,
-                productSkuRpcClient,
+                productFeignClient,
                 objectMapper,
                 cartAddScript,
                 cartItemMapper,

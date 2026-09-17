@@ -56,7 +56,7 @@ public class CartService {
 
     private final StringRedisTemplate stringRedisTemplate;
     private final RocketMQTemplate rocketMQTemplate;
-    private final com.myxhs.cart.rpc.ProductSkuRpcClient productSkuRpcClient;
+    private final ProductFeignClient productFeignClient;
     private final ObjectMapper objectMapper;
     private final DefaultRedisScript<Long> cartAddScript;
     private final com.myxhs.cart.mapper.CartItemMapper cartItemMapper;  // P2-7: Redis 丢失时从 MySQL 恢复
@@ -623,7 +623,7 @@ public class CartService {
      */
     private boolean skuExists(Long skuId) {
         try {
-            R<ProductFeignClient.SkuDTO> response = productSkuRpcClient.getSkuDetail(skuId);
+            R<ProductFeignClient.SkuDTO> response = productFeignClient.getSkuDetail(skuId);
             if (response == null || !response.isSuccess() || response.getData() == null || response.getData().getId() == null) {
                 return false;
             }
@@ -642,7 +642,7 @@ public class CartService {
 
         // 一次批量调用替代 N 次循环单查
         try {
-            R<List<ProductFeignClient.SkuDTO>> response = productSkuRpcClient.batchGetSkuDetails(skuIds);
+            R<List<ProductFeignClient.SkuDTO>> response = productFeignClient.batchGetSkuDetails(skuIds);
             if (response != null && response.isSuccess() && response.getData() != null) {
                 Map<Long, ProductFeignClient.SkuDTO> result = new HashMap<>();
                 for (ProductFeignClient.SkuDTO sku : response.getData()) {

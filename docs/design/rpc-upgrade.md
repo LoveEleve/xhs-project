@@ -19,7 +19,7 @@
 | 迁移成本 | — | 中（共享接口 + 双协议灰度可行） | 高（IDL + 代码生成） |
 | 结论 | 保留（非热路径） | **试点（读路径先行）** | 不选（多语言非需求） |
 
-## 三、试点方案（B2）
+## 三、试点方案（B2，评估产物，未落地）
 - **范围**：cart → product 的 SKU 查询（`getSkuDetail`/`batchGetSkuDetails`，读路径，安全）；
 - **双协议**：保留 Feign 客户端；新增 Dubbo 接口 + 提供者/消费者，由 `myxhs.rpc.dubbo-enabled` 开关切换（默认 false，可回滚）；
 - **注册中心**：Nacos（`nacos://192.168.0.142:18848?namespace=my-xhs`），与现有治理一致；
@@ -36,7 +36,7 @@
 
 ---
 
-## 六、B3 试点实测结果（2026-09-17）
+## 六、B3 试点实测结果（2026-09-17，评估产物，代码已回滚）
 **场景**：cart `GET /api/cart/list`（购物车含 1 个 SKU，触发 product 批量 SKU 查询）；2000 个用户轮换（规避业务限流 60/min/用户）；c=32，20s；同机同数据。
 
 | 指标 | Feign（HTTP+JSON） | Dubbo（Hessian2） | 差异 |
