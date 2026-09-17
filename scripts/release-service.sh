@@ -27,7 +27,14 @@ MX=${XMX[$MODULE]:-512m}
 
 mkdir -p "$NEW_DIR" /data2/logs
 cp "$JAR_SRC" "$NEW_DIR/app.jar"
-PREV=$(readlink -f "$CURRENT" 2>/dev/null || true)
+# 修复：readlink -f 对不存在路径会返回自身规范化路径 → 自引用软链；改为校验软链与目标存在
+PREV=""
+if [ -L "$CURRENT" ]; then
+  RAW=$(readlink "$CURRENT" 2>/dev/null || true)
+  if [ -n "$RAW" ] && [ -f "$RAW/app.jar" ] && [ "$RAW" != "$CURRENT" ]; then
+    PREV="$RAW"
+  fi
+fi
 ln -sfn "$NEW_DIR" "$CURRENT"
 echo "== 发布 $MODULE -> $NEW_DIR（上一版: ${PREV:-无}） =="
 
@@ -40,7 +47,9 @@ stop() {
   sleep 3
 }
 start() {
-  nohup setsid java -Xmx$MX -jar "$1/app.jar" > "/data2/logs/release-$MODULE.log" 2>&1 < /dev/null &
+  local EXTRA=""
+  case "$MODULE" in home|notification) EXTRA="-Dspring.profiles.active=dev";; esac
+  nohup setsid java -Xmx$MX $EXTRA -jar "$1/app.jar" > "/data2/logs/release-$MODULE.log" 2>&1 < /dev/null &
   echo "   已启动: $1/app.jar"
 }
 health() {

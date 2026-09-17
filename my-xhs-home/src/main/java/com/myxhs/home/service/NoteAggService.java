@@ -33,11 +33,25 @@ import java.util.concurrent.TimeoutException;
 @RequiredArgsConstructor
 public class NoteAggService {
 
+    /** 聚合全局超时（毫秒），可用 myxhs.home.agg.global-timeout-ms 覆盖 */
+    @org.springframework.beans.factory.annotation.Value("${myxhs.home.agg.global-timeout-ms:4000}")
+    private long globalTimeoutMs;
+
+    /** 第 1 层聚合超时（毫秒），A3：从硬编码 3s 下调，避免并发下 3s 尾延迟 */
+    @org.springframework.beans.factory.annotation.Value("${myxhs.home.agg.layer1-timeout-ms:800}")
+    private long layer1TimeoutMs;
+
     private final ContentFeignClient contentFeignClient;
     private final UserFeignClient userFeignClient;
     private final AnalyticsFeignClient analyticsFeignClient;
     private final CounterFeignClient counterFeignClient;
-    private final ExecutorService aggregatorPool;
+    /**
+     * 内层下游调用池（A3 修复线程池饥饿）：
+     * 外层请求占用 aggregatorPool，若内层 future 也提交到同池，
+     * 核心线程被外层占满 + LinkedBlockingQueue 不触发扩容 → 内层任务饿死直到超时。
+     * 内层统一改用独立的 batchFeignPool（30/80/500）隔离。
+     */
+    private final ExecutorService batchFeignPool;
 
     /**
      * 聚合笔记详情
@@ -48,9 +62,8 @@ public class NoteAggService {
     @SuppressWarnings("unchecked")
     public NoteDetailAggVO getNoteDetail(Long noteId, Long userId) {
 
-        // 全局请求级超时控制：整个聚合不超过 4 秒
+        // 全局请求级超时控制（可配，默认 4s）
         long startTime = System.nanoTime();
-        long globalTimeoutMs = 4000;
 
         // ========== 第 1 层并行：笔记详情 + 社交状态 + 计数 ==========
 
@@ -64,7 +77,7 @@ public class NoteAggService {
                         log.warn("[笔记详情] 获取笔记详情异常: noteId={}", noteId, e);
                         return R.fail(503, "content服务异常");
                     }
-                }, aggregatorPool);
+                }, batchFeignPool);
 
         // 1b. 点赞状态
         CompletableFuture<Boolean> likeFuture = CompletableFuture
@@ -78,7 +91,7 @@ public class NoteAggService {
                         log.warn("[笔记详情] 查询点赞状态失败: noteId={}", noteId, e);
                         return false;
                     }
-                }, aggregatorPool);
+                }, batchFeignPool);
 
         // 1c. 收藏状态
         CompletableFuture<Boolean> collectFuture = CompletableFuture
@@ -91,7 +104,7 @@ public class NoteAggService {
                         log.warn("[笔记详情] 查询收藏状态失败: noteId={}", noteId);
                         return false;
                     }
-                }, aggregatorPool);
+                }, batchFeignPool);
 
         // 1d. 计数（点赞/收藏/评论）
         CompletableFuture<Map<String, Long>> counterFuture = CompletableFuture
@@ -111,12 +124,12 @@ public class NoteAggService {
                         log.warn("[笔记详情] 获取计数失败: noteId={}", noteId);
                     }
                     return Collections.emptyMap();
-                }, aggregatorPool);
+                }, batchFeignPool);
 
         // 等待第 1 层完成（总超时 3 秒）
         try {
             CompletableFuture.allOf(noteFuture, likeFuture, collectFuture, counterFuture)
-                    .get(3, TimeUnit.SECONDS);
+                    .get(layer1TimeoutMs, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             log.warn("[笔记详情] 第1层聚合超时，部分数据降级");
         } catch (Exception e) {
@@ -151,7 +164,7 @@ public class NoteAggService {
                     if (authorId == null) return Collections.<String, Object>emptyMap();
                     R<Map<String, Object>> r = userFeignClient.getUserPublicInfo(authorId);
                     return (r != null && r.isSuccess() && r.getData() != null) ? r.getData() : Collections.emptyMap();
-                }, aggregatorPool);
+                }, batchFeignPool);
 
         // 2b. 关注关系
         CompletableFuture<Map<String, Boolean>> relationFuture = CompletableFuture
@@ -161,7 +174,7 @@ public class NoteAggService {
                     }
                     R<Map<String, Boolean>> r = analyticsFeignClient.checkRelation(userId, authorId);
                     return (r != null && r.isSuccess() && r.getData() != null) ? r.getData() : Collections.emptyMap();
-                }, aggregatorPool);
+                }, batchFeignPool);
 
         // 2c. 热门评论（前 3 条）
         CompletableFuture<List<Map<String, Object>>> commentsFuture = CompletableFuture
@@ -178,7 +191,7 @@ public class NoteAggService {
                         log.warn("[笔记详情] 获取热门评论失败: noteId={}", noteId);
                     }
                     return Collections.<Map<String, Object>>emptyList();
-                }, aggregatorPool);
+                }, batchFeignPool);
 
         // 等待第 2 层完成（动态超时：全局超时 - 第1层已用时间）
         long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startTime);

@@ -48,9 +48,14 @@ public class GlobalExceptionHandler {
      * 可预期的业务错误，返回具体的错误码和消息
      */
     @ExceptionHandler(BizException.class)
-    public R<Void> handleBizException(BizException e, HttpServletRequest request) {
+    public org.springframework.http.ResponseEntity<R<Void>> handleBizException(BizException e, HttpServletRequest request) {
         log.warn("[业务异常] URI={}, code={}, message={}", request.getRequestURI(), e.getCode(), e.getMessage());
-        return R.fail(e.getCode(), e.getMessage());
+        // A3：限流语义规范化——业务限流返回 HTTP 429（与其他限流入口一致，便于监控/客户端识别）
+        org.springframework.http.HttpStatus status =
+                e.getCode() == ResultCode.RATE_LIMIT_REJECT.getCode()
+                        ? org.springframework.http.HttpStatus.TOO_MANY_REQUESTS
+                        : org.springframework.http.HttpStatus.OK;
+        return org.springframework.http.ResponseEntity.status(status).body(R.fail(e.getCode(), e.getMessage()));
     }
 
     // ==================== 系统异常 ====================
