@@ -124,27 +124,50 @@ public final class TraceContextHolder {
      * Agent 未加载时（本地开发）静默降级，不影响业务。
      * </p>
      */
+    /**
+     * SkyWalking 桥接（A2 性能修复）：Class/Method 静态缓存一次。
+     * <p>原实现每次请求 Class.forName + getMethod：无 agent 时每次抛 CNFE 并争抢
+     * 类加载锁，压测中 92/99 个 Tomcat 线程 BLOCKED（吞吐被压到 ~1k RPS）。
+     * 修复后每请求仅一次静态字段判断 + 反射调用（agent 存在时）。</p>
+     */
+    private static final class SkyWalkingBridge {
+        static final java.lang.reflect.Method PUT_CORRELATION;
+        static final java.lang.reflect.Method REMOVE_CORRELATION;
+
+        static {
+            java.lang.reflect.Method put = null;
+            java.lang.reflect.Method remove = null;
+            try {
+                Class<?> swContext = Class.forName("org.apache.skywalking.apm.toolkit.trace.TraceContext");
+                put = swContext.getMethod("putCorrelation", String.class, String.class);
+                remove = swContext.getMethod("removeCorrelation", String.class);
+            } catch (Throwable ignored) {
+                // SkyWalking Agent 未加载：桥接不可用，业务无感
+            }
+            PUT_CORRELATION = put;
+            REMOVE_CORRELATION = remove;
+        }
+    }
+
     private static void injectSkyWalkingCorrelation(TraceContext ctx) {
-        if (ctx == null || ctx.getTraceId() == null) return;
+        if (ctx == null || ctx.getTraceId() == null || SkyWalkingBridge.PUT_CORRELATION == null) {
+            return;
+        }
         try {
-            Class<?> swContext = Class.forName(
-                "org.apache.skywalking.apm.toolkit.trace.TraceContext");
-            java.lang.reflect.Method putCorrelation = swContext.getMethod(
-                "putCorrelation", String.class, String.class);
-            putCorrelation.invoke(null, "traceId", ctx.getTraceId());
+            SkyWalkingBridge.PUT_CORRELATION.invoke(null, "traceId", ctx.getTraceId());
         } catch (Exception ignored) {
-            // SkyWalking Agent 未加载
+            // 桥接异常不影响业务
         }
     }
 
     private static void clearSkyWalkingCorrelation() {
+        if (SkyWalkingBridge.REMOVE_CORRELATION == null) {
+            return;
+        }
         try {
-            Class<?> swContext = Class.forName(
-                "org.apache.skywalking.apm.toolkit.trace.TraceContext");
-            java.lang.reflect.Method removeCorrelation = swContext.getMethod(
-                "removeCorrelation", String.class);
-            removeCorrelation.invoke(null, "traceId");
+            SkyWalkingBridge.REMOVE_CORRELATION.invoke(null, "traceId");
         } catch (Exception ignored) {
+            // 桥接异常不影响业务
         }
     }
 }

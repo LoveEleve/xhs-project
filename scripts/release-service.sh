@@ -44,12 +44,17 @@ if [ -f .secrets/tokens.env ]; then set -a; source .secrets/tokens.env; set +a; 
 stop() {
   pkill -f "[m]y-xhs-$MODULE-1.0-SNAPSHOT.jar" 2>/dev/null || true
   pkill -f "[r]eleases/$MODULE/.*app.jar" 2>/dev/null || true
-  sleep 3
+  # 等待端口释放（优雅停机可能超过 3s；最多 60s），避免"Port already in use"启动失败
+  for _ in $(seq 1 30); do
+    ss -ltn 2>/dev/null | grep -q ":$P " || break
+    sleep 2
+  done
+  sleep 1
 }
 start() {
   local EXTRA=""
   case "$MODULE" in home|notification) EXTRA="-Dspring.profiles.active=dev";; esac
-  nohup setsid java -Xmx$MX $EXTRA -jar "$1/app.jar" > "/data2/logs/release-$MODULE.log" 2>&1 < /dev/null &
+  nohup setsid java -Xms$MX -Xmx$MX ${JVM_EXTRA:-} $EXTRA -jar "$1/app.jar" > "/data2/logs/release-$MODULE.log" 2>&1 < /dev/null &
   echo "   已启动: $1/app.jar"
 }
 health() {

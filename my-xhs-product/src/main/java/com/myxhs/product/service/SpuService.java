@@ -304,6 +304,7 @@ public class SpuService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void updateSpu(Long spuId, SpuUpdateRequest request) {
+        localSpuCache.invalidate(spuId);
         // 1. 校验 SPU 存在
         Spu spu = spuMapper.selectById(spuId);
         if (spu == null) {
@@ -372,6 +373,7 @@ public class SpuService {
      */
     @Transactional(rollbackFor = Exception.class)
     public void updateSpuStatus(Long spuId, Integer status) {
+        localSpuCache.invalidate(spuId);
         Spu spu = spuMapper.selectById(spuId);
         if (spu == null) {
             throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
@@ -442,7 +444,29 @@ public class SpuService {
      * 【防击穿策略】逻辑过期 + 分布式锁异步刷新
      * </p>
      */
+    /**
+     * L1 本地缓存（A2 调优）：3s TTL，热 key 直接命中，跳过 Redis 与 JSON 反序列化。
+     * <p>一致性口径：最长 3s 脏读，优于既有 L2 逻辑过期(30min)；写路径同步 invalidate（单实例），
+     * 多实例场景由 3s TTL 兜底（如需强一致可接 CACHE_EVICT_TOPIC 广播清理，待办）。</p>
+     */
+    private final com.github.benmanes.caffeine.cache.Cache<Long, java.util.Optional<SpuDetailVO>> localSpuCache =
+            com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
+                    .maximumSize(10_000)
+                    .expireAfterWrite(3, java.util.concurrent.TimeUnit.SECONDS)
+                    .build();
+
+    /** L1 → L2 → L3 多级读（A2：L1 本地缓存热 key 命中） */
     public SpuDetailVO getSpuDetail(Long spuId) {
+        java.util.Optional<SpuDetailVO> cached = localSpuCache.getIfPresent(spuId);
+        if (cached != null) {
+            return cached.orElse(null);
+        }
+        SpuDetailVO detail = getSpuDetailWithL2L3(spuId);
+        localSpuCache.put(spuId, java.util.Optional.ofNullable(detail));
+        return detail;
+    }
+
+    private SpuDetailVO getSpuDetailWithL2L3(Long spuId) {
         // 1. 布隆过滤器前置拦截（第一层防穿透）
         //    拦截"一定不存在"的 ID，连 Redis 都不用查，减少无效 Key 进入缓存
         //    Redis 故障时降级跳过（视为"可能存在"，放行到缓存/DB 层）
