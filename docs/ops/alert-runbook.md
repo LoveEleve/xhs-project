@@ -40,6 +40,7 @@
 | SearchHighLatency | ES CPU 配额/慢查询（当日案例：2 核打满 → 6 核，508→1,448 RPS） |
 
 ## 三、验证与维护
-- 端到端验证：注入 `SELECT SLEEP(600)` → `MysqlLongRunningQueries` firing → sink 落盘（2026-09-17 22:34 实测）。
+- 端到端验证：注入 `SELECT SLEEP(600)` → firing（22:34:25）→ resolved（22:39:25）均落盘（2026-09-17 实测）。
+- `EsClusterNotGreen`：单节点集群 yellow 属预期，建议将索引副本数设为 0 或调整告警仅 red 触发（待决策）。
 - 规则位置：`deploy/docker/my-xhs-deploy-zip/config/prometheus/alert_rules/myxhs_rules.yml`（live）与 `config/prometheus/alert_rules/myxhs_rules.yml`（仓库副本）。
 - 热加载：`curl -X POST http://localhost:19090/-/reload`（Prometheus）、`http://localhost:19093/-/reload`（Alertmanager）。

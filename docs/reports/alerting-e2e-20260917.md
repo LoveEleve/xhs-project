@@ -22,8 +22,11 @@
 | Alertmanager（19093） | active |
 | Sink 落盘 | `22:34:25 [firing] MysqlLongRunningQueries severity=critical` ✅ |
 | 存量告警同链路 | `EsClusterNotGreen`（既有 firing）亦已送达 ✅ |
-| 清理后端 | 已 KILL SLEEP 查询，等待 resolve 通知 |
+| 清理后端 | `22:39:25 [resolved] MysqlLongRunningQueries` **已收到恢复通知**（受 `group_interval=5m` 影响，firing→resolved 间隔约 5 分钟） |
 
-## 四、遗留
-- **EsClusterNotGreen 长期 firing**：单节点 ES + 副本未分配（yellow）等，需评估副本数/分片配置（待办）；
+## 四、遗留与决策项
+- **EsClusterNotGreen 长期 firing（决策项）**：单节点 ES 无法分配副本 → 常态 yellow；三种处理：
+  ① 索引副本数设为 0（单节点正确姿势，告警消失）；② 告警只在 red 时触发（保留 yellow 观测）；③ 增加节点（本地不现实）。
+  建议 ①（并在 Runbook 注明单节点前提）。
+- resolve 通知延迟 5 分钟来自 `group_interval=5m`（可按需调小）；
 - IM（企微/飞书）接入需凭据，当前落盘方案可平滑替换。
