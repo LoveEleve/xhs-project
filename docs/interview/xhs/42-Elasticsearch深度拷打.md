@@ -16,7 +16,7 @@ ES 的写入和查询原理？为什么搜索快？分片怎么设计？怎么�
 
 **② 本项目用法**
 - **版本**：ES 8.19.19（单节点，19200）+ 独立 SkyWalking ES 8.12.2（隔离观测数据与业务）；
-- **索引**：`note_index`（3 分片/0 副本）、`product_index`、`xhs_ai_knowledge`（知识卡 55 条）、`myxhs-logs-*`（日志，ILM 30 天删除 + 模板副本 0）；
+- **索引**：`note_index`（3 分片/0 副本）、`product_index`、`xhs_ai_knowledge`（知识卡 55 条）、`myxhs-logs-*`（日志；保留为双口径：设计 ILM 30 天策略（apply-ilm.sh，P-D14）+ 本环境 cron 清理 7 天；副本 0 由巡检 cron 保障）；
 - **版本控制**：外部版本 `external_gte`（Canal 毫秒 ts），旧写拒绝——同步链路（28 题）；
 - **查询**：`multi_match` 加权重（question^3/title^2/keywords^2）、`search_after` 深分页、`completion suggester` 建议词、聚合做热搜快照；
 - **写入**：Canal/MQ 双通道 + 增量补偿 + 全量重建（别名切换）；
@@ -52,7 +52,7 @@ ES 的写入和查询原理？为什么搜索快？分片怎么设计？怎么�
 **危险信号**：把 ES 当权威存储；分片拍脑袋；深分页硬翻；CPU 打满还只调查询。
 
 ## 本项目真实证据
-- ES 8.19.19 + 19200；`note_index` 3 分片/0 副本（运行态查询）；`myxhs-logs-*` ILM 30d（`apply-ilm.sh`）与巡检脚本 `scripts/es-log-index-check.sh`；
+- ES 8.19.19 + 19200；`note_index` 3 分片/0 副本（运行态查询）；日志保留（设计 ILM 30d 脚本 + 环境 7 天清理）与巡检脚本 `scripts/es-log-index-check.sh`；
 - 调优：`batch-release-baseline-20260917.md:19,29`（CPU 202%→6 核、508→1,448、P99 191→61）；客户端配置 `application.yml:100-101`；
 - `EsClusterNotGreen`/`EsNodeHighJvmHeap` 告警规则（第 38 题）。
 
