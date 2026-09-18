@@ -27,8 +27,8 @@
 4. **性能与存储**：APM 数据量与采样强相关，存储独占 ES 才敢全链路开。
 
 **④ 边界（主动披露，很值钱）**
-- **当前环境 Agent 未接入**：本地 OAP/UI/ES 在运行，但 `release-service.sh` 的启动参数**不含** `-javaagent`（agent 目录不在本机）；`restart-service.sh` 里的 `-Dskywalking.collector.backend_service=21.130.247.89:11800` 指向云环境 collector——**当前 15 服务没有实时 trace 数据**，22 span 是此前环境实证；
-- **修复路径**：把 9.6.0 agent 落到本机 → release 启动参数追加 `-javaagent` + `service_name` + 指向本地 OAP 11800（gRPC）→ 重启验证 UI 出图；代价是每实例约百 MB 内存与 CPU 开销，需要采样率与资源预算；
+- **接入演进（真实故事）**：曾核查发现——OAP/UI/ES 在运行，但 `release-service.sh` 参数不含 `-javaagent`、agent 包缺失、`restart-service.sh` 还指向云 collector，即『组件在跑但没数据』；**2026-09-18 已修复**：agent 9.7.0 落地（TUNA 源）、插件适配（springmvc 3/4/5 移出、6.x/webflux 6.x/gateway 4.x 移入、清理 `._*`）、release/restart 脚本自动挂载 → 15/15 服务注册；
+- **运维参数**：采样默认 `sample_n_per_3_secs=1`（全采样 `SW_AGENT_SAMPLE=-1`，压测注意开销）；`SW_AGENT_DISABLED=1` 可关闭；升级 = 换 `SW_AGENT_DIR` 目录；
 - **两套追踪的取舍**：全自动 APM（跨 MQ/自定义异步/长连接仍需手动增强）vs 业务 traceId（可控、无 agent 依赖、可进审计）；本项目**以业务 traceId 为主、APM 作为增强**。
 
 **⑤ 拷打追问**
@@ -40,7 +40,7 @@
 6. **"为什么 APM 存储用独立 ES？"** 隔离数据量与索引生命周期，避免 APM 写入影响业务搜索集群（业务 ES 19200 / APM ES 19201）。
 
 **⑥ 话术**
-> "SkyWalking 我们部署的是 OAP 9.7 加 UI 加独立 ES 19201，Agent 9.6 通过 javaagent 接入。最能打的是 22 span 的跨服务实证：home 的 SpringMVC 到三个 Feign Exit，再到 user/counter/content 的 Entry 加 DB/Redis，CROSS_PROCESS 和 CROSS_THREAD 都在。接入时踩过插件版本坑：Spring Boot 3 要把 springmvc 3/4/5 插件移出、换 6.x，WebFlux 和网关插件要从 optional 移进来，还要挂 bootstrap-plugins 目录，否则 jdk-http 兜底失效。边界我主动说：当前这台机器 release 流程没挂 agent，所以实时链路数据是没有的，只有此前环境的实证；修复路径是把 agent 落地并加到启动参数，这块和业务 traceId 是互补关系，不是替代。"
+> "SkyWalking 我们部署 OAP 9.7 加 UI 加独立 ES 19201，Agent 9.7 通过 javaagent 接入，release 脚本自动挂载。最能打的是真实链路实证：gateway 到 home 的 /api/home/feed 一条 trace 29 个 span，CROSS_PROCESS 和 CROSS_THREAD 都在，Redis 的 Lettuce 异步调用也串上了；15 个服务全部注册，连 MySQL/Redis/ES 依赖 peer 都有数据。接入时踩过插件版本坑：Spring Boot 3 要把 springmvc 3/4/5 插件移出、换 6.x，WebFlux 和网关插件从 optional 移进来，还要清掉 macOS 的 ._ 元数据文件，否则插件加载报错。这段经历也典型——组件在跑不等于有数据，我们做过一次从假装在用到真正接入的修复。它和业务 traceId 是互补关系，不是替代。"
 
 ## 发散追问地图（横向）
 - APM 原理：字节码增强、span 模型、上下文传播（W3C traceparent）。
@@ -56,10 +56,10 @@
 
 ## 本项目真实证据
 - `docs/FINAL-HANDOFF.md:72-95`（OAP 9.7.0/8080/11800/ES 19201、Agent 9.6.0、22 span 实证、插件改动与 SW_MOUNT_FOLDERS、备份路径）；
-- 运行态：`my-xhs-skywalking-oap`/`-ui`/`my-xhs-es-skywalking` 容器在跑；`scripts/release-service.sh` 无 agent 参数、`restart-service.sh` 指向 21.130.247.89:11800（当前无实时数据）。
+- 运行态：OAP/UI/专用 ES 在跑；**2026-09-18 agent 接入完成**（报告 `skywalking-agent-enable-20260918.md`）：15 服务注册、gateway→home 29 spans（`CROSS_PROCESS`+`CROSS_THREAD`）、段量 cart 1815/home 327/search 278；`release-service.sh` 自动挂载（SW_AGENT_DIR/SW_COLLECTOR/SW_AGENT_DISABLED）。
 
 ## 版本与来源
 SkyWalking 9.7 文档；本项目 FINAL-HANDOFF 排查记录与运行态。
 
 ## 真实性说明
-22 span/插件改动/OAP 版本/存储端口为历史实证；"当前 Agent 未接入、无实时 trace"为运行态核查结果，修复路径与性能代价一并披露。
+22 span（旧环境）/插件改动/OAP 版本/存储端口为历史实证；2026-09-18 起本环境已接入并验证（15 服务注册、29 span 跨进程、段量数据），采样/关闭/升级参数一并披露。

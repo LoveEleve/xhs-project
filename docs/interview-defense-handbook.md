@@ -428,7 +428,7 @@
 | Nacos | 注册 AP/Distro、配置 CP、2.x gRPC(端口+1000) | 配置外置"假生效"：shared-configs 在 SCA 2023 失效 → import → code 300 → 200 | 15/15 Load success | 44 |
 | XXL-Job | 调度/执行器分离、时间轮+DB 扫描、misfire/阻塞策略 | 非法 cron（`0/60` 秒增量越界）被调度器自动禁用"从未运行"；每日任务 DO_NOTHING 错过窗口静默丢弃 | 20 任务/633 失败口径拆解 | 46 |
 | Sentinel | Slot 链 + LeapArray 滑动窗口，Dashboard 只观测 | Nacos 规则异步到达被 @PostConstruct 兜底覆盖 → 改 ApplicationReadyEvent + 30s 真空期 | 16 路由规则、40 处自定义 @RateLimit | 47 |
-| SkyWalking | 字节码增强 Agent → OAP → 专用 ES（与业务隔离） | 插件与框架大版本冲突（SpringMVC 3/4/5 移出换 6.x）；**当前 release 流程未挂 agent（诚实边界）** | 22 span 实证 | 51 |
+| SkyWalking | 字节码增强 Agent → OAP → 专用 ES（与业务隔离） | 插件与框架大版本冲突（SpringMVC 3/4/5 移出换 6.x）；曾『组件在跑但没数据』→ 2026-09-18 接入修复（release 自动挂载） | 15 服务注册、gateway→home 29 span（CROSS_PROCESS） | 51 |
 | Prometheus | 拉模型 + TSDB + Alertmanager 路由分组抑制 | 通知黑洞（receiver 空/占位）→ alert-sink 落盘 + e2e 演练；短命告警被 group_wait 吞 → keep_firing_for | 9 组 40 规则 | 52 |
 | ELK | Filebeat 采集 → Logstash 加工 → ES 日索引 | 漏网 replicas=1 索引把集群搞 yellow → 巡检 cron；保留双口径（设计 ILM 30d vs 环境 cron 7d） | 单日 650 万条/1.8GB | 53 |
 
