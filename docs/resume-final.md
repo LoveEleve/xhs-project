@@ -44,6 +44,13 @@ xhs 是一个内容与交易并重的社交电商平台，共 15 个 Spring Clou
 - MySQL 稳定性治理：定位"僵尸连接风暴"（318 条挂起查询、连接 459/500）并清理恢复（459→106）；comment 慢 SQL 由相关子查询改窗口函数 + 复合索引；补充连接/长查询告警规则与"压测中勿发布"纪律。
 - 仓库与脚本卫生：pids 运行时文件取消 Git 跟踪并入 .gitignore；发布/重启脚本的 Agent 与降噪参数全部环境变量化，避免"改脚本才能调参"。
 - 事实校准与知识沉淀：全库数字/口径按运行态校准（购物车 Lua 6→7、Sentinel 规则 15→16、common 单测 97/user 14、业务 topic 17、锁切面"未接入"纠偏、ILM 双口径等）；沉淀 76 篇深度问答（含 14 个组件深度拷打、12 条叙事链、逐链自测清单）与修复报告 4 篇。
+- JVM 与线程池调优：G1 + MaxGCPauseMillis=200 + Metaspace 256m 参数体系；定位类加载锁热点（TraceContextHolder 每请求 Class.forName，92/99 Tomcat 线程 BLOCKED、product 仅 1,074 RPS）并改静态桥接修复；聚合服务内外线程池隔离 + MDC 包装线程池保证 traceId 跨池不断链。
+- 可观测与告警体系：Prometheus 规则 31→40 条（9 组，severity 分级）；修复 Alertmanager 通知黑洞（receiver 空 → alert-sink 落地 /data2/logs/alerts.jsonl + send_resolved）；短命告警 keep_firing_for 防吞；Watchdog 元监控；SLO 错误预算（30 天 43m12s）与 Burn Ledger；完成告警端到端演练验证。
+- CI/CD 落地（Gitea Actions）：Gitea 1.22 + act_runner v0.6.1（systemd、Docker 执行器、挂载 .m2 复用缓存）；workflow 覆盖编译/单测/规范扫描，ci-gate.sh 门禁实测拦截违规提交（printStackTrace → RED）；版本化发布与自动回滚链路配套。
+- MySQL 故障转移演练：停主 10.2s、提升从库 0.087s、应用切换 22s，RTO≈32s（不含发现时间）；本次 RPO=0；输出 5 项短板（无自动切换/配置散落/异步复制 RPO 不保证/errant GTID/短命告警）与路线。
+- Zone 多活延伸：ZoneLocator 自动发现（env/文件/网段 CIDR）+ X-Zone 跨服务传播（入/出站过滤 + 指标，实测 10/10）；网关反应式 zone LB（12/12 就近、切换 5.54s）；动态 JDBC/Spring 热切（内容服务读主从切换、购物车热切不重启）；发布链路 PID 校验杜绝旧进程假成功。
+- SqlGuard v2 与限流加固：SQL 防护从"只判定"升级为可配置安全阻断（200ms 告警 + 5 次熔断 + 白名单阻断/豁免/冷却 + 3 个 Prometheus 指标 + 6 单测）；网关 Sentinel 规则 Nacos 化 + 30s 真空期兜底 + 路由 metadata 兜底双轨。
+- 基础设施细节治理：Nacos gRPC 19848 启动噪音排查定性（非故障、不设告警）；Nacos 鉴权缺失与密码明文登记为安全债；compose 配置与运行时零漂移核验（27 容器全量对照）。
 
 ## 关键结果（Key Achievements）
 - 并发控制分层后，锁只承担效率职责（Redis 故障时加锁 fail-closed 拒绝）：重复下单/重复回调/重复点赞分别被唯一键、状态机与幂等表拦截，故障注入下无幽灵数据。
@@ -71,6 +78,11 @@ xhs 是一个内容与交易并重的社交电商平台，共 15 个 Spring Clou
 - 日志/ES：yellow 索引修复 + 巡检 cron 上线；保留策略统一（ILM 30d/清理 7d/文件 3d）。
 - 成本：内存 45→28Gi、发布包 8.1→6.5G、npm 3.6G→591M（附清理明细与治理报告）。
 - 数据一致性：全库数字/口径完成一轮实测校准（61 单测/94 评测用例/8 红队/4 性能场景等），确保简历与运行态一致。
+- JVM/性能：类加载锁修复后 product 1,074→4,871 RPS（4.5x，92/99 线程 BLOCKED 归零）；线程池隔离后聚合链路互不饥饿，MDC traceId 跨池保留。
+- 告警体系：40 规则/9 组上线分级；通知黑洞修复并端到端验证（firing→落盘→resolved）；SLO 错误预算 43m12s/30 天 + Burn Ledger 落地。
+- CI/CD：门禁实测拦截违规提交（RED 日志）；版本化发布 + 自动回滚上线；act_runner 复用 .m2 缓存加速流水线。
+- MySQL 演练：RTO≈32s 分解（停主 10.2s/提升 0.087s/切换 22s）+ 5 短板清单 + RPO=0（本次）与回切验证。
+- Zone 自动发现与传播：zone-a（网段）/zone-b（文件）自动识别，X-Zone 传播 10/10；动态数据源热切实测（+207→+206 / +40↔+40 不重启）。
 
 ---
 
@@ -108,6 +120,7 @@ xhs-ai 是面向上述 15 微服务交易系统的 AIOps 诊断与知识问答 A
 - 去 MCP 化：kill 两个 MCP 子进程后，ES 索引问题 19s、PromQL 问题 39s 正常作答；MCP 工具仅保留 /api/ai/mcp/** 运维直连。
 - 安全验证：红队 8 项全拦截；审计链篡改可检出（篡改后校验失败）；RBAC 实测 OPERATOR→403 / ADMIN→200。
 - 可观测与门禁：17 个 ai_* 指标 + 7 条告警上线；门禁一键通过（61 单测 + 审计一致性 + 哈希链校验，可选 LLM 评测），CI 工作流当前仅跑单测。
+- 全量评测首跑：mimo-v2.5-pro 下 100 条 nightly 全量（smoke 20 + regression 80）取得 100% 通过率 / 96% 完成率 / 0% 幻觉率，评测体系从"关键门禁可跑"进入"完整体系成立"阶段。
 - 评测隔离与资产：评测使用专用用户并在运行前清零额度（此前预算硬限曾拦评测，默认 20 万→50 万）；55 张知识卡、14 条轨迹用例、50 条答案用例、10 个运维脚本，20 篇评审（RV01~RV20）+ RV21~RV29 报告与 10 篇专项设计。
 
 # 技能
