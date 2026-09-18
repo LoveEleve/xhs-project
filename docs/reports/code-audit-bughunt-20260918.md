@@ -51,3 +51,16 @@
 | 附带修复 | `NoteSearchService` Javadoc 写 `status=1（已发布）` 与实现 `status=2` 不一致 → 已修正 | ✓ |
 
 > 追溯建议：压测/乱序类测试若直接向 ES 写入合成文档，应在用例结束清理（本次为历史遗留，已清）。
+
+### 库存 Redis 分桶 vs DB 账本（逐 SKU）
+
+```
+sku=1 DB=80 Redis=80 桶=2 ✓   sku=2 DB=146 Redis=146 ✓   sku=3 DB=117 Redis=117 ✓
+sku=4 DB=198 Redis=198 ✓      sku=5 DB=179 Redis=179 ✓   sku=6 DB=78 Redis=78 ✓
+sku=7 DB=300 Redis=300 ✓      sku=990001 DB=97 Redis=97 ✓ sku=20 DB=100 Redis=100 ✓
+sku=27411 DB=998 Redis=998 ✓  sku=27825 DB=499 Redis=499 ✓
+（sku=8/9/10 未缓存=惰性加载正常）
+```
+
+- **11 个已缓存 SKU 的 Redis 分桶合计与 DB available_stock 逐一精确相等**；惰性未缓存 SKU 属预期；
+- 期间修正两处审计脚本自身错误（列名 `available`→`available_stock`、逻辑表名 `t_order`→物理 `t_order_N`），确保结论可信。
