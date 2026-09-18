@@ -1,5 +1,6 @@
 package com.myxhs.common.web;
 
+import com.myxhs.common.constants.RedisKeyConstants;
 import com.myxhs.common.util.JwtUtil;
 import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
@@ -8,7 +9,10 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -56,6 +60,13 @@ public class GatewayAuthTrustFilter extends OncePerRequestFilter {
     @Value("${myxhs.internal.token:}")
     private String internalToken;
 
+    private final ObjectProvider<StringRedisTemplate> redisProvider;
+
+    public GatewayAuthTrustFilter(
+            @Qualifier("stringRedisTemplate") ObjectProvider<StringRedisTemplate> redisProvider) {
+        this.redisProvider = redisProvider;
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
@@ -90,7 +101,11 @@ public class GatewayAuthTrustFilter extends OncePerRequestFilter {
      */
     private Long resolveJwtUserId(HttpServletRequest request) {
         String auth = request.getHeader(AUTHORIZATION_HEADER);
-        if (auth == null || !auth.startsWith(BEARER_PREFIX) || jwtSecret == null || jwtSecret.isEmpty()) {
+        if (auth == null || !auth.startsWith(BEARER_PREFIX)) {
+            return null;
+        }
+        if (jwtSecret == null || jwtSecret.isEmpty()) {
+            log.debug("[安全] jwt.secret 未配置，直连 JWT 不生效（uri={}）", request.getRequestURI());
             return null;
         }
         try {
@@ -98,10 +113,30 @@ public class GatewayAuthTrustFilter extends OncePerRequestFilter {
             if (!"access".equals(claims.get("type", String.class))) {
                 return null;
             }
+            // F-001 修复（2026-09-18）：直连端口同样强制 Token 吊销名单（与网关一致，Redis 异常 fail-closed）
+            String jti = claims.getId();
+            if (jti != null && isRevoked(jti)) {
+                log.warn("[安全] 已吊销 Token 直连被拒: jti={}, uri={}", jti, request.getRequestURI());
+                return null;
+            }
             return Long.valueOf(claims.getSubject());
         } catch (Exception e) {
             log.debug("[安全] JWT 解析失败(忽略): {}", e.getMessage());
             return null;
+        }
+    }
+
+    /** Token 吊销名单校验（F-001）：Redis 不可用按吊销处理（fail-closed，与网关口径一致） */
+    private boolean isRevoked(String jti) {
+        StringRedisTemplate redis = redisProvider.getIfAvailable();
+        if (redis == null) {
+            return false;
+        }
+        try {
+            return Boolean.TRUE.equals(redis.hasKey(RedisKeyConstants.USER_TOKEN_BLACKLIST + jti));
+        } catch (Exception e) {
+            log.warn("[安全] 吊销名单校验异常(按已吊销处理): {}", e.getMessage());
+            return true;
         }
     }
 

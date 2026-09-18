@@ -8,7 +8,7 @@
 
 | 编号 | 问题 | 涉及 |
 |---|---|---|
-| F-001 | 撤销后的 access token 直连服务端口仍可用（GatewayAuthTrustFilter 不查黑名单） | gateway/common/全部服务 |
+| F-001 | 撤销后的 access token 直连服务端口仍可用（GatewayAuthTrustFilter 不查黑名单）**✅ 已修复+验证 2026-09-18** | gateway/common/全部服务 |
 | F-007 | 退款回补幂等键只有 orderId，多 SKU 订单只回补一个 SKU | order/inventory |
 
 ## High

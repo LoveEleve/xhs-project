@@ -44,6 +44,8 @@ spring:
       - org.springframework.boot.autoconfigure.jmx.JmxAutoConfiguration
       # JPA：仅显式配置启用（content.jpa.enabled=true），避免基线自动装配
       - org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration
+      # JPA 仓库自动配置：仅显式配置（ContentJpaConfig）启用，避免开关关闭时要求 entityManagerFactory
+      - org.springframework.boot.autoconfigure.data.jpa.JpaRepositoriesAutoConfiguration
   data:
     redis:
       host: 192.168.0.142

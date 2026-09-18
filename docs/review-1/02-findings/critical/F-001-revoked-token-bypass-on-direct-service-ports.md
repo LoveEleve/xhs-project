@@ -57,3 +57,38 @@ Critical
 ## 是否需要补充验证
 
 需要。建议实测一条最短路径：登录拿 token → 调用 `/api/user/me` 成功 → 注销 → 直连 user 19001 再次带旧 access token 调 `/api/user/me`，确认当前是否仍返回 200。
+
+---
+
+## 修复处置（2026-09-18，已修复并验证）
+
+| 项 | 内容 |
+|---|---|
+| 状态 | ✅ 已修复：15 服务全量发布，5 场景实测通过（23:16） |
+| 修复点 | `GatewayAuthTrustFilter` JWT 分支新增吊销名单校验，与网关同口径 |
+| 判定 | 命中 `RedisKeyConstants.USER_TOKEN_BLACKLIST + jti` → 视为已吊销，剥离 `X-User-Id`（fail-closed）；Redis 异常同样 fail-closed |
+| 注入 | `ObjectProvider<StringRedisTemplate>` + `@Qualifier("stringRedisTemplate")` 锁定业务 Redis（非缓存 Redis） |
+
+### 实施中发现并修复的次生问题（否则修复静默失效）
+
+首版按类型取模板（`getIfAvailable()`）；user 等服务同时存在两个 `StringRedisTemplate`
+（业务 `stringRedisTemplate` 与缓存 `cacheStringRedisTemplate`，见 `RedisConfig` / `RedisMultiSourceConfig`，缓存库为 16380），
+类型解析抛 `NoUniqueBeanDefinitionException` 并被 `resolveJwtUserId` 的 catch 吞掉 →
+**所有直连 JWT 都按无效剥离**（fail-closed），表现为“直连 + 有效 JWT 也返回 400 缺少 X-User-Id”。
+改为 `@Qualifier("stringRedisTemplate")` 后恢复。定位手段：`[安全] JWT 解析失败(忽略)` debug + 临时 WARN。
+
+### 实测验证（直连 19001，2026-09-18 23:16）
+
+| 场景 | 请求 | 结果 |
+|---|---|---|
+| ① 有效 JWT + 伪造 `X-User-Id: 1` | `GET /api/user/me` | 200，返回 JWT 真实身份（覆盖生效） |
+| ② 注销 | `POST /api/user/auth/logout` | 200 |
+| ③ 已吊销 JWT 直连 | `GET /api/user/me` | **400 拒绝**；审计日志 `已吊销 Token 直连被拒 jti=...` |
+| ④ 内部调用 | `X-Internal-Call` + `X-User-Id` | 200 |
+| ⑤ 网关正常流量 | 带 token `/api/user/me`、`/api/home/feed` | 200、200 |
+
+### 残余与口径
+
+1. 直连端口仍绕过网关其他能力（HMAC、路由限流、统一审计），长期方向仍是收缩直连暴露面（残余风险不变）。
+2. 未配置 `jwt.secret` 的服务（如 cart）JWT 分支不生效：直连一律剥离 `X-User-Id`（fail-closed，无此漏洞面）。
+3. 报告：`docs/reports/f001-token-blacklist-fix-20260918.md`。
