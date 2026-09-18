@@ -22,6 +22,7 @@
   - Redis：客户端 `ReadFrom.REPLICA_PREFERRED`（读本 zone 副本、写主库、副本故障回主）；**服务端双主**（zone-a 6379 / zone-b 6381 双向同步：DUMP/RESTORE + LWW 时间戳 + 周期对账兜底）；
 - **动态化**：`ZoneContext` 属性变更事件 → 数据源热切换 + LB 路由即时变化；提供内部令牌保护的 zone 热切端点（不重启）；
 - **演练（RTO）**：进程 kill **1.31s / 3.25s**（两次采样）、iptables 网络分区 **4.79s**、回切 <5s；Redis 双主：单侧宕机不中断、恢复 ≤35s 对账追平。
+- **收益（netem 跨区模拟）**：给 zone-b 注入 25ms/向（≈+100ms RTT），网关同区优先 ON vs OFF——吞吐 **+34%**（7,077 vs 5,278 RPS）、P99 **-41%**、平均延迟 **-49%**；未设网关 zone 时会静默 `invalid_zone`（路由全部实例）。
 
 **③ 坑**
 - **假切换**：进程 kill 后 0.55s"恢复"是假象——SIGTERM 优雅关闭仍在服务；必须 `kill -9` 或等端口关闭；
