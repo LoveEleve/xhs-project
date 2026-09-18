@@ -191,65 +191,35 @@ class CouponServiceTest {
     }
 
     @Test
-    @DisplayName("退券 - 补偿消息发送失败时写入兜底集合")
-    void returnCoupon_afterCommitRedisFailureAndRepairSendFailure_writesFallbackSet() {
-        UserCoupon userCoupon = new UserCoupon();
-        userCoupon.setId(12L);
-        userCoupon.setUserId(USER_ID);
-        userCoupon.setCouponId(TEMPLATE_ID);
-        when(userCouponMapper.selectById(12L)).thenReturn(userCoupon);
-        when(userCouponMapper.returnCoupon(12L, 9002L)).thenReturn(1);
-        when(templateMapper.incrementRemainCount(TEMPLATE_ID)).thenReturn(1);
-        when(stringRedisTemplate.execute(eq(returnCouponScript), anyList())).thenThrow(new RuntimeException("redis down"));
-        when(rocketMQTemplate.syncSend(eq("COUPON_RETURN_REDIS_REPAIR_TOPIC"), any(Message.class), eq(3000L)))
-                .thenThrow(new RuntimeException("mq down"));
-
-        ReturnCouponRequest request = new ReturnCouponRequest();
-        request.setUserCouponId(12L);
-        request.setOrderId(9002L);
-
-        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
-        try {
-            couponService.returnCoupon(USER_ID, request);
-            org.springframework.transaction.support.TransactionSynchronizationManager.getSynchronizations()
-                    .forEach(org.springframework.transaction.support.TransactionSynchronization::afterCommit);
-        } finally {
-            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
-        }
-
-        verify(setOperations).add("myxhs:coupon:return:repair:pending", TEMPLATE_ID + ":" + USER_ID);
-    }
-
-    @Test
-    @DisplayName("退券 - afterCommit Redis失败时发送补偿消息")
-    void returnCoupon_afterCommitRedisFailure_sendsRepairMessage() {
-        UserCoupon userCoupon = new UserCoupon();
-        userCoupon.setId(11L);
-        userCoupon.setUserId(USER_ID);
-        userCoupon.setCouponId(TEMPLATE_ID);
+    @DisplayName("退券 - 状态匹配时恢复用户券（RV30 语义：不回补库存/不发补偿消息）")
+    void returnCouponSuccess() {
+        UserCoupon userCoupon = buildUserCoupon();
         when(userCouponMapper.selectById(11L)).thenReturn(userCoupon);
-        when(userCouponMapper.returnCoupon(11L, 9001L)).thenReturn(1);
-        when(templateMapper.incrementRemainCount(TEMPLATE_ID)).thenReturn(1);
-        when(stringRedisTemplate.execute(eq(returnCouponScript), anyList())).thenThrow(new RuntimeException("redis down"));
-        SendResult sendResult = new SendResult();
-        sendResult.setSendStatus(SendStatus.SEND_OK);
-        when(rocketMQTemplate.syncSend(eq("COUPON_RETURN_REDIS_REPAIR_TOPIC"), any(Message.class), eq(3000L)))
-                .thenReturn(sendResult);
+        when(userCouponMapper.returnCoupon(1L, 9001L)).thenReturn(1);
 
         ReturnCouponRequest request = new ReturnCouponRequest();
         request.setUserCouponId(11L);
         request.setOrderId(9001L);
+        couponService.returnCoupon(USER_ID, request);
 
-        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
-        try {
-            couponService.returnCoupon(USER_ID, request);
-            org.springframework.transaction.support.TransactionSynchronizationManager.getSynchronizations()
-                    .forEach(org.springframework.transaction.support.TransactionSynchronization::afterCommit);
-        } finally {
-            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
-        }
+        verify(userCouponMapper).returnCoupon(1L, 9001L);
+        verifyNoInteractions(rocketMQTemplate);
+    }
 
-        verify(rocketMQTemplate).syncSend(eq("COUPON_RETURN_REDIS_REPAIR_TOPIC"), any(Message.class), eq(3000L));
+    @Test
+    @DisplayName("退券 - 状态不匹配幂等返回（不抛异常、不触发补偿）")
+    void returnCouponIdempotent() {
+        UserCoupon userCoupon = buildUserCoupon();
+        when(userCouponMapper.selectById(11L)).thenReturn(userCoupon);
+        when(userCouponMapper.returnCoupon(1L, 9001L)).thenReturn(0);
+
+        ReturnCouponRequest request = new ReturnCouponRequest();
+        request.setUserCouponId(11L);
+        request.setOrderId(9001L);
+        couponService.returnCoupon(USER_ID, request);
+
+        verify(userCouponMapper).returnCoupon(1L, 9001L);
+        verifyNoInteractions(rocketMQTemplate);
     }
 
     // ==================== 查询用户优惠券 ====================

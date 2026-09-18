@@ -23,6 +23,7 @@ class OrderTransactionConsumerTest {
     @Mock private InventoryService inventoryService;
     @Mock private MessageIdempotentHelper idempotentHelper;
     @Mock private org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
+    @Mock private org.springframework.data.redis.core.SetOperations<String, String> setOperations;
 
     private OrderTransactionConsumer consumer;
 
@@ -45,17 +46,22 @@ class OrderTransactionConsumerTest {
     }
 
     @Test
-    void shouldAckWhenSkuDoesNotExist() {
+    void shouldThrowAndMarkAnomalyWhenSkuDoesNotExist() {
         when(idempotentHelper.isFirstProcess(anyString(), anyString(), anyLong())).thenReturn(true);
         doThrow(new com.myxhs.common.exception.BizException(com.myxhs.common.response.ResultCode.PARAM_INVALID, "SKU不存在"))
                 .when(inventoryService).preDeduct(any());
+        when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
 
         MessageExt message = new MessageExt();
         message.setMsgId("msg-ack");
         message.setBody("{\"orderNo\":\"ORD-3\",\"userId\":1001,\"skuItems\":[{\"skuId\":6,\"quantity\":1}]}".getBytes(StandardCharsets.UTF_8));
 
-        org.assertj.core.api.Assertions.assertThatCode(() -> consumer.onMessage(message)).doesNotThrowAnyException();
-        verify(idempotentHelper, never()).removeMark("inventory:order:consumed", "msg-ack");
+        // RV31 语义：不可恢复坏消息写异常集合 + 抛错进入重试→DLQ（而非静默 ACK）
+        assertThatThrownBy(() -> consumer.onMessage(message))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessageContaining("不可恢复");
+        verify(setOperations).add("myxhs:inventory:anomaly:sku-missing", "ORD-3");
+        verify(idempotentHelper).removeMark("inventory:order:consumed", "msg-ack");
     }
 
     @Test

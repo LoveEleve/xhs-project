@@ -99,9 +99,25 @@ health() {
   done
   return 1
 }
+# 监听端口占用者 PID
+listen_pid() {
+  ss -ltnp 2>/dev/null | grep ":$P " | grep -o "pid=[0-9]*" | head -1 | cut -d= -f2
+}
+# 健康检查必须命中"本次启动的进程"，否则视为失败（防止旧进程占端口造成假成功）
+verified_health() {
+  health || return 1
+  local actual started
+  actual=$(listen_pid)
+  started=$(cat "$PID_FILE" 2>/dev/null || true)
+  if [ -n "$actual" ] && [ -n "$started" ] && [ "$actual" != "$started" ]; then
+    echo "   ❌ 健康检查命中的进程 pid=$actual 不是本次启动的 pid=$started（疑似旧进程占端口）"
+    return 1
+  fi
+  return 0
+}
 
 stop; start "$TARGET_DIR"
-if health; then
+if verified_health; then
   # 版本保留：仅保留最近 5 个版本
   mapfile -t OLD < <(find "$RELEASE_ROOT" -maxdepth 1 -mindepth 1 -type d ! -name current -printf '%f\n' | sort | head -n -5)
   for d in "${OLD[@]:-}"; do [ -n "$d" ] && rm -rf "$RELEASE_ROOT/$d"; done
@@ -111,7 +127,7 @@ echo "== ❌ 健康检查失败，准备回滚 =="
 if [ -n "$PREV" ] && [ -d "$PREV" ]; then
   ln -sfn "$PREV" "$CURRENT"
   stop; start "$TARGET_DIR"
-  if health; then echo "== ↩️ 已回滚到 $PREV =="; exit 2; fi
+  if verified_health; then echo "== ↩️ 已回滚到 $PREV =="; exit 2; fi
   echo "== ❌❌ 回滚后仍不健康，需人工介入 =="; exit 3
 fi
 echo "== ❌ 无上一版可回滚 =="; exit 3
