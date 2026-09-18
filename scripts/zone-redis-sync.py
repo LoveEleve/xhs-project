@@ -99,12 +99,17 @@ class SyncWorker:
                 ts_src = now
                 self._set_ts(src_side, key, now)
             else:
-                # 周期对账：按存量时间戳判断；双 0 时确定性 zone-a 优先
+                # 周期对账：按存量时间戳判断
                 ts_src = self._ts(src_side, key)
                 if ts_src == 0 and ts_dst == 0:
-                    winner_is_src = (src_side == A_SIDE)
-                    ts_src = 1 if winner_is_src else 0
-                    ts_dst = 0 if winner_is_src else 1
+                    # 双 0（无时间戳）：存在优先（避免误删单侧数据）；都存在时 zone-a 优先（确定性）
+                    if d_dst is None and d_src is not None:
+                        ts_src, ts_dst = 1, 0
+                    elif d_src is None and d_dst is not None:
+                        ts_src, ts_dst = 0, 1
+                    else:
+                        ts_src = 1 if src_side == A_SIDE else 0
+                        ts_dst = 0 if src_side == A_SIDE else 1
             winner_is_src = ts_src >= ts_dst
             if winner_is_src:
                 try:
@@ -131,25 +136,31 @@ class SyncWorker:
 
     # ---------- 事件订阅 ----------
     def _listen(self, side):
-        conn = self.conns[side]
-        pubsub = conn.pubsub()
-        pubsub.psubscribe("__keyevent@0__:*")
-        log.info("[%s] 订阅 keyspace 通知", side)
-        for msg in pubsub.listen():
-            if self.stopping:
-                break
-            if msg.get("type") != "pmessage":
-                continue
-            event = self._txt(msg["channel"]).rsplit(":", 1)[-1]
-            if event not in WATCHED:
-                continue
-            key = msg["data"]
-            if isinstance(key, bytes) and key.startswith(SYNC_PREFIX.encode()):
-                continue
+        """事件监听（带断线重连：Redis 重启后自动恢复订阅）"""
+        while not self.stopping:
             try:
-                self.sync_key(side, key, reason="event:" + event)
+                conn = self.conns[side]
+                pubsub = conn.pubsub()
+                pubsub.psubscribe("__keyevent@0__:*")
+                log.info("[%s] 订阅 keyspace 通知", side)
+                for msg in pubsub.listen():
+                    if self.stopping:
+                        break
+                    if msg.get("type") != "pmessage":
+                        continue
+                    event = self._txt(msg["channel"]).rsplit(":", 1)[-1]
+                    if event not in WATCHED:
+                        continue
+                    key = msg["data"]
+                    if isinstance(key, bytes) and key.startswith(SYNC_PREFIX.encode()):
+                        continue
+                    try:
+                        self.sync_key(side, key, reason="event:" + event)
+                    except Exception as e:  # noqa
+                        log.warning("[%s] 处理事件失败 %s: %s", side, self._txt(key), e)
             except Exception as e:  # noqa
-                log.warning("[%s] 处理事件失败 %s: %s", side, self._txt(key), e)
+                log.warning("[%s] 订阅中断，3s 后重连: %s", side, e)
+                time.sleep(3)
 
     # ---------- 周期对账 ----------
     def _reconcile_once(self):

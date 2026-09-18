@@ -34,3 +34,15 @@
 ## 五、交付物
 - `scripts/zone-redis-sync.py`（同步 Worker）+ `/etc/systemd/system/zone-redis-sync.service`
 - `my-xhs-redis-zone-b` 容器（端口 6381，AOF 持久化，keyspace 通知开启）
+
+## 六、Review 轮发现并修复（2026-09-18 同日）
+1. **对账 tie-break 误删数据（严重）**：双时间戳为 0 时原逻辑"zone-a 优先"，会把仅存在于 zone-b 的 key 在 zone-a 侧视为"删除"并写入，导致数据丢失。修复为**存在优先**（仅单侧存在时以存在侧为准；双侧都存在才 zone-a 优先）。
+   - 复测：worker 停止期间仅在 zone-b 写入无时间戳 key → 重启对账后双侧均为该值（未被删）✅
+2. **事件通道无重连**：Redis 重启导致 pubsub 断开后监听线程静默死亡（仅剩 30s 对账兜底）。修复为**断线自动重连（3s 重试）**。
+   - 复测：重启 zone-b Redis 后写入立即可同步至 zone-a ✅
+3. 复核结果：common 单测全绿；content/cart/product 基线 zone 参数=0；双侧 dbsize 一致（1873=1873）、影子时间戳一致（945=945）。
+
+## 七、遗留边界（复核确认）
+- 同步覆盖全部业务 key（含 `myxhs:lock:*` 锁键）——仿真可接受，生产需按前缀白名单过滤（锁/幂等键不应跨 zone 复制）；
+- LWW 用"事件处理时刻"近似写入时刻，极端乱序下保证收敛但不保证严格写入顺序语义；
+- Worker 单实例（无 HA），断线期间依赖 30s 对账补偿（RPO>0）。
