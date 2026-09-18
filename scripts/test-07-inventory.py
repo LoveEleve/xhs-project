@@ -76,6 +76,7 @@ def sign(secret, method, path, ts, nonce):
 
 
 def call(method, path, token, secret, json_body=None, params=None):
+    time.sleep(0.6)  # 限速：避免密集调用触发 429 干扰断言
     ts = str(int(time.time() * 1000))
     nonce = uuid.uuid4().hex
     sig = sign(secret, method, path, ts, nonce)

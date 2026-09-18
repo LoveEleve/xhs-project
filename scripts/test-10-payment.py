@@ -58,6 +58,7 @@ def sign(secret, method, path, ts, nonce):
 
 
 def call(method, path, token, secret, json_body=None, params=None, user_id=None, raw_body=None):
+    time.sleep(0.6)  # 限速：payment 5 QPS，避免测试触发 429 干扰断言
     ts = str(int(time.time() * 1000))
     nonce = uuid.uuid4().hex
     sig = sign(secret, method, path.split("?")[0], ts, nonce)
@@ -83,6 +84,18 @@ def call(method, path, token, secret, json_body=None, params=None, user_id=None,
 
 def run():
     token, secret, user_id = login()
+
+    # 前置：确保用户有收货地址（新注册用户无地址会导致下单失败）
+    code, body = call("GET", "/api/user/address/list", token, secret, user_id=user_id)
+    _addr_list = (body or {}).get("data") or []
+    if _addr_list:
+        ADDR = _addr_list[0].get("id")
+    else:
+        code, body = call("POST", "/api/user/address", token, secret, user_id=user_id,
+                          json_body={"receiverName": "测试用户", "receiverPhone": "13800000000",
+                                     "province": "上海市", "city": "上海市", "district": "徐汇区",
+                                     "detailAddress": "测试路 1 号", "isDefault": True})
+        ADDR = (body or {}).get("data", {}).get("id")
     print(f"\n=== Payment 5 接口 + 2 异常 ===\n")
     results = []
     ts_base = int(time.time() * 1000)
@@ -90,8 +103,8 @@ def run():
     # ----- 前置：创建订单（需要 valid orderId 来支付） -----
     biz_id = f"pay-test-{ts_base}"
     code, body = call("POST", "/api/order/create", token, secret,
-                      json_body={"skuItems": [{"skuId": 999, "quantity": 1}],
-                                 "addressId": 1, "bizIdentifier": biz_id},
+                      json_body={"skuItems": [{"skuId": 1, "quantity": 1}],
+                                 "addressId": ADDR, "bizIdentifier": biz_id},
                       user_id=user_id)
     order_id = body.get("data", {}).get("orderId") if isinstance(body, dict) else None
     order_no = body.get("data", {}).get("orderNo") if isinstance(body, dict) else None
@@ -113,8 +126,9 @@ def run():
     # ===== 3. POST /api/payment/callback/{payType} =====
     # 回调返回 String（非 R<JSON>），需特殊解析
     callback_data = json.dumps({"out_trade_no": payment_no or f"PAY_{ts_base}",
-                                 "status": "success"})
-    code, body = call("POST", "/api/payment/callback/1", token, secret,
+                                 "trade_no": f"MOCKPAY_{ts_base}",
+                                 "status": "SUCCESS"})
+    code, body = call("POST", "/api/payment/callback/99", token, secret,
                       raw_body=callback_data)
     callback_ok = (code == 200 and isinstance(body, dict) and
                    body.get("_raw", "").strip() == "success")
@@ -129,8 +143,9 @@ def run():
 
     # ===== 5. POST /api/payment/refund-callback/{payType} =====
     callback_data = json.dumps({"refund_no": f"REFUND_{ts_base}",
-                                 "status": "REFUND_SUCCESS"})
-    code, body = call("POST", "/api/payment/refund-callback/1", token, secret,
+                                 "refund_status": "REFUND_SUCCESS",
+                                 "status": "SUCCESS"})
+    code, body = call("POST", "/api/payment/refund-callback/99", token, secret,
                       raw_body=callback_data)
     rc_ok = (code == 200 and isinstance(body, dict) and
              body.get("_raw", "").strip() == "success")

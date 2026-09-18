@@ -83,8 +83,10 @@ def run():
     # 1. 创建券模板
     now = int(time.time() * 1000)
     # Jackson 全局配置：LocalDateTime 格式 "yyyy-MM-dd HH:mm:ss"（空格分隔，非 ISO T 分隔）
-    valid_start = "2026-08-01 00:00:00"
-    valid_end = "2026-12-31 23:59:59"
+    # validStart 有 @FutureOrPresent 校验：取"当前+3s"并在领券前等待生效
+    from datetime import datetime, timedelta
+    valid_start = (datetime.now() + timedelta(seconds=3)).strftime("%Y-%m-%d %H:%M:%S")
+    valid_end = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
     code, body = call("POST", "/api/coupon/template", token, secret,
                       json_body={"name": f"auto-test-{now}",
                                  "type": 1, "discountValue": 20.00,
@@ -93,6 +95,7 @@ def run():
                                  "validStart": valid_start, "validEnd": valid_end})
     results.append((1, "POST 创建券模板", (code, body)))
     new_template_id = body.get("data", {}).get("id") if isinstance(body, dict) else None
+    time.sleep(4)  # 等 validStart 生效（@FutureOrPresent + 有效期校验收口）
 
     # 2. 修改券模板状态（下线=0 → 上线=1）
     code, body = call("PUT", f"/api/coupon/template/{new_template_id}/status?status=0",

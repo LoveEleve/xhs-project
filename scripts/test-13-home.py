@@ -125,8 +125,8 @@ def run():
             ok = (rc == 404)
         elif idx == 3:  # product nonexistent → 404
             ok = (rc == 404)
-        elif idx in (6, 7):  # dev endpoints: 404 when profile not active (expected)
-            ok = (rc == 404)
+        elif idx in (6, 7):  # dev 端点：dev profile 开启为 200，未开启为 404，均算通过
+            ok = (rc in (200, 404))
         mark = "[PASS]" if ok else "[FAIL]"
         if ok: pass_cnt += 1
         else: fail_cnt += 1

@@ -57,7 +57,8 @@ def sign(secret, method, path, ts, nonce):
     return base64.b64encode(hmac.new(secret.encode(), msg, hashlib.sha256).digest()).decode()
 
 
-def call(method, path, token, secret, json_body=None, params=None, user_id=None):
+def call(method, path, token, secret, json_body=None, params=None, user_id=None, raw_body=None):
+    time.sleep(0.6)  # 限速：order 10 QPS，避免测试触发 429 干扰断言
     ts = str(int(time.time() * 1000))
     nonce = uuid.uuid4().hex
     sig = sign(secret, method, path.split("?")[0], ts, nonce)
@@ -68,8 +69,12 @@ def call(method, path, token, secret, json_body=None, params=None, user_id=None)
                "Content-Type": "application/json"}
     if user_id is not None:
         headers["X-User-Id"] = str(user_id)
-    r = requests.request(method, f"{GATEWAY}{path}", headers=headers,
-                         json=json_body, params=params, timeout=60)
+    if raw_body is not None:
+        r = requests.request(method, f"{GATEWAY}{path}", headers=headers,
+                             data=raw_body, params=params, timeout=60)
+    else:
+        r = requests.request(method, f"{GATEWAY}{path}", headers=headers,
+                             json=json_body, params=params, timeout=60)
     try:
         body = r.json()
     except Exception:
@@ -79,6 +84,18 @@ def call(method, path, token, secret, json_body=None, params=None, user_id=None)
 
 def run():
     token, secret, user_id = login()
+
+    # 前置：确保用户有收货地址（新注册用户无地址会导致下单失败）
+    code, body = call("GET", "/api/user/address/list", token, secret, user_id=user_id)
+    _addr_list = (body or {}).get("data") or []
+    if _addr_list:
+        ADDR = _addr_list[0].get("id")
+    else:
+        code, body = call("POST", "/api/user/address", token, secret, user_id=user_id,
+                          json_body={"receiverName": "测试用户", "receiverPhone": "13800000000",
+                                     "province": "上海市", "city": "上海市", "district": "徐汇区",
+                                     "detailAddress": "测试路 1 号", "isDefault": True})
+        ADDR = (body or {}).get("data", {}).get("id")
     print(f"\n=== Order 14 接口 + 2 异常 ===\n")
     results = []
     ts_base = int(time.time() * 1000)
@@ -86,8 +103,8 @@ def run():
     # ===== 1. 创建订单 A（无优惠券，走完整状态机） =====
     biz_id = f"order-test-{ts_base}-main"
     order_create_body = {
-        "skuItems": [{"skuId": 999, "quantity": 2}],
-        "addressId": 1,
+        "skuItems": [{"skuId": 1, "quantity": 2}],
+        "addressId": ADDR,
         "bizIdentifier": biz_id
     }
     code, body = call("POST", "/api/order/create", token, secret,
@@ -113,6 +130,13 @@ def run():
     code, body = call("POST", "/api/order/pay/create", token, secret,
                       json_body={"orderId": order_id_a, "payType": 1}, user_id=user_id)
     results.append((5, "POST 创建支付", (code, body)))
+    _payment_no = body.get("data", {}).get("paymentNo") if isinstance(body, dict) else None
+    # 补支付成功回调（payType=1 支付宝 mock 渠道），否则订单不会进入已支付
+    if _payment_no:
+        call("POST", "/api/payment/callback/1", token, secret,
+             raw_body=json.dumps({"out_trade_no": _payment_no,
+                                  "trade_no": f"ALIPAY_MOCK_{ts_base}",
+                                  "status": "SUCCESS"}))
 
     # ===== 6. 支付状态查询 =====
     code, body = call("GET", f"/api/order/pay/status/{order_id_a}", token, secret)
@@ -133,8 +157,8 @@ def run():
     # ===== 9. 取消订单（新建订单 B，再取消） =====
     biz_b = f"order-test-{ts_base}-cancel"
     code, body = call("POST", "/api/order/create", token, secret,
-                      json_body={"skuItems": [{"skuId": 999, "quantity": 1}],
-                                 "addressId": 1, "bizIdentifier": biz_b},
+                      json_body={"skuItems": [{"skuId": 1, "quantity": 1}],
+                                 "addressId": ADDR, "bizIdentifier": biz_b},
                       user_id=user_id)
     order_id_b = body.get("data", {}).get("orderId") if isinstance(body, dict) else None
     print(f"[debug] cancel target orderId={order_id_b}")
@@ -145,8 +169,8 @@ def run():
     # ===== 10. 支付成功回调（新建订单 C，直接回调） =====
     biz_c = f"order-test-{ts_base}-paysuccess"
     code, body = call("POST", "/api/order/create", token, secret,
-                      json_body={"skuItems": [{"skuId": 999, "quantity": 1}],
-                                 "addressId": 1, "bizIdentifier": biz_c},
+                      json_body={"skuItems": [{"skuId": 1, "quantity": 1}],
+                                 "addressId": ADDR, "bizIdentifier": biz_c},
                       user_id=user_id)
     order_id_c = body.get("data", {}).get("orderId") if isinstance(body, dict) else None
     print(f"[debug] paysuccess target orderId={order_id_c}")
@@ -157,8 +181,8 @@ def run():
     # ===== 11. 支付失败回调（新建订单 D） =====
     biz_d = f"order-test-{ts_base}-payfail"
     code, body = call("POST", "/api/order/create", token, secret,
-                      json_body={"skuItems": [{"skuId": 999, "quantity": 1}],
-                                 "addressId": 1, "bizIdentifier": biz_d},
+                      json_body={"skuItems": [{"skuId": 1, "quantity": 1}],
+                                 "addressId": ADDR, "bizIdentifier": biz_d},
                       user_id=user_id)
     order_id_d = body.get("data", {}).get("orderId") if isinstance(body, dict) else None
     print(f"[debug] payfail target orderId={order_id_d}")
@@ -169,12 +193,18 @@ def run():
     # ===== 12. 退款成功回调（新建订单 E，先支付再回调） =====
     biz_e = f"order-test-{ts_base}-refundok"
     code, body = call("POST", "/api/order/create", token, secret,
-                      json_body={"skuItems": [{"skuId": 999, "quantity": 1}],
-                                 "addressId": 1, "bizIdentifier": biz_e},
+                      json_body={"skuItems": [{"skuId": 1, "quantity": 1}],
+                                 "addressId": ADDR, "bizIdentifier": biz_e},
                       user_id=user_id)
     order_id_e = body.get("data", {}).get("orderId") if isinstance(body, dict) else None
-    call("POST", "/api/order/pay/create", token, secret,
+    _, _pay_body = call("POST", "/api/order/pay/create", token, secret,
          json_body={"orderId": order_id_e, "payType": 1}, user_id=user_id)
+    _pay_no_e = _pay_body.get("data", {}).get("paymentNo") if isinstance(_pay_body, dict) else None
+    if _pay_no_e:
+        call("POST", "/api/payment/callback/1", token, secret,
+             raw_body=json.dumps({"out_trade_no": _pay_no_e,
+                                  "trade_no": f"ALIPAY_MOCK_{ts_base}e",
+                                  "status": "SUCCESS"}))
     print(f"[debug] refund-success target orderId={order_id_e}")
     code, body = call("POST", "/api/order/refund-success", token, secret,
                       params={"orderId": order_id_e, "refundNo": "refund-001"})
@@ -194,7 +224,7 @@ def run():
     # ===== 异常用例 =====
     # 15. 创建订单缺 skuItems（预期 40002 PARAM_INVALID）
     code, body = call("POST", "/api/order/create", token, secret,
-                      json_body={"addressId": 1, "bizIdentifier": f"order-test-{ts_base}-err1"},
+                      json_body={"addressId": ADDR, "bizIdentifier": f"order-test-{ts_base}-err1"},
                       user_id=user_id)
     results.append((15, "异常: 缺skuItems", (code, body)))
 
