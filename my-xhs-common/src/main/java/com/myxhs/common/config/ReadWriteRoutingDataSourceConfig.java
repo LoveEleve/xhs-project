@@ -43,12 +43,16 @@ public class ReadWriteRoutingDataSourceConfig {
         return ds;
     }
 
-    @Bean
-    public DataSource slaveDataSource(
-            @Value("${spring.datasource.slave.jdbc-url}") String slaveUrl,
-            @Value("${spring.datasource.slave.username}") String slaveUsername,
-            @Value("${spring.datasource.slave.password}") String slavePassword,
-            @Value("${spring.datasource.slave.driver-class-name}") String slaveDriver) {
+    /**
+     * 从库数据源（不暴露为独立 Bean）。
+     * <p>
+     * 设计说明：Spring Boot 的 db 健康检查会评估容器内所有 DataSource Bean，
+     * 从库宕机时会导致 /actuator/health=503 → 发布健康校验失败回滚（2026-09-18 实测发现）。
+     * 从库是可降级组件（路由层已有"从库不可用 → 主库"兜底），因此它不应参与整体健康判定。
+     * </p>
+     */
+    private DataSource createSlaveDataSource(String slaveUrl, String slaveUsername,
+                                             String slavePassword, String slaveDriver) {
         HikariDataSource ds = new HikariDataSource();
         ds.setJdbcUrl(slaveUrl);
         ds.setUsername(slaveUsername);
@@ -60,17 +64,30 @@ public class ReadWriteRoutingDataSourceConfig {
         ds.setMaxLifetime(1800000);
         ds.setConnectionTimeout(10000);
         ds.setReadOnly(true);
+        // 从库故障不应阻止服务启动：路由层已有"从库不可用 → 主库降级"兜底
+        ds.setInitializationFailTimeout(-1);
         return ds;
     }
 
     @Bean
     @Primary
-    public DataSource routingDataSource(DataSource masterDataSource, DataSource slaveDataSource) {
+    public DataSource routingDataSource(DataSource masterDataSource,
+                                        @Value("${spring.datasource.slave.jdbc-url}") String slaveUrl,
+                                        @Value("${spring.datasource.slave.username}") String slaveUsername,
+                                        @Value("${spring.datasource.slave.password}") String slavePassword,
+                                        @Value("${spring.datasource.slave.driver-class-name}") String slaveDriver,
+                                        @Value("${myxhs.availability.zone.datasource.enabled:false}") boolean zoneRoutingEnabled,
+                                        @Value("${myxhs.availability.zone.datasource.master-zone:}") String masterZone,
+                                        @Value("${myxhs.availability.zone.datasource.slave-zone:}") String slaveZone) {
         ReadWriteRoutingDataSource routingDataSource = new ReadWriteRoutingDataSource();
+        routingDataSource.setZoneRoutingEnabled(zoneRoutingEnabled);
+        routingDataSource.setMasterZone(masterZone);
+        routingDataSource.setSlaveZone(slaveZone);
 
         Map<Object, Object> targetDataSources = new HashMap<>();
         targetDataSources.put(DataSourceType.MASTER, masterDataSource);
-        targetDataSources.put(DataSourceType.SLAVE, slaveDataSource);
+        targetDataSources.put(DataSourceType.SLAVE,
+                createSlaveDataSource(slaveUrl, slaveUsername, slavePassword, slaveDriver));
 
         routingDataSource.setTargetDataSources(targetDataSources);
         routingDataSource.setDefaultTargetDataSource(masterDataSource);
