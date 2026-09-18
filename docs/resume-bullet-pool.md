@@ -87,6 +87,19 @@
 | 事实校准：Lua 6→7、Sentinel 15→16、单测 53→97、topic 18→17、锁切面纠偏 | 各题文件 | ⭐"简历对得上代码" |
 | 知识沉淀：76 题库/14 组件拷打/12 链/逐链自测/防御手册 10 事故/4 报告 | docs/interview/*；docs/reports/* | 面试准备资产 |
 
+**J. 公共组件与数据面扩展**
+| 备选条目 | 证据 | 口径提示 |
+|---|---|---|
+| 号段 ID 生成器：DB 段号 + 双 Buffer 预加载；批量写入执行器（CPU×2/JDBC 5000/ID 分片） | SegmentIdGenerator.java；BatchInsertExecutor.java | 与 Snowflake 区分场景 |
+| 多版本 API：@ApiVersion 替换 HandlerMapping；未知版本降级不拒绝（v2/v9/无版本均 200） | ApiVersionFilter.java；定制 HandlerMapping | 默认 v1，降级要说明 |
+| 审计独立事务：REQUIRES_NEW 模板（不被主事务回滚拖累）；HTTP ETag/304 | AuditTransactionTemplate.java；ETag 过滤器 | 两个小点可合并 |
+| 读写分离：ReadWriteRoutingInterceptor（SLAVE 只读路由/事务中不切）；12 服务 ignore-routing 不阻塞发布 | ReadWriteRoutingDataSource；application.yml | ⭐与 21 题互相印证 |
+| 造数框架：seed-data.py（规模倍数造数）；压测脚本 test-07~14 全链路 | scripts/seed-data.py；scripts/test-*.py | 数据准备能力 |
+| ShardingSphere 绑定表：5 张逻辑表同 user_id 分片，JOIN 无笛卡尔积；Snowflake worker-id 三级优先级（env→-D→IP 哈希） | sharding-config.yaml；ShardingSphereDataSourceConfig.java:92-112 | 与 29/49 题一致 |
+| 压测隔离：ShadowTableInterceptor（X-Pressure-Test + 开关，表名+_shadow）；混沌演练脚本（Redis/MQ pause、CPU 满载、磁盘 burn、MySQL pause、优雅停机） | ShadowTableInterceptor.java；chaos-drill.sh | ⭐"压测中勿发布"来源 |
+| 端口与连接治理：TIME_WAIT/临时端口排查口径（连接复用/keep-alive/池化），Grafana node 面板指标 | 平台深挖；node-exporter 面板 | 无事故，讲原理+口径 |
+| 部署脚本：setup-firewall.sh（安全组/端口）、setup-ip.sh（部署包 IP 置换）、restart-all-skywalking.sh、开机自愈 boot-selfheal.sh | deploy/docker/my-xhs-deploy-zip/*.sh；deploy/scripts/boot-selfheal.sh | 可用 |
+
 ## 项目一 · 电商平台 — 关键结果备选
 | 备选条目 | 证据 | 口径提示 |
 |---|---|---|
@@ -134,6 +147,11 @@
 | 部署运维：systemd（Restart=always/RestartSec=10/Stop 45s）+ readiness=MySQL/Redis + 日志 100MB/7天/2GB + 指标 loopback + 10 运维脚本 | xhs-ai.service；prometheus.yml:91 | 可用 |
 | ⭐ AgentScope 框架：BYPASS 补偿（白名单+HITL+审计）；热替换缺失→去 MCP；RuntimeContext 多租户坑；源码级验证 6 项 | AgentService.java:233；research/02 | ⭐强 |
 | 知识卡工程：55 卡（11/7/36/1）+ BM25 + 引用硬校验 + 验证问题集 + 启停重索引 | KnowledgeIndexer.java；ES 聚合 | 可用 |
+| ⭐ 扩展框架两代设计：v1 Java SPI（声明式零信任）+ v2 出进程 Sidecar（借鉴协议）；禁止 in-process full-trust | ADR-21；design/08-extension-framework | ⭐设计感强 |
+| 技能仓库：GitSkillRepository（技能变更走 PR 治理）+ 四层合成（全局<Marketplace<workspace<user）；沙箱 v1 不启用（无不可信代码执行） | ADR-7/6；design/12 | 治理视角 |
+| 受控只读 SQL：AST 校验 + READ ONLY 事务 + 只读账号 + 行数/超时限制 + 脱敏审计（替代"禁止 SQL"） | ADR-23；deploy/scripts/ai-readonly-grant.sql | ⭐安全设计 |
+| 工程规范 E1-E7：依赖精确版本/CVE 扫描/出网收敛两域名/审计只追加/灰度回滚 | 04-engineering.md | 与测试体系互补 |
+| 缺口登记（诚实边界）：OTel/Langfuse 0 命中、Prompt 版本化缺失、DLP 仅密钥、多租户未做、Bulkhead 设计未落地 | 18-生产化缺口.md；observability-truth | ⭐主动披露加分 |
 
 ## 项目二 · xhs-ai — 关键结果备选
 | 备选条目 | 证据 | 口径提示 |
@@ -152,6 +170,7 @@
 | ⭐ 100 条 nightly：100% 通过率 / 96% 完成率 / 0% 幻觉率（smoke 20+regression 80） | nightly-100-report | ⭐强 |
 | 在线 QA：chat 3.2s / Agent 145.6s；日志结论经 ES 复核属实（6319/8305 条） | ai-live-qa | 可用 |
 | 需求追溯：34 场景 100% REQ→AC→TC；门禁通过率≥90% + 引用有效性 100% | 03-test-design | 可用 |
+| 运维脚本资产：audit-gate/audit-verify（审计链）、cost-week（周成本）、tool-eval（工具评测）、order-flow（全链路演练）、traffic-gen（造流量）、load-test、red-team | xhs-ai/scripts/ | 10 个脚本=可执行 runbook |
 
 ## 备选"一句话加分细节"（面试自然带出）
 - 伪订单号 fold-hash 溢出碰撞 → SHA-256 统一（库存永久泄漏修复）
