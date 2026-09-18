@@ -49,7 +49,7 @@
 | 1 | Spring Cloud LoadBalancer 多活 | ✅ 路由+健康检查+切换全通（RTO **3.06s**，liveness/3s）；报告见 `docs/reports/zone-pilot-20260918.md` | 分区演练（D4） | **完成** |
 | 2 | Spring REST Client 多活 | 未做（`RestTemplate`/`RestClient` 使用面小） | 若使用面扩大再评估 zone 拦截器 | 待评估 |
 | 3 | Apache Dubbo 多活 | **决策不引入**（见 rpc-upgrade.md） | 仅理论储备（Dubbo 自带 zone/region 路由） | 排除 |
-| 4 | Spring Cloud Gateway 多活 | 网关已有 zone 标记（TrafficColoring）+ GrayRoute | 评估"zone 就近转发/zone 故障切流"（本地双实例仿真） | P1 |
+| 4 | Spring Cloud Gateway 多活 | ✅ 完成：网关内精简 zone LB（`@LoadBalancerClients` 子 context）+ 就近路由实证（12/12）+ 故障切换 RTO 5.54s（`docs/reports/gateway-multi-active-20260918.md`） | 按请求来源 zone 路由（可选） | **完成** |
 | 5 | MySQL Server 多活 | ✅ 双 zone 仿真：主从分属 zone-a/b；读就近、从库故障降级/自动恢复（~40s）、从库不可达不阻塞发布（`docs/reports/mysql-zone-datasource-20260918.md`） | 真双主/复制与 zone 解耦（超本期） | 部分完成（C1 已含主故障切换） |
 | 6 | MySQL JDBC 多活 | ✅ zone 感知数据源（content 试点）：读本 zone 优先、跨 zone 降级、30s 自动恢复；4+5 项单测（`docs/reports/mysql-zone-datasource-20260918.md`） | 推广到其余服务（按开关） | **完成** |
 | 7 | Redis Client 多活 | 业务/缓存双实例 + Sentinel；zone 骨架含 `RedisTemplateWrapper`/`RedisCommandEvent`（默认关） | 接 zone 感知路由 + 跨 zone 同步事件消费 | P2 |
@@ -57,7 +57,7 @@
 | 9 | 动态 JDBC 组件多活 | `DynamicDataSource` 类完整（含 TCC 事务安全），未接入服务 | 接线到 1 个服务试点（如 cart） | P2 |
 | 10 | 动态 Spring 组件多活 | `ZoneContext` PropertyChange + `ZoneProperties` 已具备 | 动态切换演示（不改配置热切 zone） | P2 |
 
-> Review 记录（2026-09-18）：① 12 服务 `ignore-routing` 属性已生效——**更正**：首轮"分批重启"实为假成功（11 个服务运行旧进程，健康检查命中的是旧进程）；已修复 release 脚本（端口占用者精确清理 + **健康检查必须命中本次启动 PID**），11 服务二次真重启，审计 15/15 PID 吻合、属3服务抽样入包、冒烟全绿、复制延迟 0；陈旧单测（coupon×2、inventory×1）按现行语义修正；② zone 能力启用清单 `docs/ops/zone-enable-checklist.md`（含必需的健康检查配套参数）；③ 与 microsphere 对比 `docs/design/multi-active-vs-microsphere.md`（结论：整体不如成熟框架，差异化在落地/实测/修 bug）；④ ✅ home 下游失败语义已修复（业务码透传 → 404“笔记不存在”，仅 5xx 判服务不可用）；⑤ ✅ release 脚本"假成功"修复（旧进程占端口→健康检查打旧进程）：按端口占用者精确清理（含历史手工进程）；⑥ ✅ Zone 自动发现（env/文件/网段 + EnvironmentPostProcessor 注册前生效）与 Zone 传播（X-Zone 入站/出站 + 指标）完成，common 单测 82/82。
+> Review 记录（2026-09-18）：① 12 服务 `ignore-routing` 属性已生效——**更正**：首轮"分批重启"实为假成功（11 个服务运行旧进程，健康检查命中的是旧进程）；已修复 release 脚本（端口占用者精确清理 + **健康检查必须命中本次启动 PID**），11 服务二次真重启，审计 15/15 PID 吻合、属3服务抽样入包、冒烟全绿、复制延迟 0；陈旧单测（coupon×2、inventory×1）按现行语义修正；② zone 能力启用清单 `docs/ops/zone-enable-checklist.md`（含必需的健康检查配套参数）；③ 与 microsphere 对比 `docs/design/multi-active-vs-microsphere.md`（结论：整体不如成熟框架，差异化在落地/实测/修 bug）；④ ✅ home 下游失败语义已修复（业务码透传 → 404“笔记不存在”，仅 5xx 判服务不可用）；⑤ ✅ release 脚本"假成功"修复（旧进程占端口→健康检查打旧进程）：按端口占用者精确清理（含历史手工进程）；⑥ ✅ Zone 自动发现与传播完成；⑦ ✅ D3-4 网关多活完成（2026-09-18）：网关内反应式 zone LB + 就近路由/切换实证（RTO 5.54s）。
 
 ## Track E：可观测与稳定性（对应 6/7/8）
 | # | 事项 | 现状 | 目标/动作 | 验收证据 | 优先级 |

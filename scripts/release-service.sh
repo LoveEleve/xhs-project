@@ -89,10 +89,20 @@ start() {
   [ -n "$INSTANCE_ID" ] && EXTRA="$EXTRA -Dserver.port=$P"
   nohup setsid java -Xms$MX -Xmx$MX ${JVM_EXTRA:-} $EXTRA -jar "$1/app.jar" > "$LOG_FILE" 2>&1 < /dev/null &
   echo $! > "$PID_FILE"
+  # setsid 可能 fork（$! 非真实 java PID）：以端口实际监听者回写，确保 PID 校验可靠
+  for _ in $(seq 1 25); do
+    lp=$(listen_pid 2>/dev/null || true)
+    if [ -n "$lp" ]; then
+      echo "$lp" > "$PID_FILE"
+      break
+    fi
+    sleep 1
+  done
   echo "   已启动: $1/app.jar (pid $(cat "$PID_FILE"), port $P, log $LOG_FILE)"
 }
 health() {
-  for _ in $(seq 1 20); do
+  # 冷启动较慢的服务（DLQ 监控消费者初始化等）可能 >40s，窗口放宽到 60s
+  for _ in $(seq 1 30); do
     code=$(curl -s -m 2 -o /dev/null -w "%{http_code}" "http://localhost:$P/actuator/health" 2>/dev/null)
     [ "$code" = "200" ] && return 0
     sleep 2
