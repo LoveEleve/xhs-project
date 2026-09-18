@@ -1,4 +1,4 @@
-# 简历可选条目池（双项目）· 2026-09-15
+# 简历可选条目池（双项目）· 2026-09-18（本轮按主题全量补充）
 
 > 用法：从下表挑选替换/补充到 `docs/resume-final.md`；⭐=推荐直接写；⚠️=口径需注意（写法见"口径提示"列）
 > 每条都可在 `docs/mining/*` 与 `docs/interview-defense-handbook.md` 找到 file:line / 报告出处
@@ -22,6 +22,71 @@
 | 指标治理：预注册空标签防"业务系列被吞/恒 0"；URI 归一化（≥10 位 ID→{id}）防时间序列爆炸；DLQ Gauge 零 I/O 抓取 | BusinessMetrics.java:115-139；ApiMetricsFilter.java:12 | ⭐观测类问题很好用 |
 | 安全：HMAC per-session 密钥 fail-closed；X-User-Id set 覆盖防伪造；压测标记仅 10.x 客户端可带（P0-7） | HmacSignatureFilter.java:174-209；TrafficColoringFilter.java:82 | 可用 |
 
+### 新增（2026-09-18）· 按主题
+**A. 配置中心与调度**
+| 备选条目 | 证据 | 口径提示 |
+|---|---|---|
+| ⭐ 配置中心真实接入：shared-configs 在 SCA 2023 失效（死配置）→ `spring.config.import: optional:nacos:` + 14 服务补 config 命名空间 + 网关补依赖；15/15 Load config success | nacos-config-externalization-20260918.md；release-cart 日志 | ⭐"写了没生效"强故事；optional 保启动韧性 |
+| ⭐ XXL-Job 治理：`0/60` 秒增量越界 → 调度器自动禁用退款任务（从未运行）→ 修复；3 每日任务 DO_NOTHING→FIRE_ONCE_NOW；20 任务/10 执行器组 | xxl-job-schedule-audit-20260918.md | ⭐排查链完整；日报 633=调度失败+未上报+真失败 2 |
+| 基建治理：RocketMQ topic 全量初始化（autoCreateTopicEnable=false 事故）；Nacos gRPC 19848 噪音定性；27 容器零漂移核验 | init-rocketmq-topics.sh；nacos-grpc-noise-20260917.md | 可用 |
+
+**B. APM 与可观测**
+| 备选条目 | 证据 | 口径提示 |
+|---|---|---|
+| ⭐ SkyWalking 接入：修复"组件在跑但没数据"；agent 9.7 + 幂等安装脚本 + SB3 插件适配 + release/restart 自动挂载 + ignore_suffix 降噪 + 采样可调 | skywalking-agent-enable-20260918.md；install-skywalking-agent.sh | ⭐gateway WebFlux 噪音为已知边界 |
+| ⭐ 告警体系：31→40 规则/9 组；通知黑洞修复（noop→alert-sink 落盘）；keep_firing_for；Watchdog；SLO 43m12s + Burn Ledger | alerting-e2e-20260917.md | ⭐通知黑洞/短命告警是经典 |
+| ELK 链路：Filebeat filestream+ndjson → Logstash grok → ES 日索引；Logback JSON 上限（100MB/7天/2GB）；yellow 修复+巡检 cron；ILM 双口径 | filebeat.yml；logstash.conf；es-log-index-check.sh；log-cleanup.sh | 保留双口径主动讲 |
+| Grafana：看板 datasource provisioning 即代码 | config/grafana/provisioning | 可用 |
+
+**C. 通信与负载均衡**
+| 备选条目 | 证据 | 口径提示 |
+|---|---|---|
+| ⭐ Feign：24 客户端 HC5（200/50）+ 分级超时（核心 500ms/2s）+ Decoder/ErrorDecoder 统一 + 内部令牌 fail-closed + 52 处 fallback | FeignUnifiedConfig.java；FeignInternalCallInterceptor.java | ⭐"超时怎么定/为什么不重试" |
+| ⭐ 负载均衡：最小连接（活跃/权重；需埋点+平局随机）+ 同 zone 优先 + 优雅停机（摘注册+10s 传播等待） | LeastConnectionsLoadBalancer.java；GracefulShutdownListener.java | 未埋点退化轮询是坑 |
+| Dubbo 决策：双协议试点 A/B +4.9% RPS / P50 -19% → 决策不引入并回滚（数据留档） | docs/design/rpc-upgrade.md | ⭐"评估后不做"加分 |
+
+**D. 认证与安全**
+| 备选条目 | 证据 | 口径提示 |
+|---|---|---|
+| 用户认证：JWT 双 token（access 30min/refresh 7d）+ 验证码（Redis）+ 刷新拉黑旧 token + 登出失效 | TokenService.java；AuthController.java | 可用 |
+| SqlGuard v2：200ms 告警+5 次熔断+白名单/豁免/冷却+3 指标+6 单测；Sentinel 规则 Nacos 化 + 30s 真空期兜底 | sqlguard-sentinel-hardening-20260917.md | 默认关闭要说明 |
+| 安全边界：直连服务鉴权 fail-closed、管理/内部令牌空即拒绝、HMAC 重放防护 | 手册 §Q；TrafficColoringFilter | 与 17 题组合讲 |
+
+**E. 数据一致性与多活**
+| 备选条目 | 证据 | 口径提示 |
+|---|---|---|
+| ⭐ Zone 数据面：动态 ZoneContext 源统一；12 服务 ignore-routing；9 分支路由指标；RPO/冲突策略评估；D4 演练 1.31s/3.25s/4.79s | d4-zone-drills-20260918.md；ZoneRouteMetrics.java | ⭐数字背全 |
+| MySQL 故障转移：停主 10.2s/提升 0.087s/切换 22s/RTO≈32s + 5 短板 | mysql-failover-drill-20260917.md | ⭐"不含发现时间" |
+| Redis 双主修复："存在优先"防误删 + 3s 重连 + 防回环；dbsize 1873=1873、≤35s 追平 | redis-server-multi-active-20260918.md | 已有 |
+| 动态 JDBC/Spring：content +207→+206、cart +40↔+40 不重启 | dynamic-zone-jdbc-spring-20260918.md | 已有 |
+
+**F. JVM 与性能**
+| 备选条目 | 证据 | 口径提示 |
+|---|---|---|
+| ⭐ 类加载锁：每请求 Class.forName → 92/99 线程 BLOCKED → 静态桥接 1,074→4,871（4.5x） | a2-jvm-tuning-20260917.md | ⭐必背 |
+| JVM/线程池：G1+200ms+Metaspace 256m；聚合内外池隔离；MDC 包装线程池 | 同上；MdcAwareExecutorService.java | 可用 |
+| ID 与预热：订单 Snowflake（IP 推导 worker-id）；号段双 Buffer；Bloom 预热 100 万/1% | ShardingSphereDataSourceConfig.java；CacheHelper | 可用 |
+
+**G. 稳定性与发布**
+| 备选条目 | 证据 | 口径提示 |
+|---|---|---|
+| ⭐ 发布假成功：11/15 服务跑旧 jar → "监听 PID==启动 PID" + ensure_port_free + setsid PID 回写 + 多实例最新构建 | release-service.sh；review 记录 | ⭐根治故事 |
+| 慢 SQL/连接：僵尸连接 318 条 → 459/500 → 清理 106；窗口函数+复合索引 | comment-sql-tuning-20260917.md | ⭐故事完整 |
+| 死信清账：14 条归档（3 毒丸+11 合法）；DLQ 26 组指标恒 0 治理 | dlq-cleanup-*.md | 已有 |
+
+**H. 成本与日志治理**
+| 备选条目 | 证据 | 口径提示 |
+|---|---|---|
+| ⭐ 成本：19 残留 JVM（16.4GB）；内存 45→28Gi；日志 3.7→2.6G；releases 8.1→6.5G；npm 3.6G→591M；apt | cost-log-governance-20260918.md | ⭐数字都可复现 |
+| 日志清理 cron（文件 3 天/ES 7 天）+ 版本保留 3 | log-cleanup.sh；crontab | 已有 |
+
+**I. 工程与知识治理**
+| 备选条目 | 证据 | 口径提示 |
+|---|---|---|
+| 仓库卫生：pids 取消跟踪+gitignore；SW_AGENT_* 环境变量化 | .gitignore；release-service.sh | 小点不占位 |
+| 事实校准：Lua 6→7、Sentinel 15→16、单测 53→97、topic 18→17、锁切面纠偏 | 各题文件 | ⭐"简历对得上代码" |
+| 知识沉淀：76 题库/14 组件拷打/12 链/逐链自测/防御手册 10 事故/4 报告 | docs/interview/*；docs/reports/* | 面试准备资产 |
+
 ## 项目一 · 电商平台 — 关键结果备选
 | 备选条目 | 证据 | 口径提示 |
 |---|---|---|
@@ -30,8 +95,24 @@
 | 限流校准：content/product 500、home/recommend 300、search 300，写路由 10/5/30 不放松 | application.yml:100-251 | 已有；可补"写路由更严" |
 | chaos 演练 7 场景（Redis/MQ pause、CPU 满载、磁盘 burn、MySQL pause、优雅停机）全部通过 | chaos-drill.sh | 可补进"稳定性" |
 | 慢下游实录：UserService DELAY 11s → 网关 504；listener 75s → 事务回查恰好一次 | 99-runtime…:126,140,292 | 50 并发预扣那类 |
-| 告警体系：28 条 Prometheus 规则（含 P0：ServiceDown/PaymentHighErrorRate/MysqlDown）+ 10 个 Grafana 看板 | alert_rules/myxhs_rules.yml | 可写"28 条 + 分级" |
+| 告警体系：**40 条规则/9 组**（含 P0：ServiceDown/PaymentHighErrorRate/MysqlDown）+ Grafana 看板（provisioning 即代码） | alerting-e2e-20260917.md；alert_rules/myxhs_rules.yml | 可写"40 条/9 组 + 分级 + SLO"（旧 28 条口径作废） |
 | 缓存治理：布隆+空值双层防穿透；逻辑过期防击穿；TTL 随机防雪崩 —— 商品/用户/券全链路接入 | 平台深挖 §8 | 可写结果"缓存类故障 0 起"（需自证） |
+
+### 新增（2026-09-18）· 按主题
+| 备选条目 | 证据 | 口径提示 |
+|---|---|---|
+| ⭐ 配置中心：15/15 真实加载（修复前为死配置）；optional 保 Nacos 故障不阻塞启动 | nacos-config-externalization | 可用 |
+| ⭐ 定时任务：20/20 可调度（1 从未运行+3 丢窗口修复）；日报 633 条=真实业务失败 2 条 | xxl-job-schedule-audit | 可用 |
+| ⭐ APM：15/15 注册 + gateway→home 53 span（CROSS_PROCESS/CROSS_THREAD）；ignore_suffix 对 SpringMVC 生效 | skywalking-agent-enable | 边界：gateway 噪音 |
+| ⭐ 告警：40 规则/9 组 + 通知黑洞修复 e2e + SLO 43m12s/30 天 | alerting-e2e | 可用 |
+| ⭐ CI/CD：门禁实测拦截 RED + 版本化发布/自动回滚 + act_runner 复用 .m2 | cicd-gitea；ci-gate-red | 可用 |
+| ⭐ JVM：1,074→4,871（4.5x，92/99 BLOCKED 归零）+ 线程池隔离/MDC 跨池 | a2-jvm-tuning | ⭐必背 |
+| MySQL 演练：RTO≈32s 分解 + RPO=0（本次）+ 5 短板 | mysql-failover-drill | 可用 |
+| 成本：内存 45→28Gi / releases 8.1→6.5G / npm 3.6G→591M | cost-log-governance | 必背 |
+| Feign/LB：HC5+分级超时+52 降级+最小连接+优雅停机 | 代码 | 可用 |
+| 认证：双 token 刷新/拉黑/登出闭环 + 验证码防刷 | TokenService | 可用 |
+| Dubbo：A/B +4.9% RPS 后决策不引入并回滚 | rpc-upgrade | ⭐决策力 |
+| Zone：自动发现/传播 10/10；动态热切 +207→+206 / +40↔+40 | zone 系列报告 | 已有 |
 
 ## 项目二 · xhs-ai — 职责备选
 | 备选条目 | 证据 | 口径提示 |
@@ -45,6 +126,15 @@
 | 去 MCP 化架构决策 + 工具 schema token 预算（3428/12000） | 素材 §4 | 已有 |
 | 评测：三层 + 部分分 + 稳定性；评测隔离（专用用户+额度清零） | trajectory-eval 报告 | 已有 |
 
+### 新增（2026-09-18）· 按主题
+| 备选条目 | 证据 | 口径提示 |
+|---|---|---|
+| ⭐ 需求与架构：34 场景（DIAG/KB/OPS/PLAT）+ 量化 NFR/SLO + STRIDE + REQ→AC→TC 门禁 + 23 ADR + Flyway 只管网表 | requirements/*.md；02-architecture.md:107-133 | ⭐强 |
+| ⭐ 测试与工程：六层设计（落地 UT61/EVAL94/RED8/PERF4；CT/IT/E2E 为 TC 清单）+ Enforcer/CVE/依赖冲突 4 项与豁免退出条件 | 03-test-design.md；04-engineering.md | 设计 vs 落地分开讲 |
+| 部署运维：systemd（Restart=always/RestartSec=10/Stop 45s）+ readiness=MySQL/Redis + 日志 100MB/7天/2GB + 指标 loopback + 10 运维脚本 | xhs-ai.service；prometheus.yml:91 | 可用 |
+| ⭐ AgentScope 框架：BYPASS 补偿（白名单+HITL+审计）；热替换缺失→去 MCP；RuntimeContext 多租户坑；源码级验证 6 项 | AgentService.java:233；research/02 | ⭐强 |
+| 知识卡工程：55 卡（11/7/36/1）+ BM25 + 引用硬校验 + 验证问题集 + 启停重索引 | KnowledgeIndexer.java；ES 聚合 | 可用 |
+
 ## 项目二 · xhs-ai — 关键结果备选
 | 备选条目 | 证据 | 口径提示 |
 |---|---|---|
@@ -55,6 +145,13 @@
 | 去 MCP 化 kill 演练 19s/39s | live-drill §4.6 | 已有 |
 | 会话摘要演练：47 条→27 条摘要，删状态仍答 ZEBRA-42/87 | production-gaps | 已有 |
 | 诚实边界（可写进"边界"）：跨实例事件只发不收（除指标）、capture_mode/ai_feedback 未接线、DLQ 尾部扫描 200 条上限、/chat 不计预算 | 素材 §6 | ⚠️ 主动写边界反而加分 |
+
+### 新增（2026-09-18）· 按主题
+| 备选条目 | 证据 | 口径提示 |
+|---|---|---|
+| ⭐ 100 条 nightly：100% 通过率 / 96% 完成率 / 0% 幻觉率（smoke 20+regression 80） | nightly-100-report | ⭐强 |
+| 在线 QA：chat 3.2s / Agent 145.6s；日志结论经 ES 复核属实（6319/8305 条） | ai-live-qa | 可用 |
+| 需求追溯：34 场景 100% REQ→AC→TC；门禁通过率≥90% + 引用有效性 100% | 03-test-design | 可用 |
 
 ## 备选"一句话加分细节"（面试自然带出）
 - 伪订单号 fold-hash 溢出碰撞 → SHA-256 统一（库存永久泄漏修复）
@@ -67,3 +164,12 @@
 - 模型网关"已出流不降级重放"（防重复输出）
 - 审计规范化 Java/Python 双端等价（TreeMap vs sort_keys）
 - 工具 schema tokens=JSON 字符/4（实测 3428/12000）
+- 配置中心"写了没生效"：SCA 2023 下 shared-configs 死配置 → optional:nacos
+- XXL-Job"非法 cron 静默禁用"：0/60 秒增量越界（CronExpression.checkIncrementRange）
+- SkyWalking"组件在跑但没数据"：release 未挂 -javaagent → 自动挂载修复
+- 告警"通知黑洞"：receiver 为 noop 静默丢弃 → alert-sink + e2e 演练
+- 发布"假成功"：11/15 跑旧 jar，健康检查过 → 监听 PID 指纹校验
+- gateway WebFlux 不吃 ignore_suffix（agent 9.7 边界）
+- Redis 双主对账"存在优先"防误删；断线 3s 重连
+- AgentScope 工具"注册≠可用"：权限 ASK 卡 asking（空答复）
+- 模型网关"已出流不降级重放"（防重复输出）
