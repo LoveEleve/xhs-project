@@ -59,6 +59,7 @@
 | ⭐ Zone 数据面：动态 ZoneContext 源统一；12 服务 ignore-routing；9 分支路由指标；RPO/冲突策略评估；D4 演练 1.31s/3.25s/4.79s | d4-zone-drills-20260918.md；ZoneRouteMetrics.java | ⭐数字背全 |
 | MySQL 故障转移：停主 10.2s/提升 0.087s/切换 22s/RTO≈32s + 5 短板 | mysql-failover-drill-20260917.md | ⭐"不含发现时间" |
 | ⭐ 同区优先收益实测（netem 跨区模拟）：吞吐 **+34%**、P99 **-41%**、平均延迟 **-49%**（网关 7,077 vs 5,278 RPS）；失效时 P99 743ms~1.03s 且静默 | zone-same-zone-benefit-20260918.md | ⭐对标"降低 10-30%"的实测证据 |
+| ⭐ ShardingSphere × 动态数据源融合（实测）：同应用内分片表走 SS、映射表走动态数据源（master/slave 运行时切换，**server_id 1↔2**）；分片下单不受影响 | shardingsphere-dynamic-datasource-20260918.md | ⭐对标"动态 Spring 上下文 + 支持 SS 5.x" |
 | ⭐ 同区优先收益实测（netem 跨区模拟 25ms/向）：网关优先 ON vs OFF——吞吐 **+34%**（7,077 vs 5,278）、P99 **-33~47%**、均值延迟 -44~54%；暴露"网关 zone 取值源不统一（invalid_zone）"问题 | zone-cross-region-latency-20260918.md | ⭐对标 10-30% 的实测数据 |
 | Redis 双主修复："存在优先"防误删 + 3s 重连 + 防回环；dbsize 1873=1873、≤35s 追平 | redis-server-multi-active-20260918.md | 已有 |
 | 动态 JDBC/Spring：content +207→+206、cart +40↔+40 不重启 | dynamic-zone-jdbc-spring-20260918.md | 已有 |
@@ -163,7 +164,7 @@
 | 备选条目 | 证据 | 口径提示 |
 |---|---|---|
 | ⭐ 17 个 ai_* 指标全覆盖（工具失败率/运行时长/预算决策/MCP 健康/保留清理量） | 素材 §5 | 可写成"可观测：17 个自定义指标 + 7 告警" |
-| ⭐ 评测隔离与门禁：门禁一键 = 61 单测 + 审计一致性 + 哈希链（+可选 LLM 评测）；CI 工作流 | gate.sh；.github/workflows | 已有 |
+| ⭐ 评测隔离与门禁：门禁一键 = 65 测试（61 单测+4 契约）+ 审计一致性 + 哈希链（+可选 LLM 评测）；CI 工作流 | gate.sh；.github/workflows | 已有 |
 | 成本实测三态：软切、硬限 429、计量 5577 tokens | live-drill §4.4 | 已有 |
 | 崩溃恢复：批准后 60s 补执行 + executing 600s 回收 | production-gaps | 已有 |
 | 去 MCP 化 kill 演练 19s/39s | live-drill §4.6 | 已有 |

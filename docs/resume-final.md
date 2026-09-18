@@ -87,7 +87,7 @@ xhs 是一个内容与交易并重的社交电商平台，共 15 个 Spring Clou
 - APM：15/15 服务注册，真实链路 gateway→home 53 span（CROSS_PROCESS/CROSS_THREAD 完整，含 GatewayFilter）；`ignore_suffix` 对 SpringMVC 生效（gateway WebFlux 抓取噪音列入已知边界）。
 - 日志/ES：yellow 索引修复 + 巡检 cron 上线；保留策略统一（ILM 30d/清理 7d/文件 3d）。
 - 成本：内存 45→28Gi、发布包 8.1→6.5G、npm 3.6G→591M（附清理明细与治理报告）。
-- 数据一致性：全库数字/口径完成一轮实测校准（61 单测/94 评测用例/8 红队/4 性能场景等），确保简历与运行态一致。
+- 数据一致性：全库数字/口径完成一轮实测校准（65 测试=61 单测+4 契约/94 评测用例/8 红队/4 性能场景等），确保简历与运行态一致。
 - JVM/性能：类加载锁修复后 product 1,074→4,871 RPS（4.5x，92/99 线程 BLOCKED 归零）；线程池隔离后聚合链路互不饥饿，MDC traceId 跨池保留。
 - 告警体系：40 规则/9 组上线分级；通知黑洞修复并端到端验证（firing→落盘→resolved）；SLO 错误预算 43m12s/30 天 + Burn Ledger 落地。
 - CI/CD：门禁实测拦截违规提交（RED 日志）；版本化发布 + 自动回滚上线；act_runner 复用 .m2 缓存加速流水线。
