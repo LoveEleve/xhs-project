@@ -66,6 +66,22 @@
 | `docs/design/09-feature-driven-ecosystem-adoption.md` | 专项：**功能驱动**的生态采纳（MCP 对标+翻译清单） | ✅ v0.1 |
 | `docs/design/12-retrieval-and-knowledge.md` | 专项：检索与知识（Agentic Retrieval，非默认 RAG） | ✅ v0.1 |
 
+## 脚本清单（scripts/，2026-09-18）
+
+| 脚本 | 用途 | 备注 |
+|---|---|---|
+| `gate.sh` | 一键门禁（单测+审计一致性+哈希链；`with-eval` 可选 LLM 评测） | CI 同款 |
+| `e2e.sh` | E2E 自动化（fast 10 项；`--full` 12 项含 LLM 对话/SSE） | 2026-09-18 新增 |
+| `it-smoke.sh` | IT 冒烟（健康/Redis/ES/Prometheus/MQ nameserver/审计链） | 2026-09-18 新增 |
+| `red-team.sh` | 红队回归（8 项，`--fast` 跳过 Agent 慢检查） | |
+| `tool-eval.sh` | 工具选择评测（12 题） | |
+| `load-test.sh` | 会话级压测（N/C 可调） | |
+| `audit-gate.sh` / `audit-verify.sh` / `audit-check.sql` | 审计链校验 | |
+| `cost-week.sh` | 周成本统计 | |
+| `order-flow.sh` / `traffic-gen.sh` | 全链路下单演练 / 造流量 | |
+
+> 2026-09-18 增补：CT 契约测试（4 用例）、IT 冒烟、E2E 自动化、OTel 接入（`docs/reports/ai-otel-enable-20260918.md`、主仓 `docs/reports/`）。
+
 ## 运行状态（2026-09-13，M1~M4 主体完成）
 
 - 服务：`xhs-ai` 由 systemd 托管（`xhs-ai.service`，Restart=always），19020 health UP，Flyway v1，JSON 日志（含 traceId）入 ELK，`/actuator/prometheus` 可用；Nacos 注册 + 网关 `/api/ai/**` JWT 路由（SSE 31min）；审批位点诊断端点仅管理/内部令牌可用（未授权 401）。

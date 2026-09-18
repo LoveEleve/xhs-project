@@ -12,7 +12,7 @@
 2. **xhs-ai 挂 OTel Agent**（systemd drop-in，不改原 unit）：
    - `JAVA_TOOL_OPTIONS=-javaagent:/data/workspace/otel-agent/opentelemetry-javaagent.jar`（2.10.0，21MB，仓库外）
    - `OTEL_SERVICE_NAME=xhs-ai-otel`、`OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:11800`（grpc）、traces=otlp、metrics/logs=none
-   - 路径：`/etc/systemd/system/xhs-ai.service.d/otel.conf`
+   - 路径：`/etc/systemd/system/xhs-ai.service.d/otel.conf`（模板已入库：`deploy/ops/xhs-ai-otel.conf`）
 
 ## 二、验证
 

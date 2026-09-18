@@ -12,6 +12,8 @@
 | 映射表动态数据源（order） | `order.mapping.zone-routing.enabled` | false | **开启（target=master，行为等价基线）** | `shardingsphere-dynamic-datasource-20260918.md` |
 | 多 ORM（content JPA） | `content.jpa.enabled` | false | **开启（只读探针）** | `multi-orm-coexistence-20260918.md` |
 | 压测影子表 | `myxhs.shadow.enabled=true` + 请求头 `X-Pressure-Test` | false | 关闭 | xhs/22 题 |
+| OTel（xhs-ai） | systemd drop-in：`JAVA_TOOL_OPTIONS=-javaagent:...otel-agent.jar` + `OTEL_*` 环境变量 | 已安装并启用 | **开启（OTel Agent 2.10.0）** | 模板 `deploy/ops/xhs-ai-otel.conf`；报告 `ai-otel-enable-20260918.md` |
+| OAP OTel 接收 | `receiver-otel.enabledHandlers` 含 `otlp-traces` + `receiver-zipkin` 开启 | 已配置 | **开启（OTLP 复用 11800；zipkin 9411）** | `deploy/docker/my-xhs-deploy-zip/config/skywalking/application.yml` |
 | 网关 HMAC 签名 | `gateway.auth.hmac-enabled` | false | 关闭 | xhs/17 题 |
 
 ## 恢复"纯基线"（去掉两项 Demo 开关）
