@@ -44,7 +44,7 @@
 | 9-2 | 订单/支付/券 | 4×4 分片与映射表怎么配合？回调幂等怎么做的？退券 RV30 语义？ | `xhs/29/30/31` | 状态机/TCC 对比、渠道对账、Outbox |
 | 9-3 | 内容/推荐 | DFA 热更新怎么做？5 路召回怎么合并？冷启动闭环是什么？ | `xhs/33/34` | 敏感词算法、CF/双塔、A/B 实验 |
 | 9-4 | 部署/测试/CI-CD/告警 | 27 容器怎么编排？假测试四模式？PID 校验根治假成功的原理？40 规则+SLO 账本？ | `xhs/35-38` | K8s vs compose、测试金字塔、错误预算 |
-| 9-5 | 组件深拷打（11 个：MQ/Redis/ES/MySQL/Nacos/Redisson/XXL-Job/Sentinel/Feign/ShardingSphere/Canal） | 每组件"原理→用法→事故→边界"四层串讲；真实事故：配置外置假生效/僵尸连接/非法 cron 自动禁用/规则时序坑 | `xhs/40-50`、`nacos-config-externalization-20260918.md`、`xxl-job-schedule-audit-20260918.md` | 各组件论文级原理（Raft/Distro/LeapArray/dump 协议等） |
+| 9-5 | 组件深拷打（14 个：MQ/Redis/ES/MySQL/Nacos/Redisson/XXL-Job/Sentinel/Feign/ShardingSphere/Canal/SkyWalking/Prometheus/ELK） | 每组件"原理→用法→事故→边界"四层串讲；真实事故：配置外置假生效/僵尸连接/非法 cron 自动禁用/规则时序坑 | `xhs/40-53`、`nacos-config-externalization-20260918.md`、`xxl-job-schedule-audit-20260918.md` | 各组件论文级原理（Raft/Distro/LeapArray/dump 协议等） |
 | 9-6 | 公共组件（39） | 号段双 Buffer 怎么切换？审计 REQUIRES_NEW 为什么？ | `xhs/39` | 雪花算法、审计合规 |
 
 ## 通用理论补课（对照学习路线，按优先级）
