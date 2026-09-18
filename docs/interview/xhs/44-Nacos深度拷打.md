@@ -83,7 +83,7 @@ gRPC 长连接与 1.x 差异；`optional:` 的启动韧性取舍。
 - 运行态：Nacos 2.3.2 standalone；16 服务注册；cart 实例 metadata `zone=defaultZone`（基线条）；
 - `docs/reports/nacos-config-externalization-20260918.md`（完整修复报告与验证数据）；
 - `docs/reports/nacos-grpc-noise-20260917.md`（19848 噪音结论）；
-- `docs/review-1/.../F-026-nacos-runtime-snapshot-shows-auth-not-enabled.md`（鉴权缺失）；
+- `docs/review-1/02-findings/high/F-026-nacos-runtime-snapshot-shows-auth-not-enabled.md`（鉴权缺失）；
 - 本地快照目录与 `scripts/nacos-import-configs.sh`。
 
 ## 版本与来源
