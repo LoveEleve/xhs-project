@@ -59,4 +59,17 @@ public interface NotificationMapper extends BaseMapper<Notification> {
     @Update("UPDATE t_notification SET title = #{title}, updated_at = NOW() " +
             "WHERE id = #{id} AND deleted = 0")
     int updateAggregateTitle(@Param("id") Long id, @Param("title") String title);
+
+    /**
+     * 订单通知聚合：刷新为最新状态内容（标题保持模板标题，不做"等N人"社交化聚合）
+     * <p>
+     * 受唯一键 uk_aggregate(user_id,type,target_id,notify_date) 约束，同一订单当天只保留一条；
+     * 后到的状态（已发货/退款到账）必须覆盖内容，否则用户会一直看到首条旧状态。
+     * </p>
+     */
+    @Update("UPDATE t_notification SET content = #{content}, extra_data = #{extraData}, updated_at = NOW() " +
+            "WHERE id = #{id} AND deleted = 0")
+    int updateOrderLatest(@Param("id") Long id,
+                          @Param("content") String content,
+                          @Param("extraData") String extraData);
 }

@@ -214,9 +214,9 @@ def main():
     # 10. 通知（订单事件应有落库）
     code, body = call("GET", "/api/notification/list", token, secret,
                       params={"pageNum": 1, "pageSize": 10}, user_id=uid)
-    notif_cnt = len(body.get("data") or []) if isinstance(body.get("data"), list) else \
-        len((body.get("data") or {}).get("list") or [])
-    step(20, f"通知列表(条数={notif_cnt})", code, body, code == 200)
+    _nd = body.get("data")
+    notif_cnt = len(_nd) if isinstance(_nd, list) else len((_nd or {}).get("records") or (_nd or {}).get("list") or [])
+    step(20, f"通知列表(条数={notif_cnt})", code, body, code == 200 and notif_cnt >= 1)
 
     # 11. 内容：发笔记→评论
     code, body = call("POST", "/api/note/publish", token, secret, user_id=uid,
@@ -260,6 +260,18 @@ def main():
             break
     step(28, f"券状态(退款后): {coupon_status}", code, body, code == 200,
          {"userCouponId": user_coupon_id, "couponStatus": coupon_status})
+
+    # 14. 订单通知（退款后应刷新为最新状态：订单域接入验证）
+    code, body = call("GET", "/api/notification/list", token, secret,
+                      params={"pageNum": 1, "pageSize": 10}, user_id=uid)
+    _nd2 = body.get("data")
+    _recs = _nd2 if isinstance(_nd2, list) else (_nd2 or {}).get("records") or (_nd2 or {}).get("list") or []
+    order_notifs = [r for r in _recs if r.get("type") == 5]
+    latest_content = order_notifs[0].get("content") if order_notifs else None
+    step(29, f"订单通知(退款后): {len(order_notifs)}条 | {latest_content}", code, body,
+         bool(order_notifs) and "退款已到账" in (latest_content or ""),
+         {"titles": [r.get("title") for r in order_notifs],
+          "contents": [r.get("content") for r in order_notifs]})
 
     out_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                            "docs", "reports")

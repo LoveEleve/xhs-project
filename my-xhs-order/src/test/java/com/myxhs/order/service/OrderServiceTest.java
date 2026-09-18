@@ -90,6 +90,8 @@ class OrderServiceTest {
     private UserFeignClient userFeignClient;
     @Mock
     private BusinessMetrics businessMetrics;
+    @Mock
+    private OrderNotificationPublisher orderNotificationPublisher;
 
     private ObjectMapper objectMapper;
     private OrderService orderService;
@@ -108,7 +110,7 @@ class OrderServiceTest {
                 orderEventService,
                 rocketMQTemplate, stringRedisTemplate, objectMapper,
                 inventoryFeignClient, couponFeignClient, productFeignClient, userFeignClient,
-                businessMetrics
+                businessMetrics, orderNotificationPublisher
         );
 
         // resolveAddressSnapshot 需返回有效地址，否则下单测试会抛 ADDRESS_NOT_FOUND

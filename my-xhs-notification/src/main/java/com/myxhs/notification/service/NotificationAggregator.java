@@ -179,6 +179,17 @@ public class NotificationAggregator {
         Integer newCount = notificationMapper.getAggregateCount(mainId);
         if (newCount == null) newCount = 1;
 
+        // 订单通知（type=5）：受 uk_aggregate(user_id,type,target_id,notify_date) 约束，同一订单当天只保留一条，
+        // 但内容必须刷新为最新状态；标题保持模板标题（"订单通知"），不做"某用户等N人"社交化聚合。
+        // 背景：订单域接入通知后，支付成功→已发货→退款到账 会命中同一聚合键，不刷新内容会让用户停留在首条旧状态。
+        if (NotificationType.fromCode(notification.getType()) == NotificationType.ORDER) {
+            notificationMapper.updateOrderLatest(mainId, notification.getContent(), notification.getExtraData());
+            Notification latest = notificationMapper.selectById(mainId);
+            log.debug("[聚合] 订单通知刷新最新状态: mainId={}, count={}, content={}",
+                    mainId, newCount, notification.getContent());
+            return latest != null ? latest : notification;
+        }
+
         // 更新聚合标题
         String aggregateTitle = buildAggregateTitle(
                 notification.getType(),

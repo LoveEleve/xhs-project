@@ -70,6 +70,7 @@ public class OrderService {
     private final ProductFeignClient productFeignClient;
     private final UserFeignClient userFeignClient;
     private final BusinessMetrics businessMetrics;
+    private final OrderNotificationPublisher orderNotificationPublisher;
 
     private static final String IDEMPOTENT_KEY_PREFIX = "myxhs:order:idempotent:";
     private static final String CREATE_LOCK_PREFIX = "myxhs:order:create:lock:";
@@ -694,6 +695,11 @@ public class OrderService {
 
         takeSnapshot(orderId, userId, "DELIVERED");
         stringRedisTemplate.delete("myxhs:order:info:" + orderId);
+        // 订单通知（type=5）：已发货（附物流信息）
+        String shipInfo = ((logisticsCompany == null || logisticsCompany.isEmpty()) ? "" : logisticsCompany + " ")
+                + (trackingNo == null || trackingNo.isEmpty() ? "" : trackingNo);
+        orderNotificationPublisher.publishStatusChanged(order.getUserId(), orderId, order.getOrderNo(),
+                "已发货，请注意查收", shipInfo.trim());
         log.info("[订单] 发货成功: userId={}, orderId={}, logisticsCompany={}, trackingNo={}",
                 userId, orderId, logisticsCompany, trackingNo);
     }
@@ -760,6 +766,8 @@ public class OrderService {
                 confirmInventoryDeduct(orderId, order.getOrderNo(), userId);
                 takeSnapshot(orderId, userId, "PAID");
                 stringRedisTemplate.delete("myxhs:order:info:" + orderId);
+                orderNotificationPublisher.publishStatusChanged(userId, orderId, order.getOrderNo(),
+                        "支付成功，我们将尽快为你发货", null);
                 return true;
             }
             log.error("[订单] 支付事件 SQL 失败且状态未更新: orderId={}", orderId, e);
@@ -771,6 +779,9 @@ public class OrderService {
 
         takeSnapshot(orderId, userId, "PAID");
         stringRedisTemplate.delete("myxhs:order:info:" + orderId);
+        // 订单通知（type=5）：支付成功
+        orderNotificationPublisher.publishStatusChanged(userId, orderId, order.getOrderNo(),
+                "支付成功，我们将尽快为你发货", null);
         log.info("[订单] 支付成功: orderId={}", orderId);
         return true;
     }
@@ -1194,6 +1205,9 @@ public class OrderService {
 
         takeSnapshot(orderId, userId, "REFUNDED");
         stringRedisTemplate.delete("myxhs:order:info:" + orderId);
+        // 订单通知（type=5）：退款到账
+        orderNotificationPublisher.publishStatusChanged(userId, orderId, order.getOrderNo(),
+                "退款已到账", null);
         log.info("[订单] 退款成功: orderId={}", orderId);
         return true;
     }

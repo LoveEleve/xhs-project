@@ -1,0 +1,538 @@
+{
+ "runTs": "20260918-234249",
+ "userId": "2100973830223843330",
+ "orderId": "2100973879154647042",
+ "steps": [
+  {
+   "no": 0,
+   "name": "创建/获取收货地址",
+   "http": 200,
+   "ok": true,
+   "data": {
+    "id": "2100973835001155585",
+    "receiverName": "链路测试",
+    "receiverPhone": "138****0000",
+    "province": "上海市",
+    "city": "上海市",
+    "district": "徐汇区",
+    "detailAddress": "测试路 1 号",
+    "isDefault": 1,
+    "createdAt": "2026-09-18 23:42:51",
+    "updatedAt": "2026-09-18 23:42:51"
+   }
+  },
+  {
+   "no": 1,
+   "name": "商品列表+详情(spuId=1,skuId=1)",
+   "http": 200,
+   "ok": true,
+   "data": {
+    "id": "1",
+    "name": "2026夏季新款连衣裙",
+    "categoryId": "111",
+    "categoryName": "连衣裙",
+    "brandId": "1",
+    "description": "轻盈飘逸的夏季连衣裙，多种颜色可选",
+    "images": [
+     "https://example.com/spu1_1.jpg",
+     "https://example.com/spu1_2.jpg"
+    ],
+    "status": 1,
+    "skuList": [
+     {
+      "id": "1",
+      "spuId": "1",
+      "name": "连衣裙-红色-S",
+      "price": 199.0,
+      "originalPrice": 399.0,
+      "specs": "{\"颜色\":\"红色\",\"尺码\":\"S\"}",
+      "image": "https://example.com/spu1_1.jpg",
+      "status": 1,
+      "spuStatus": null
+     },
+     {
+      "id": "2",
+      "spuId": "1",
+      "name": "连衣裙-红色-M",
+      "price": 199.0,
+      "originalPrice": 399.0,
+      "specs": "{\"颜色\":\"红色\",\"尺码\":\"M\"}",
+      "image": "https://example.com/spu1_1.jpg",
+      "status": 1,
+      "spuStatus": null
+     },
+     {
+      "id": "3",
+      "spuId": "1",
+      "name": "连衣裙-蓝色-M",
+      "price": 199.0,
+      "originalPrice": 399.0,
+      "specs": "{\"颜色\":\"蓝色\",\"尺码\":\"M\"}",
+      "image": "https://example.com/spu1_1.jpg",
+      "status": 1,
+      "spuStatus": null
+     },
+     {
+      "id": "2096589063768395778",
+      "spuId": "1",
+      "name": "连衣裙-新增-XXL",
+      "price": 199.0,
+      "originalPrice": null,
+      "specs": "{\"颜色\":\"红色\",\"尺码\":\"XXL\"}",
+      "image": "https://example.com/spu1_1.jpg",
+      "status": 1,
+      "spuStatus": null
+     }
+    ],
+    "createdAt": "2026-09-06 19:01:19",
+    "updatedAt": "2026-09-08 22:45:50"
+   }
+  },
+  {
+   "no": 2,
+   "name": "商品搜索(ES)",
+   "http": 200,
+   "ok": true,
+   "data": {
+    "items": [],
+    "total": "0",
+    "searchAfter": null,
+    "hasMore": false,
+    "took": "1"
+   }
+  },
+  {
+   "no": 3,
+   "name": "笔记搜索(ES)",
+   "http": 200,
+   "ok": true,
+   "data": {
+    "items": [],
+    "total": "0",
+    "searchAfter": null,
+    "hasMore": false,
+    "took": "0"
+   }
+  },
+  {
+   "no": 4,
+   "name": "加购 sku×2",
+   "http": 200,
+   "ok": true,
+   "data": null
+  },
+  {
+   "no": 5,
+   "name": "购物车列表",
+   "http": 200,
+   "ok": true,
+   "data": {
+    "items": [
+     {
+      "skuId": "1",
+      "spuId": "1",
+      "name": "连衣裙-红色-S",
+      "price": 199.0,
+      "originalPrice": 399.0,
+      "quantity": 2,
+      "checked": true,
+      "specs": "{\"颜色\":\"红色\",\"尺码\":\"S\"}",
+      "image": null,
+      "valid": true,
+      "invalidReason": null,
+      "addedAt": "1789746173777"
+     }
+    ],
+    "checkedCount": 2,
+    "checkedAmount": 398.0,
+    "totalCount": 1,
+    "allChecked": true
+   }
+  },
+  {
+   "no": 6,
+   "name": "创建券模板",
+   "http": 200,
+   "ok": true,
+   "data": {
+    "id": "2100973850490773506",
+    "name": "chain-1789746169887",
+    "type": 1,
+    "discountValue": 5.0,
+    "minAmount": 0.01,
+    "totalCount": 100,
+    "remainCount": 100,
+    "perUserLimit": 2,
+    "validStart": "2026-09-18 23:42:57",
+    "validEnd": "2026-10-18 23:42:54",
+    "status": 1
+   }
+  },
+  {
+   "no": 7,
+   "name": "领取优惠券",
+   "http": 200,
+   "ok": true,
+   "data": null
+  },
+  {
+   "no": 8,
+   "name": "我的券(userCouponId=2100973869478387713)",
+   "http": 200,
+   "ok": true,
+   "data": [
+    {
+     "id": "2100973869478387713",
+     "couponId": "2100973850490773506",
+     "name": "chain-1789746169887",
+     "type": 1,
+     "discountValue": 5.0,
+     "minAmount": 0.01,
+     "status": 0,
+     "validStart": "2026-09-18 23:42:57",
+     "validEnd": "2026-10-18 23:42:54",
+     "receivedAt": "2026-09-18 23:42:59"
+    }
+   ]
+  },
+  {
+   "no": 9,
+   "name": "库存快照(下单前): None",
+   "http": 200,
+   "ok": true,
+   "data": {
+    "skuId": "1",
+    "availableStock": 77,
+    "lockedStock": 2,
+    "bucketCount": 2,
+    "initialized": true
+   }
+  },
+  {
+   "no": 10,
+   "name": "创建订单 orderId=2100973879154647042",
+   "http": 200,
+   "ok": true,
+   "data": {
+    "orderId": "2100973879154647042",
+    "orderNo": "ORD2026091823430151133300030",
+    "totalAmount": 398.0,
+    "payAmount": 393.0,
+    "discountAmount": 5.0,
+    "status": 0,
+    "statusDesc": "待付款",
+    "remark": null,
+    "addressSnapshot": null,
+    "createdAt": "2026-09-18 23:43:01",
+    "paidAt": null,
+    "items": null
+   },
+   "orderId": "2100973879154647042",
+   "orderNo": "ORD2026091823430151133300030",
+   "payAmount": 393.0
+  },
+  {
+   "no": 11,
+   "name": "订单详情(下单后): status=0",
+   "http": 200,
+   "ok": true,
+   "data": {
+    "orderId": "2100973879154647042",
+    "orderNo": "ORD2026091823430151133300030",
+    "totalAmount": 398.0,
+    "payAmount": 393.0,
+    "discountAmount": 5.0,
+    "status": 0,
+    "statusDesc": "待付款",
+    "remark": null,
+    "addressSnapshot": "{\"name\":\"链路测试\",\"phone\":\"138****0000\",\"address\":\"上海市上海市徐汇区测试路 1 号\"}",
+    "createdAt": "2026-09-18 23:43:01",
+    "paidAt": null,
+    "items": [
+     {
+      "skuId": "1",
+      "skuName": "连衣裙-红色-S",
+      "skuImage": "https://example.com/spu1_1.jpg",
+      "price": 199.0,
+      "quantity": 2,
+      "totalAmount": 398.0
+     }
+    ]
+   }
+  },
+  {
+   "no": 12,
+   "name": "库存快照(预扣后): None",
+   "http": 200,
+   "ok": true,
+   "data": {
+    "skuId": "1",
+    "availableStock": 75,
+    "lockedStock": 4,
+    "bucketCount": 2,
+    "initialized": true
+   },
+   "stockBefore": null,
+   "stockAfter": null
+  },
+  {
+   "no": 13,
+   "name": "创建支付单 paymentNo=PAY20260918000019",
+   "http": 200,
+   "ok": true,
+   "data": {
+    "id": "2100973887190953985",
+    "orderId": "2100973879154647042",
+    "paymentNo": "PAY20260918000019",
+    "amount": 393.0,
+    "payType": 1,
+    "status": 0,
+    "statusDesc": "待支付",
+    "paidAt": null,
+    "createdAt": "2026-09-18 23:43:03"
+   }
+  },
+  {
+   "no": 14,
+   "name": "支付渠道回调(SUCCESS)",
+   "http": 200,
+   "ok": true,
+   "data": null
+  },
+  {
+   "no": 15,
+   "name": "订单详情(支付后): status=1",
+   "http": 200,
+   "ok": true,
+   "data": {
+    "orderId": "2100973879154647042",
+    "orderNo": "ORD2026091823430151133300030",
+    "totalAmount": 398.0,
+    "payAmount": 393.0,
+    "discountAmount": 5.0,
+    "status": 1,
+    "statusDesc": "已付款",
+    "remark": null,
+    "addressSnapshot": "{\"name\":\"链路测试\",\"phone\":\"138****0000\",\"address\":\"上海市上海市徐汇区测试路 1 号\"}",
+    "createdAt": "2026-09-18 23:43:01",
+    "paidAt": "2026-09-18 23:43:04",
+    "items": [
+     {
+      "skuId": "1",
+      "skuName": "连衣裙-红色-S",
+      "skuImage": "https://example.com/spu1_1.jpg",
+      "price": 199.0,
+      "quantity": 2,
+      "totalAmount": 398.0
+     }
+    ]
+   }
+  },
+  {
+   "no": 16,
+   "name": "支付单状态: 1 paymentId=2100973887190953985",
+   "http": 200,
+   "ok": true,
+   "data": {
+    "id": "2100973887190953985",
+    "orderId": "2100973879154647042",
+    "paymentNo": "PAY20260918000019",
+    "amount": 393.0,
+    "payType": 1,
+    "status": 1,
+    "statusDesc": "支付成功",
+    "paidAt": "2026-09-18 23:43:04",
+    "createdAt": "2026-09-18 23:43:04"
+   }
+  },
+  {
+   "no": 17,
+   "name": "订单发货",
+   "http": 200,
+   "ok": true,
+   "data": null
+  },
+  {
+   "no": 18,
+   "name": "确认收货",
+   "http": 200,
+   "ok": true,
+   "data": null
+  },
+  {
+   "no": 19,
+   "name": "订单终态: status=3",
+   "http": 200,
+   "ok": true,
+   "data": {
+    "orderId": "2100973879154647042",
+    "orderNo": "ORD2026091823430151133300030",
+    "totalAmount": 398.0,
+    "payAmount": 393.0,
+    "discountAmount": 5.0,
+    "status": 3,
+    "statusDesc": "已完成",
+    "remark": null,
+    "addressSnapshot": "{\"name\":\"链路测试\",\"phone\":\"138****0000\",\"address\":\"上海市上海市徐汇区测试路 1 号\"}",
+    "createdAt": "2026-09-18 23:43:01",
+    "paidAt": "2026-09-18 23:43:04",
+    "items": [
+     {
+      "skuId": "1",
+      "skuName": "连衣裙-红色-S",
+      "skuImage": "https://example.com/spu1_1.jpg",
+      "price": 199.0,
+      "quantity": 2,
+      "totalAmount": 398.0
+     }
+    ]
+   }
+  },
+  {
+   "no": 20,
+   "name": "通知列表(条数=0)",
+   "http": 200,
+   "ok": true,
+   "data": {
+    "records": [
+     {
+      "id": "2100973889816506370",
+      "type": 5,
+      "title": "某用户等2人更新了订单状态",
+      "content": "订单 ORD2026091823430151133300030 支付成功，我们将尽快为你发货",
+      "senderId": null,
+      "senderName": null,
+      "senderAvatar": null,
+      "targetId": "2100973879154647042",
+      "targetType": 3,
+      "isRead": 0,
+      "aggregateCount": 2,
+      "createdAt": "2026-09-18 23:43:04"
+     }
+    ],
+    "total": "1",
+    "size": "20",
+    "current": "1",
+    "pages": "1"
+   }
+  },
+  {
+   "no": 21,
+   "name": "发布笔记 noteId=2100973905226436610",
+   "http": 200,
+   "ok": true,
+   "data": {
+    "noteId": "2100973905226436610"
+   }
+  },
+  {
+   "no": 22,
+   "name": "发表评论 commentId=2100973907415863297",
+   "http": 200,
+   "ok": true,
+   "data": {
+    "commentId": "2100973907415863297"
+   }
+  },
+  {
+   "no": 23,
+   "name": "评论列表",
+   "http": 200,
+   "ok": true,
+   "data": [
+    {
+     "id": "2100973907415863297",
+     "noteId": "2100973905226436610",
+     "userId": "2100973830223843330",
+     "parentId": "0",
+     "content": "链路评论",
+     "likeCount": 0,
+     "createdAt": "2026-09-18 23:43:08",
+     "children": [],
+     "childCount": "0"
+    }
+   ]
+  },
+  {
+   "no": 24,
+   "name": "发起退款",
+   "http": 200,
+   "ok": true,
+   "data": null
+  },
+  {
+   "no": 25,
+   "name": "退款渠道回调",
+   "http": 200,
+   "ok": true,
+   "data": null
+  },
+  {
+   "no": 26,
+   "name": "订单详情(退款后): status=3",
+   "http": 200,
+   "ok": true,
+   "data": {
+    "orderId": "2100973879154647042",
+    "orderNo": "ORD2026091823430151133300030",
+    "totalAmount": 398.0,
+    "payAmount": 393.0,
+    "discountAmount": 5.0,
+    "status": 3,
+    "statusDesc": "已完成",
+    "remark": null,
+    "addressSnapshot": "{\"name\":\"链路测试\",\"phone\":\"138****0000\",\"address\":\"上海市上海市徐汇区测试路 1 号\"}",
+    "createdAt": "2026-09-18 23:43:01",
+    "paidAt": "2026-09-18 23:43:04",
+    "items": [
+     {
+      "skuId": "1",
+      "skuName": "连衣裙-红色-S",
+      "skuImage": "https://example.com/spu1_1.jpg",
+      "price": 199.0,
+      "quantity": 2,
+      "totalAmount": 398.0
+     }
+    ]
+   }
+  },
+  {
+   "no": 27,
+   "name": "库存快照(退款后): None",
+   "http": 200,
+   "ok": true,
+   "data": {
+    "skuId": "1",
+    "availableStock": 75,
+    "lockedStock": 2,
+    "bucketCount": 2,
+    "initialized": true
+   },
+   "stockBefore": null,
+   "stockAfter": null,
+   "stockFinal": null
+  },
+  {
+   "no": 28,
+   "name": "券状态(退款后): 1",
+   "http": 200,
+   "ok": true,
+   "data": [
+    {
+     "id": "2100973869478387713",
+     "couponId": "2100973850490773506",
+     "name": "chain-1789746169887",
+     "type": 1,
+     "discountValue": 5.0,
+     "minAmount": 0.01,
+     "status": 1,
+     "validStart": "2026-09-18 23:42:57",
+     "validEnd": "2026-10-18 23:42:54",
+     "receivedAt": "2026-09-18 23:42:59"
+    }
+   ],
+   "userCouponId": "2100973869478387713",
+   "couponStatus": 1
+  }
+ ]
+}
