@@ -50,14 +50,14 @@ xhs 是一个内容与交易并重的社交电商平台，共 15 个 Spring Clou
 - MySQL 故障转移演练：停主 10.2s、提升从库 0.087s、应用切换 22s，RTO≈32s（不含发现时间）；本次 RPO=0；输出 5 项短板（无自动切换/配置散落/异步复制 RPO 不保证/errant GTID/短命告警）与路线。
 - Zone 多活延伸：ZoneLocator 自动发现（env/文件/网段 CIDR）+ X-Zone 跨服务传播（入/出站过滤 + 指标，实测 10/10）；网关反应式 zone LB（12/12 就近、切换 5.54s）；动态 JDBC/Spring 热切（内容服务读主从切换、购物车热切不重启）；发布链路 PID 校验杜绝旧进程假成功。
 - SqlGuard v2 与限流加固：SQL 防护从"只判定"升级为可配置安全阻断（200ms 告警 + 5 次熔断 + 白名单阻断/豁免/冷却 + 3 个 Prometheus 指标 + 6 单测）；网关 Sentinel 规则 Nacos 化 + 30s 真空期兜底 + 路由 metadata 兜底双轨。
-- 基础设施细节治理：RocketMQ topic 全量初始化（autoCreateTopicEnable=false 导致"M no route info"事故：namesrv 仅 1 个 topic）修复并脚本固化；Nacos gRPC 19848 启动噪音排查定性（非故障、不设告警）；Nacos 鉴权缺失与密码明文登记为安全债；compose 配置与运行时零漂移核验（27 容器全量对照）。
+- 基础设施细节治理：RocketMQ topic 全量初始化（autoCreateTopicEnable=false 导致"M no route info"事故：namesrv 仅 1 个 topic）修复并脚本固化；Nacos gRPC 19848 启动噪音排查定性（非故障、不设告警）；Nacos 鉴权缺失与密码明文登记为安全债；compose 配置与运行时零漂移核验（27 容器全量对照）。 混沌演练 7 场景（Redis/MQ pause、CPU 满载、磁盘 burn、MySQL pause、优雅停机）全部通过；TIME_WAIT/临时端口耗尽排查口径（连接复用/keep-alive/池化）；部署包脚本（setup-firewall/setup-ip/重启脚本）配套。
 - 发布"假成功"事故复盘与根治：发现批次重启后 11/15 服务实际仍跑旧 jar（脚本只看健康检查、端口占用未清、PID 指纹缺失）；发布链路加"监听 PID==本次启动 PID"校验 + ensure_port_free + setsid PID 回写 + 多实例用最新构建，并真重启 11 个服务。
 - Zone LB 接线修正（5 坑）：供应商 Bean 必须进 LB 子 context、resolver 用标准 metadata 键、健康检查 liveness vs 聚合 health、同 zone 最小实例阈值单实例不适用、SIGTERM 造成"假恢复"必须 kill -9 验证；修正后同 zone 命中 240/240。
 - Redis 双主同步修复：对账逻辑误删问题改"存在优先"、断线无重连改 3s 自动重连并补值相等防回环；验证 dbsize 1873=1873、恢复 ≤35s 追平。
 - 服务间通信与负载均衡：24 个 Feign 客户端统一 HC5 连接池（200/50）+ 分级超时（核心链路 connect 500ms/read 2s、长任务 5s）+ 统一 Decoder/ErrorDecoder（R<T> 自动解包、BizException 还原）+ 内部令牌拦截器（缺失不携带，fail-closed）+ 52 处 FallbackFactory 降级；自定义最小连接负载均衡（活跃数/权重，需调用侧埋点否则退化为轮询；平局随机化）与同 zone 优先 Supplier；优雅停机"先摘注册 + 10s 实例列表传播等待"防发布抖动。
 - 用户与认证：JWT 双 token（access 30 分钟 / refresh 7 天）+ 图形验证码（Redis）+ 刷新时旧 access 拉黑、登出失效；网关统一鉴权与身份注入（覆盖伪造头），直连服务路径鉴权 fail-closed。
 - RPC 选型决策（Dubbo 试点）：完成 cart→product 双协议试点（开关+回退），A/B 实测 +4.9% RPS / P50 -19%，修复注册名冲突坑；最终按"运维复杂度与收益不匹配"决策不引入并全量回滚（选型数据留档为决策依据）。
-- 分布式 ID 与缓存预热：订单 Snowflake 主键（worker-id 按本机 IP 推导防冲突）、号段 ID 双 Buffer 预加载、Bloom 异步分段预热（100 万容量/1% 误判）。
+- 分布式 ID 与缓存预热：订单 Snowflake 主键（worker-id 按本机 IP 推导防冲突）、号段 ID 双 Buffer 预加载、Bloom 异步分段预热（100 万容量/1% 误判）；ShardingSphere 绑定表 5 张逻辑表（同分片键防 JOIN 笛卡尔积）。
 - Zone 数据面细节：数据源 zone 来源统一为动态 ZoneContext（避免误杀第二实例）；从库宕机时 health 忽略路由目标、不阻塞发布（12 服务 ignore-routing 属性全量生效）；路由决策 9 分支指标（ZoneRouteMetrics）；最小连接平局随机化；RPO/冲突策略评估（单写场景无需 CRDT）；D4 演练复盘进程崩溃 1.31s/3.25s、分区 4.79s、自动回切。
 - 语义与测试细节：区分业务失败与依赖失败（业务失败返回 404 而非 503）；陈旧测试按现行语义修正（退券 RV30 / 预扣异常 RV31）；订单快照表与事件表同分片保证单用户一致性；用户地址管理（默认地址切换 + 锁内数量校验）；发布脚本端口占用者精确清理（校验为本模块 app.jar 防误杀）。
 
@@ -104,7 +104,7 @@ xhs 是一个内容与交易并重的社交电商平台，共 15 个 Spring Clou
 xhs-ai 是面向上述 15 微服务交易系统的 AIOps 诊断与知识问答 Agent，从零设计并实现。以自然语言为入口，自动编排 DLQ / 日志 / 指标 / 知识 / 代码五类共 16 个自研工具，输出可回链的定位结论；对死信重投等危险变更实施 HITL 审批与可校验审计；配套检索/答案/Agent 三层评测体系与按用户 token 预算治理。技术栈 AgentScope 2.0 Java（Harness / HITL / Redis 状态存储）、Spring Boot 3.2.5、JDK 17；模型走双通道——聊天 deepseek-v4-pro、Agent 工具循环 qwen3.8-flash、降级 deepseek-v4-flash；接入 RocketMQ Admin / Elasticsearch / Prometheus（VictoriaMetrics）/ MySQL / Redis，单机 systemd 托管，接入 ELK 与 Prometheus 告警。
 
 ## 职责描述（Responsibilities）
-- 需求与架构：主导需求工程（34 个业务场景，REQ→AC→TC 全链路追溯，含 NFR/STRIDE 威胁模型）；确定分层架构与 23 条 ADR（AgentScope 选型、Redis 状态存储、BM25 先行、模型网关、策略引擎、观测合规、扩展框架等）；划清框架边界（Flyway 只管 ai_*，不碰 agentscope_*）。
+- 需求与架构：主导需求工程（34 个业务场景，REQ→AC→TC 全链路追溯，含 NFR/STRIDE 威胁模型）；确定分层架构与 23 条 ADR（AgentScope 选型、Redis 状态存储、BM25 先行+向量止损、模型网关自研、策略引擎、扩展框架两代 SPI→Sidecar、技能仓库 GitSkill、沙箱 v1 不启用等）；划清框架边界（Flyway 只管 ai_*，不碰 agentscope_*）。
 - 测试与工程规范：设计六层测试矩阵——单测（实测 61 个）/ 契约（LLM 桩 + fixture 录制回放）/ 集成 / E2E / 评测（50 条答案 + 14 条轨迹）/ 红队 8 项 + 性能 4 场景；按 E1~E7 工程规范执行（依赖 BOM+Enforcer、出网收敛到两个域名、受控只读 SQL 三层、审计只追加、灰度与回滚流程）。
 - 工具与编排：设计 16 个自研工具（DLQ 诊断/重投、日志检索/Top 服务、指标 Top/趋势/PromQL 兜底、标签探索、消费积压、ES 索引/DSL 兜底、代码定位、知识卡目录/检索/读取）；ES DSL 与 PromQL 全部在服务端拼装，模型只填业务参数，并对参数做 clamp、服务名/索引/PromQL 白名单校验；DLQ 详情可按 originMsgId→msgId→keys 逐级检索日志取首错（匹配 message/MSG_ID/UNIQ_KEY/keys 字段），把死信与首条失败日志自动关联。统一错误返回与只读标记。16 个工具：dlq_topic_list / dlq_message_detail / dlq_redeliver / consumer_lag_top / log_search / log_top_services / es_search / es_index_list / metric_top / metric_trend / metric_query / metric_labels / knowledge_catalog / knowledge_search / card_read / code_locate。
 - 提示词与行为约束：系统提示 13 条硬约束（同一工具最多 1 次、参数报错禁止重调、总工具调用 ≤4、系统本体问题必须走知识检索、锚点事实两关键词各查一次并读卡、引用只允许卡片 id），配合 ReAct 循环（maxIters=12、温度 0.2）控制行为边界。
