@@ -106,7 +106,7 @@ xhs-ai 是面向上述 15 微服务交易系统的 AIOps 诊断与知识问答 A
 
 ## 职责描述（Responsibilities）
 - 需求与架构：主导需求工程（34 个业务场景，REQ→AC→TC 全链路追溯，含 NFR/STRIDE 威胁模型）；确定分层架构与 23 条 ADR（AgentScope 选型、Redis 状态存储、BM25 先行+向量止损、模型网关自研、策略引擎、扩展框架两代 SPI→Sidecar、技能仓库 GitSkill、沙箱 v1 不启用等）；划清框架边界（Flyway 只管 ai_*，不碰 agentscope_*）。
-- 测试与工程规范：设计六层测试矩阵——单测/契约（实测 65：61 单测 + 4 条 LLM fixture 契约）/ 集成 / E2E / 评测（50 条答案 + 14 条轨迹）/ 红队 8 项 + 性能 4 场景；按 E1~E7 工程规范执行（依赖 BOM+Enforcer、出网收敛到两个域名、受控只读 SQL 三层、审计只追加、灰度与回滚流程）。
+- 测试与工程规范：设计六层测试矩阵——单测/契约（实测 65：61 单测 + 4 条 LLM fixture 契约）/ 集成（IT 冒烟 6 项）/ E2E（自动化 12 项，含 SSE 与权限负向） / 评测（50 条答案 + 14 条轨迹）/ 红队 8 项 + 性能 4 场景；按 E1~E7 工程规范执行（依赖 BOM+Enforcer、出网收敛到两个域名、受控只读 SQL 三层、审计只追加、灰度与回滚流程）。
 - 工具与编排：设计 16 个自研工具（DLQ 诊断/重投、日志检索/Top 服务、指标 Top/趋势/PromQL 兜底、标签探索、消费积压、ES 索引/DSL 兜底、代码定位、知识卡目录/检索/读取）；ES DSL 与 PromQL 全部在服务端拼装，模型只填业务参数，并对参数做 clamp、服务名/索引/PromQL 白名单校验；DLQ 详情可按 originMsgId→msgId→keys 逐级检索日志取首错（匹配 message/MSG_ID/UNIQ_KEY/keys 字段），把死信与首条失败日志自动关联。统一错误返回与只读标记。16 个工具：dlq_topic_list / dlq_message_detail / dlq_redeliver / consumer_lag_top / log_search / log_top_services / es_search / es_index_list / metric_top / metric_trend / metric_query / metric_labels / knowledge_catalog / knowledge_search / card_read / code_locate。
 - 提示词与行为约束：系统提示 13 条硬约束（同一工具最多 1 次、参数报错禁止重调、总工具调用 ≤4、系统本体问题必须走知识检索、锚点事实两关键词各查一次并读卡、引用只允许卡片 id），配合 ReAct 循环（maxIters=12、温度 0.2）控制行为边界。
 - HITL 审批闭环：设计"诊断→提案→审批→执行→核验→审计"状态机；审批超时 fail-closed、同会话同指纹 pending 复用、原文指纹执行前复核；审批决策跨实例 pub/sub 事件通知（业务续跑订阅未接线）；重投后按消息所在队列的消费位点核验是否真被消费，可区分 reentered_dlq / verified_consumed / 无位点证据；always 授权写会话授权表（先撤销旧授权，后续同工具直执）、reject 级联拒绝同会话其余待审；审批执行崩溃自动补执行、卡在 executing 超时回收为失败交人工重试。

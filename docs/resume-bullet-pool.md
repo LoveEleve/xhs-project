@@ -150,7 +150,7 @@
 | 备选条目 | 证据 | 口径提示 |
 |---|---|---|
 | ⭐ 需求与架构：34 场景（DIAG/KB/OPS/PLAT）+ 量化 NFR/SLO + STRIDE + REQ→AC→TC 门禁 + 23 ADR + Flyway 只管网表 | requirements/*.md；02-architecture.md:107-133 | ⭐强 |
-| ⭐ 测试与工程：六层设计（落地 UT61+**CT4（LLM fixture 契约：200/429/500/连接中断重试）**/EVAL94/RED8/PERF4；IT/E2E 为 TC 清单）+ Enforcer/CVE/依赖冲突 4 项与豁免退出条件 | 03-test-design.md；04-engineering.md；ModelContractTest.java | 设计 vs 落地分开讲 |
+| ⭐ 测试与工程：六层设计（落地 UT61+**CT4（200/429/500/连接中断重试）**/IT 冒烟6/**E2E 自动化12（含 SSE/权限负向）**/EVAL94/RED8/PERF4）+ Enforcer/CVE/依赖冲突 4 项与豁免退出条件 | 03-test-design.md；04-engineering.md；ModelContractTest.java | 设计 vs 落地分开讲 |
 | 部署运维：systemd（Restart=always/RestartSec=10/Stop 45s）+ readiness=MySQL/Redis + 日志 100MB/7天/2GB + 指标 loopback + 10 运维脚本 | xhs-ai.service；prometheus.yml:91 | 可用 |
 | ⭐ AgentScope 框架：BYPASS 补偿（白名单+HITL+审计）；热替换缺失→去 MCP；RuntimeContext 多租户坑；源码级验证 6 项 | AgentService.java:233；research/02 | ⭐强 |
 | 知识卡工程：55 卡（11/7/36/1）+ BM25 + 引用硬校验 + 验证问题集 + 启停重索引 | KnowledgeIndexer.java；ES 聚合 | 可用 |

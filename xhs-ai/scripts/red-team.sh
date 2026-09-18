@@ -3,7 +3,7 @@
 # 用法: bash scripts/red-team.sh [--fast]
 set -u
 BASE=${XHS_AI_BASE:-http://127.0.0.1:19020}
-TOKENS_FILE=${TOKENS_FILE:-$(dirname "$0")/../../../.secrets/tokens.env}
+TOKENS_FILE=${TOKENS_FILE:-$(dirname "$0")/../../.secrets/tokens.env}
 if [ -f "$TOKENS_FILE" ]; then set -a; . "$TOKENS_FILE"; set +a; fi
 ADMIN=${ADMIN_TOKEN:-}
 FAST=0; [ "${1:-}" = "--fast" ] && FAST=1
