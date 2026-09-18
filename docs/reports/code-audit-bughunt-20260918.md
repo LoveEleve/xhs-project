@@ -64,3 +64,28 @@ sku=27411 DB=998 Redis=998 ✓  sku=27825 DB=499 Redis=499 ✓
 
 - **11 个已缓存 SKU 的 Redis 分桶合计与 DB available_stock 逐一精确相等**；惰性未缓存 SKU 属预期；
 - 期间修正两处审计脚本自身错误（列名 `available`→`available_stock`、逻辑表名 `t_order`→物理 `t_order_N`），确保结论可信。
+
+---
+
+## 六、逐业务域一致性审计（2026-09-18 深夜·第二轮）
+
+| 业务域 | 口径 | 结果 |
+|---|---|---|
+| 库存 | Redis 分桶合计 vs DB 账本 | **11/11 精确相等** |
+| 优惠券 | Redis 库存 vs DB remain_count | **3/3 相等** |
+| 计数 | Redis 计数 vs DB t_counter | **15/15 相等** |
+| 计数投影 | counter DB vs ES note_index（赞/藏/评） | 精确相等（2 笔记抽查） |
+| 订单 | 16 物理分片 vs 映射表 | **75 = 75** |
+| 订单↔支付 | 已付款单必须有成功支付记录 | 新链路 0 异常（2 条为 test-09 直调回调的**历史测试脏数据**，脚本已改真实链路） |
+| 通知未读 | Redis vs DB is_read=0 | **4/4 相等** |
+| 用户地址 | 每用户默认地址唯一 | 无重复 ✓ |
+| 商品/笔记索引 | ES vs DB | 相等（笔记曾多 1 条乱序测试遗留，已清） |
+| 推荐 | 行为上报→落库→离线计算→热池 | **全链路验证**：上报 200 → `content.t_user_behavior` +1 → 热门池 `myxhs:recommend:hot:global` 更新（score=1，日志"2 条，cost=6ms"） |
+
+### 本轮发现（文档/口径类）
+
+1. **遗留重复表**：`my_xhs_analytics.t_user_behavior`（空，旧 `sql/mysql-user-init.sql` 建） vs 活跃 `my_xhs_content.t_user_behavior`（search 服务写入）——xhs-ai 的 business-analysis 文档仍指向前者（易误导 BI 查询）；
+2. **跨库硬编码**：`RecommendComputeJob` 有 `FROM my_xhs_analytics.t_favorite`——单实例同机可行，**生产拆库即断**（部署耦合提醒）；
+3. **特征增量语义**：`t_item_feature` 只处理"有新行为但无特征记录"的笔记，已有指纹的 like_count 不刷新（设计如此，但口径需注明）。
+
+> 结论：**已审计 9 个业务域、全部一致/可归因**；剩余未做单域：购物车、内容评论数、IM、Feed。
