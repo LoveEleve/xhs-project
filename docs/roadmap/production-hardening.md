@@ -57,7 +57,7 @@
 | 9 | 动态 JDBC 组件多活 | `DynamicDataSource` 类完整（含 TCC 事务安全），未接入服务 | 接线到 1 个服务试点（如 cart） | P2 |
 | 10 | 动态 Spring 组件多活 | `ZoneContext` PropertyChange + `ZoneProperties` 已具备 | 动态切换演示（不改配置热切 zone） | P2 |
 
-> Review 记录（2026-09-18）：① 12 服务 `ignore-routing` 属性已**全部重启生效**（11 个服务分批重启完成，15/15 healthy，业务冒烟通过，MySQL 复制延迟 0）；② zone 能力启用清单 `docs/ops/zone-enable-checklist.md`（含必需的健康检查配套参数）；③ 与 microsphere 对比 `docs/design/multi-active-vs-microsphere.md`（结论：整体不如成熟框架，差异化在落地/实测/修 bug）；④ 发现（未修，低优先级）：home 将下游业务失败（如笔记不存在/未发布）统一映射为 503“内容服务不可用”，语义待细化。
+> Review 记录（2026-09-18）：① 12 服务 `ignore-routing` 属性已**全部重启生效**（11 个服务分批重启完成，15/15 healthy，业务冒烟通过，MySQL 复制延迟 0）；② zone 能力启用清单 `docs/ops/zone-enable-checklist.md`（含必需的健康检查配套参数）；③ 与 microsphere 对比 `docs/design/multi-active-vs-microsphere.md`（结论：整体不如成熟框架，差异化在落地/实测/修 bug）；④ ✅ home 下游失败语义已修复（业务码透传 → 404“笔记不存在”，仅 5xx 判服务不可用）；⑤ ✅ release 脚本"假成功"修复（旧进程占端口→健康检查打旧进程）：按端口占用者精确清理（含历史手工进程）；⑥ ✅ Zone 自动发现（env/文件/网段 + EnvironmentPostProcessor 注册前生效）与 Zone 传播（X-Zone 入站/出站 + 指标）完成，common 单测 82/82。
 
 ## Track E：可观测与稳定性（对应 6/7/8）
 | # | 事项 | 现状 | 目标/动作 | 验收证据 | 优先级 |

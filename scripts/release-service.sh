@@ -71,9 +71,14 @@ stop() {
       fi
     done
   fi
-  # 等待端口释放（优雅停机可能超过 3s；最多 60s），避免"Port already in use"启动失败
+  # 确保端口释放：等待优雅停机；若仍有进程占用（pid 文件失效等），按端口精确清理占用者（校验是本模块 app.jar）
   for _ in $(seq 1 30); do
-    ss -ltn 2>/dev/null | grep -q ":$P " || break
+    holder=$(ss -ltnp 2>/dev/null | grep ":$P " | grep -o "pid=[0-9]*" | head -1 | cut -d= -f2)
+    [ -z "$holder" ] && break
+    if tr '\0' ' ' < "/proc/$holder/cmdline" 2>/dev/null | grep -qE "app\.jar|my-xhs-$MODULE"; then
+      echo "   ⚠️ 端口 $P 仍被 pid=$holder 占用，清理中"
+      kill "$holder" 2>/dev/null || true
+    fi
     sleep 2
   done
   sleep 1

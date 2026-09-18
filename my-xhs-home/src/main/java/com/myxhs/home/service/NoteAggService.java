@@ -140,9 +140,15 @@ public class NoteAggService {
         // 区分"服务降级"和"笔记不存在"：
         // - 服务降级（503）：不返回 null，而是抛出异常让上层感知
         // - 数据为空（成功但 data 为 null/empty）：笔记确实不存在
-        if (noteResult == null || !noteResult.isSuccess()) {
+        if (noteResult == null || (noteResult.getCode() >= 500 && noteResult.getCode() < 1000)) {
             log.warn("[笔记详情] content服务不可用，无法获取笔记: noteId={}", noteId);
             throw new DownstreamUnavailableException("内容服务不可用");
+        }
+        if (!noteResult.isSuccess()) {
+            // 业务失败（如笔记不存在/未发布）：按"数据不存在"返回 null，由 controller 转 404 语义
+            log.info("[笔记详情] content业务失败: noteId={}, code={}, msg={}",
+                    noteId, noteResult.getCode(), noteResult.getMessage());
+            return null;
         }
         Map<String, Object> noteData = noteResult.getData();
         if (noteData == null || noteData.isEmpty()) {

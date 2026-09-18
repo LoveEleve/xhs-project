@@ -16,7 +16,8 @@
 |---|---|
 | 同类 | `ZoneContext`/`ZoneResolver`/`ZonePreferenceFilter`/`ZonePreferenceServiceInstanceListSupplier`；LB 子 context 正确接线（`@LoadBalancerClients`） |
 | 超出对方 | 路由指标与决策原因（9 分支）；健康检查（3s + liveness）实测 **RTO 3.06s**；zone 感知数据源（读本地/降级/**30s 自动恢复**）；平台 bug 修复（从库恢复、健康阻塞发布、LC 平局、release 多实例）；演练报告+单测 |
-| 不如对方 | 无云元数据自动 zone 发现（依赖显式 metadata）；无 zone 附着/跨调用传播；无标准化自动配置与版本化 artifact；仅单机仿真、无社区维护 |
+| 已补齐（对标） | **Zone 自动发现**：env/zone 文件/网段映射 + `EnvironmentPostProcessor`（注册前生效，Nacos 元数据自动携带）；**Zone 传播**：入站 `X-Zone`（Servlet 过滤器→ThreadLocal）+ 出站 Feign 自动带头（`myxhs_zone_propagation_total` 可观测） |
+| 仍不如对方 | 无云元数据 locator（AWS/ECS/Eureka，本栈不需要）；**事件/MQ 传播未做**（仅 HTTP）；无 Ribbon 支持（不需要）；无标准化 artifact 与社区维护；仅单机仿真 |
 
 ## 三、结论
 - **整体不如 microsphere**（成熟度/通用性/生态与生产验证）；我们的价值在"本平台栈内的落地、实测与修 bug"。

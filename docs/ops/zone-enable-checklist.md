@@ -25,6 +25,24 @@
 - 从库恢复：读路径 30s 间隔探测，恢复后自动回切（日志 `从库已恢复`）。
 - `management.health.db.ignore-routing-data-sources=true` 已在 12 个读写分离服务配置（**待重启生效**），保证从库宕机不阻塞发布。
 
+## 二点五、Zone 自动发现（可选，替代显式打标）
+| 配置 | 值 | 说明 |
+|---|---|---|
+| `myxhs.availability.zone.locator.enabled` | true | 总开关（默认关） |
+| `...locator.file` | `/etc/myxhs/zone` | 文件定位器（类云元数据文件模式），文件内容为 zone 名 |
+| `...locator.ip-ranges` | `192.168.0.0/24=zone-a,10.0.0.0/8=zone-b` | 网段映射，匹配本机网卡地址 |
+
+优先级：显式 `-Dmyxhs.current.availability.zone` > 显式 metadata.zone（非 defaultZone）> env `MYXHS_ZONE` > zone 文件 > 网段 > defaultZone。
+自动发现由 `EnvironmentPostProcessor` 在**注册前**写入 Nacos metadata，无需手工打标（已实测：zone-a 网段发现、zone-b 文件发现）。
+
+## 二点六、Zone 传播（可选，HTTP）
+| 配置 | 值 | 说明 |
+|---|---|---|
+| `myxhs.availability.zone.propagation.enabled` | true | 总开关（默认关） |
+- 入站：Servlet 过滤器读取 `X-Zone` → 请求级 ThreadLocal（结束清理）。
+- 出站：Feign 自动附加 `X-Zone`（优先请求级，其次本机 Zone；defaultZone 不传）。
+- 观测：`myxhs_zone_propagation_total{direction=in|out, zone}`（实测 10/10 出站=入站）。
+
 ## 三、演练检查
 1. kill -9 首选 zone 实例：验证 LB 摘除+跨 zone 切换（RTO）。
 2. `docker stop my-xhs-mysql-slave`：验证读降级主库 + 恢复回切（≤40s）。

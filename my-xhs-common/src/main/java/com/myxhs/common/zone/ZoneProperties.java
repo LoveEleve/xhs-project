@@ -4,6 +4,9 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.NestedConfigurationProperty;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Zone 多活配置属性
  *
@@ -19,6 +22,23 @@ public class ZoneProperties {
     /** Zone 优先路由配置 */
     @NestedConfigurationProperty
     private PreferenceProperties preference = new PreferenceProperties();
+
+    /** Zone 自动发现配置 */
+    @NestedConfigurationProperty
+    private LocatorProperties locator = new LocatorProperties();
+
+    @Data
+    public static class LocatorProperties {
+
+        /** 自动发现开关（默认关） */
+        private boolean enabled = false;
+
+        /** 文件定位器路径（类云元数据文件模式） */
+        private String file = "/etc/myxhs/zone";
+
+        /** 网段映射：CIDR=zone（如 192.168.0.0/24=zone-a） */
+        private List<String> ipRanges = new ArrayList<>();
+    }
 
     @Data
     public static class PreferenceProperties {
