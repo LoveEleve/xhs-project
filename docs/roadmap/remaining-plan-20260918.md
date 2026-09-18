@@ -27,6 +27,11 @@
 - 成本：CPU/内存/磁盘/连接数盘点 → 成本折算 → 与 A2/A3 联动的优化清单。
 - 交付：`docs/ops/log-retention.md` + 成本报告。
 
+## 阶段 2 执行结果（2026-09-18，已完成）
+- ✅ 文档：`docs/reports/cost-log-governance-20260918.md`；日志保留脚本 `scripts/log-cleanup.sh` + 每日 cron；15 服务 JSON 日志上限生效
+- ✅ 清理：19 个残留 JVM（16.4GB）、日志 1.1G、releases 1.6G、npm 3G、apt 0.4G；内存 45→28Gi
+- 遗留：containerd 21G 迁移（维护窗口）、SkyWalking/Kibana/Logstash 是否停用待确认
+
 ## 阶段 3：面试材料回填（Track G，最高优先级价值）
 - 把新能力写入口径：zone LB / zone 数据源 / 网关多活 / Redis 多活 / 发布链路加固（PID 校验与"假成功"教训）/ 告警闭环 / MySQL 切换 / 压测数据。
 - 补齐未写题：xhs 18-25、ai 08-18（已预审）。
