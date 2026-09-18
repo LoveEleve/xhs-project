@@ -25,7 +25,7 @@
 ### 2.1 对话（流式）
 1. `POST /api/ai/chat/stream {sessionId, message}`（JWT→userId）
 2. `(userId, sessionId)` 恢复 AgentState（Redis）；同会话串行、异会话并行
-3. `streamEvents()` → **30 种 AgentEventType** 映射为 SSE 业务事件（SSE 业务事件契约：`docs/design/10-sse-contract.md` 待补，M1.6 前置）
+3. `streamEvents()` → **30 种 AgentEventType** 映射为 SSE 业务事件（SSE 业务事件契约：`docs/design/10-sse-contract.md` ✅ 2026-09-18 补）
 4. `REQUIRE_USER_CONFIRM` → 落 `ai_approval` 挂起；`USER_CONFIRM_RESULT` 恢复
 5. 结束归档 message/usage；OTel span + capture 模式
 
@@ -148,7 +148,7 @@ com.myxhs.ai
 ## 8. 专项设计进展（2026-09-12 更新）
 
 - ✅ 已产出：`design/01`~`design/09` + `design/12`（模型网关/工具治理审批/观测合规/代码导航/MCP/FMEA/容量成本/扩展框架/生态采纳，见 README 索引）
-- ⏳ 待补（M1.6 前置）：`design/10-sse-contract.md`（SSE 业务事件契约）、`design/11-security-authz.md`（鉴权与工具白名单）
+- ✅ 已补（2026-09-18）：`design/10-sse-contract.md`（SSE 业务事件契约）、`design/11-security-authz.md`（鉴权与工具白名单）
 
 ## 9. 风险（v0.2）
 

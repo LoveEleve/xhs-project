@@ -133,7 +133,7 @@
 ### E5.2 监控接入
 
 - `prometheus.yml` 增 target `192.168.0.142:19020`（labels: service=xhs-ai, application=xhs-ai）+ `POST /-/reload`
-- Grafana dashboard JSON 入库 `deploy/grafana/xhs-ai-dashboard.json`
+- Grafana dashboard JSON 入库 `（规划）AI 专属 Grafana 看板：当前复用平台看板 + `ai_*` 指标直查（见本文件 E7 与 16 题）`
 - 告警 rules：LLM 错误率/延迟/成本/审批积压/tool 失败率/Redis 内存/磁盘
 
 ### E5.3 健康检查分级

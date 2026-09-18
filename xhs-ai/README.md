@@ -13,6 +13,8 @@
 | `docs/02-architecture.md` | 架构设计（AgentScope 2.0 Java） | v0.2（RV09 修订） |
 | `docs/03-test-design.md` | 测试设计（全量 TC 矩阵/fixture/压测/红队） | ✅ v1.0 |
 | `docs/04-engineering.md` | 工程规范（E1-E7 可执行版） | ✅ v0.1 |
+| `docs/design/10-sse-contract.md` | **SSE 业务事件契约（v1.0）** | ✅ 2026-09-18 补 |
+| `docs/design/11-security-authz.md` | **鉴权与工具白名单（v1.0）** | ✅ 2026-09-18 补 |
 | `docs/engineering/dependency-matrix.md` | 依赖矩阵与冲突处置（M1-1） | ✅ 2026-09-12 |
 | `docs/resume-and-metrics.md` | 简历条目 + 指标口径与取证（面试防翻车） | ✅ v0.1 |
 | `docs/research/01-data-source-capability.md` | 数据源能力矩阵（实测） | ✅ v0.1 |
