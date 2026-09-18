@@ -174,9 +174,17 @@ def run():
                       user_id=user_id)
     order_id_c = body.get("data", {}).get("orderId") if isinstance(body, dict) else None
     print(f"[debug] paysuccess target orderId={order_id_c}")
-    code, body = call("POST", "/api/order/pay-success", token, secret,
-                      params={"orderId": order_id_c, "tradeNo": "trade-test-001"})
-    results.append((10, "POST 支付成功回调", (code, body)))
+    # 走真实链路：创建支付单 + 渠道回调（payment 服务内部再回调 order），避免"已付款无支付记录"的脏测试数据
+    _, _pay_c = call("POST", "/api/order/pay/create", token, secret,
+                     json_body={"orderId": order_id_c, "payType": 1}, user_id=user_id)
+    _pay_no_c = _pay_c.get("data", {}).get("paymentNo") if isinstance(_pay_c, dict) else None
+    if _pay_no_c:
+        call("POST", "/api/payment/callback/1", token, secret,
+             raw_body=json.dumps({"out_trade_no": _pay_no_c,
+                                  "trade_no": f"ALIPAY_MOCK_{ts_base}c",
+                                  "status": "SUCCESS"}))
+    code, body = call("GET", f"/api/order/{order_id_c}", token, secret, user_id=user_id)
+    results.append((10, "支付成功回调(真实链路)", (code, body)))
 
     # ===== 11. 支付失败回调（新建订单 D） =====
     biz_d = f"order-test-{ts_base}-payfail"
