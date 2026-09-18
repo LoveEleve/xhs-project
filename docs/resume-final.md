@@ -39,18 +39,18 @@ xhs 是一个内容与交易并重的社交电商平台，共 15 个 Spring Clou
 - 定时任务治理（XXL-Job）：审计 20 个任务/10 个执行器组；定位退款超时任务因非法 cron（`0/60` 秒字段增量越界）被调度器自动禁用、从未执行，修复后连续 200/200；3 个每日任务因环境非 7×24 + DO_NOTHING 静默丢窗口，改 `FIRE_ONCE_NOW`；拆解日报 633 条"失败"为调度失败/未上报/真实失败三类。
 - APM 接入（SkyWalking）：修复"组件在跑但没数据"——agent 9.7.0 落地并沉淀幂等安装脚本；完成 Spring Boot 3 插件适配（springmvc 3/4/5 移出、6.x/webflux 6.x/gateway 4.x 移入、清理 macOS 元数据）；release/restart 启动脚本自动挂载（SW_AGENT_DIR/COLLECTOR/DISABLED/IGNORE_SUFFIX/SAMPLE 环境变量化）；`ignore_suffix` 降噪 + 采样可调。
 - 日志与索引治理：修复漏网 `replicas=1` 日志索引导致的 ES yellow，新增索引副本巡检 cron；统一日志保留双口径（设计 ILM 30 天策略 + 环境清理脚本 7 天/本地文件 3 天）。
-- 日志规范与滚动上限：15 服务统一 Logback JSON 结构化日志（单文件 100MB、保留 7 天、总量 2GB 上限）并批量重建发布生效；JSON 字段含 traceId/服务名/级别/stack_trace，支撑 ES 按 traceId 检索。
+- 日志规范与滚动上限：15 服务统一 Logback JSON 结构化日志（单文件 100MB、保留 7 天、总量 2GB 上限）并批量重建发布生效；JSON 字段含 traceId/服务名/级别/stack_trace，支撑 ES 按 traceId 检索；采集链路 Filebeat filestream+ndjson → Logstash（grok 提取服务名/时间规范化）→ ES 按天索引（myxhs-logs-YYYY.MM.dd）→ Kibana。
 - 成本与磁盘治理：清理 19 个残留 JVM（释放 16.4GB RSS，内存 45→28Gi）；日志目录 3.7G→2.6G + 每日 cron；发布包保留 3 版（8.1G→6.5G）；npm 缓存 3.6G→591M；apt 缓存清理并沉淀治理报告。
 - MySQL 稳定性治理：定位"僵尸连接风暴"（318 条挂起查询、连接 459/500）并清理恢复（459→106）；comment 慢 SQL 由相关子查询改窗口函数 + 复合索引；补充连接/长查询告警规则与"压测中勿发布"纪律。
 - 仓库与脚本卫生：pids 运行时文件取消 Git 跟踪并入 .gitignore；发布/重启脚本的 Agent 与降噪参数全部环境变量化，避免"改脚本才能调参"。
 - 事实校准与知识沉淀：全库数字/口径按运行态校准（购物车 Lua 6→7、Sentinel 规则 15→16、common 单测 97/user 14、业务 topic 17、锁切面"未接入"纠偏、ILM 双口径等）；沉淀 76 篇深度问答（含 14 个组件深度拷打、12 条叙事链、逐链自测清单）与修复报告 4 篇。
 - JVM 与线程池调优：G1 + MaxGCPauseMillis=200 + Metaspace 256m 参数体系；定位类加载锁热点（TraceContextHolder 每请求 Class.forName，92/99 Tomcat 线程 BLOCKED、product 仅 1,074 RPS）并改静态桥接修复；聚合服务内外线程池隔离 + MDC 包装线程池保证 traceId 跨池不断链。
-- 可观测与告警体系：Prometheus 规则 31→40 条（9 组，severity 分级；含 MySQL 连接/复制 4 条新规则与 Runbook）；修复 Alertmanager 通知黑洞（receiver 空 → alert-sink 落地 /data2/logs/alerts.jsonl + send_resolved）；短命告警 keep_firing_for 防吞；Watchdog 元监控；SLO 错误预算（30 天 43m12s）与 Burn Ledger；完成告警端到端演练验证。
+- 可观测与告警体系：Prometheus 规则 31→40 条（9 组，severity 分级；含 MySQL 连接/复制 4 条新规则与 Runbook）；Grafana 看板 datasource provisioning 即代码；修复 Alertmanager 通知黑洞（receiver 空 → alert-sink 落地 /data2/logs/alerts.jsonl + send_resolved）；短命告警 keep_firing_for 防吞；Watchdog 元监控；SLO 错误预算（30 天 43m12s）与 Burn Ledger；完成告警端到端演练验证。
 - CI/CD 落地（Gitea Actions）：Gitea 1.22 + act_runner v0.6.1（systemd、Docker 执行器、挂载 .m2 复用缓存）；workflow 覆盖编译/单测/规范扫描，ci-gate.sh 门禁实测拦截违规提交（printStackTrace → RED）；版本化发布与自动回滚链路配套。
 - MySQL 故障转移演练：停主 10.2s、提升从库 0.087s、应用切换 22s，RTO≈32s（不含发现时间）；本次 RPO=0；输出 5 项短板（无自动切换/配置散落/异步复制 RPO 不保证/errant GTID/短命告警）与路线。
 - Zone 多活延伸：ZoneLocator 自动发现（env/文件/网段 CIDR）+ X-Zone 跨服务传播（入/出站过滤 + 指标，实测 10/10）；网关反应式 zone LB（12/12 就近、切换 5.54s）；动态 JDBC/Spring 热切（内容服务读主从切换、购物车热切不重启）；发布链路 PID 校验杜绝旧进程假成功。
 - SqlGuard v2 与限流加固：SQL 防护从"只判定"升级为可配置安全阻断（200ms 告警 + 5 次熔断 + 白名单阻断/豁免/冷却 + 3 个 Prometheus 指标 + 6 单测）；网关 Sentinel 规则 Nacos 化 + 30s 真空期兜底 + 路由 metadata 兜底双轨。
-- 基础设施细节治理：Nacos gRPC 19848 启动噪音排查定性（非故障、不设告警）；Nacos 鉴权缺失与密码明文登记为安全债；compose 配置与运行时零漂移核验（27 容器全量对照）。
+- 基础设施细节治理：RocketMQ topic 全量初始化（autoCreateTopicEnable=false 导致"M no route info"事故：namesrv 仅 1 个 topic）修复并脚本固化；Nacos gRPC 19848 启动噪音排查定性（非故障、不设告警）；Nacos 鉴权缺失与密码明文登记为安全债；compose 配置与运行时零漂移核验（27 容器全量对照）。
 - 发布"假成功"事故复盘与根治：发现批次重启后 11/15 服务实际仍跑旧 jar（脚本只看健康检查、端口占用未清、PID 指纹缺失）；发布链路加"监听 PID==本次启动 PID"校验 + ensure_port_free + setsid PID 回写 + 多实例用最新构建，并真重启 11 个服务。
 - Zone LB 接线修正（5 坑）：供应商 Bean 必须进 LB 子 context、resolver 用标准 metadata 键、健康检查 liveness vs 聚合 health、同 zone 最小实例阈值单实例不适用、SIGTERM 造成"假恢复"必须 kill -9 验证；修正后同 zone 命中 240/240。
 - Redis 双主同步修复：对账逻辑误删问题改"存在优先"、断线无重连改 3s 自动重连并补值相等防回环；验证 dbsize 1873=1873、恢复 ≤35s 追平。
