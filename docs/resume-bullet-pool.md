@@ -164,6 +164,7 @@
 | 备选条目 | 证据 | 口径提示 |
 |---|---|---|
 | ⭐ 17 个 ai_* 指标全覆盖（工具失败率/运行时长/预算决策/MCP 健康/保留清理量） | 素材 §5 | 可写成"可观测：17 个自定义指标 + 7 告警" |
+| ⭐ OTel 接入实测：OTel Java Agent → SkyWalking OAP OTLP（11800）→ `sw_zipkin_span` 52 条（样本：mcphealthmonitor/approvalexpiryjob）；导出失败 0 | ai-otel-enable-20260918.md | ⭐补上原"OTel 0 命中"缺口 |
 | ⭐ 评测隔离与门禁：门禁一键 = 65 测试（61 单测+4 契约）+ 审计一致性 + 哈希链（+可选 LLM 评测）；CI 工作流 | gate.sh；.github/workflows | 已有 |
 | 成本实测三态：软切、硬限 429、计量 5577 tokens | live-drill §4.4 | 已有 |
 | 崩溃恢复：批准后 60s 补执行 + executing 600s 回收 | production-gaps | 已有 |
