@@ -31,7 +31,7 @@ xhs 是一个内容与交易并重的社交电商平台，共 15 个 Spring Clou
 - IM 与通知：WebSocket 一致性哈希（150 虚拟节点）把会话固定到实例，跨实例走 Redis pub/sub，离线消息上线补发（上限 1000 条/7 天），已读/未读同步，多端登录踢旧连接，ticket 两步握手；通知按自然日窗口聚合（Redis SETNX+Lua，"等 N 人"），SSE 跨实例推送，未读对账限速防雪崩。
 - 网关：8 个过滤器按序组链（BodyCache → 日志 → 鉴权 → 染色 → HMAC → 限流 → 灰度 → 版本）；JWT 注入用户身份并覆盖伪造头，HMAC（默认关闭、按需启用）以 method/path/query/时间戳/nonce/bodyHash 生成签名并用 Lua 防重放；维护 16 条服务路由；灰度按用户哈希 10% 打标（实例过滤未实现）、版本头默认 v1、未知版本降级。
 - 公共组件（扩展）：号段 ID 生成器（DB 段号 + 双 Buffer 预加载）、读写分离路由（inventory 已启用；MyBatis 拦截器 + readOnly 事务路由）、多版本 API（@ApiVersion 替换 HandlerMapping）、审计独立事务模板（REQUIRES_NEW）、批量写入执行器（CPU×2/JDBC 5000/ID 分片）、造数框架（规模倍数）、HTTP ETag/304、Sentinel 客户端接入（网关兜底规则 + Dashboard，规则经控制台导入）。
-- Zone 多活与容灾（专项）：同 zone 优先路由 + 健康检查摘除（实测切换 RTO 1.3~4.8s、回切 <5s）；数据面 zone 感知（MySQL 读本 zone/从库故障降级恢复；Redis 客户端读副本写主库）；Redis 双主仿真（DUMP/RESTORE + LWW + 周期对账，单侧故障不中断、恢复 ≤35s 追平）；支持运行时热切 zone（不重启）；发布链路加 PID 校验杜绝旧进程假成功。
+- Zone 多活与容灾（专项）：同 zone 优先路由（**netem 跨区模拟实测吞吐 +34%、P99 -41%**）+ 健康检查摘除（实测切换 RTO 1.3~4.8s、回切 <5s）；数据面 zone 感知（MySQL 读本 zone/从库故障降级恢复；Redis 客户端读副本写主库）；Redis 双主仿真（DUMP/RESTORE + LWW + 周期对账，单侧故障不中断、恢复 ≤35s 追平）；支持运行时热切 zone（不重启）；发布链路加 PID 校验杜绝旧进程假成功。
 - 部署与运维：27 个容器的 Docker 编排（全部 restart:always + healthcheck 覆盖 + 9 组 depends_on 时序），并核验 compose 配置与运行时零漂移；备份体系（MySQL 每日全量 + binlog 保留 30 天、Redis 每 6 小时 BGSAVE、ES 每日快照）；日志保留治理（ILM 30 天策略 + 环境清理脚本）；沉淀 22 条部署踩坑与开机自愈脚本。
 - 覆盖审计与测试治理：在 117 项矩阵之外做文件级覆盖审计（购物车 34 个文件、内容 38/38、网关 11 个核心类），识别并修复"假修复/假测试"（注释冒充、非原子称原子、测试未真正执行等），补跑 common 97 + user 14 个单测全绿。
 - 公共组件与稳定性：限流→业务幂等切面按序执行（@Order 10/100）；消息幂等由 helper 显式去重、关键路径 Redisson 直连锁；MQ 透传 traceId/灰度/压测标记；优雅停机（先摘流量再停、缓冲刷盘）；沉淀 20 个 @XxlJob 兜底任务与 17 个业务 topic（另有 2 个重试约定 topic）；搭建 117 项测试矩阵，用混沌注入框架（Nacos 动态开关）+ iptables 做故障注入，压测流量经影子表隔离（SQL 自动改写 _shadow 表），完成容量压测与限流校准、traceId 全链路与 DLQ 治理。
