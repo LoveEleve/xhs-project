@@ -55,7 +55,7 @@
 | 5 | MySQL Server 多活 | ✅ 双 zone 仿真：主从分属 zone-a/b；读就近、从库故障降级/自动恢复（~40s）、从库不可达不阻塞发布（`docs/reports/mysql-zone-datasource-20260918.md`） | 真双主/复制与 zone 解耦（超本期） | 部分完成（C1 已含主故障切换） |
 | 6 | MySQL JDBC 多活 | ✅ zone 感知数据源（content 试点）：读本 zone 优先、跨 zone 降级、30s 自动恢复；4+5 项单测（`docs/reports/mysql-zone-datasource-20260918.md`） | 推广到其余服务（按开关） | **完成** |
 | 7 | Redis Client 多活 | ✅ 完成：zone 感知 ReadFrom（读本地副本/写主库/故障兜底/恢复回切），cart 试点验证；报告 `docs/reports/redis-zone-drill-20260918.md` | 推广到更多服务（开关默认关） | **完成** |
-| 8 | Redis Server 多活 | 单主一从 + Sentinel（切主 2.3s 已演练）；双主/CRDT 冲突策略评估结论=不做（无真实双写场景，见报告边界） | 按需 | 评估完成 |
+| 8 | Redis Server 多活 | ✅ 完成（双主仿真）：zone-b 独立可写主库(6381) + 双向同步 Worker（DUMP/RESTORE + LWW + 周期对账）；实测双向/冲突/故障/恢复全通过（`docs/reports/redis-server-multi-active-20260918.md`） | 生产级需 CRDT/Active-Active（不做） | **完成** |
 | 9 | 动态 JDBC 组件多活 | ✅ 完成：接线 content 试点（zone-a→主库/zone-b→副本），运行时热切实证（读路由 +207→+206）；TCC 活跃连接等待；单测 4 项（`docs/reports/dynamic-zone-jdbc-spring-20260918.md`） | — | **完成** |
 | 10 | 动态 Spring 组件多活 | ✅ 完成：`ZoneAdminController` 热切端点（内部令牌保护）+ cart 实测热切 zone 后 LB 路由即时切换（+40↔+40，无重启）；单测 3 项 | — | **完成** |
 
