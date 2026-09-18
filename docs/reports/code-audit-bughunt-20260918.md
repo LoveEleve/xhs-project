@@ -88,4 +88,13 @@ sku=27411 DB=998 Redis=998 ✓  sku=27825 DB=499 Redis=499 ✓
 2. **跨库硬编码**：`RecommendComputeJob` 有 `FROM my_xhs_analytics.t_favorite`——单实例同机可行，**生产拆库即断**（部署耦合提醒）；
 3. **特征增量语义**：`t_item_feature` 只处理"有新行为但无特征记录"的笔记，已有指纹的 like_count 不刷新（设计如此，但口径需注明）。
 
-> 结论：**已审计 9 个业务域、全部一致/可归因**；剩余未做单域：购物车、内容评论数、IM、Feed。
+### 追加域（第三批）
+
+| 业务域 | 口径 | 结果 |
+|---|---|---|
+| 购物车 | Redis items vs DB t_cart_item（无 deleted 列，物理删除） | user 2100874164006232066: **1 = 1** ✓ |
+| 内容评论数 | DB 评论 vs 计数器（countType=3） | **实时链路验证**：发 1 条评论 → DB 5→6、计数器 8→9 **精确同步**；历史偏差（5/8、1/0）= 09-06/08 种子数据（无事件写入） |
+| IM | 消息表 + Redis unread/seq | 5 条消息、Redis key 正常（轻量 sanity；深度对账需设计口径） |
+| Feed | inbox/outbox | **纯 Redis 设计**（无 DB 镜像），key 正常（轻量 sanity） |
+
+> 结论：**已审计 11 个业务域、全部一致或可归因**；IM/Feed 的深度对账需先定义设计级不变量（后续可做）。
