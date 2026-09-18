@@ -59,6 +59,7 @@
 | MySQL 故障转移：停主 10.2s/提升 0.087s/切换 22s/RTO≈32s + 5 短板 | mysql-failover-drill-20260917.md | ⭐"不含发现时间" |
 | Redis 双主修复："存在优先"防误删 + 3s 重连 + 防回环；dbsize 1873=1873、≤35s 追平 | redis-server-multi-active-20260918.md | 已有 |
 | 动态 JDBC/Spring：content +207→+206、cart +40↔+40 不重启 | dynamic-zone-jdbc-spring-20260918.md | 已有 |
+| 多活选型对比：与 Microsphere 多活框架逐项对比（路由/数据面/容灾/运维成本），结论"整体不如成熟框架、差异化在落地与实测"留档 | docs/design/multi-active-vs-microsphere.md | ⭐选型视野 |
 
 **F. JVM 与性能**
 | 备选条目 | 证据 | 口径提示 |
@@ -79,6 +80,7 @@
 |---|---|---|
 | ⭐ 成本：19 残留 JVM（16.4GB）；内存 45→28Gi；日志 3.7→2.6G；releases 8.1→6.5G；npm 3.6G→591M；apt | cost-log-governance-20260918.md | ⭐数字都可复现 |
 | 日志清理 cron（文件 3 天/ES 7 天）+ 版本保留 3 | log-cleanup.sh；crontab | 已有 |
+| 备份体系：MySQL 每日全量+binlog 30 天（mysql-backup.sh）、Redis 每 6 小时 BGSAVE（redis-backup.sh）、ES 每日快照（es-backup.sh）；开机自愈 systemd（boot-selfheal：磁盘扩容+依赖等待+15 服务拉起+重试补偿） | deploy/scripts/*.sh；my-xhs-selfheal.service | 备份+自愈是一组讲 |
 
 **I. 工程与知识治理**
 | 备选条目 | 证据 | 口径提示 |
