@@ -39,6 +39,7 @@ xhs 是一个内容与交易并重的社交电商平台，共 15 个 Spring Clou
 - 定时任务治理（XXL-Job）：审计 20 个任务/10 个执行器组；定位退款超时任务因非法 cron（`0/60` 秒字段增量越界）被调度器自动禁用、从未执行，修复后连续 200/200；3 个每日任务因环境非 7×24 + DO_NOTHING 静默丢窗口，改 `FIRE_ONCE_NOW`；拆解日报 633 条"失败"为调度失败/未上报/真实失败三类。
 - APM 接入（SkyWalking）：修复"组件在跑但没数据"——agent 9.7.0 落地并沉淀幂等安装脚本；完成 Spring Boot 3 插件适配（springmvc 3/4/5 移出、6.x/webflux 6.x/gateway 4.x 移入、清理 macOS 元数据）；release/restart 启动脚本自动挂载（SW_AGENT_DIR/COLLECTOR/DISABLED/IGNORE_SUFFIX/SAMPLE 环境变量化）；`ignore_suffix` 降噪 + 采样可调。
 - 日志与索引治理：修复漏网 `replicas=1` 日志索引导致的 ES yellow，新增索引副本巡检 cron；统一日志保留双口径（设计 ILM 30 天策略 + 环境清理脚本 7 天/本地文件 3 天）。
+- 日志规范与滚动上限：15 服务统一 Logback JSON 结构化日志（单文件 100MB、保留 7 天、总量 2GB 上限）并批量重建发布生效；JSON 字段含 traceId/服务名/级别/stack_trace，支撑 ES 按 traceId 检索。
 - 成本与磁盘治理：清理 19 个残留 JVM（释放 16.4GB RSS，内存 45→28Gi）；日志目录 3.7G→2.6G + 每日 cron；发布包保留 3 版（8.1G→6.5G）；npm 缓存 3.6G→591M；apt 缓存清理并沉淀治理报告。
 - MySQL 稳定性治理：定位"僵尸连接风暴"（318 条挂起查询、连接 459/500）并清理恢复（459→106）；comment 慢 SQL 由相关子查询改窗口函数 + 复合索引；补充连接/长查询告警规则与"压测中勿发布"纪律。
 - 仓库与脚本卫生：pids 运行时文件取消 Git 跟踪并入 .gitignore；发布/重启脚本的 Agent 与降噪参数全部环境变量化，避免"改脚本才能调参"。
