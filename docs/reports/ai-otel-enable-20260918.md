@@ -10,7 +10,7 @@
    - `receiver-zipkin.selector` 由禁用改为 `default`——OTel traces 在 OAP 内**转发给 Zipkin 接收模块**存储（此前导出报 `ModuleNotFoundRuntimeException: receiver-zipkin missing`，gRPC status 2）
    - 重启 OAP：`OpenTelemetryTraceHandler` 绑定 11800（OTLP/gRPC 与 SW 原生协议共端口）；zipkin 接收器监听 9411
 2. **xhs-ai 挂 OTel Agent**（systemd drop-in，不改原 unit）：
-   - `JAVA_TOOL_OPTIONS=-javaagent:/data/workspace/otel-agent/opentelemetry-javaagent.jar`（2.10.0，21MB，仓库外）
+   - `JAVA_TOOL_OPTIONS=-javaagent:/data/workspace/otel-agent/opentelemetry-javaagent.jar`（2.10.0，21MB，仓库外；安装脚本 `scripts/install-otel-agent.sh` 幂等复现）
    - `OTEL_SERVICE_NAME=xhs-ai-otel`、`OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:11800`（grpc）、traces=otlp、metrics/logs=none
    - 路径：`/etc/systemd/system/xhs-ai.service.d/otel.conf`（模板已入库：`deploy/ops/xhs-ai-otel.conf`）
 
