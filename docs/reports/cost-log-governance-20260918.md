@@ -45,3 +45,9 @@
   - `snapshotter.v1.overlayfs` 16G + `content.v1.content` 5.7G
 - 安全回收评估：`docker system df` — 悬空镜像 0、停止容器 0、构建缓存 0 → **标准 prune 可回收 ≈0**（22G 为 32 个运行容器的真实镜像占用）
 - 建议（未执行，需窗口）：将 containerd 根迁移至 `/data2/containerd`（改 `config.toml` + 重启运行时）或扩容根盘；`/data2` 尚余 22G
+
+## 八、仓库卫生复核（2026-09-18 晚）
+
+- `.gitignore` 覆盖 `target/`、`logs/`、`*.jar`、`pids/`，**无构建产物误入库**；
+- `.git` 体积 **752MB**，主要来自归档资产：`my-xhs-ai/docs/reference/papers/*.pdf`（18-22MB/篇）与 `docs/test-1/xhs_hz/**/images/*`（GIF/PNG）——属历史资料，非代码；
+- 建议（未执行）：后续大文件不入库或改 **git-lfs/外链**；如需瘦身需 `git filter-repo` 重写历史（另择窗口）。
