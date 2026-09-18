@@ -20,7 +20,12 @@ Martin Kleppmann（《DDIA》作者）发文《How to do distributed locking》�
 - **Redis 连接异常** → catch 后**降级放行**（`DistributedLockAspect:68-74`），把锁让位于下游兜底——这才叫"效率锁"。
 不做 Redlock：运维复杂、时钟假设苛刻，且正确性本来就不靠锁。
 
-**③ 项目怎么兜底（这段就是答案）**
+**③ 坑（主动承认）**
+- Sentinel 切主实测 2.3s，窗口内锁可能没同步到新主，出现"双持锁"——我们接受，因为锁丢了数据也不会错。
+- Watchdog 只能续"进程活着"的锁；长 GC/进程被 kill 后锁会按 TTL 释放，下游兜底必须永远在位。
+- 解锁防误放：Redisson 内置解锁用 Lua 校验锁 owner（线程标识），切面再包 `isHeldByCurrentThread()` 防误释放（`DistributedLockAspect:89-93`，unlock 失败由 Watchdog/TTL 兜底）；对账类锁 RV30 改成随机 token + CAS（不靠锁身份判断）。
+
+**④ 兜底（分层机制表，这段就是答案）**
 | 层 | 机制 | 证据 |
 |----|------|------|
 | 效率锁 | Redisson RLock + Watchdog 防重复执行；**抢锁失败拒绝请求、Redis 故障降级放行**，不假装它保证正确性 | `DistributedLockAspect:68-78,89-93` |
@@ -30,11 +35,6 @@ Martin Kleppmann（《DDIA》作者）发文《How to do distributed locking》�
 | 版本控制 | ES ExternalGte 拒绝陈旧写、社交事件 24h 版本窗口防乱序 | ProductIndexSyncConsumer、LikeUnlikeConsumer |
 | 幂等兜底 | msgId 去重（2h/24h）、预扣幂等表 | counter/coupon/inventory |
 | 最终一致 | 对账 Job 以 Redis 权威修 DB，或反向修复 | 各模块 reconcile |
-
-**④ 坑（主动承认）**
-- Sentinel 切主实测 2.3s，窗口内锁可能没同步到新主，出现"双持锁"——我们接受，因为锁丢了数据也不会错。
-- Watchdog 只能续"进程活着"的锁；长 GC/进程被 kill 后锁会按 TTL 释放，下游兜底必须永远在位。
-- 解锁防误放：Redisson 内置解锁用 Lua 校验锁 owner（线程标识），切面再包 `isHeldByCurrentThread()` 防误释放（`DistributedLockAspect:89-93`，unlock 失败由 Watchdog/TTL 兜底）；对账类锁 RV30 改成随机 token + CAS（不靠锁身份判断）。
 
 **⑤ 话术**
 > "Redis 锁在我们这儿是效率工具，不是正确性保证；正确性由 DB 唯一键、乐观锁、fence 状态机和版本控制承担，Redis 挂掉锁降级放行也不会产生脏数据。这跟 Kleppmann 的建议一致——要用多节点多数派（Redlock）才谈 fencing，我们评估后没走这条路。"
