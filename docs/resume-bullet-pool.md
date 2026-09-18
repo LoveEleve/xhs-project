@@ -48,7 +48,7 @@
 **D. 认证与安全**
 | 备选条目 | 证据 | 口径提示 |
 |---|---|---|
-| 用户认证：JWT 双 token（access 30min/refresh 7d）+ 验证码（Redis）+ 刷新拉黑旧 token + 登出失效 | TokenService.java；AuthController.java | 可用 |
+| 用户认证：JWT 双 token（access 30min/refresh 7d）+ 验证码（Redis）+ 刷新拉黑旧 token + 登出失效；用户地址管理（默认地址切换+锁内校验） | TokenService.java；AuthController.java；UserAddressService.java | 可用 |
 | SqlGuard v2：200ms 告警+5 次熔断+白名单/豁免/冷却+3 指标+6 单测；Sentinel 规则 Nacos 化 + 30s 真空期兜底 | sqlguard-sentinel-hardening-20260917.md | 默认关闭要说明 |
 | 安全边界：直连服务鉴权 fail-closed、管理/内部令牌空即拒绝、HMAC 重放防护 | 手册 §Q；TrafficColoringFilter | 与 17 题组合讲 |
 
@@ -98,7 +98,7 @@
 | 读写分离：ReadWriteRoutingInterceptor（SLAVE 只读路由/事务中不切）；12 服务 ignore-routing 不阻塞发布 | ReadWriteRoutingDataSource；application.yml | ⭐与 21 题互相印证 |
 | 造数框架：seed-data.py（规模倍数造数）；压测脚本 test-07~14 全链路 | scripts/seed-data.py；scripts/test-*.py | 数据准备能力 |
 | ShardingSphere 绑定表：5 张逻辑表同 user_id 分片，JOIN 无笛卡尔积；Snowflake worker-id 三级优先级（env→-D→IP 哈希） | sharding-config.yaml；ShardingSphereDataSourceConfig.java:92-112 | 与 29/49 题一致 |
-| 压测隔离：ShadowTableInterceptor（X-Pressure-Test + 开关，表名+_shadow）；混沌演练脚本（Redis/MQ pause、CPU 满载、磁盘 burn、MySQL pause、优雅停机） | ShadowTableInterceptor.java；chaos-drill.sh | ⭐"压测中勿发布"来源 |
+| 压测隔离：影子表 ShadowTableInterceptor（X-Pressure-Test + 开关，表名+_shadow）；混沌演练脚本（Redis/MQ pause、CPU 满载、磁盘 burn、MySQL pause、优雅停机） | ShadowTableInterceptor.java；chaos-drill.sh | ⭐"压测中勿发布"来源 |
 | 端口与连接治理：TIME_WAIT/临时端口排查口径（连接复用/keep-alive/池化），Grafana node 面板指标 | 平台深挖；node-exporter 面板 | 无事故，讲原理+口径 |
 | 部署脚本：setup-firewall.sh（安全组/端口）、setup-ip.sh（部署包 IP 置换）、restart-all-skywalking.sh、开机自愈 boot-selfheal.sh | deploy/docker/my-xhs-deploy-zip/*.sh；deploy/scripts/boot-selfheal.sh | 可用 |
 
@@ -120,7 +120,7 @@
 | ⭐ 定时任务：20/20 可调度（1 从未运行+3 丢窗口修复）；日报 633 条=真实业务失败 2 条 | xxl-job-schedule-audit | 可用 |
 | ⭐ APM：15/15 注册 + gateway→home 53 span（CROSS_PROCESS/CROSS_THREAD）；ignore_suffix 对 SpringMVC 生效 | skywalking-agent-enable | 边界：gateway 噪音 |
 | ⭐ 告警：40 规则/9 组 + 通知黑洞修复 e2e + SLO 43m12s/30 天 | alerting-e2e | 可用 |
-| ⭐ CI/CD：门禁实测拦截 RED + 版本化发布/自动回滚 + act_runner 复用 .m2 | cicd-gitea；ci-gate-red | 可用 |
+| ⭐ CI/CD：Gitea Actions + act_runner 门禁实测拦截 RED + 版本化发布/自动回滚 + .m2 缓存 | cicd-gitea-20260917.md；ci-gate-red | 可用 |
 | ⭐ JVM：1,074→4,871（4.5x，92/99 BLOCKED 归零）+ 线程池隔离/MDC 跨池 | a2-jvm-tuning | ⭐必背 |
 | MySQL 演练：RTO≈32s 分解 + RPO=0（本次）+ 5 短板 | mysql-failover-drill | 可用 |
 | 成本：内存 45→28Gi / releases 8.1→6.5G / npm 3.6G→591M | cost-log-governance | 必背 |
