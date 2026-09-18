@@ -18,7 +18,23 @@ public final class TraceContextHolder {
 
     private static final ThreadLocal<TraceContext> CONTEXT = new ThreadLocal<>();
 
+    /** MDC 中的 traceId Key（与 TraceIdConfig/MqTraceHelper 保持一致） */
+    private static final String MDC_TRACE_KEY = "traceId";
+
     private TraceContextHolder() {
+    }
+
+    /**
+     * 为无入口的后台线程（定时任务/模拟器/补偿 Job）开启一条新链路：
+     * 生成 traceId → 写入 ThreadLocal + MDC（+ SkyWalking correlation）。
+     * <p>使用方必须在 finally 中调用 {@link #clear()}（会同时清理 MDC）。</p>
+     */
+    public static TraceContext startNewTrace() {
+        TraceContext ctx = new TraceContext();
+        ctx.setTraceId(java.util.UUID.randomUUID().toString().replace("-", ""));
+        set(ctx);
+        org.slf4j.MDC.put(MDC_TRACE_KEY, ctx.getTraceId());
+        return ctx;
     }
 
     public static void set(TraceContext ctx) {
@@ -52,6 +68,7 @@ public final class TraceContextHolder {
      */
     public static void clear() {
         CONTEXT.remove();
+        org.slf4j.MDC.remove(MDC_TRACE_KEY);
         clearSkyWalkingCorrelation();
     }
 

@@ -2,6 +2,7 @@ package com.myxhs.order.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.common.trace.MqTraceHelper;
+import com.myxhs.common.trace.TraceContextHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.client.producer.SendCallback;
@@ -73,21 +74,44 @@ public class OrderNotificationPublisher {
             extra.put("status", statusText);
             event.put("extraData", objectMapper.writeValueAsString(extra));
 
+            // 异步回调在 RocketMQ Netty 线程执行：捕获发送线程的 traceId，回调日志手动补 MDC
+            String traceId = TraceContextHolder.getTraceId() != null
+                    ? TraceContextHolder.getTraceId()
+                    : org.slf4j.MDC.get("traceId");
             rocketMQTemplate.asyncSend(NOTIFICATION_TOPIC,
                     MqTraceHelper.wrapWithTraceContext(MessageBuilder.withPayload(event).build()),
                     new SendCallback() {
                         @Override
                         public void onSuccess(SendResult sendResult) {
-                            log.info("[订单通知] 已发送: orderId={}, status={}", orderId, statusText);
+                            withTrace(traceId, () -> log.info("[订单通知] 已发送: orderId={}, status={}", orderId, statusText));
                         }
 
                         @Override
                         public void onException(Throwable e) {
-                            log.error("[订单通知] 发送失败(不影响交易主链路): orderId={}, status={}", orderId, statusText, e);
+                            withTrace(traceId, () -> log.error("[订单通知] 发送失败(不影响交易主链路): orderId={}, status={}", orderId, statusText, e));
                         }
                     });
         } catch (Exception e) {
             log.error("[订单通知] 发送异常(不影响交易主链路): orderId={}, status={}", orderId, statusText, e);
+        }
+    }
+
+    /** 在 MQ Netty 回调线程中临时恢复发送线程的 traceId（不污染线程池复用） */
+    private static void withTrace(String traceId, Runnable action) {
+        if (traceId == null || traceId.isEmpty()) {
+            action.run();
+            return;
+        }
+        String prev = org.slf4j.MDC.get("traceId");
+        org.slf4j.MDC.put("traceId", traceId);
+        try {
+            action.run();
+        } finally {
+            if (prev != null) {
+                org.slf4j.MDC.put("traceId", prev);
+            } else {
+                org.slf4j.MDC.remove("traceId");
+            }
         }
     }
 }

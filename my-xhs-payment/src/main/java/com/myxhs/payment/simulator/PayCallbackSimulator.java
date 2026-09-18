@@ -97,6 +97,8 @@ public class PayCallbackSimulator {
         }
 
         for (String key : keys) {
+            // 定时线程无入站 traceId：每单开启新链路，保证回调→MQ→订单/通知全链可追
+            com.myxhs.common.trace.TraceContextHolder.startNewTrace();
             try {
                 // 分布式锁：防止多实例重复发送回调
                 String lockKey = CALLBACK_LOCK_PREFIX + key.substring(CALLBACK_PENDING_PREFIX.length());
@@ -138,6 +140,8 @@ public class PayCallbackSimulator {
                 break;
             } catch (Exception e) {
                 log.error("[回调模拟] 回调发送失败: key={}", key, e);
+            } finally {
+                com.myxhs.common.trace.TraceContextHolder.clear();
             }
         }
     }
@@ -156,6 +160,8 @@ public class PayCallbackSimulator {
                 return;
             }
             for (String key : keys) {
+                // 定时线程无入站 traceId：每单开启新链路（退款回调→MQ→订单回补/通知）
+                com.myxhs.common.trace.TraceContextHolder.startNewTrace();
                 try {
                     String refundNo = key.substring(REFUND_CALLBACK_PENDING_PREFIX.length());
                     String lockKey = "myxhs:payment:refund-callback:simulate:" + refundNo;
@@ -175,6 +181,8 @@ public class PayCallbackSimulator {
                     break;
                 } catch (Exception e) {
                     log.error("[回调模拟] 退款回调发送失败: key={}", key, e);
+                } finally {
+                    com.myxhs.common.trace.TraceContextHolder.clear();
                 }
             }
         } catch (Exception e) {

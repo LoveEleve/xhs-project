@@ -1190,8 +1190,22 @@ public class OrderService {
         }
 
         // 3. Event Sourcing: 追加退款事件并更新状态
-        orderEventService.appendEvent(order, OrderEventService.EVENT_REFUNDED,
-                Map.of("refundTime", LocalDateTime.now().toString()));
+        //    并发口径：Feign 同步与 REFUND_RESULT_TOPIC MQ 兜底可能同时到达，
+        //    后到线程乐观锁失败（订单已被先到线程收敛到 5）→ 按幂等成功返回，
+        //    避免向支付侧抛 500/503 触发无谓补偿（支付侧会误判"订单状态滞留"）。
+        try {
+            orderEventService.appendEvent(order, OrderEventService.EVENT_REFUNDED,
+                    Map.of("refundTime", LocalDateTime.now().toString()));
+        } catch (IllegalStateException | IllegalArgumentException e) {
+            Order latest = orderMapper.selectOne(
+                    new LambdaQueryWrapper<Order>()
+                            .eq(Order::getUserId, userId)
+                            .eq(Order::getId, orderId));
+            boolean alreadyRefunded = latest != null && latest.getStatus() == 5;
+            log.warn("[订单] 退款回调并发竞态(Feign/MQ 双通道): orderId={}, alreadyRefunded={}, cause={}",
+                    orderId, alreadyRefunded, e.getMessage());
+            return alreadyRefunded;
+        }
 
         // 4. 退款前先同步确认库存扣减：确保预扣记录被清理，
         //    避免「releaseInventory 回补 + refundRestore 回补」双通道叠加造成库存虚增，
