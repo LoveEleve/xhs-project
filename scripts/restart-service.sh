@@ -21,7 +21,7 @@ PORT[coupon]=19010; PORT[order]=19011; PORT[payment]=19012; PORT[notification]=1
 PORT[im]=19014; PORT[home]=19015; PORT[search]=19016
 
 BASE="-Dskywalking.collector.backend_service=192.168.0.142:11800 -Xms512m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m -Dserver.tomcat.mbeanregistry.enabled=true"
-OPTS[gateway]="-Dskywalking.collector.backend_service=192.168.0.142:11800 -Xms256m -Xmx256m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m -Dspring.data.redis.host=21.130.247.89"
+OPTS[gateway]="-Dskywalking.collector.backend_service=192.168.0.142:11800 -Xms256m -Xmx256m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m -Dspring.data.redis.host=192.168.0.142"
 OPTS[analytics]="-Dskywalking.collector.backend_service=192.168.0.142:11800 -Xms512m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m -Dmanagement.admin-token=${ADMIN_TOKEN} -Dserver.tomcat.mbeanregistry.enabled=true"
 OPTS[inventory]="${BASE///my-xhs-inventory}"; OPTS[order]="${BASE///my-xhs-order}"; OPTS[search]="${BASE///my-xhs-search}"
 OPTS[inventory]="${OPTS[inventory]/-Xms512m -Xmx512m/-Xms1024m -Xmx1024m}"

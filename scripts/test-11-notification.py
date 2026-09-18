@@ -8,7 +8,7 @@ import redis, requests
 from redis.sentinel import Sentinel
 
 GATEWAY = "http://localhost:19000"
-_sentinel = Sentinel([("21.130.247.89", 26379), ("21.130.247.89", 26380), ("21.130.247.89", 26381)],
+_sentinel = Sentinel([("192.168.0.142", 26379), ("192.168.0.142", 26380), ("192.168.0.142", 26381)],
                      socket_timeout=3, password="Xhs@2026#Redis")
 _h, _p = _sentinel.discover_master("mymaster")
 REDIS = redis.Redis(host=_h, port=_p, db=0, password="Xhs@2026#Redis", decode_responses=True)

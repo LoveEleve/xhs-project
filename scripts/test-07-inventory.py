@@ -16,7 +16,7 @@ import requests
 GATEWAY = "http://localhost:19000"
 # Redis 通过 Sentinel 找 master
 from redis.sentinel import Sentinel
-_sentinel = Sentinel([("21.130.247.89", 26379), ("21.130.247.89", 26380), ("21.130.247.89", 26381)],
+_sentinel = Sentinel([("192.168.0.142", 26379), ("192.168.0.142", 26380), ("192.168.0.142", 26381)],
                      socket_timeout=3, password="Xhs@2026#Redis")
 _master_host, _master_port = _sentinel.discover_master("mymaster")
 REDIS = redis.Redis(host=_master_host, port=_master_port, db=0,
