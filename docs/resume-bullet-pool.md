@@ -36,6 +36,7 @@
 | ⭐ SkyWalking 接入：修复"组件在跑但没数据"；agent 9.7 + 幂等安装脚本 + SB3 插件适配 + release/restart 自动挂载 + ignore_suffix 降噪 + 采样可调 | skywalking-agent-enable-20260918.md；install-skywalking-agent.sh | ⭐gateway WebFlux 噪音为已知边界 |
 | ⭐ 告警体系：31→40 规则/9 组；通知黑洞修复（noop→alert-sink 落盘）；keep_firing_for；Watchdog；SLO 43m12s + Burn Ledger | alerting-e2e-20260917.md | ⭐通知黑洞/短命告警是经典 |
 | ELK 链路：Filebeat filestream+ndjson → Logstash grok → ES 日索引；Logback JSON 上限（100MB/7天/2GB）；yellow 修复+巡检 cron；ILM 双口径 | filebeat.yml；logstash.conf；es-log-index-check.sh；log-cleanup.sh | 保留双口径主动讲 |
+| ⭐ APM 开销实测：product 同法两轮对比（agent ON/OFF），吞吐开销 **≈5.4%**（7,439 vs 7,863 RPS）、P50 +0.41ms；明确"基线无 agent"口径 | skywalking-overhead-20260918.md | ⭐性能数字可复现的前提 |
 | Grafana：看板 datasource provisioning 即代码 | config/grafana/provisioning | 可用 |
 
 **C. 通信与负载均衡**

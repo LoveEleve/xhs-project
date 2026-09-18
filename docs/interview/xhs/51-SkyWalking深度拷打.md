@@ -29,6 +29,7 @@
 **④ 边界（主动披露，很值钱）**
 - **接入演进（真实故事）**：曾核查发现——OAP/UI/ES 在运行，但 `release-service.sh` 参数不含 `-javaagent`、agent 包缺失、`restart-service.sh` 还指向云 collector，即『组件在跑但没数据』；**2026-09-18 已修复**：agent 9.7.0 落地（安装脚本 `scripts/install-skywalking-agent.sh`，TUNA 源）、插件适配（springmvc 3/4/5 移出、6.x/webflux 6.x/gateway 4.x 移入、清理 `._*`）、release/restart 脚本自动挂载 + `ignore_suffix` 降噪 → 15/15 服务注册；
 - **运维参数**：采样默认 `sample_n_per_3_secs=1`（全采样 `SW_AGENT_SAMPLE=-1`，压测注意开销）；`SW_AGENT_DISABLED=1` 可关闭；升级 = 换 `SW_AGENT_DIR` 目录；
+- **开销实测（两轮交替取样）**：product 同法对比 agent ON/OFF——吞吐 7,439 vs 7,863 RPS（**≈5.4% 开销**）、P50 +0.41ms；**性能基线必须标注"无 agent"口径**（报告 `skywalking-overhead-20260918.md`）；
 - **两套追踪的取舍**：全自动 APM（跨 MQ/自定义异步/长连接仍需手动增强）vs 业务 traceId（可控、无 agent 依赖、可进审计）；本项目**以业务 traceId 为主、APM 作为增强**。
 
 **⑤ 拷打追问**
