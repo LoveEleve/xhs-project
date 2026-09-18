@@ -28,6 +28,12 @@
             <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
         </dependency>
         
+        <!-- Nacos Config（my-xhs-common.yaml / my-xhs-gateway.yaml 外部化配置） -->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+        </dependency>
+        
         <!-- Sentinel DataSource Nacos -->
         <dependency>
             <groupId>com.alibaba.cloud</groupId>

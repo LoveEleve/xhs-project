@@ -21,6 +21,9 @@ server:
     enabled: true
 
 spring:
+  config:
+    import:
+      - optional:nacos:my-xhs-common.yaml?group=DEFAULT_GROUP&refreshEnabled=true
   main:
     # PaymentService ↔ PayCallbackSimulator 存在调用闭环（模拟回调需回 PaymentService 处理），允许循环引用
     allow-circular-references: true
@@ -40,7 +43,7 @@ spring:
   data:
     redis:
       host: 192.168.0.142
-      # Redis 密码 — Nacos shared-configs(my-xhs-common.yaml) 优先，本地为 fallback
+      # Redis 密码 — Nacos 配置(my-xhs-common.yaml) 优先，本地为 fallback
       password: "Xhs@2026#Redis"
       port: 6379
       sentinel:
@@ -82,13 +85,8 @@ spring:
       config:
         enabled: true
         server-addr: 192.168.0.142:18848
-        import-check:
-          enabled: false
+        namespace: my-xhs
         file-extension: yaml
-        shared-configs:
-          - data-id: my-xhs-common.yaml
-            group: DEFAULT_GROUP
-            refresh: true
     # Sentinel 配置（轻量模式，暂不连接 Dashboard）
     sentinel:
       transport:

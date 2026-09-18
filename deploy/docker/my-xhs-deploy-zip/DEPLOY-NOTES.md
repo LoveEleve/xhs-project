@@ -14,6 +14,15 @@
    Canal 用宿主机 JDK8(`/opt/openjdk8`)、compose v2。
 5. **compose 校验坑**: `depends_on` 下若写成 `rocketmq-broker:` 空映射会报
    "must be a mapping" —— 必须带 `condition: service_started`。
+6. **Nacos 配置必须真正导入（否则静默回退本地 yml）**: 服务通过
+   `spring.config.import: optional:nacos:my-xhs-common.yaml` 拉取（命名空间 my-xhs）。
+   导入方法：使用 `config/nacos/*.yaml` 三个文件，通过 Nacos 控制台或
+   `POST /nacos/v1/cs/configs`（dataId/group=DEFAULT_GROUP/tenant=my-xhs）导入；
+   仓库内脚本：`scripts/nacos-import-configs.sh`（将 HOST 指向部署机）。
+   **注意**: `sql/04-nacos-config-seed.sql` 为 2026-08 历史快照，其中 gateway 键结构
+   (`gateway.jwt.secret`) 与 search 数据源端口均已过期，**不要**用它替代上述文件导入；
+   仅作历史留档。验证：服务启动日志出现
+   `[Nacos Config] Load config[dataId=my-xhs-common.yaml, group=DEFAULT_GROUP] success`。
 
 ## 二、RocketMQ(坑最多)
 
