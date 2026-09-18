@@ -15,6 +15,8 @@ import org.springframework.cloud.loadbalancer.core.ServiceInstanceListSupplier;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.web.client.RestTemplate;
 
 /**
  * Zone 优先 LoadBalancer 配置（LoadBalancer 子 context 内生效）。
@@ -40,15 +42,28 @@ public class ZoneLoadBalancerConfiguration {
         return new ZonePreferenceFilter<>(zoneContext, ServiceInstanceZoneResolver.INSTANCE, metrics);
     }
 
+    /**
+     * 健康检查用 RestTemplate（子 context 内；连接/读取超时 2s，健康探测必须快速失败）
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public RestTemplate zoneHealthCheckRestTemplate() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(2000);
+        factory.setReadTimeout(2000);
+        return new RestTemplate(factory);
+    }
+
     @Bean
     @ConditionalOnBean(DiscoveryClient.class)
     @ConditionalOnMissingBean(name = "optimizedZonePreferenceServiceInstanceListSupplier")
     public ServiceInstanceListSupplier optimizedZonePreferenceServiceInstanceListSupplier(
             ConfigurableApplicationContext context,
-            ZonePreferenceFilter<ServiceInstance> zonePreferenceFilter) {
+            ZonePreferenceFilter<ServiceInstance> zonePreferenceFilter,
+            RestTemplate zoneHealthCheckRestTemplate) {
         return ServiceInstanceListSupplier.builder()
                 .withBlockingDiscoveryClient()
-                .withCaching()
+                .withBlockingHealthChecks(zoneHealthCheckRestTemplate)
                 .with((ctx, delegate) ->
                         new ZonePreferenceServiceInstanceListSupplier(delegate, zonePreferenceFilter))
                 .build(context);

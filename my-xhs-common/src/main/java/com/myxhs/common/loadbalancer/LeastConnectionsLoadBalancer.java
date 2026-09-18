@@ -12,6 +12,7 @@ import org.springframework.cloud.loadbalancer.core.ReactorServiceInstanceLoadBal
 import org.springframework.cloud.loadbalancer.core.ServiceInstanceListSupplier;
 import reactor.core.publisher.Mono;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -103,23 +104,30 @@ public class LeastConnectionsLoadBalancer implements ReactorServiceInstanceLoadB
      * 3. 选择活跃请求数 / 权重 最小的实例
      */
     private ServiceInstance selectInstance(List<ServiceInstance> instances) {
-        ServiceInstance best = null;
+        // 收集并列最优（ratio 最小）的候选，避免平局时恒定选列表中第一个实例
+        List<ServiceInstance> candidates = new ArrayList<>();
         double bestRatio = Double.MAX_VALUE;
+        final double eps = 1e-9;
 
         for (ServiceInstance instance : instances) {
             int active = getActiveCount(instance);
             int weight = calculateWeight(instance);
             double ratio = (double) active / weight;
 
-            if (ratio < bestRatio) {
+            if (ratio < bestRatio - eps) {
                 bestRatio = ratio;
-                best = instance;
+                candidates.clear();
+                candidates.add(instance);
+            } else if (ratio < bestRatio + eps) {
+                candidates.add(instance);
             }
         }
 
-        // 如果所有实例的 ratio 相同（都是 0），随机选一个
-        if (best == null) {
+        ServiceInstance best;
+        if (candidates.isEmpty()) {
             best = instances.get(ThreadLocalRandom.current().nextInt(instances.size()));
+        } else {
+            best = candidates.get(ThreadLocalRandom.current().nextInt(candidates.size()));
         }
 
         log.debug("[LoadBalancer] 选择实例: serviceId={}, instanceId={}, activeRequests={}, ratio={}",

@@ -46,7 +46,7 @@
 ### D3 组件级多活矩阵（对应你列的 10 项）
 | # | 组件 | 现状 | 计划 | 状态 |
 |---|---|---|---|---|
-| 1 | Spring Cloud LoadBalancer 多活 | ✅ 路由接线修复+指标+实证（RTO **6.16s**，cache.ttl=5s；默认 35s 时约 35s）；报告见 `docs/reports/zone-pilot-20260918.md` | 健康检查/推送式 supplier；分区演练（D4） | **完成** |
+| 1 | Spring Cloud LoadBalancer 多活 | ✅ 路由+健康检查+切换全通（RTO **3.06s**，liveness/3s）；报告见 `docs/reports/zone-pilot-20260918.md` | 分区演练（D4） | **完成** |
 | 2 | Spring REST Client 多活 | 未做（`RestTemplate`/`RestClient` 使用面小） | 若使用面扩大再评估 zone 拦截器 | 待评估 |
 | 3 | Apache Dubbo 多活 | **决策不引入**（见 rpc-upgrade.md） | 仅理论储备（Dubbo 自带 zone/region 路由） | 排除 |
 | 4 | Spring Cloud Gateway 多活 | 网关已有 zone 标记（TrafficColoring）+ GrayRoute | 评估"zone 就近转发/zone 故障切流"（本地双实例仿真） | P1 |

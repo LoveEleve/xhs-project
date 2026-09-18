@@ -42,3 +42,9 @@
 ## 五、边界与后续
 - 边界：单机仿真、无双 zone 网络延迟/分区；数据面（动态数据源/Redis zone 事件）未接入；RTO 为单次采样。
 - 后续（D4）：重复演练取分布 + iptables 分区场景；健康检查/推送式 supplier；同 zone 命中率与跨 zone 流量告警。
+
+## 六、问题修复（同日收口，全部实测）
+1. **健康检查链修复**：根因 `withBlockingHealthChecks()` 需要 `RestTemplate` Bean（LB 子 context 没有）→ 在子配置内提供 2s 超时的 RestTemplate 并显式传入。随后发现默认聚合 `/actuator/health` 会因依赖抖动 flapping → 改用 `/actuator/health/liveness`。实测（health-check.interval=3s）：首次失败 0.35s、失败 8 次、**RTO 3.06s**，恢复后 20/20 请求稳定无抖动。
+2. **LeastConnections 平局修复**：原严格 `<` 比较导致恒选列表首个实例（回退/无过滤场景“全打一台”）；改为并列最优中随机选择，并补 2 个单测（200 次采样覆盖双实例、活跃数高者必落选）。
+3. **release 脚本多实例支持**：进程号落 `pids/<module>[-<instance>].pid`，停止只杀本实例；新增 `INSTANCE_ID`/`PORT_OVERRIDE` 启动第二实例（复用 current 版本，不动主实例软链/进程）。实测：发布 product 主实例时 zone-b 第二实例不受影响。
+4. **RTO 口径合并**：默认 LB 缓存 35s → RTO≈35s；短 TTL(5s) → 6.16s；**health-check(liveness, 3s) → 3.06s**（推荐配置）。
