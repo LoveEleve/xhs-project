@@ -16,7 +16,7 @@ Redis HA 三条路：**主从+Sentinel**（自动故障转移、单 master、语
 - **业务实例**：`noeviction`（不允许淘汰，写满报错而不是静默丢数据），承载锁/计数/幂等/MQ 位点/待处理集合；
 - **缓存实例**：`allkeys-lru`（允许淘汰），承载商品/Feed 等可重建缓存，挂了不影响业务正确路径；
 - 持久化统一 **AOF everysec + RDB 快照**（900/300/60 秒策略）；
-- HA：**Sentinel 三节点**，`monitor mymaster`，quorum 1、`down-after 5s`、`failover-timeout 30s`、`parallel-syncs 1`；客户端 Lettuce 池（max-active 15/max-idle 8/min-idle 4/max-wait 3000ms）+ Redisson（同 Sentinel，watchdog 15s、retry 5×1000ms）；key 用 String 序列化、value 用 Jackson JSON。
+- HA：**Sentinel 三节点**，`monitor mymaster`，quorum 1、`down-after 5s`、`failover-timeout 30s`、`parallel-syncs 1`；客户端 Lettuce 池（max-active 15/max-idle 8/min-idle 4/max-wait 3000ms）+ Redisson（同 Sentinel，retry 5×1000ms；watchdog 15s 配置仅对 leaseTime=-1 模式生效，业务未用）；key 用 String 序列化、value 用 Jackson JSON。
 - **不选 Cluster 的理由**：业务 Lua 基本都跨 key（去重+计数、库存桶、滑动窗口），Cluster 会 CROSSSLOT，改造 hash tag 侵入大；容量（512MB 级）够用，先垂直再拆分。
 
 **③ 坑**

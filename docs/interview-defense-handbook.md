@@ -8,15 +8,15 @@
 
 ## A. 分布式锁与并发控制
 
-- **设计**：Redisson RLock（互斥/读写/公平），切面 `@Order(50)` 先锁后幂等；看门狗 `leaseTime=-1` 续期。业务另用 SETNX 单飞锁 + Lua 比较删除。
+- **设计**：Redisson RLock 直连锁 + 显式租期（10s~7200s：支付/用户/缓存单飞 10s、库存 30s、SPU 300s、索引重建 7200s、Job 4~50s），解锁统一 `isHeldByCurrentThread()`。注解切面（@Order(50)/watchdog/fail-open）为框架件未接入；消息幂等用 helper 显式 SETNX 去重。
 - **争议**：RedLock（多节点多数派）vs Redisson+DB 兜底 vs ZK+fencing。项目注释明确放弃 RedLock（运维复杂 + Kleppmann 已论证其局限）。
 - **坑**：
-  - Redis 异常时切面 **fail-open 降级放行**，锁保护失效；
+  - Redis 异常时加锁直接失败（fail-closed，拒绝/跳过）；切主丢锁窗口只影响效率；
   - 10s 锁在多 Feign 串行下可能过期，同用户出现两单；
   - 释放失败仅告警。
-- **兜底**：DB 乐观锁/唯一键是最终防线；Sentinel 切主 `retryAttempts=5` + watchdog 缩到 15s；初始化锁失败直接拒绝。
+- **兜底**：DB 乐观锁/唯一键是最终防线；Sentinel 切主 `retryAttempts=5×1000ms`；抢锁失败直接拒绝（支付）/跳过（Job）。
 - **话术**：
-  > “我们把锁定位成效率工具而不是正确性保证。Redis 不可用时锁会降级放行，这是有意的——真正防重靠 DB 唯一键和状态机条件更新。Redis 单集群在 Sentinel 切主时确实有丢锁窗口，所以没上 RedLock，也没把 fencing 责任交给锁本身。”
+  > “我们把锁定位成效率工具而不是正确性保证。加锁点都在关键路径直连 Redisson、显式租期：抢锁失败就拒绝或跳过，Redis 挂了加锁直接失败（fail-closed）——宁可暂时不可用也不冒险重复执行。真正防重靠 DB 唯一键和状态机条件更新。Sentinel 切主确实有丢锁窗口，所以没上 RedLock，也没把 fencing 责任交给锁本身。”
 
 ## B. 缓存穿透/击穿/雪崩与一致性
 
