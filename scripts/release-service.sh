@@ -48,8 +48,18 @@ if [ -z "$INSTANCE_ID" ]; then
   ln -sfn "$NEW_DIR" "$CURRENT"
   echo "== 发布 $MODULE -> $NEW_DIR（上一版: ${PREV:-无}） =="
 else
-  [ -f "$CURRENT/app.jar" ] || { echo "❌ 无 current 版本，无法启动第二实例"; exit 1; }
-  echo "== 启动第二实例 $MODULE[$INSTANCE_ID] -> $CURRENT（端口 $P） =="
+  # 第二实例：优先使用最新构建产物（避免误用旧 current 导致"跑旧 jar"），否则回退 current
+  INSTANCE_DIR=$RELEASE_ROOT/instance-$INSTANCE_ID
+  mkdir -p "$INSTANCE_DIR"
+  if [ -f "$JAR_SRC" ]; then
+    cp "$JAR_SRC" "$INSTANCE_DIR/app.jar"
+    echo "== 启动第二实例 $MODULE[$INSTANCE_ID] -> 最新构建（端口 $P） =="
+  else
+    [ -f "$CURRENT/app.jar" ] || { echo "❌ 无 current 版本，无法启动第二实例"; exit 1; }
+    cp "$CURRENT/app.jar" "$INSTANCE_DIR/app.jar"
+    echo "== 启动第二实例 $MODULE[$INSTANCE_ID] -> current（端口 $P） =="
+  fi
+  TARGET_DIR=$INSTANCE_DIR
 fi
 
 cd "$ROOT"

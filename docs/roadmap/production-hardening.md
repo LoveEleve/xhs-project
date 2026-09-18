@@ -54,8 +54,8 @@
 | 4 | Spring Cloud Gateway 多活 | ✅ 完成：网关内精简 zone LB（`@LoadBalancerClients` 子 context）+ 就近路由实证（12/12）+ 故障切换 RTO 5.54s（`docs/reports/gateway-multi-active-20260918.md`） | 按请求来源 zone 路由（可选） | **完成** |
 | 5 | MySQL Server 多活 | ✅ 双 zone 仿真：主从分属 zone-a/b；读就近、从库故障降级/自动恢复（~40s）、从库不可达不阻塞发布（`docs/reports/mysql-zone-datasource-20260918.md`） | 真双主/复制与 zone 解耦（超本期） | 部分完成（C1 已含主故障切换） |
 | 6 | MySQL JDBC 多活 | ✅ zone 感知数据源（content 试点）：读本 zone 优先、跨 zone 降级、30s 自动恢复；4+5 项单测（`docs/reports/mysql-zone-datasource-20260918.md`） | 推广到其余服务（按开关） | **完成** |
-| 7 | Redis Client 多活 | 业务/缓存双实例 + Sentinel；zone 骨架含 `RedisTemplateWrapper`/`RedisCommandEvent`（默认关） | 接 zone 感知路由 + 跨 zone 同步事件消费 | P2 |
-| 8 | Redis Server 多活 | 单主一从 + Sentinel（切主 2.3s 已演练） | 双 zone 仿真：两主各管本 zone 数据 + 冲突策略 | P2 |
+| 7 | Redis Client 多活 | ✅ 完成：zone 感知 ReadFrom（读本地副本/写主库/故障兜底/恢复回切），cart 试点验证；报告 `docs/reports/redis-zone-drill-20260918.md` | 推广到更多服务（开关默认关） | **完成** |
+| 8 | Redis Server 多活 | 单主一从 + Sentinel（切主 2.3s 已演练）；双主/CRDT 冲突策略评估结论=不做（无真实双写场景，见报告边界） | 按需 | 评估完成 |
 | 9 | 动态 JDBC 组件多活 | `DynamicDataSource` 类完整（含 TCC 事务安全），未接入服务 | 接线到 1 个服务试点（如 cart） | P2 |
 | 10 | 动态 Spring 组件多活 | `ZoneContext` PropertyChange + `ZoneProperties` 已具备 | 动态切换演示（不改配置热切 zone） | P2 |
 

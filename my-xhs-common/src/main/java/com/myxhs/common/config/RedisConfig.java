@@ -27,6 +27,9 @@ import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
+import com.myxhs.common.zone.ZoneConstants;
+import com.myxhs.common.zone.redis.config.ZoneRedisReadFromResolver;
+import io.lettuce.core.ReadFrom;
 import org.springframework.util.StringUtils;
 
 /**
@@ -62,9 +65,19 @@ public class RedisConfig {
             @Value("${spring.data.redis.sentinel.nodes:}") String sentinelNodes,
             @Value("${spring.data.redis.host:21.91.124.110}") String host,
             @Value("${spring.data.redis.business.port:16381}") int port,
-            @Value("${spring.data.redis.password:Xhs@2026#Redis}") String password) {
+            @Value("${spring.data.redis.password:Xhs@2026#Redis}") String password,
+            @Value("${myxhs.availability.zone.redis.enabled:false}") boolean zoneRedisEnabled,
+            @Value("${myxhs.availability.zone.redis.slave-zone:}") String zoneRedisSlaveZone) {
 
+        // Zone 感知：slave-zone 的实例读走本 Zone 副本（REPLICA_PREFERRED），其余读写主库；默认关闭
+        String currentZone = System.getProperty(ZoneConstants.CURRENT_ZONE_PROPERTY_NAME, ZoneConstants.DEFAULT_ZONE);
+        ReadFrom readFrom = ZoneRedisReadFromResolver.resolve(zoneRedisEnabled, currentZone, zoneRedisSlaveZone);
+        if (zoneRedisEnabled) {
+            log.info("[ZoneRedis] enabled, zone={}, slave-zone={}, readFrom={}",
+                    currentZone, zoneRedisSlaveZone, readFrom);
+        }
         LettuceClientConfiguration clientConfig = LettucePoolingClientConfiguration.builder()
+                .readFrom(readFrom)
                 .build();
 
         if (StringUtils.hasText(sentinelNodes)) {
