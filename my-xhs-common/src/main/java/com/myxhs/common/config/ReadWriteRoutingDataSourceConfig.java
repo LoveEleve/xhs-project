@@ -72,6 +72,8 @@ public class ReadWriteRoutingDataSourceConfig {
 
     @Bean
     @Primary
+    @ConditionalOnProperty(prefix = "myxhs.availability.zone.dynamic-datasource", name = "enabled",
+            havingValue = "false", matchIfMissing = true)
     public DataSource routingDataSource(DataSource masterDataSource,
                                         @Value("${spring.datasource.slave.jdbc-url}") String slaveUrl,
                                         @Value("${spring.datasource.slave.username}") String slaveUsername,

@@ -56,8 +56,8 @@
 | 6 | MySQL JDBC 多活 | ✅ zone 感知数据源（content 试点）：读本 zone 优先、跨 zone 降级、30s 自动恢复；4+5 项单测（`docs/reports/mysql-zone-datasource-20260918.md`） | 推广到其余服务（按开关） | **完成** |
 | 7 | Redis Client 多活 | ✅ 完成：zone 感知 ReadFrom（读本地副本/写主库/故障兜底/恢复回切），cart 试点验证；报告 `docs/reports/redis-zone-drill-20260918.md` | 推广到更多服务（开关默认关） | **完成** |
 | 8 | Redis Server 多活 | 单主一从 + Sentinel（切主 2.3s 已演练）；双主/CRDT 冲突策略评估结论=不做（无真实双写场景，见报告边界） | 按需 | 评估完成 |
-| 9 | 动态 JDBC 组件多活 | `DynamicDataSource` 类完整（含 TCC 事务安全），未接入服务 | 接线到 1 个服务试点（如 cart） | P2 |
-| 10 | 动态 Spring 组件多活 | `ZoneContext` PropertyChange + `ZoneProperties` 已具备 | 动态切换演示（不改配置热切 zone） | P2 |
+| 9 | 动态 JDBC 组件多活 | ✅ 完成：接线 content 试点（zone-a→主库/zone-b→副本），运行时热切实证（读路由 +207→+206）；TCC 活跃连接等待；单测 4 项（`docs/reports/dynamic-zone-jdbc-spring-20260918.md`） | — | **完成** |
+| 10 | 动态 Spring 组件多活 | ✅ 完成：`ZoneAdminController` 热切端点（内部令牌保护）+ cart 实测热切 zone 后 LB 路由即时切换（+40↔+40，无重启）；单测 3 项 | — | **完成** |
 
 > Review 记录（2026-09-18）：① 12 服务 `ignore-routing` 属性已生效——**更正**：首轮"分批重启"实为假成功（11 个服务运行旧进程，健康检查命中的是旧进程）；已修复 release 脚本（端口占用者精确清理 + **健康检查必须命中本次启动 PID**），11 服务二次真重启，审计 15/15 PID 吻合、属3服务抽样入包、冒烟全绿、复制延迟 0；陈旧单测（coupon×2、inventory×1）按现行语义修正；② zone 能力启用清单 `docs/ops/zone-enable-checklist.md`（含必需的健康检查配套参数）；③ 与 microsphere 对比 `docs/design/multi-active-vs-microsphere.md`（结论：整体不如成熟框架，差异化在落地/实测/修 bug）；④ ✅ home 下游失败语义已修复（业务码透传 → 404“笔记不存在”，仅 5xx 判服务不可用）；⑤ ✅ release 脚本"假成功"修复（旧进程占端口→健康检查打旧进程）：按端口占用者精确清理（含历史手工进程）；⑥ ✅ Zone 自动发现与传播完成；⑦ ✅ D3-4 网关多活完成（2026-09-18）：网关内反应式 zone LB + 就近路由/切换实证（RTO 5.54s）。
 
