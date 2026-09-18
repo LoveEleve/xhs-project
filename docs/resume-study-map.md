@@ -23,8 +23,18 @@
 | 1-2 | 事务消息 + 本地消息表 + 75s 回查 | 回查解决什么？补发为什么双投？幂等怎么消？ | 手册 §E | RocketMQ 事务消息源码级流程（可选） |
 | 1-3 | 8 对账 Job | 权威源怎么选？与在线写无屏障的后果？ | 手册 §R / R′ | 对账 vs CDC 流式同步 |
 | 1-4 | 死信清零 + 26 组监控 | 指标曾恒 0 的根因？失败分类怎么分？ | 手册 §O / O′ | RocketMQ 重试/死信机制 |
-| 1-5 | 容量基线/慢下游降级 | 阈值怎么校准？降级策略是谁定的？ | 手册 §L / L′ | 限流算法对比（滑动窗口/令牌桶） |
+| 1-5 | 容量基线/慢下游降级（**新口径**：product 4,871 / comment 4,418 / home 1,861 / search 1,448） | 阈值怎么校准？降级策略是谁定的？类加载锁怎么发现的？ | 手册 §L / L′；`batch-release-baseline-20260917.md` | 限流算法对比（滑动窗口/令牌桶） |
 | 1-6 | failover 2.3s / 分片短板 | 切主窗口丢锁怎么办？扩容正解？ | 手册 §A / M′ / N | Sentinel vs Cluster 细节 |
+
+## 第八轮：多活专项（2026-09-18，简历 Zone 多活 bullet）
+
+| # | 简历条目 | 必答追问（3 连） | 材料 | 待补理论 |
+|---|---------|----------------|------|---------|
+| 8-1 | 同 zone 优先路由 + RTO 1.3~4.8s | 为什么供应商 Bean 必须进 LB 子 context？假切换（SIGTERM/列表快照）怎么发现的？ | `xhs/26`、`zone-pilot-20260918.md`、`d4-zone-drills` | SCLB 子 context 机制、Ribbon 时代 zone 过滤 |
+| 8-2 | Redis 双主（DUMP/RESTORE+LWW+对账） | 为什么不用真双写？删除/冲突坑（存在优先、防回环）？RPO 多少？ | `xhs/26`、`redis-server-multi-active-20260918.md` | CRDT/向量时钟、Redis Active-Active |
+| 8-3 | 数据面 zone 感知（MySQL/Redis 客户端） | 切 zone 为什么等活跃连接？从库恢复 bug 根因？ | `xhs/26`、`mysql-zone-datasource`、`redis-zone-drill` | 主从延迟、半同步、读己之写 |
+| 8-4 | 动态热切 zone / 自动发现 / 传播 | ZoneContext 事件机制？liveness vs 聚合 health？ | `xhs/26`、启用清单 `docs/ops/zone-enable-checklist.md` | 动态配置中心、liveness/readiness 语义 |
+| 8-5 | 发布链路 PID 校验（假成功教训） | "假成功"怎么发生的？pid 文件为什么不可靠（setsid fork）？ | `release-service.sh`、作战图 review 记录 | 蓝绿/金丝雀部署对比 |
 
 ## 通用理论补课（对照学习路线，按优先级）
 
