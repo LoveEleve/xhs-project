@@ -45,7 +45,7 @@ xhs 是一个内容与交易并重的社交电商平台，共 15 个 Spring Clou
 - 仓库与脚本卫生：pids 运行时文件取消 Git 跟踪并入 .gitignore；发布/重启脚本的 Agent 与降噪参数全部环境变量化，避免"改脚本才能调参"。
 - 事实校准与知识沉淀：全库数字/口径按运行态校准（购物车 Lua 6→7、Sentinel 规则 15→16、common 单测 97/user 14、业务 topic 17、锁切面"未接入"纠偏、ILM 双口径等）；沉淀 76 篇深度问答（含 14 个组件深度拷打、12 条叙事链、逐链自测清单）与修复报告 4 篇。
 - JVM 与线程池调优：G1 + MaxGCPauseMillis=200 + Metaspace 256m 参数体系；定位类加载锁热点（TraceContextHolder 每请求 Class.forName，92/99 Tomcat 线程 BLOCKED、product 仅 1,074 RPS）并改静态桥接修复；聚合服务内外线程池隔离 + MDC 包装线程池保证 traceId 跨池不断链。
-- 可观测与告警体系：Prometheus 规则 31→40 条（9 组，severity 分级）；修复 Alertmanager 通知黑洞（receiver 空 → alert-sink 落地 /data2/logs/alerts.jsonl + send_resolved）；短命告警 keep_firing_for 防吞；Watchdog 元监控；SLO 错误预算（30 天 43m12s）与 Burn Ledger；完成告警端到端演练验证。
+- 可观测与告警体系：Prometheus 规则 31→40 条（9 组，severity 分级；含 MySQL 连接/复制 4 条新规则与 Runbook）；修复 Alertmanager 通知黑洞（receiver 空 → alert-sink 落地 /data2/logs/alerts.jsonl + send_resolved）；短命告警 keep_firing_for 防吞；Watchdog 元监控；SLO 错误预算（30 天 43m12s）与 Burn Ledger；完成告警端到端演练验证。
 - CI/CD 落地（Gitea Actions）：Gitea 1.22 + act_runner v0.6.1（systemd、Docker 执行器、挂载 .m2 复用缓存）；workflow 覆盖编译/单测/规范扫描，ci-gate.sh 门禁实测拦截违规提交（printStackTrace → RED）；版本化发布与自动回滚链路配套。
 - MySQL 故障转移演练：停主 10.2s、提升从库 0.087s、应用切换 22s，RTO≈32s（不含发现时间）；本次 RPO=0；输出 5 项短板（无自动切换/配置散落/异步复制 RPO 不保证/errant GTID/短命告警）与路线。
 - Zone 多活延伸：ZoneLocator 自动发现（env/文件/网段 CIDR）+ X-Zone 跨服务传播（入/出站过滤 + 指标，实测 10/10）；网关反应式 zone LB（12/12 就近、切换 5.54s）；动态 JDBC/Spring 热切（内容服务读主从切换、购物车热切不重启）；发布链路 PID 校验杜绝旧进程假成功。
@@ -54,6 +54,10 @@ xhs 是一个内容与交易并重的社交电商平台，共 15 个 Spring Clou
 - 发布"假成功"事故复盘与根治：发现批次重启后 11/15 服务实际仍跑旧 jar（脚本只看健康检查、端口占用未清、PID 指纹缺失）；发布链路加"监听 PID==本次启动 PID"校验 + ensure_port_free + setsid PID 回写 + 多实例用最新构建，并真重启 11 个服务。
 - Zone LB 接线修正（5 坑）：供应商 Bean 必须进 LB 子 context、resolver 用标准 metadata 键、健康检查 liveness vs 聚合 health、同 zone 最小实例阈值单实例不适用、SIGTERM 造成"假恢复"必须 kill -9 验证；修正后同 zone 命中 240/240。
 - Redis 双主同步修复：对账逻辑误删问题改"存在优先"、断线无重连改 3s 自动重连并补值相等防回环；验证 dbsize 1873=1873、恢复 ≤35s 追平。
+- 服务间通信与负载均衡：24 个 Feign 客户端统一 HC5 连接池（200/50）+ 分级超时（核心链路 connect 500ms/read 2s、长任务 5s）+ 统一 Decoder/ErrorDecoder（R<T> 自动解包、BizException 还原）+ 内部令牌拦截器（缺失不携带，fail-closed）+ 52 处 FallbackFactory 降级；自定义最小连接负载均衡（活跃数/权重，需调用侧埋点否则退化为轮询）与同 zone 优先 Supplier；优雅停机"先摘注册 + 10s 实例列表传播等待"防发布抖动。
+- 用户与认证：JWT 双 token（access 30 分钟 / refresh 7 天）+ 图形验证码（Redis）+ 刷新时旧 access 拉黑、登出失效；网关统一鉴权与身份注入（覆盖伪造头），直连服务路径鉴权 fail-closed。
+- RPC 选型决策（Dubbo 试点）：完成 cart→product 双协议试点（开关+回退），A/B 实测 +4.9% RPS / P50 -19%，修复注册名冲突坑；最终按"运维复杂度与收益不匹配"决策不引入并全量回滚（选型数据留档为决策依据）。
+- 分布式 ID 与缓存预热：订单 Snowflake 主键（worker-id 按本机 IP 推导防冲突）、号段 ID 双 Buffer 预加载、Bloom 异步分段预热（100 万容量/1% 误判）。
 
 ## 关键结果（Key Achievements）
 - 并发控制分层后，锁只承担效率职责（Redis 故障时加锁 fail-closed 拒绝）：重复下单/重复回调/重复点赞分别被唯一键、状态机与幂等表拦截，故障注入下无幽灵数据。
@@ -86,6 +90,9 @@ xhs 是一个内容与交易并重的社交电商平台，共 15 个 Spring Clou
 - CI/CD：门禁实测拦截违规提交（RED 日志）；版本化发布 + 自动回滚上线；act_runner 复用 .m2 缓存加速流水线。
 - MySQL 演练：RTO≈32s 分解（停主 10.2s/提升 0.087s/切换 22s）+ 5 短板清单 + RPO=0（本次）与回切验证。
 - Zone 自动发现与传播：zone-a（网段）/zone-b（文件）自动识别，X-Zone 传播 10/10；动态数据源热切实测（+207→+206 / +40↔+40 不重启）。
+- 服务间通信：HC5 池化 + 分级超时 + 52 处降级点上线；最小连接/同 zone 优先路由与优雅停机（摘注册+传播等待）配套，发布期间调用不抖动。
+- 认证安全：双 token 刷新/旧 token 拉黑/登出失效闭环 + 验证码防刷；直连服务鉴权 fail-closed。
+- 选型与成本判断：Dubbo 试点 A/B +4.9% RPS 后决策不引入并回滚，避免为性能盲区引入长期运维成本（决策数据留档）。
 
 ---
 
