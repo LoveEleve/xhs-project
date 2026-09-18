@@ -30,6 +30,15 @@ declare -A XMX
 XMX[inventory]=1024m; XMX[order]=1024m; XMX[search]=1024m
 MX=${XMX[$MODULE]:-512m}
 
+# ---- SkyWalking Agent（APM）：默认自动探测，SW_AGENT_DISABLED=1 可关闭 ----
+SW_AGENT_DIR=${SW_AGENT_DIR:-/data/workspace/skywalking-agent-9.7.0}
+SW_COLLECTOR=${SW_COLLECTOR:-192.168.0.142:11800}
+agent_opts() {
+  [ "${SW_AGENT_DISABLED:-0}" = "1" ] && return 0
+  [ -f "$SW_AGENT_DIR/skywalking-agent.jar" ] || return 0
+  echo "-javaagent:$SW_AGENT_DIR/skywalking-agent.jar -Dskywalking.agent.service_name=my-xhs-$MODULE -Dskywalking.collector.backend_service=$SW_COLLECTOR -Dskywalking.logging.dir=/tmp/sw-logs/$MODULE"
+}
+
 [ -n "$JAR_SRC" ] || JAR_SRC=$ROOT/my-xhs-$MODULE/target/my-xhs-$MODULE-1.0-SNAPSHOT.jar
 [ -f "$JAR_SRC" ] || { echo "❌ jar 不存在: $JAR_SRC"; exit 1; }
 
@@ -97,7 +106,11 @@ start() {
   local EXTRA=""
   case "$MODULE" in home|notification) EXTRA="-Dspring.profiles.active=dev";; esac
   [ -n "$INSTANCE_ID" ] && EXTRA="$EXTRA -Dserver.port=$P"
-  nohup setsid java -Xms$MX -Xmx$MX ${JVM_EXTRA:-} $EXTRA -jar "$1/app.jar" > "$LOG_FILE" 2>&1 < /dev/null &
+  local AGENT_OPTS
+  AGENT_OPTS=$(agent_opts)
+  [ -n "$AGENT_OPTS" ] && echo "   [SW] SkyWalking agent: service=my-xhs-$MODULE collector=$SW_COLLECTOR" || echo "   [SW] SkyWalking agent 未启用（缺 agent 包或已禁用）"
+  nohup setsid env SW_MOUNT_FOLDERS=plugins,activations,bootstrap-plugins \
+    java -Xms$MX -Xmx$MX ${AGENT_OPTS} ${JVM_EXTRA:-} $EXTRA -jar "$1/app.jar" > "$LOG_FILE" 2>&1 < /dev/null &
   echo $! > "$PID_FILE"
   # setsid 可能 fork（$! 非真实 java PID）：以端口实际监听者回写，确保 PID 校验可靠
   for _ in $(seq 1 25); do

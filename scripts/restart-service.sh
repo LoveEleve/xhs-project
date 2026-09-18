@@ -20,9 +20,9 @@ PORT[counter]=19004; PORT[product]=19006; PORT[cart]=19008; PORT[inventory]=1900
 PORT[coupon]=19010; PORT[order]=19011; PORT[payment]=19012; PORT[notification]=19013
 PORT[im]=19014; PORT[home]=19015; PORT[search]=19016
 
-BASE="-Dskywalking.collector.backend_service=21.130.247.89:11800 -Xms512m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m -Dserver.tomcat.mbeanregistry.enabled=true"
-OPTS[gateway]="-Dskywalking.collector.backend_service=21.130.247.89:11800 -Xms256m -Xmx256m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m -Dspring.data.redis.host=21.130.247.89"
-OPTS[analytics]="-Dskywalking.collector.backend_service=21.130.247.89:11800 -Xms512m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m -Dmanagement.admin-token=${ADMIN_TOKEN} -Dserver.tomcat.mbeanregistry.enabled=true"
+BASE="-Dskywalking.collector.backend_service=192.168.0.142:11800 -Xms512m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m -Dserver.tomcat.mbeanregistry.enabled=true"
+OPTS[gateway]="-Dskywalking.collector.backend_service=192.168.0.142:11800 -Xms256m -Xmx256m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m -Dspring.data.redis.host=21.130.247.89"
+OPTS[analytics]="-Dskywalking.collector.backend_service=192.168.0.142:11800 -Xms512m -Xmx512m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=256m -Dmanagement.admin-token=${ADMIN_TOKEN} -Dserver.tomcat.mbeanregistry.enabled=true"
 OPTS[inventory]="${BASE///my-xhs-inventory}"; OPTS[order]="${BASE///my-xhs-order}"; OPTS[search]="${BASE///my-xhs-search}"
 OPTS[inventory]="${OPTS[inventory]/-Xms512m -Xmx512m/-Xms1024m -Xmx1024m}"
 OPTS[order]="${OPTS[order]/-Xms512m -Xmx512m/-Xms1024m -Xmx1024m}"
@@ -43,10 +43,15 @@ restart_one() {
     local OLD_PID=$(ps aux | grep "[j]ava.*my-xhs-$MODULE-1.0" | awk '{print $2}' | head -1)
     if [ -n "$OLD_PID" ]; then kill "$OLD_PID" 2>/dev/null && echo "  旧进程 $OLD_PID 已终止"; sleep 4; fi
 
-    # 2. 启动（setsid 脱离会话防 shell 退出误杀；dev profile 追加）
+    # 2. 启动（setsid 脱离会话防 shell 退出误杀；dev profile 追加；SkyWalking agent 自动挂载）
     local EXTRA=""
     case " $DEV_MODULES " in *" $MODULE "*) EXTRA="-Dspring.profiles.active=dev";; esac
-    setsid java $OPTS_V $EXTRA -jar "$JAR" < /dev/null > "/data/workspace/xhs-project/logs/my-xhs-$MODULE.log" 2>&1 &
+    local AGENT_OPTS=""
+    SW_AGENT_DIR=${SW_AGENT_DIR:-/data/workspace/skywalking-agent-9.7.0}
+    [ "${SW_AGENT_DISABLED:-0}" != "1" ] && [ -f "$SW_AGENT_DIR/skywalking-agent.jar" ] && \
+      AGENT_OPTS="-javaagent:$SW_AGENT_DIR/skywalking-agent.jar -Dskywalking.agent.service_name=my-xhs-$MODULE -Dskywalking.logging.dir=/tmp/sw-logs/$MODULE"
+    setsid env SW_MOUNT_FOLDERS=plugins,activations,bootstrap-plugins \
+      java $AGENT_OPTS $OPTS_V $EXTRA -jar "$JAR" < /dev/null > "/data/workspace/xhs-project/logs/my-xhs-$MODULE.log" 2>&1 &
     disown
 
     # 3. 等 health（最多 150s）
