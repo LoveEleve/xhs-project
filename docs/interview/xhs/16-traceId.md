@@ -27,7 +27,7 @@
 
 **④ 兜底**
 - "有则透传、无则生成"保证上游接入零改造；MDC 必须 finally 清理（防内存泄漏/串日志）；
-- 异步任务与线程池统一走包装类；证据侧：SkyWalking 跨服务 22 span、test-4 IM 双实例同一 traceId、ES 可按 traceId 检索（traceid-es 问题单处理过）。
+- 异步任务与线程池统一走包装类；证据侧：SkyWalking 跨服务 22 span、**2026-09-18 本环境已接入 agent（15 服务注册，gateway→home 29-53 span/CROSS_PROCESS 完整）**、test-4 IM 双实例同一 traceId、ES 可按 traceId 检索（traceid-es 问题单处理过）。
 - 压测标记/灰度标记随 traceId 一起透传：`ShadowTableInterceptor` 读 `TraceContextHolder.isPressureTest()` 决定是否改写影子表（避免压测污染真实数据），`GrayRouteFilter`/`ApiVersionFilter` 消费对应标记做路由。
 
 **⑤ 话术**
