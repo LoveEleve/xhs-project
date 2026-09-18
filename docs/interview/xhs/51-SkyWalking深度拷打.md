@@ -27,7 +27,7 @@
 4. **性能与存储**：APM 数据量与采样强相关，存储独占 ES 才敢全链路开。
 
 **④ 边界（主动披露，很值钱）**
-- **接入演进（真实故事）**：曾核查发现——OAP/UI/ES 在运行，但 `release-service.sh` 参数不含 `-javaagent`、agent 包缺失、`restart-service.sh` 还指向云 collector，即『组件在跑但没数据』；**2026-09-18 已修复**：agent 9.7.0 落地（TUNA 源）、插件适配（springmvc 3/4/5 移出、6.x/webflux 6.x/gateway 4.x 移入、清理 `._*`）、release/restart 脚本自动挂载 → 15/15 服务注册；
+- **接入演进（真实故事）**：曾核查发现——OAP/UI/ES 在运行，但 `release-service.sh` 参数不含 `-javaagent`、agent 包缺失、`restart-service.sh` 还指向云 collector，即『组件在跑但没数据』；**2026-09-18 已修复**：agent 9.7.0 落地（安装脚本 `scripts/install-skywalking-agent.sh`，TUNA 源）、插件适配（springmvc 3/4/5 移出、6.x/webflux 6.x/gateway 4.x 移入、清理 `._*`）、release/restart 脚本自动挂载 + `ignore_suffix` 降噪 → 15/15 服务注册；
 - **运维参数**：采样默认 `sample_n_per_3_secs=1`（全采样 `SW_AGENT_SAMPLE=-1`，压测注意开销）；`SW_AGENT_DISABLED=1` 可关闭；升级 = 换 `SW_AGENT_DIR` 目录；
 - **两套追踪的取舍**：全自动 APM（跨 MQ/自定义异步/长连接仍需手动增强）vs 业务 traceId（可控、无 agent 依赖、可进审计）；本项目**以业务 traceId 为主、APM 作为增强**。
 
@@ -56,7 +56,7 @@
 
 ## 本项目真实证据
 - `docs/FINAL-HANDOFF.md:72-95`（OAP 9.7.0/8080/11800/ES 19201、Agent 9.6.0、22 span 实证、插件改动与 SW_MOUNT_FOLDERS、备份路径）；
-- 运行态：OAP/UI/专用 ES 在跑；**2026-09-18 agent 接入完成**（报告 `skywalking-agent-enable-20260918.md`）：15 服务注册、gateway→home 29 spans（`CROSS_PROCESS`+`CROSS_THREAD`）、段量 cart 1815/home 327/search 278；`release-service.sh` 自动挂载（SW_AGENT_DIR/SW_COLLECTOR/SW_AGENT_DISABLED）。
+- 运行态：OAP/UI/专用 ES 在跑；**2026-09-18 agent 接入完成**（报告 `skywalking-agent-enable-20260918.md`）：15 服务注册、gateway→home 29 spans（`CROSS_PROCESS`+`CROSS_THREAD`）、调优后 gateway→home 复验 **53 spans**（含 GatewayFilter）；`release-service.sh` 自动挂载（SW_AGENT_DIR/SW_COLLECTOR/SW_AGENT_DISABLED/SW_AGENT_IGNORE_SUFFIX/SW_AGENT_SAMPLE）。
 
 ## 版本与来源
 SkyWalking 9.7 文档；本项目 FINAL-HANDOFF 排查记录与运行态。

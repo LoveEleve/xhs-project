@@ -42,3 +42,22 @@
 
 - xhs/51 题的"当前无 agent"边界 → 已改为"2026-09-18 已接入并验证"（29 spans 跨进程实证）
 - 防御手册 V′ SkyWalking 行同步更新
+
+---
+
+## 六、降噪与调优（2026-09-18 晚补充）
+
+### 6.1 安装脚本化（可复现）
+- 新增 `scripts/install-skywalking-agent.sh`（幂等）：TUNA 优先下载 → 解压 → Spring Boot 3 插件适配 → 清理 `._*`；
+- 移除仓库内残缺的 `skywalking-agent/` 壳目录（无 jar，易误导），改为脚本安装。
+
+### 6.2 降噪参数
+- `SW_AGENT_IGNORE_SUFFIX`（默认 `/actuator/health,/actuator/prometheus,/actuator/info,/favicon.ico`）随启动注入；
+- **实测**：SpringMVC 服务生效——product 最新 trace 已是业务 span（不再出现 `/actuator/prometheus`）；
+- **边界（9.7 已知限制）**：`ignore_suffix` 对 **WebFlux/Gateway 插件不生效**，gateway 仍会记录 Prometheus 抓取 span（约 4 条/分钟）；agent 9.7 无 `trace_ignore_path` 配置项，升级 agent 或接受该噪音（量小、可采样过滤）。
+
+### 6.3 采样可调
+- `SW_AGENT_SAMPLE=<n>` 注入 `sample_n_per_3_secs`（默认不设置=Agent 默认 1/3s；演示要全采样用 `-1`，压测建议保持默认或 `SW_AGENT_DISABLED=1`）。
+
+### 6.4 调优后复验
+- 15/15 健康；gateway→home `/api/home/feed` 复验：**53 spans**，服务 [my-xhs-gateway, my-xhs-home]，refs 含 `CROSS_PROCESS` + `CROSS_THREAD`，endpoints 含 `/api/home/feed`、`SpringCloudGateway/GatewayFilter`。
