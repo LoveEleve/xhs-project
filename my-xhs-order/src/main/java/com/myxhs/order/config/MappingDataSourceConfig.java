@@ -3,6 +3,7 @@ package com.myxhs.order.config;
 import com.zaxxer.hikari.HikariDataSource;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -23,6 +24,7 @@ import javax.sql.DataSource;
  * </p>
  */
 @Configuration
+@ConditionalOnProperty(name = "order.mapping.zone-routing.enabled", havingValue = "false", matchIfMissing = true)
 public class MappingDataSourceConfig {
 
     @Value("${order.mapping.datasource.url}")
