@@ -15,6 +15,11 @@ public interface ZoneConstants {
     String ZONE_PROPERTY_NAME = "myxhs.availability.zone";
 
     /**
+     * 实例 metadata 中的 zone 键（Nacos / Spring Cloud 标准约定）
+     */
+    String METADATA_ZONE_KEY = "zone";
+
+    /**
      * 当前 Zone 属性名（系统属性）
      */
     String CURRENT_ZONE_PROPERTY_NAME = "myxhs.current.availability.zone";

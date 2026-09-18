@@ -1,3 +1,2 @@
 com.myxhs.common.zone.ZoneContextAutoConfiguration
-com.myxhs.common.zone.loadbalancer.ZoneLoadBalancerConfiguration
 com.myxhs.common.zone.redis.config.RedisInterceptorAutoConfiguration

@@ -24,7 +24,11 @@ public class ServiceInstanceZoneResolver implements ZoneResolver<ServiceInstance
         }
         Map<String, String> metadata = serviceInstance.getMetadata();
         if (metadata != null) {
-            return metadata.get(ZoneConstants.ZONE_PROPERTY_NAME);
+            String zone = metadata.get(ZoneConstants.METADATA_ZONE_KEY);
+            if (zone == null || zone.isEmpty()) {
+                zone = metadata.get(ZoneConstants.ZONE_PROPERTY_NAME);
+            }
+            return (zone == null || zone.isEmpty()) ? null : zone;
         }
         return null;
     }

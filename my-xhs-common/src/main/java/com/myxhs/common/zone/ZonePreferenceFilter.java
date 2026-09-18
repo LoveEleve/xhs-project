@@ -1,5 +1,6 @@
 package com.myxhs.common.zone;
 
+import com.myxhs.common.zone.metrics.ZoneRouteMetrics;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
@@ -35,10 +36,22 @@ public class ZonePreferenceFilter<E> {
 
     private final ZoneContext zoneContext;
     private final ZoneResolver<E> zoneResolver;
+    private final ZoneRouteMetrics metrics;
 
     public ZonePreferenceFilter(ZoneContext zoneContext, ZoneResolver<E> zoneResolver) {
+        this(zoneContext, zoneResolver, null);
+    }
+
+    public ZonePreferenceFilter(ZoneContext zoneContext, ZoneResolver<E> zoneResolver, ZoneRouteMetrics metrics) {
         this.zoneContext = zoneContext;
         this.zoneResolver = zoneResolver;
+        this.metrics = metrics;
+    }
+
+    private void record(int totalInstances, int sameZoneInstances, String decision, String reason) {
+        if (metrics != null) {
+            metrics.record(totalInstances, sameZoneInstances, decision, reason);
+        }
     }
 
     /**
@@ -52,18 +65,21 @@ public class ZonePreferenceFilter<E> {
 
         // 1. 空列表或单元素，无需过滤
         if (totalSize <= 1) {
+            record(totalSize, 0, "pass_through", "single_or_empty");
             return entities;
         }
 
         // 2. Zone 功能未启用
         if (!zoneContext.isEnabled()) {
             log.debug("Zone feature disabled. Enable via '{}'", ZONE_ENABLED_PROPERTY_NAME);
+            record(totalSize, 0, "all", "feature_disabled");
             return entities;
         }
 
         // 3. Zone 优先未启用
         if (!zoneContext.isPreferenceEnabled()) {
             log.debug("Zone preference disabled. Enable via '{}'", PREFERENCE_ENABLED_PROPERTY_NAME);
+            record(totalSize, 0, "all", "preference_disabled");
             return entities;
         }
 
@@ -71,6 +87,7 @@ public class ZonePreferenceFilter<E> {
         final String zone = zoneContext.getZone();
         if (isIgnored(zone)) {
             log.debug("Zone preference ignored, current zone: '{}'", zone);
+            record(totalSize, 0, "all", "invalid_zone");
             return entities;
         }
 
@@ -83,6 +100,7 @@ public class ZonePreferenceFilter<E> {
             int currentSize = targetEntities.size();
             if (currentSize <= 1) {
                 log.debug("Not enough entities after disabled zone filter, size: {} -> {}", totalSize, currentSize);
+                record(entities.size(), currentSize, "all", "disabled_zone_insufficient");
                 return entities;
             }
             totalSize = currentSize;
@@ -108,6 +126,7 @@ public class ZonePreferenceFilter<E> {
         if (isUpstreamZoneNotReady(zoneCount, totalSize, upstreamReadyPercentage)) {
             log.debug("Upstream zone ready percentage under threshold [{}%], total: {}, ready: {}",
                     upstreamReadyPercentage, totalSize, zoneCount);
+            record(totalSize, sameZoneEntities.size(), "all", "zone_not_ready");
             return targetEntities;
         }
 
@@ -117,14 +136,17 @@ public class ZonePreferenceFilter<E> {
             int sameZoneMinAvailable = zoneContext.getPreferenceUpstreamSameZoneMinAvailable();
             if (isUnderSameZoneMinAvailableThreshold(sameZoneSize, sameZoneMinAvailable)) {
                 log.debug("Same zone '{}' entities under threshold: {}, actual: {}", zone, sameZoneMinAvailable, sameZoneSize);
+                record(totalSize, sameZoneSize, "all", "min_available");
                 return targetEntities;
             }
             log.debug("Same zone '{}' entities found: {}/{}", zone, sameZoneSize, totalSize);
+            record(totalSize, sameZoneSize, "same_zone", "ok");
             return sameZoneEntities;
         }
 
         // 10. 无同 Zone 实体 → 返回全部
         log.debug("No same zone '{}' entity found, total: {}, zone count: {}", zone, totalSize, zoneCount);
+        record(totalSize, 0, "all", "no_same_zone");
         return targetEntities;
     }
 

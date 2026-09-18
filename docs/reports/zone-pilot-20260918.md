@@ -1,26 +1,44 @@
-# D1 双 Zone 试点报告（2026-09-18）
+# D1 双 Zone 试点报告（2026-09-18，修正版）
+
+> 说明：本报告初版结论（“路由已生效 / RTO≈0.9s”）经复查**不成立**。本版记录错误原因、修正过程与最终实测数据。
 
 ## 一、目标与拓扑
 - 目标：验证 zone 优先路由（同 zone 优先、zone 故障自动切走）与切换 RTO。
-- 拓扑（单机仿真）：product 双实例 zone-a(19006)/zone-b(19026)；cart(19008) 为消费者（zone-a）；Nacos(18848) 元数据 `zone` 打标。
-- 开关：`myxhs.availability.zone.preference.enabled=true`、`myxhs.availability.zone.preference.upstream.same-zone-min-available=1`、`myxhs.current.availability.zone=zone-a`。
+- 拓扑（单机仿真）：product 双实例 zone-a(19006)/zone-b(19026)；cart(19008) 消费者（zone-a）；Nacos 实例 metadata `zone` 打标。
+- 关键配置：`myxhs.availability.zone.preference.enabled=true`、`...upstream.same-zone-min-available=1`（默认 5 对单实例/zone 不适用）、`myxhs.current.availability.zone`。
 
-## 二、结果 A：同 zone 优先路由 ✅
-- 开启前后基线：zone-a count=4；发起 240 次 cart list（8 用户轮转，触发 SKU 查询）。
-- 结果：**240/240 全部命中 zone-a（4→244）**，zone-b（新进程）计数 0；cart 进程与 19006 建连、与 19026 无业务连接。
-- 关键配置坑：默认 `same-zone-min-available=5`，单 zone 仅 1 实例时优先逻辑直接回退"全部实例"（首轮测试因此无效）。小副本试点必须显式调小。
+## 二、首轮结论为何错误（复盘）
+1. **接线错误（根因）**：自定义 `ServiceInstanceListSupplier` 放在 default context（AutoConfiguration），LB 子 context 不采用 → 过滤器从未执行；DEBUG 日志与指标“双零”暴露了这一点。
+2. **resolver 键不一致**：resolver 读 `myxhs.availability.zone`，实例 metadata 用标准键 `zone`。
+3. **实例 zone 参数未生效**：product 19006 实际 metadata=`defaultZone`；早前 Nacos 看到的 zone-a 是旧注册残留。
+4. **假 RTO**：`kill`（SIGTERM）触发优雅关闭，0.55s “恢复”实为垂死实例仍在服务；换 `kill -9` 后暴露真相（>45s 未恢复）。
+5. **排障工具缺失**：当时无路由指标，只能靠对端计数反推。
 
-## 三、结果 B：zone 故障切换 ✅
-- 操作：kill 掉 zone-a product（pid 1425270）。
-- 结果：cart 首次探测（0.5s 后）即成功且数据完整（price=199.0），**实测 RTO ≈ 0.89s**；流量落到 zone-b（19026）并计数。
-- 说明：Nacos 2.x gRPC 连接断开可近实时感知实例下线并推送；本次未出现缓存窗口内失败重试。
+## 三、修正与验证
+### 3.1 接线修复
+- 新增 `common/config/ZoneLoadBalancerConfig`：在 default context 用 `@LoadBalancerClients(defaultConfiguration=ZoneLoadBalancerConfiguration.class)` 注册（对齐既有 `LeastConnectionsLoadBalancerConfig` 模式），仅 preference.enabled=true 时生效。
+- `ZoneLoadBalancerConfiguration` 从 `AutoConfiguration.imports` 移出，作为 **LB 子 context** 配置（`withBlockingDiscoveryClient` + `withCaching` + zone 过滤）。
+- `ServiceInstanceZoneResolver`：标准键 `zone` 优先、兼容 `myxhs.availability.zone`（新增 4 个单测）。
 
-## 四、发现与待办
-1. **首轮异常（重要）**：在正确开 zone 优先且双实例均在册的情况下，首轮 240 次全部打到 zone-b（cart 本地实例列表快照疑似只含 zone-b，属 Nacos 订阅/缓存窗口，非过滤逻辑问题）；kill 19026 触发列表刷新后立即恢复 zone-a，重启订阅周期后路由恢复正常。**待办：补 zone 路由命中指标/日志（当前无观测，只能靠对端计数反推）。**
-2. 操作坑：`pkill -f "server.port=19026"` 会匹配到自身 shell 命令行导致自杀，需用 pid 精确 kill。
-3. 边界（不得夸大）：单机仿真、无双 zone 网络延迟/分区真实故障；RTO 为单次采样；数据面（动态数据源/Redis zone 事件）未接入；未验证跨 zone 数据一致性。
+### 3.2 路由可观测（新增）
+- `ZoneRouteMetrics`：`myxhs_zone_route_total{zone,decision,reason}`（覆盖 9 类决策分支）与 `myxhs_zone_instances{zone,kind=total|same}`；3 个单测。
 
-## 五、生产化建议
-- 配置：按真实副本数设置 `same-zone-min-available`（如 2 zone×2 副本 → 1~2）；保留 fallback 语义（同 zone 不足自动回全局）。
-- 可观测：路由命中/回退/跨 zone 指标（下一步 D1 收尾）。
-- 演练：重复 kill 演练取 RTO 分布；补网络隔离（iptables DROP）场景，验证与进程宕机的差异。
+### 3.3 实测结果（双实例，cart zone-a）
+| 场景 | 结果 |
+|---|---|
+| 同 zone 优先 | 日志 `Same zone 'zone-a' entities found: 1/2`；指标 `same_zone{reason=ok}=24`；24 次请求全部命中 zone-a（SKU 计数 48:0） |
+| 无匹配 zone（cart=zone-x） | 日志 `No same zone 'zone-x' ...`；指标 `all{reason=no_same_zone}`；跨 zone 正常服务（zone-b 计数 48；平局让 LeastConnections 全落单边） |
+| 故障切换（kill -9 zone-a，cache.ttl=5s） | 首次失败 0.56s；**Nacos 摘除 3.28s**；失败请求 10 次；**恢复 6.16s**（列表剔除死实例后 pass_through 走 zone-b，数据完整 price=199） |
+
+### 3.4 失败尝试（避坑）
+- `withHealthChecks()` 加入链后 LB 子 context 初始化异常（`AnnotationConfigApplicationContext` 异常，全部请求失败）→ 已回滚。健康检查/推送式 supplier 需另行方案。
+
+## 四、发现
+1. Nacos 2.x 对 kill -9 的实例摘除约 3.3s（gRPC 断连感知）；**主导 RTO 的是 LB 列表缓存 TTL**（默认 35s → RTO≈35s；5s → 6.16s）。zone 启用服务应显式设置 `spring.cloud.loadbalancer.cache.ttl=5s`。
+2. `release-service.sh` 发布按模块杀进程：同模块多实例会被一并杀掉 → 双实例演练必须先发布、后起第二实例。
+3. `LeastConnectionsLoadBalancer` 在 active=0 平局时选择倾斜（回退/无过滤场景会“全打一台”，不利于跨 zone 摊平流量）。
+4. SIGTERM 优雅关闭会掩盖切换耗时，演练必须 `kill -9` 或确认端口关闭。
+
+## 五、边界与后续
+- 边界：单机仿真、无双 zone 网络延迟/分区；数据面（动态数据源/Redis zone 事件）未接入；RTO 为单次采样。
+- 后续（D4）：重复演练取分布 + iptables 分区场景；健康检查/推送式 supplier；同 zone 命中率与跨 zone 流量告警。
