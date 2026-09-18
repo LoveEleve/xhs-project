@@ -58,6 +58,7 @@
 |---|---|---|
 | ⭐ Zone 数据面：动态 ZoneContext 源统一；12 服务 ignore-routing；9 分支路由指标；RPO/冲突策略评估；D4 演练 1.31s/3.25s/4.79s | d4-zone-drills-20260918.md；ZoneRouteMetrics.java | ⭐数字背全 |
 | MySQL 故障转移：停主 10.2s/提升 0.087s/切换 22s/RTO≈32s + 5 短板 | mysql-failover-drill-20260917.md | ⭐"不含发现时间" |
+| ⭐ 同区优先收益实测（netem 跨区模拟 25ms/向）：网关优先 ON vs OFF——吞吐 **+34%**（7,077 vs 5,278）、P99 **-33~47%**、均值延迟 -44~54%；暴露"网关 zone 取值源不统一（invalid_zone）"问题 | zone-cross-region-latency-20260918.md | ⭐对标 10-30% 的实测数据 |
 | Redis 双主修复："存在优先"防误删 + 3s 重连 + 防回环；dbsize 1873=1873、≤35s 追平 | redis-server-multi-active-20260918.md | 已有 |
 | 动态 JDBC/Spring：content +207→+206、cart +40↔+40 不重启 | dynamic-zone-jdbc-spring-20260918.md | 已有 |
 | 多活选型对比：与 Microsphere 多活框架逐项对比（路由/数据面/容灾/运维成本），结论"整体不如成熟框架、差异化在落地与实测"留档 | docs/design/multi-active-vs-microsphere.md | ⭐选型视野 |
