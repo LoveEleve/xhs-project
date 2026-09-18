@@ -1,0 +1,21 @@
+{
+  "id": "chatcmpl-contract-001",
+  "object": "chat.completion",
+  "created": 1789727000,
+  "model": "contract-stub",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "pong"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 3,
+    "completion_tokens": 1,
+    "total_tokens": 4
+  }
+}
