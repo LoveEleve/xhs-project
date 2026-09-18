@@ -74,7 +74,7 @@ FROM xxl_job.xxl_job_group g WHERE g.app_name='my-xhs-payment'
 AND NOT EXISTS (SELECT 1 FROM xxl_job.xxl_job_info WHERE executor_handler='paymentTimeoutCheckJob');
 
 INSERT INTO xxl_job.xxl_job_info (job_group, job_desc, add_time, update_time, author, alarm_email, schedule_type, schedule_conf, misfire_strategy, executor_route_strategy, executor_handler, executor_param, executor_block_strategy, executor_timeout, executor_fail_retry_count, glue_type, glue_source, glue_remark, glue_updatetime, child_jobid, trigger_status, trigger_last_time, trigger_next_time)
-SELECT g.id, '退款超时检查', NOW(), NOW(), 'my-xhs', '', 'CRON', '0/60 * * * * ?', 'DO_NOTHING', 'FIRST', 'refundTimeoutCheckJob', '', 'SERIAL_EXECUTION', 60, 0, 'BEAN', '', '', NOW(), '', 1, 0, 0
+SELECT g.id, '退款超时检查', NOW(), NOW(), 'my-xhs', '', 'CRON', '0 * * * * ?', 'DO_NOTHING', 'FIRST', 'refundTimeoutCheckJob', '', 'SERIAL_EXECUTION', 60, 0, 'BEAN', '', '', NOW(), '', 1, 0, 0
 FROM xxl_job.xxl_job_group g WHERE g.app_name='my-xhs-payment'
 AND NOT EXISTS (SELECT 1 FROM xxl_job.xxl_job_info WHERE executor_handler='refundTimeoutCheckJob');
 
@@ -89,7 +89,7 @@ FROM xxl_job.xxl_job_group g WHERE g.app_name='my-xhs-payment'
 AND NOT EXISTS (SELECT 1 FROM xxl_job.xxl_job_info WHERE executor_handler='refundNotifyCompensateJob');
 
 INSERT INTO xxl_job.xxl_job_info (job_group, job_desc, add_time, update_time, author, alarm_email, schedule_type, schedule_conf, misfire_strategy, executor_route_strategy, executor_handler, executor_param, executor_block_strategy, executor_timeout, executor_fail_retry_count, glue_type, glue_source, glue_remark, glue_updatetime, child_jobid, trigger_status, trigger_last_time, trigger_next_time)
-SELECT g.id, '支付对账', NOW(), NOW(), 'my-xhs', '', 'CRON', '0 0 3 * * ?', 'DO_NOTHING', 'FIRST', 'paymentReconcileJob', '', 'SERIAL_EXECUTION', 300, 0, 'BEAN', '', '', NOW(), '', 1, 0, 0
+SELECT g.id, '支付对账', NOW(), NOW(), 'my-xhs', '', 'CRON', '0 0 3 * * ?', 'FIRE_ONCE_NOW', 'FIRST', 'paymentReconcileJob', '', 'SERIAL_EXECUTION', 300, 0, 'BEAN', '', '', NOW(), '', 1, 0, 0
 FROM xxl_job.xxl_job_group g WHERE g.app_name='my-xhs-payment'
 AND NOT EXISTS (SELECT 1 FROM xxl_job.xxl_job_info WHERE executor_handler='paymentReconcileJob');
 
@@ -118,7 +118,7 @@ AND NOT EXISTS (SELECT 1 FROM xxl_job.xxl_job_info WHERE executor_handler='cartR
 
 -- home
 INSERT INTO xxl_job.xxl_job_info (job_group, job_desc, add_time, update_time, author, alarm_email, schedule_type, schedule_conf, misfire_strategy, executor_route_strategy, executor_handler, executor_param, executor_block_strategy, executor_timeout, executor_fail_retry_count, glue_type, glue_source, glue_remark, glue_updatetime, child_jobid, trigger_status, trigger_last_time, trigger_next_time)
-SELECT g.id, 'Feed 流数据清理', NOW(), NOW(), 'my-xhs', '', 'CRON', '0 0 3 * * ?', 'DO_NOTHING', 'FIRST', 'feedCleanupJob', '', 'SERIAL_EXECUTION', 60, 0, 'BEAN', '', '', NOW(), '', 1, 0, 0
+SELECT g.id, 'Feed 流数据清理', NOW(), NOW(), 'my-xhs', '', 'CRON', '0 0 3 * * ?', 'FIRE_ONCE_NOW', 'FIRST', 'feedCleanupJob', '', 'SERIAL_EXECUTION', 60, 0, 'BEAN', '', '', NOW(), '', 1, 0, 0
 FROM xxl_job.xxl_job_group g WHERE g.app_name='my-xhs-home'
 AND NOT EXISTS (SELECT 1 FROM xxl_job.xxl_job_info WHERE executor_handler='feedCleanupJob');
 
@@ -134,7 +134,7 @@ FROM xxl_job.xxl_job_group g WHERE g.app_name='my-xhs-search'
 AND NOT EXISTS (SELECT 1 FROM xxl_job.xxl_job_info WHERE executor_handler='recommendHotPoolJob');
 
 INSERT INTO xxl_job.xxl_job_info (job_group, job_desc, add_time, update_time, author, alarm_email, schedule_type, schedule_conf, misfire_strategy, executor_route_strategy, executor_handler, executor_param, executor_block_strategy, executor_timeout, executor_fail_retry_count, glue_type, glue_source, glue_remark, glue_updatetime, child_jobid, trigger_status, trigger_last_time, trigger_next_time)
-SELECT g.id, '推荐 ItemCF 更新', NOW(), NOW(), 'my-xhs', '', 'CRON', '0 0 2 * * ?', 'DO_NOTHING', 'FIRST', 'recommendItemCFJob', '', 'SERIAL_EXECUTION', 300, 0, 'BEAN', '', '', NOW(), '', 1, 0, 0
+SELECT g.id, '推荐 ItemCF 更新', NOW(), NOW(), 'my-xhs', '', 'CRON', '0 0 2 * * ?', 'FIRE_ONCE_NOW', 'FIRST', 'recommendItemCFJob', '', 'SERIAL_EXECUTION', 300, 0, 'BEAN', '', '', NOW(), '', 1, 0, 0
 FROM xxl_job.xxl_job_group g WHERE g.app_name='my-xhs-search'
 AND NOT EXISTS (SELECT 1 FROM xxl_job.xxl_job_info WHERE executor_handler='recommendItemCFJob');
 
