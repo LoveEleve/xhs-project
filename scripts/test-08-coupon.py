@@ -1,3 +1,4 @@
+import os
 #!/usr/bin/env python3
 """
 08-coupon 接口测试脚本（通过 Gateway 19000 + JWT + HMAC per-session secret）
@@ -62,8 +63,8 @@ def call(method, path, token, secret, json_body=None, params=None):
     sig = sign(secret, method, path.split("?")[0], ts, nonce)
     headers = {"Authorization": f"Bearer {token}",
                "X-Timestamp": ts, "X-Nonce": nonce, "X-Signature": sig,
-        "X-Internal-Call": "myxhs-internal-2026",
-        "X-Admin-Call": "myxhs-admin-2026",
+        "X-Internal-Call": os.environ.get("INTERNAL_TOKEN", "myxhs-internal-2026"),
+        "X-Admin-Call": os.environ.get("ADMIN_TOKEN", "myxhs-admin-2026"),
                "Content-Type": "application/json"}
     r = requests.request(method, f"{GATEWAY}{path}", headers=headers,
                          json=json_body, params=params, timeout=10)

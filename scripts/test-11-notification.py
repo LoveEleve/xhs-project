@@ -1,3 +1,4 @@
+import os
 #!/usr/bin/env python3
 """
 11-notification 接口测试脚本（通过 Gateway 19000 + JWT + HMAC per-session secret）
@@ -52,8 +53,8 @@ def call(method, path, token, secret, json_body=None, params=None, user_id=None)
     sig = sign(secret, method, path.split("?")[0], ts, nonce)
     headers = {"Authorization": f"Bearer {token}",
                "X-Timestamp": ts, "X-Nonce": nonce, "X-Signature": sig,
-        "X-Internal-Call": "myxhs-internal-2026",
-        "X-Admin-Call": "myxhs-admin-2026",
+        "X-Internal-Call": os.environ.get("INTERNAL_TOKEN", "myxhs-internal-2026"),
+        "X-Admin-Call": os.environ.get("ADMIN_TOKEN", "myxhs-admin-2026"),
                "Content-Type": "application/json"}
     if user_id is not None:
         headers["X-User-Id"] = str(user_id)

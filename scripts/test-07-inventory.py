@@ -1,3 +1,4 @@
+import os
 #!/usr/bin/env python3
 """
 07-inventory 接口测试脚本（通过 Gateway 19000 + JWT + HMAC per-session secret）
@@ -83,8 +84,8 @@ def call(method, path, token, secret, json_body=None, params=None):
         "X-Timestamp": ts,
         "X-Nonce": nonce,
         "X-Signature": sig,
-        "X-Internal-Call": "myxhs-internal-2026",
-        "X-Admin-Call": "myxhs-admin-2026",
+        "X-Internal-Call": os.environ.get("INTERNAL_TOKEN", "myxhs-internal-2026"),
+        "X-Admin-Call": os.environ.get("ADMIN_TOKEN", "myxhs-admin-2026"),
         "Content-Type": "application/json",
     }
     url = f"{GATEWAY}{path}"
