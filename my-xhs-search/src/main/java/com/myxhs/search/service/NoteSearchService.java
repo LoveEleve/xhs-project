@@ -58,7 +58,7 @@ public class NoteSearchService extends AbstractSearchService {
      * <p>
      * 查询策略：
      * - multi_match: title(权重3) + content(权重1)，使用 ik_smart 分词
-     * - filter: status=1（已发布）
+     * - filter: status=2（已发布；-1=已删除 tombstone，1=未发布）
      * - 排序: relevance(_score) / time(createdAt) / hot(likeCount)
      * - 分页: Search After（游标分页，O(1) 性能）
      * - 高亮: title + content 字段
