@@ -25,8 +25,8 @@
 ## 项目一 · 电商平台 — 关键结果备选
 | 备选条目 | 证据 | 口径提示 |
 |---|---|---|
-| ⭐ ES 配额 0.5→2 核后 search **175→683 RPS（3.9x）、P50 115→29ms** | 99-runtime-reconciliation-report.md:210-236 | 很强，建议写 |
-| 压测基线：product 1020 / note 1096 / home 764 / recommend 761 / search 683 RPS | 同上 | 已有 |
+| ⭐ ES 容器 CPU 2→6 核 + 客户端 IO 4→16 后 search **508→1,448 RPS（2.9x）、P99 191→61ms** | batch-release-baseline-20260917.md:19,29 | 很强，建议写（旧 175→683 口径已作废） |
+| 压测基线（**新口径**）：product 4,871 / comment 4,418 / home 1,861 / search 1,448 RPS（类加载锁修复后，无本地缓存） | batch-release-baseline-20260917.md:13-19 | 建议替换旧数字 |
 | 限流校准：content/product 500、home/recommend 300、search 300，写路由 10/5/30 不放松 | application.yml:100-251 | 已有；可补"写路由更严" |
 | chaos 演练 7 场景（Redis/MQ pause、CPU 满载、磁盘 burn、MySQL pause、优雅停机）全部通过 | chaos-drill.sh | 可补进"稳定性" |
 | 慢下游实录：UserService DELAY 11s → 网关 504；listener 75s → 事务回查恰好一次 | 99-runtime…:126,140,292 | 50 并发预扣那类 |
