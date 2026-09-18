@@ -138,8 +138,8 @@ verified_health() {
 
 stop; start "$TARGET_DIR"
 if verified_health; then
-  # 版本保留：仅保留最近 5 个版本
-  mapfile -t OLD < <(find "$RELEASE_ROOT" -maxdepth 1 -mindepth 1 -type d ! -name current -printf '%f\n' | sort | head -n -5)
+  # 版本保留：仅保留最近 3 个版本（与磁盘治理口径一致）
+  mapfile -t OLD < <(find "$RELEASE_ROOT" -maxdepth 1 -mindepth 1 -type d ! -name current -printf '%f\n' | sort | head -n -3)
   for d in "${OLD[@]:-}"; do [ -n "$d" ] && rm -rf "$RELEASE_ROOT/$d"; done
   echo "== ✅ 发布成功: $MODULE${INSTANCE_ID:+[$INSTANCE_ID]} (端口 $P, Xmx$MX) =="; exit 0
 fi

@@ -87,9 +87,11 @@
     <!-- ==================== JSON 文件输出（Logstash 采集） ==================== -->
     <appender name="JSON_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>/logs/${APP_NAME}.json</file>
-        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>/logs/${APP_NAME}.%d{yyyy-MM-dd}.json</fileNamePattern>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>/logs/${APP_NAME}.%d{yyyy-MM-dd}.%i.json</fileNamePattern>
+            <maxFileSize>100MB</maxFileSize>
             <maxHistory>7</maxHistory>
+            <totalSizeCap>2GB</totalSizeCap>
         </rollingPolicy>
         <encoder class="net.logstash.logback.encoder.LogstashEncoder">
             <includeMdcKeyName>traceId</includeMdcKeyName>
