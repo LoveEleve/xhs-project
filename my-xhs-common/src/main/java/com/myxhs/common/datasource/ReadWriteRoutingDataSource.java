@@ -10,6 +10,7 @@ import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Map;
+import java.util.function.Supplier;
 
 /**
  * 读写分离路由数据源 — 支持三种路由策略（优先级从高到低）：
@@ -43,6 +44,15 @@ public class ReadWriteRoutingDataSource extends AbstractRoutingDataSource {
 
     public void setSlaveZone(String slaveZone) {
         this.slaveZone = (slaveZone == null) ? "" : slaveZone;
+    }
+
+    /** 当前 Zone 提供者（默认系统属性；Spring 环境注入 ZoneContext Bean 以支持动态切换） */
+    private volatile Supplier<String> zoneSupplier = ZoneContext::getCurrentZone;
+
+    public void setZoneSupplier(Supplier<String> zoneSupplier) {
+        if (zoneSupplier != null) {
+            this.zoneSupplier = zoneSupplier;
+        }
     }
 
     /** 从库不可用标记 */
@@ -104,7 +114,7 @@ public class ReadWriteRoutingDataSource extends AbstractRoutingDataSource {
         if (!zoneRoutingEnabled || masterZone.isEmpty() || slaveZone.isEmpty()) {
             return type;
         }
-        String zone = ZoneContext.getCurrentZone();
+        String zone = zoneSupplier.get();
         if (zone == null || zone.isEmpty() || ZoneConstants.DEFAULT_ZONE.equals(zone)) {
             return type;
         }

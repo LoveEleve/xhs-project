@@ -64,9 +64,12 @@ stop() {
     fi
     rm -f "$PID_FILE"
   elif [ -z "$INSTANCE_ID" ]; then
-    # 无 pid 文件的旧进程兜底清理（仅主实例；第二实例绝不按模块模式误杀主实例）
-    pkill -f "[m]y-xhs-$MODULE-1.0-SNAPSHOT.jar" 2>/dev/null || true
-    pkill -f "[r]eleases/$MODULE/.*app.jar" 2>/dev/null || true
+    # 无 pid 文件的旧进程兜底清理：跳过带 -Dserver.port= 的第二实例进程（绝不误杀）
+    for pid in $(pgrep -f "\[m\]y-xhs-$MODULE-1.0-SNAPSHOT.jar|[r]eleases/$MODULE/.*app.jar" 2>/dev/null); do
+      if ! tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q "server.port="; then
+        kill "$pid" 2>/dev/null || true
+      fi
+    done
   fi
   # 等待端口释放（优雅停机可能超过 3s；最多 60s），避免"Port already in use"启动失败
   for _ in $(seq 1 30); do

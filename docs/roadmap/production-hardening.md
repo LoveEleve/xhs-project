@@ -57,6 +57,8 @@
 | 9 | 动态 JDBC 组件多活 | `DynamicDataSource` 类完整（含 TCC 事务安全），未接入服务 | 接线到 1 个服务试点（如 cart） | P2 |
 | 10 | 动态 Spring 组件多活 | `ZoneContext` PropertyChange + `ZoneProperties` 已具备 | 动态切换演示（不改配置热切 zone） | P2 |
 
+> Review 记录（2026-09-18）：① 12 服务已加 `ignore-routing` 属性，**11 个待重启生效**；② zone 能力启用清单 `docs/ops/zone-enable-checklist.md`（含必需的健康检查配套参数）；③ 与 microsphere 对比 `docs/design/multi-active-vs-microsphere.md`（结论：整体不如成熟框架，差异化在落地/实测/修 bug）。
+
 ## Track E：可观测与稳定性（对应 6/7/8）
 | # | 事项 | 现状 | 目标/动作 | 验收证据 | 优先级 |
 |---|---|---|---|---|---|

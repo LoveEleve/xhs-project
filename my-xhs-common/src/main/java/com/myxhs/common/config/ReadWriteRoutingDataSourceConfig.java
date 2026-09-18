@@ -1,6 +1,7 @@
 package com.myxhs.common.config;
 
 import com.myxhs.common.datasource.DataSourceType;
+import com.myxhs.common.zone.ZoneContext;
 import com.myxhs.common.datasource.ReadWriteRoutingDataSource;
 import com.zaxxer.hikari.HikariDataSource;
 import org.springframework.beans.factory.annotation.Value;
@@ -76,11 +77,13 @@ public class ReadWriteRoutingDataSourceConfig {
                                         @Value("${spring.datasource.slave.username}") String slaveUsername,
                                         @Value("${spring.datasource.slave.password}") String slavePassword,
                                         @Value("${spring.datasource.slave.driver-class-name}") String slaveDriver,
+                                        ZoneContext zoneContext,
                                         @Value("${myxhs.availability.zone.datasource.enabled:false}") boolean zoneRoutingEnabled,
                                         @Value("${myxhs.availability.zone.datasource.master-zone:}") String masterZone,
                                         @Value("${myxhs.availability.zone.datasource.slave-zone:}") String slaveZone) {
         ReadWriteRoutingDataSource routingDataSource = new ReadWriteRoutingDataSource();
         routingDataSource.setZoneRoutingEnabled(zoneRoutingEnabled);
+        routingDataSource.setZoneSupplier(zoneContext::getZone);
         routingDataSource.setMasterZone(masterZone);
         routingDataSource.setSlaveZone(slaveZone);
 
