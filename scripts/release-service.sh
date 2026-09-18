@@ -33,10 +33,13 @@ MX=${XMX[$MODULE]:-512m}
 # ---- SkyWalking Agent（APM）：默认自动探测，SW_AGENT_DISABLED=1 可关闭 ----
 SW_AGENT_DIR=${SW_AGENT_DIR:-/data/workspace/skywalking-agent-9.7.0}
 SW_COLLECTOR=${SW_COLLECTOR:-192.168.0.142:11800}
+SW_AGENT_IGNORE_SUFFIX=${SW_AGENT_IGNORE_SUFFIX:-/actuator/health,/actuator/prometheus,/actuator/info,/favicon.ico}
 agent_opts() {
   [ "${SW_AGENT_DISABLED:-0}" = "1" ] && return 0
   [ -f "$SW_AGENT_DIR/skywalking-agent.jar" ] || return 0
-  echo "-javaagent:$SW_AGENT_DIR/skywalking-agent.jar -Dskywalking.agent.service_name=my-xhs-$MODULE -Dskywalking.collector.backend_service=$SW_COLLECTOR -Dskywalking.logging.dir=/tmp/sw-logs/$MODULE"
+  local opts="-javaagent:$SW_AGENT_DIR/skywalking-agent.jar -Dskywalking.agent.service_name=my-xhs-$MODULE -Dskywalking.collector.backend_service=$SW_COLLECTOR -Dskywalking.logging.dir=/tmp/sw-logs/$MODULE -Dskywalking.agent.ignore_suffix=$SW_AGENT_IGNORE_SUFFIX"
+  [ -n "${SW_AGENT_SAMPLE:-}" ] && opts="$opts -Dskywalking.agent.sample_n_per_3_secs=$SW_AGENT_SAMPLE"
+  echo "$opts"
 }
 
 [ -n "$JAR_SRC" ] || JAR_SRC=$ROOT/my-xhs-$MODULE/target/my-xhs-$MODULE-1.0-SNAPSHOT.jar

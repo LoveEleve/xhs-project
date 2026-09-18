@@ -48,8 +48,10 @@ restart_one() {
     case " $DEV_MODULES " in *" $MODULE "*) EXTRA="-Dspring.profiles.active=dev";; esac
     local AGENT_OPTS=""
     SW_AGENT_DIR=${SW_AGENT_DIR:-/data/workspace/skywalking-agent-9.7.0}
+    local IGNORE_SUFFIX=${SW_AGENT_IGNORE_SUFFIX:-/actuator/health,/actuator/prometheus,/actuator/info,/favicon.ico}
     [ "${SW_AGENT_DISABLED:-0}" != "1" ] && [ -f "$SW_AGENT_DIR/skywalking-agent.jar" ] && \
-      AGENT_OPTS="-javaagent:$SW_AGENT_DIR/skywalking-agent.jar -Dskywalking.agent.service_name=my-xhs-$MODULE -Dskywalking.logging.dir=/tmp/sw-logs/$MODULE"
+      AGENT_OPTS="-javaagent:$SW_AGENT_DIR/skywalking-agent.jar -Dskywalking.agent.service_name=my-xhs-$MODULE -Dskywalking.logging.dir=/tmp/sw-logs/$MODULE -Dskywalking.agent.ignore_suffix=$IGNORE_SUFFIX"
+    [ -n "${SW_AGENT_SAMPLE:-}" ] && AGENT_OPTS="$AGENT_OPTS -Dskywalking.agent.sample_n_per_3_secs=$SW_AGENT_SAMPLE"
     setsid env SW_MOUNT_FOLDERS=plugins,activations,bootstrap-plugins \
       java $AGENT_OPTS $OPTS_V $EXTRA -jar "$JAR" < /dev/null > "/data/workspace/xhs-project/logs/my-xhs-$MODULE.log" 2>&1 &
     disown
