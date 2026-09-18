@@ -97,6 +97,7 @@
 |---|---|---|
 | 号段 ID 生成器：DB 段号 + 双 Buffer 预加载；批量写入执行器（CPU×2/JDBC 5000/ID 分片） | SegmentIdGenerator.java；BatchInsertExecutor.java | 与 Snowflake 区分场景 |
 | 多版本 API：@ApiVersion 替换 HandlerMapping；未知版本降级不拒绝（v2/v9/无版本均 200） | ApiVersionFilter.java；定制 HandlerMapping | 默认 v1，降级要说明 |
+| ⭐ 多 ORM 隔离并存（实测）：MyBatis + MyBatis-Plus + **Spring Data JPA** 同一应用/同一数据源共存——独立 EMF 与事务管理器、逻辑删除语义差异实测（36 vs 33 行） | multi-orm-coexistence-20260918.md；ContentJpaConfig.java | ⭐对标"JDBC 框架隔离并存" |
 | 审计独立事务：REQUIRES_NEW 模板（不被主事务回滚拖累）；HTTP ETag/304 | AuditTransactionTemplate.java；ETag 过滤器 | 两个小点可合并 |
 | 读写分离：ReadWriteRoutingInterceptor（SLAVE 只读路由/事务中不切）；12 服务 ignore-routing 不阻塞发布 | ReadWriteRoutingDataSource；application.yml | ⭐与 21 题互相印证 |
 | 造数框架：seed-data.py（规模倍数造数）；压测脚本 test-07~14 全链路 | scripts/seed-data.py；scripts/test-*.py | 数据准备能力 |

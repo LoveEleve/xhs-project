@@ -58,6 +58,7 @@ xhs 是一个内容与交易并重的社交电商平台，共 15 个 Spring Clou
 - 用户与认证：JWT 双 token（access 30 分钟 / refresh 7 天）+ 图形验证码（Redis）+ 刷新时旧 access 拉黑、登出失效；网关统一鉴权与身份注入（覆盖伪造头），直连服务路径鉴权 fail-closed。
 - RPC 选型决策（Dubbo 试点）：完成 cart→product 双协议试点（开关+回退），A/B 实测 +4.9% RPS / P50 -19%，修复注册名冲突坑；最终按"运维复杂度与收益不匹配"决策不引入并全量回滚（选型数据留档为决策依据）。
 - 分布式 ID 与缓存预热：订单 Snowflake 主键（worker-id 按本机 IP 推导防冲突）、号段 ID 双 Buffer 预加载、Bloom 异步分段预热（100 万容量/1% 误判）；ShardingSphere 绑定表 5 张逻辑表（同分片键防 JOIN 笛卡尔积）。
+- 多 ORM 与动态数据源（专项 Demo）：MyBatis + MyBatis-Plus + Spring Data JPA 三框架同应用并存（独立 EMF/事务管理器，逻辑删除语义差异实测）；ShardingSphere 分片与 Zone 动态数据源同应用并存（映射表 master/slave 运行时切换，server_id 1↔2 验证、分片下单不受影响）。
 - Zone 数据面细节：数据源 zone 来源统一为动态 ZoneContext（避免误杀第二实例）；从库宕机时 health 忽略路由目标、不阻塞发布（12 服务 ignore-routing 属性全量生效）；路由决策 9 分支指标（ZoneRouteMetrics）；最小连接平局随机化；RPO/冲突策略评估（单写场景无需 CRDT）；D4 演练复盘进程崩溃 1.31s/3.25s、分区 4.79s、自动回切。
 - 语义与测试细节：区分业务失败与依赖失败（业务失败返回 404 而非 503）；陈旧测试按现行语义修正（退券 RV30 / 预扣异常 RV31）；订单快照表与事件表同分片保证单用户一致性；用户地址管理（默认地址切换 + 锁内数量校验）；发布脚本端口占用者精确清理（校验为本模块 app.jar 防误杀）。
 
