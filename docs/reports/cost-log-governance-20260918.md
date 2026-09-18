@@ -35,3 +35,13 @@
 1. **containerd 数据在根盘（21G）**：如需进一步释放根盘，可在维护窗口将 containerd root 迁至 /data2（需重启 Docker，风险中）。
 2. **SkyWalking/Kibana/Logstash**：若无实际使用，停用可再省 ~2.3GB 内存。
 3. **残留进程防复发**：新 release 流程已带 PID 校验 + 端口占用清理；建议定期执行"监听 PID vs pid 文件"审计（本次审计脚本口径）。
+
+---
+
+## 七、磁盘复核（2026-09-18 晚）
+
+- 根盘 `/`：**37G/50G（78%）**；下钻定位：`/var/lib/containerd` **22G**
+- 原因：Docker 使用 **containerd snapshotter（overlayfs）** 存储驱动，镜像层落在 `/var/lib/containerd`（而非 `Docker Root Dir=/data2/docker`）：
+  - `snapshotter.v1.overlayfs` 16G + `content.v1.content` 5.7G
+- 安全回收评估：`docker system df` — 悬空镜像 0、停止容器 0、构建缓存 0 → **标准 prune 可回收 ≈0**（22G 为 32 个运行容器的真实镜像占用）
+- 建议（未执行，需窗口）：将 containerd 根迁移至 `/data2/containerd`（改 `config.toml` + 重启运行时）或扩容根盘；`/data2` 尚余 22G
