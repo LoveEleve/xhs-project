@@ -25,6 +25,7 @@
 - **连接池**：每个 ds 独立 Hikari（max 10 / min 2 / keepalive 30s / maxLifetime 30min），`max-connections-size-per-query: 2`；
 - **非分片键查询**：订单号 → `t_order_no_mapping` 映射表（**独立数据源**，绕过分片路由）+ 映射补录 Job（29 题）；
 - **压测隔离**：`ShadowTableInterceptor`（默认关，`myxhs.shadow.enabled=true` + 请求头 `X-Pressure-Test`）把 `t_*` 表名改写为 `t_*_shadow`，压测数据不污染生产表。
+- **动态数据源融合（Demo 实测）**：映射表数据源支持 master/slave **运行时切换**（`AbstractRoutingDataSource`，server_id 1↔2），与 ShardingSphere 分片**同应用并存**、分片下单流程不受影响；同时验证 MyBatis/MP/JPA 多 ORM 并存（`shardingsphere-dynamic-datasource-20260918.md`、`multi-orm-coexistence-20260918.md`）。
 
 **③ 坑与事故（真实配置演进）**
 1. **协议不识别**：Spring Boot 3.2.5 下 `jdbc:shardingsphere:` 自动配置失效（Driver 类加载问题）→ 手动工厂创建（代码注释写明原因）；
@@ -72,4 +73,4 @@
 ShardingSphere 5.5.1 官方文档；本项目 `sharding-config.yaml` 与配置类。
 
 ## 真实性说明
-分片规则/表清单/池参数/worker-id 算法均为仓库配置与代码事实；"无 rehash、单实例 worker-id 边界、影子表与分片表配合未验证"等主动披露。
+分片规则/表清单/池参数/worker-id 算法均为仓库配置与代码事实；**"SS × 动态数据源融合/多 ORM 并存"已 Demo 实测**；"无 rehash、单实例 worker-id 边界、影子表与分片表配合未验证"等主动披露。
