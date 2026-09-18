@@ -413,11 +413,11 @@
 
 **⑤ 话术（30 秒版）。** "MCP 协议没有定义进程级热替换，框架也不支持，硬修不如不依赖——我们把 16 个工具全自研，MCP 只留给运维直连，于是'工具进程挂了 Agent 就瘫'这个风险从架构上消失了。权限同理：不重建账号体系，消费平台 JWT 的角色声明，管理端点全部收口到 ADMIN，危险操作永远走人工审批。如果重来，我会在选型第一周就做这两件事，而不是等到生产化清单。"
 
-## V′. 组件深拷打：七个真实事故叙事（MQ/Redis/ES/MySQL/Nacos/XXL-Job/Sentinel）
+## V′. 组件深拷打：十个真实事故叙事（MQ/Redis/ES/MySQL/Nacos/XXL-Job/Sentinel/SkyWalking/Prometheus/ELK）
 
-**① 业界背景。** 面试官问中间件，考的不是背书，是"你有没有在同一件事上吃过亏"。七类问题最常被挖：消息可靠性（MQ）、持久化与切主（Redis）、索引延迟与调优（ES）、事务与复制（MySQL）、注册配置与失效语义（Nacos）、调度与错过窗口（XXL-Job）、规则持久化与限流时序（Sentinel）。
+**① 业界背景。** 面试官问中间件，考的不是背书，是"你有没有在同一件事上吃过亏"。十类问题最常被挖：消息可靠性（MQ）、持久化与切主（Redis）、索引延迟与调优（ES）、事务与复制（MySQL）、注册配置与失效语义（Nacos）、调度与错过窗口（XXL-Job）、规则持久化与限流时序（Sentinel）。
 
-**② 七个"事故叙事"速记表（每题=原理一句话+事故一个+数字一个+边界一个）。**
+**② 十个"事故叙事"速记表（每题=原理一句话+事故一个+数字一个+边界一个）。**
 
 | 组件 | 原理一句话 | 真实事故/坑 | 关键数字 | 题 |
 |---|---|---|---|---|
@@ -427,7 +427,10 @@
 | MySQL | B+ 树+MVCC+行锁、redo/binlog 两阶段提交 | 僵尸连接风暴 318 条挂起查询；故障转移 RTO 实测 | 连接 459→106，RTO≈32s | 43 |
 | Nacos | 注册 AP/Distro、配置 CP、2.x gRPC(端口+1000) | 配置外置"假生效"：shared-configs 在 SCA 2023 失效 → import → code 300 → 200 | 15/15 Load success | 44 |
 | XXL-Job | 调度/执行器分离、时间轮+DB 扫描、misfire/阻塞策略 | 非法 cron（`0/60` 秒增量越界）被调度器自动禁用"从未运行"；每日任务 DO_NOTHING 错过窗口静默丢弃 | 20 任务/633 失败口径拆解 | 46 |
-| Sentinel | Slot 链 + LeapArray 滑动窗口，Dashboard 只观测 | Nacos 规则异步到达被 @PostConstruct 兜底覆盖 → 改 ApplicationReadyEvent + 30s 真空期 | 15 路由规则、40 处自定义 @RateLimit | 47 |
+| Sentinel | Slot 链 + LeapArray 滑动窗口，Dashboard 只观测 | Nacos 规则异步到达被 @PostConstruct 兜底覆盖 → 改 ApplicationReadyEvent + 30s 真空期 | 16 路由规则、40 处自定义 @RateLimit | 47 |
+| SkyWalking | 字节码增强 Agent → OAP → 专用 ES（与业务隔离） | 插件与框架大版本冲突（SpringMVC 3/4/5 移出换 6.x）；**当前 release 流程未挂 agent（诚实边界）** | 22 span 实证 | 51 |
+| Prometheus | 拉模型 + TSDB + Alertmanager 路由分组抑制 | 通知黑洞（receiver 空/占位）→ alert-sink 落盘 + e2e 演练；短命告警被 group_wait 吞 → keep_firing_for | 9 组 40 规则 | 52 |
+| ELK | Filebeat 采集 → Logstash 加工 → ES 日索引 | 漏网 replicas=1 索引把集群搞 yellow → 巡检 cron；保留双口径（设计 ILM 30d vs 环境 cron 7d） | 单日 650 万条/1.8GB | 53 |
 
 **③ 已知坑（主动承认）。** 全部单机仿真环境：Redis 双主是 Worker 同步不是 Active-Active 集群；MySQL 无自动切换（RTO 分解里检测时间没算）；ES 单节点副本 0；Nacos standalone 无鉴权；MQ 单 master。每个组件都有一句"生产要怎么做"的对照。
 

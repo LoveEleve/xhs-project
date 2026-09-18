@@ -17,7 +17,7 @@
 - **规则持久化**：内存（重启丢）→ 推模式数据源（Nacos/Apollo）→ 拉模式。**Dashboard 上直接改的规则不持久**，只适合调试。
 
 **② 项目用法（双轨设计，分得很清楚）**
-- **网关轨（Sentinel）**：规则 JSON 放 Nacos（`my-xhs-gateway-sentinel-flow.json`，namespace my-xhs，rule-type=gw-flow），**15 条路由级规则**（user 50、content 500、search 300、order 10、payment 5、inventory 30、product 500、home/recommend 300…），数量按容量实测校准；
+- **网关轨（Sentinel）**：规则 JSON 放 Nacos（`my-xhs-gateway-sentinel-flow.json`，namespace my-xhs，rule-type=gw-flow），**16 条路由级规则**（user 50、content 500、search 300、order 10、payment 5、inventory 30、product 500、home/recommend 300…），数量按容量实测校准；
 - **服务轨（自定义 @RateLimit，40 处）**：Redis ZSet 滑动窗口 + Lua 原子脚本，key=`myxhs:ratelimit:{userId}:{controller}:{method}`，`@Order(10)` 最先执行；
 - **为什么双轨**：网关要的是**路由级 QPS 挡量**（Sentinel 网关适配开箱即用）；服务要的是**业务键级限流**（按 userId+接口防单用户刷单/刷评论），Redis 自定义切面更直接；Sentinel 服务侧仅接 Dashboard（transport 8858、eager）做观测，**0 个 @SentinelResource**，不做业务限流。
 - 算法选型（代码注释里的论证）：滑动窗口 > 固定窗口（无 2 倍突刺）、不需要令牌桶的突发能力、不需要漏桶的整形。
@@ -45,7 +45,7 @@
 7. **"Warm Up 怎么用？"** 冷启动或缓存预热期，限流阈值从低到高爬坡，防止大流量直接把刚启动实例打穿；本项目网关路由未启用（流量已由 LB 均摊）。
 
 **⑥ 话术**
-> "限流我们分两轨：网关用 Sentinel GatewayFlowRule，15 条路由规则放 Nacos，按容量实测校准，本地还有路由 metadata 兜底——这里踩过一个时序坑：Nacos 规则异步到达，早期在 @PostConstruct 判断空就加载本地规则，会把推送覆盖掉，后来改成应用就绪事件 + 30 秒真空期兜底。服务侧没用 Sentinel，而是 40 处自定义 @RateLimit：Redis ZSet 滑动窗口加 Lua，按 userId+接口防单用户刷。规则真源只有 Nacos，Dashboard 只看不写。用户级网关限流和集群限流都是记录在案的缺口。"
+> "限流我们分两轨：网关用 Sentinel GatewayFlowRule，16 条路由规则放 Nacos，按容量实测校准，本地还有路由 metadata 兜底——这里踩过一个时序坑：Nacos 规则异步到达，早期在 @PostConstruct 判断空就加载本地规则，会把推送覆盖掉，后来改成应用就绪事件 + 30 秒真空期兜底。服务侧没用 Sentinel，而是 40 处自定义 @RateLimit：Redis ZSet 滑动窗口加 Lua，按 userId+接口防单用户刷。规则真源只有 Nacos，Dashboard 只看不写。用户级网关限流和集群限流都是记录在案的缺口。"
 
 ## 发散追问地图（横向）
 - 算法：固定/滑动窗口、令牌桶、漏桶、Warm Up、匀速排队。

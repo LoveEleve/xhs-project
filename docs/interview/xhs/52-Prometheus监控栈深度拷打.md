@@ -20,7 +20,7 @@
 - **Prometheus v2.48.1**（19090，`--web.enable-lifecycle` 已开——热加载可用）；**9 个 scrape job**：15 个服务 + 中间件（MySQL 主从/Redis/ES）+ xhs-ai 回环（127.0.0.1:19020）；
 - **告警规则：9 个规则组 / 40 条规则**（分级 severity=critical/warning；应用 6 + 业务/黄金信号/DLQ/Meta 等）；
 - **Alertmanager（19093）**：receiver=`default-webhook` → 本地告警落地器 **alert-sink（127.0.0.1:19099）**，`send_resolved: true`（恢复也通知），落盘 `/data2/logs/alerts.jsonl`；
-- **exporter 矩阵**：node-exporter（主机）、mysql-exporter ×2（主/从）、redis-exporter、es-exporter；Grafana 看板（数据源指向 Prometheus）；
+- **exporter 矩阵**：node-exporter（主机）、mysql-exporter ×2（主/从）、redis-exporter、es-exporter；Grafana 看板 + **datasource 走 provisioning（看板即代码，容器重建不丢配置）**；
 - **VictoriaMetrics** 容器作为 AI 诊断的指标查询后端（DIAG-10 场景的数据源）；
 - **SLO 落地**：错误预算（30 天 ≈43m12s）+ Burn Ledger（38 题）。
 
