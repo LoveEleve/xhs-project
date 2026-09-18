@@ -105,7 +105,7 @@ xhs-ai 是面向上述 15 微服务交易系统的 AIOps 诊断与知识问答 A
 
 ## 职责描述（Responsibilities）
 - 需求与架构：主导需求工程（34 个业务场景，REQ→AC→TC 全链路追溯，含 NFR/STRIDE 威胁模型）；确定分层架构与 23 条 ADR（AgentScope 选型、Redis 状态存储、BM25 先行+向量止损、模型网关自研、策略引擎、扩展框架两代 SPI→Sidecar、技能仓库 GitSkill、沙箱 v1 不启用等）；划清框架边界（Flyway 只管 ai_*，不碰 agentscope_*）。
-- 测试与工程规范：设计六层测试矩阵——单测（实测 61 个）/ 契约（LLM 桩 + fixture 录制回放）/ 集成 / E2E / 评测（50 条答案 + 14 条轨迹）/ 红队 8 项 + 性能 4 场景；按 E1~E7 工程规范执行（依赖 BOM+Enforcer、出网收敛到两个域名、受控只读 SQL 三层、审计只追加、灰度与回滚流程）。
+- 测试与工程规范：设计六层测试矩阵——单测/契约（实测 65：61 单测 + 4 条 LLM fixture 契约）/ 集成 / E2E / 评测（50 条答案 + 14 条轨迹）/ 红队 8 项 + 性能 4 场景；按 E1~E7 工程规范执行（依赖 BOM+Enforcer、出网收敛到两个域名、受控只读 SQL 三层、审计只追加、灰度与回滚流程）。
 - 工具与编排：设计 16 个自研工具（DLQ 诊断/重投、日志检索/Top 服务、指标 Top/趋势/PromQL 兜底、标签探索、消费积压、ES 索引/DSL 兜底、代码定位、知识卡目录/检索/读取）；ES DSL 与 PromQL 全部在服务端拼装，模型只填业务参数，并对参数做 clamp、服务名/索引/PromQL 白名单校验；DLQ 详情可按 originMsgId→msgId→keys 逐级检索日志取首错（匹配 message/MSG_ID/UNIQ_KEY/keys 字段），把死信与首条失败日志自动关联。统一错误返回与只读标记。16 个工具：dlq_topic_list / dlq_message_detail / dlq_redeliver / consumer_lag_top / log_search / log_top_services / es_search / es_index_list / metric_top / metric_trend / metric_query / metric_labels / knowledge_catalog / knowledge_search / card_read / code_locate。
 - 提示词与行为约束：系统提示 13 条硬约束（同一工具最多 1 次、参数报错禁止重调、总工具调用 ≤4、系统本体问题必须走知识检索、锚点事实两关键词各查一次并读卡、引用只允许卡片 id），配合 ReAct 循环（maxIters=12、温度 0.2）控制行为边界。
 - HITL 审批闭环：设计"诊断→提案→审批→执行→核验→审计"状态机；审批超时 fail-closed、同会话同指纹 pending 复用、原文指纹执行前复核；审批决策跨实例 pub/sub 事件通知（业务续跑订阅未接线）；重投后按消息所在队列的消费位点核验是否真被消费，可区分 reentered_dlq / verified_consumed / 无位点证据；always 授权写会话授权表（先撤销旧授权，后续同工具直执）、reject 级联拒绝同会话其余待审；审批执行崩溃自动补执行、卡在 executing 超时回收为失败交人工重试。
@@ -132,7 +132,7 @@ xhs-ai 是面向上述 15 微服务交易系统的 AIOps 诊断与知识问答 A
 - 压测：N=100 会话，C=5 全部成功（P50 13.5s / P95 39.0s / P99 46.5s）；C=20 时 61% 成功、39 个请求客户端 120s 中止，服务端熔断降级、不崩不重启。
 - 去 MCP 化：kill 两个 MCP 子进程后，ES 索引问题 19s、PromQL 问题 39s 正常作答；MCP 工具仅保留 /api/ai/mcp/** 运维直连。
 - 安全验证：红队 8 项全拦截；审计链篡改可检出（篡改后校验失败）；RBAC 实测 OPERATOR→403 / ADMIN→200。
-- 可观测与门禁：17 个 ai_* 指标 + 7 条告警上线；门禁一键通过（61 单测 + 审计一致性 + 哈希链校验，可选 LLM 评测），CI 工作流当前仅跑单测。
+- 可观测与门禁：17 个 ai_* 指标 + 7 条告警上线；门禁一键通过（65 测试含契约 + 审计一致性 + 哈希链校验，可选 LLM 评测），CI 工作流当前仅跑单测。
 - 全量评测首跑：mimo-v2.5-pro 下 100 条 nightly 全量（smoke 20 + regression 80）取得 100% 通过率 / 96% 完成率 / 0% 幻觉率，评测体系从"关键门禁可跑"进入"完整体系成立"阶段。
 - 在线 QA 验证：chat 轻量问答（重启后 3.2s 返回 200）与 Agent 通道复杂诊断（145.6s 完整回答）双通道实测；AI 给出的日志结论经 ES 复核属实（19848 噪音 6319 条 / 19008 端口占用 8305 条）。
 - 评测隔离与资产：评测使用专用用户并在运行前清零额度（此前预算硬限曾拦评测，默认 20 万→50 万）；55 张知识卡、14 条轨迹用例、50 条答案用例、10 个运维脚本，20 篇评审（RV01~RV20）+ RV21~RV29 报告与 10 篇专项设计。
