@@ -126,6 +126,8 @@ public class CounterService {
                 "else " +
                 "  changed = redis.call('SREM', KEYS[2], ARGV[1]) " +
                 "end " +
+                // 2026-09-19 review：去重 Set(KEYS[2]) 原无 TTL——noeviction 下无限增长；补 30 天续期
+                "redis.call('EXPIRE', KEYS[2], ARGV[4]) " +
                 "local count = redis.call('SCARD', KEYS[2]) " +
                 "redis.call('SET', KEYS[3], count) " +
                 // T-035 延伸（2026-08-13）：Set-based 路径补 30 天续期（原遗漏——点赞计数 key 永久 TTL=-1）

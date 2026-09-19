@@ -194,3 +194,8 @@ xxl:
       logretentiondays: 30
 jwt:
   secret: ${JWT_SECRET:MyXhs@2026#JwtSecretKey!ForTokenSign}
+
+# 内部调用令牌（review 2026-09-19：guard 依赖此配置，缺失会 fail-closed 拒绝全部内部调用）
+myxhs:
+  internal:
+    token: ${INTERNAL_TOKEN:}

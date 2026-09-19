@@ -2,6 +2,7 @@ package com.myxhs.home.controller;
 
 import com.myxhs.common.constants.RedisKeyConstants;
 import com.myxhs.common.response.R;
+import com.myxhs.common.web.AccessTokenGuard;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
@@ -25,6 +26,7 @@ import org.springframework.web.bind.annotation.*;
 public class FeedTestController {
 
     private final StringRedisTemplate stringRedisTemplate;
+    private final AccessTokenGuard accessTokenGuard;
 
     /**
      * 模拟推送笔记到用户收件箱（测试用）
@@ -33,7 +35,12 @@ public class FeedTestController {
     public R<Void> testPushInbox(
             @RequestParam Long userId,
             @RequestParam Long noteId,
-            @RequestParam(required = false) Long publishTime) {
+            @RequestParam(required = false) Long publishTime,
+            @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
+        if (!accessTokenGuard.isInternalCall(internalCall)) {
+            log.warn("[测试Feed] 非内部调用被拒绝: push-inbox, userId={}", userId);
+            return R.fail(403, "仅限内部服务调用");
+        }
         if (publishTime == null) {
             publishTime = System.currentTimeMillis();
         }
@@ -50,7 +57,12 @@ public class FeedTestController {
     public R<Void> testPushOutbox(
             @RequestParam Long authorId,
             @RequestParam Long noteId,
-            @RequestParam(required = false) Long publishTime) {
+            @RequestParam(required = false) Long publishTime,
+            @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
+        if (!accessTokenGuard.isInternalCall(internalCall)) {
+            log.warn("[测试Feed] 非内部调用被拒绝: push-outbox, authorId={}", authorId);
+            return R.fail(403, "仅限内部服务调用");
+        }
         if (publishTime == null) {
             publishTime = System.currentTimeMillis();
         }

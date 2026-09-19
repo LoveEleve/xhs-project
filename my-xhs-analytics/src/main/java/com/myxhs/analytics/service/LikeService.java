@@ -97,6 +97,7 @@ public class LikeService {
                 log.warn("[点赞] 反向索引写入失败（对账修复）: userId={}, bizId={}", userId, request.getBizId(), e);
             }
         }
+        renewLikeSetTtl(likeKey, userLikeKey);
 
         log.info("[点赞] 点赞成功: userId={}, bizType={}, bizId={}", userId, request.getBizType(), request.getBizId());
 
@@ -138,6 +139,7 @@ public class LikeService {
         } catch (Exception e) {
             log.error("[点赞] 回滚Redis失败: likeKey={}, userLikeKey={}", likeKey, userLikeKey, e);
         }
+        renewLikeSetTtl(likeKey, userLikeKey);
     }
 
     // ==================== 取消点赞 ====================
@@ -178,6 +180,7 @@ public class LikeService {
                 log.warn("[点赞] 反向索引移除失败（对账修复）: userId={}, bizId={}", userId, request.getBizId(), e);
             }
         }
+        renewLikeSetTtl(likeKey, userLikeKey);
 
         log.info("[点赞] 取消点赞成功: userId={}, bizType={}, bizId={}", userId, request.getBizType(), request.getBizId());
 
@@ -193,10 +196,25 @@ public class LikeService {
                 log.error("[点赞] MQ失败+Redis回滚也失败: userId={}, bizType={}, bizId={}",
                         userId, request.getBizType(), request.getBizId(), rollbackEx);
             }
+            renewLikeSetTtl(likeKey, userLikeKey);
             log.error("[点赞] MQ发送失败已回滚Redis: userId={}, bizType={}, bizId={}",
                     userId, request.getBizType(), request.getBizId());
             throw new com.myxhs.common.exception.BizException(
                     com.myxhs.common.response.ResultCode.INTERNAL_ERROR, "取消点赞失败，请重试");
+        }
+    }
+
+    /** 点赞集合 30 天续期（noeviction 下无 TTL 会无限增长；2026-09-19 review 修复） */
+    private void renewLikeSetTtl(String... keys) {
+        for (String key : keys) {
+            if (key == null || key.isEmpty()) {
+                continue;
+            }
+            try {
+                stringRedisTemplate.expire(key, java.time.Duration.ofDays(30));
+            } catch (Exception e) {
+                log.warn("[点赞] TTL 续期失败: key={}", key, e);
+            }
         }
     }
 
