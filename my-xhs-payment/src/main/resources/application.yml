@@ -205,4 +205,4 @@ myxhs:
     token: ${INTERNAL_TOKEN:}
 
 jwt:
-  secret: "MyXhs@2026#JwtSecretKey!ForTokenSign"
+  secret: ${JWT_SECRET:MyXhs@2026#JwtSecretKey!ForTokenSign}

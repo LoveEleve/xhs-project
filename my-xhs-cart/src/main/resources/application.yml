@@ -168,3 +168,6 @@ myxhs:
     token: ${ADMIN_TOKEN:}
   internal:
     token: ${INTERNAL_TOKEN:}
+
+jwt:
+  secret: ${JWT_SECRET:MyXhs@2026#JwtSecretKey!ForTokenSign}

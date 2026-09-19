@@ -455,3 +455,21 @@ groups:
         annotations:
           summary: "告警管道心跳（收到即代表 Prometheus→Alertmanager→sink 全链路正常）"
           description: "常鸣告警；若长时间收不到，说明通知链路故障（silence/挂掉）"
+
+  # ==================== XXL-Job 调度健康（textfile 指标，2026-09-19 补齐告警缺口） ====================
+  - name: myxhs_xxl_job_health
+    rules:
+      - alert: XxlJobScheduleOrHandleFailures
+        expr: xxl_job_trigger_failures_15m > 0 or xxl_job_handle_failures_15m > 0
+        for: 5m
+        labels: { severity: warning, level: P2 }
+        annotations:
+          summary: "XXL-Job 近 15 分钟存在调度/执行失败"
+          description: "触发失败={{ $value }}（trigger_code!=200）；执行失败见 xxl_job_handle_failures_15m。排查：xxl_job.xxl_job_log"
+      - alert: XxlJobHealthCheckDown
+        expr: xxl_job_health_ok == 0
+        for: 10m
+        labels: { severity: critical, level: P1 }
+        annotations:
+          summary: "XXL-Job 健康巡检失败（DB 不可达或巡检未运行）"
+          description: "检查 /etc/cron.d/myxhs-xxl-job-health 与 my-xhs-mysql 连通性"
