@@ -914,22 +914,9 @@ services:
       TZ: Asia/Shanghai
       LS_JAVA_OPTS: "-Xms256m -Xmx512m"
       XPACK_MONITORING_ENABLED: "false"
-    command: >
-      logstash
-      -e '
-        input {
-          tcp { port => 15044 codec => json_lines }
-          beats { port => 15045 }
-        }
-        output {
-          elasticsearch {
-            hosts => ["127.0.0.1:19200"]
-            user => "elastic"
-            password => "Xhs@2026#Elastic"
-            index => "myxhs-logs-%{+YYYY.MM.dd}"
-          }
-        }
-      '
+    # 2026-09-19 review：改用仓库管道文件（单一事实源，含 grok/date/脱敏 filter），移除内联 -e 漂移
+    volumes:
+      - ./logstash/logstash.conf:/usr/share/logstash/pipeline/logstash.conf:ro
     deploy:
       resources:
         limits: { cpus: '0.5', memory: 1024m }

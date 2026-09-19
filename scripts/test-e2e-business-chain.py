@@ -261,13 +261,18 @@ def main():
     step(28, f"券状态(退款后): {coupon_status}", code, body, code == 200,
          {"userCouponId": user_coupon_id, "couponStatus": coupon_status})
 
-    # 14. 订单通知（退款后应刷新为最新状态：订单域接入验证）
-    code, body = call("GET", "/api/notification/list", token, secret,
-                      params={"pageNum": 1, "pageSize": 10}, user_id=uid)
-    _nd2 = body.get("data")
-    _recs = _nd2 if isinstance(_nd2, list) else (_nd2 or {}).get("records") or (_nd2 or {}).get("list") or []
-    order_notifs = [r for r in _recs if r.get("type") == 5]
-    latest_content = order_notifs[0].get("content") if order_notifs else None
+    # 14. 订单通知（退款后应刷新为最新状态；退款为异步链路：轮询等待最长 15s）
+    order_notifs, latest_content = [], None
+    for _try in range(10):
+        code, body = call("GET", "/api/notification/list", token, secret,
+                          params={"pageNum": 1, "pageSize": 10}, user_id=uid)
+        _nd2 = body.get("data")
+        _recs = _nd2 if isinstance(_nd2, list) else (_nd2 or {}).get("records") or (_nd2 or {}).get("list") or []
+        order_notifs = [r for r in _recs if r.get("type") == 5]
+        latest_content = order_notifs[0].get("content") if order_notifs else None
+        if order_notifs and "退款已到账" in (latest_content or ""):
+            break
+        time.sleep(1.5)
     step(29, f"订单通知(退款后): {len(order_notifs)}条 | {latest_content}", code, body,
          bool(order_notifs) and "退款已到账" in (latest_content or ""),
          {"titles": [r.get("title") for r in order_notifs],

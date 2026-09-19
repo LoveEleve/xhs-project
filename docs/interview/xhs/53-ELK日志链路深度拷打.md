@@ -11,13 +11,13 @@
 **① 原理层**
 - **链路分工**：Filebeat（轻量采集，Go，低资源）→ 网络传输 → Logstash（重加工：grok/date/mutate，JVM，可横向扩）→ ES（存储检索）→ Kibana（可视化）；采集与加工分离，采端不阻塞业务；
 - **采集模式**：`filestream`（新，文件指纹 + 游标，替代老 log input）；JSON 日志用 **ndjson 解析**（一行一条，天然免多行堆栈处理）；
-- **处理链**：`input(json_lines)` → `filter(grok 提取服务名 + date 规范化时间戳)` → `output(按天索引)`；字段漂移靠 `overwrite_keys/add_error_key`；
+- **处理链**：`input(json_lines)` → `filter(grok 提取服务名 + date 规范化时间戳 + mutate gsub 凭据脱敏)` → `output(按天索引)`；字段漂移靠 `overwrite_keys/add_error_key`；
 - **保留与生命周期**：ILM（热/温/冷/删）是标准做法；没有 ILM 就要靠外部清理（cron 删索引）兜底；
 - **背压**：ES 慢 → Logstash 队列 → Filebeat 重试；采端 `harvester` 限速防止打爆磁盘/网络。
 
 **② 项目用法（实配）**
 - **Filebeat**：`filestream` 采集 `/logs/*.json`，**ndjson 解析**（`overwrite_keys` + `add_error_key`），输出 `output.logstash: 127.0.0.1:15045`；
-- **Logstash**：`input codec=json_lines`；filter 用 **grok 从 `[log][file][path]` 提取服务名**（`/logs/my-xhs-user.json → my-xhs-user`），date 规范化；`output index = myxhs-logs-%{+YYYY.MM.dd}`（**按天索引**，便于删除与查询裁剪）；
+- **Logstash**：`input codec=json_lines`；filter 用 **grok 从 `[log][file][path]` 提取服务名**（`/logs/my-xhs-user.json → my-xhs-user`），date 规范化；`output index = myxhs-logs-%{+YYYY.MM.dd}`（**按天索引**，便于删除与查询裁剪）；**mutate gsub 对 `ticket=/token=/password=` 等凭据脱敏**（2026-09-19 review 补，网关侧亦同步脱敏 query）；
 - **应用侧日志规范**：Logback JSON encoder（结构化字段：level/logger/traceId/stack_trace），单服务滚动上限 **100MB/文件、7 天、2GB**——**应用本地和 ES 是两级保留**，先保证不把磁盘写爆；
 - **存储实况**：`myxhs-logs-*` 单日索引可达 **650 万条 / 1.8GB**（压测日），副本 0（单节点）；
 - **保留双口径（诚实边界）**：设计上是 **ILM 30 天策略 + 模板**（`apply-ilm.sh`，P-D14——副本 0/1 分片/30d delete）；**本环境 ILM 策略未启用**，走 `log-cleanup.sh` cron（每日 4:00）删除 **7 天前**的索引 + 文件清理 3 天。

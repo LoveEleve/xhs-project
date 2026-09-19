@@ -39,6 +39,21 @@ public class RequestLogFilter implements GlobalFilter, Ordered {
     private static final String TRACE_ID_HEADER = "X-Trace-Id";
     private static final String START_TIME_ATTR = "gatewayRequestStartTime";
 
+    /** 需要脱敏的 query 参数（大小写不敏感；SSE ticket / 旧式 token / 签名等均属凭据） */
+    private static final String[] SENSITIVE_QUERY_KEYS = {
+            "ticket", "token", "access_token", "refresh_token", "password",
+            "secret", "signature", "sign", "authorization", "code", "captcha"
+    };
+
+    /** 将 query 中敏感参数值替换为 ***（保留参数名便于排查） */
+    private static String maskSensitiveQuery(String query) {
+        String masked = query;
+        for (String key : SENSITIVE_QUERY_KEYS) {
+            masked = masked.replaceAll("(?i)(" + key + "=)[^&]*", "$1***");
+        }
+        return masked;
+    }
+
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         ServerHttpRequest request = exchange.getRequest();
@@ -66,10 +81,10 @@ public class RequestLogFilter implements GlobalFilter, Ordered {
                 .header("sw8", buildSw8Header(traceId, path))
                 .build();
 
-        // 5. 入站日志
+        // 5. 入站日志（2026-09-19 review：query 含 SSE ticket 等凭据，落日志前脱敏）
         if (query != null && !query.isEmpty()) {
             log.info("[Gateway] >>> method={}, path={}, query={}, traceId={}",
-                    method, path, query, traceId);
+                    method, path, maskSensitiveQuery(query), traceId);
         } else {
             log.info("[Gateway] >>> method={}, path={}, traceId={}",
                     method, path, traceId);
