@@ -1,0 +1,137 @@
+{
+ "runTs": "20260920-001637",
+ "scenarios": [
+  {
+   "scenario": "S1 并发重复支付回调×5",
+   "ok": true,
+   "detail": {
+    "status": 1,
+    "events": [
+     "ORDER_CREATED",
+     "ORDER_PAID"
+    ],
+    "callback_codes": [
+     null,
+     null,
+     null,
+     null,
+     null
+    ]
+   }
+  },
+  {
+   "scenario": "S2 取消vs支付竞态",
+   "ok": true,
+   "detail": {
+    "orderId": "2101344736112689154",
+    "status": 4,
+    "events": [
+     "ORDER_CREATED",
+     "ORDER_CANCELLED"
+    ],
+    "refund": "REFUND20260920000003\t199.00\t0",
+    "results": [
+     [
+      "cancel",
+      200,
+      200
+     ],
+     [
+      "pay",
+      200,
+      null
+     ]
+    ]
+   }
+  },
+  {
+   "scenario": "S3 重复退款回调×3",
+   "ok": true,
+   "detail": {
+    "status": 5,
+    "events": [
+     "ORDER_CREATED",
+     "ORDER_PAID",
+     "ORDER_REFUNDED"
+    ],
+    "refund": "REFUND20260920000004\t199.00\t1",
+    "codes": [
+     null,
+     null,
+     null
+    ]
+   }
+  },
+  {
+   "scenario": "S4 确认收货vs退款竞态",
+   "ok": true,
+   "detail": {
+    "status": 5,
+    "events": [
+     "ORDER_CREATED",
+     "ORDER_PAID",
+     "ORDER_DELIVERED",
+     "ORDER_COMPLETED",
+     "ORDER_REFUNDED"
+    ],
+    "results": [
+     [
+      "confirm",
+      200,
+      200
+     ],
+     [
+      "refund",
+      200,
+      null
+     ]
+    ]
+   }
+  },
+  {
+   "scenario": "S5 部分退款(100/393)",
+   "ok": true,
+   "detail": {
+    "status": 1,
+    "stockBefore": [
+     58,
+     4
+    ],
+    "stockAfter": [
+     58,
+     3
+    ],
+    "refund": "REFUND20260920000006\t100.00\t1"
+   }
+  },
+  {
+   "scenario": "S6 支付成功但订单已取消",
+   "ok": true,
+   "detail": {
+    "orderId": "2101344818014863361",
+    "afterCancel": 4,
+    "final": 4,
+    "callback": [
+     200,
+     null
+    ],
+    "refund": ""
+   }
+  },
+  {
+   "scenario": "S7 同bizIdentifier并发创建×3",
+   "ok": true,
+   "detail": {
+    "ids": [
+     "2101344836658544641"
+    ],
+    "unique": 1,
+    "codes": [
+     200,
+     200,
+     200
+    ]
+   }
+  }
+ ]
+}

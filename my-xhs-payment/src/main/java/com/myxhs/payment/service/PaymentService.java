@@ -623,7 +623,7 @@ public class PaymentService {
             try {
                 R<Void> nr = orderFeignClient.notifyRefundSuccess(refund.getOrderId(), refundNo);
                 if (nr == null || !nr.isSuccess()) {
-                    log.error("[退款成功] Feign通知订单失败(MQ无消费端,订单状态可能滞留): orderId={}, resp={}",
+                    log.error("[退款成功] Feign通知订单失败(REFUND_RESULT_TOPIC 兜底消费，状态可收敛): orderId={}, resp={}",
                             refund.getOrderId(), nr);
                 }
             } catch (Exception e) {
