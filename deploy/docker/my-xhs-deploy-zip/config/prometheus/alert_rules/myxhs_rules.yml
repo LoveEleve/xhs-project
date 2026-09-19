@@ -227,7 +227,8 @@ groups:
 
 #       # DLQ 死信队列有消息 → P1
       - alert: DlqMessageDetected
-        expr: myxhs_mq_dlq_total > 0
+        # counter 为累计值：用 10m 增量判断"有新死信"，避免历史累积导致永久 firing
+        expr: increase(myxhs_mq_dlq_total[10m]) > 0
         for: 1m
         labels:
           severity: critical
@@ -374,7 +375,8 @@ groups:
   - name: myxhs_rocketmq_dlq_alerts
     rules:
       - alert: RocketmqDlqBacklog
-        expr: rocketmq_dlq_backlog > 0
+        # max by：多实例/多服务冗余暴露同一 gauge 时只保留每组一条，避免告警 N 倍重复
+        expr: max by (consumer_group) (rocketmq_dlq_backlog) > 0
         for: 5m
         labels: { severity: warning, level: P1 }
         annotations:

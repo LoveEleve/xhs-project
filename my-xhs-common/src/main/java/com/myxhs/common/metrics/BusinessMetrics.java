@@ -109,6 +109,15 @@ public class BusinessMetrics {
         counter("myxhs.mq.dlq.total", "consumerGroup", consumerGroup, "topic", topic).increment();
     }
 
+    /**
+     * 预注册 DLQ counter（0 基线）。
+     * <p>原因：Prometheus increase() 依赖窗口内至少两个样本；若序列首次出现即为 1（无 0 基线），
+     * 首次死信的 increase 计算为 0 → DlqMessageDetected 漏报（2026-09-19 毒丸演练实测）。</p>
+     */
+    public void registerDlqCounter(String consumerGroup, String topic) {
+        counter("myxhs.mq.dlq.total", "consumerGroup", consumerGroup, "topic", topic);
+    }
+
     // ==================== 内部方法 ====================
 
     /**
