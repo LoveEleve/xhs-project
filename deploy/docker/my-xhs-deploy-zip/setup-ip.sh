@@ -55,7 +55,6 @@ FILES_TO_BACKUP=(
     "config/redis/sentinel.conf"
     "config/prometheus/prometheus.yml"
     "sql/04-nacos-config-seed.sql"
-    "config/nacos/my-xhs-redis.yaml"
     "config/deploy-cloud/init-xxljob.sql"
     "start-all.sh"
     "sql/test-data-init.sql"
@@ -109,9 +108,6 @@ replace_ip "config/prometheus/prometheus.yml" '${MICROSERVICE_IP}' "${MICROSERVI
 # 04-nacos-config-seed.sql
 replace_ip "sql/04-nacos-config-seed.sql" '${HOST_IP}' "${HOST_IP}"
 replace_ip "sql/04-nacos-config-seed.sql" '${MICROSERVICE_IP}' "${MICROSERVICE_IP}"
-
-# nacos配置文件
-replace_ip "config/nacos/my-xhs-redis.yaml" '${HOST_IP}' "${HOST_IP}"
 
 # init-xxljob.sql
 replace_ip "config/deploy-cloud/init-xxljob.sql" '${MICROSERVICE_IP}' "${MICROSERVICE_IP}"

@@ -122,7 +122,7 @@ mybatis-plus:
 # Redisson 配置
 redisson:
   address: redis://192.168.0.142:6379
-  # 【Nacos 配置】Redisson 密码已迁移至 Nacos Config（my-xhs-redis.yaml），本地值为 fallback
+  # 【Nacos 配置】Redisson 密码已迁移至 Nacos Config（my-xhs-common.yaml），本地值为 fallback
   password: "Xhs@2026#Redis"
 
 

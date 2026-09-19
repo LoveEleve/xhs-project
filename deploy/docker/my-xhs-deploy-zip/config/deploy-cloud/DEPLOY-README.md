@@ -86,7 +86,7 @@ curl -s http://127.0.0.1:18848/nacos/v1/ns/namespace/list
 ## 七、从零部署初始化补充（2026-08-12）
 
 1. **nacos_config/xxl_job 表已补全**：原 init-all.sql 只建库未建表（全新部署 Nacos/xxl-job 连空库会失败）；已把 xxl_job 8 表（含 schedule_lock/admin 初始数据）+ nacos 12 表并入 `sql/init-all.sql` 末尾，**临时库实测通过（20 表）**。
-2. **Nacos 配置需导入**：从零部署后 Nacos 的 `my-xhs` 命名空间配置为空——**已固化在 `config/nacos/` 下（my-xhs-common.yaml / my-xhs-gateway.yaml / my-xhs-redis.yaml）**，部署后导入即可（控制台或 `curl -X POST http://127.0.0.1:18848/nacos/v1/cs/configs -d 'dataId=my-xhs-common.yaml&group=DEFAULT_GROUP&tenant=my-xhs&content=...'`），否则微服务用本地 yml 默认值（含 DB/Redis 密码一致，但 redis 端口/sentinel 等以 Nacos 为准）。**若云主机 IP 与 21.130.247.89 不同，先改 my-xhs-redis.yaml 的 host 再导入。**
+2. **Nacos 配置需导入**：从零部署后 Nacos 的 `my-xhs` 命名空间配置为空——**已固化在 `config/nacos/` 下（my-xhs-common.yaml / my-xhs-gateway.yaml）**，部署后导入即可（控制台或 `curl -X POST http://127.0.0.1:18848/nacos/v1/cs/configs -d 'dataId=my-xhs-common.yaml&group=DEFAULT_GROUP&tenant=my-xhs&content=...'`），否则微服务用本地 yml 默认值（含 DB/Redis 密码一致，但 redis 端口/sentinel 等以 Nacos 为准）。**Redis/DB 连接以各服务本地 yml 为准（common.yaml 仅外置密码/端口）；原 my-xhs-redis.yaml 已废弃移除（无服务 import，属假外置）。**
 3. **ES IK 插件需外网**：ES 首次启动从 `get.infini.cloud` 下载 IK 插件——云主机需能访问该域名，否则 ES 启动卡死。
 4. **docker 镜像加速**：云主机 docker 配置镜像加速（国内拉 elasticsearch/kibana 8.x 大镜像）：`/etc/docker/daemon.json` 配 `registry-mirrors`（腾讯云/阿里云加速），然后 `systemctl restart docker`。
 5. **rocketmq-dashboard:latest**：compose 用 latest 标签（不可复现）——建议 `docker tag` 固定当前版本或改用具体 tag。
