@@ -171,7 +171,10 @@ public class LocalMessageRetryJob {
     private String resolveTopic(String operationType) {
         return switch (operationType) {
             case "ORDER_CREATED" -> OrderService.ORDER_TRANSACTION_TOPIC;
-            default -> "DEFAULT_RETRY_TOPIC";
+            // 2026-09-19 review：原 default 投递到无消费者的 DEFAULT_RETRY_TOPIC，且 SEND_OK 后
+            // markSuccess → 消息静默丢失。未知类型改为拒绝，交由 catch 走退避重试/死信，人工可查。
+            default -> throw new IllegalStateException(
+                    "未知本地消息 operationType=" + operationType + "，拒绝投递到无消费者 topic");
         };
     }
 

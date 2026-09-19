@@ -354,7 +354,7 @@ public class PaymentService {
             businessRejected = (nr != null && !nr.isSuccess()
                     && nr.getCode() != ResultCode.SERVICE_UNAVAILABLE.getCode());
         } catch (Exception e) {
-            // 注意：PAY_RESULT_TOPIC 当前无消费端（order 侧支付结果走 Feign 同步），
+            // 注意：order 侧 PayResultConsumer 已兜底消费 PAY_RESULT_TOPIC（Feign 同步失败/503 时收敛），
             // 真正兜底是 XXL-Job paymentNotifyCompensateJob（扫描 status=1 超窗未收敛的支付单重发通知）
             log.error("[支付成功] 通知订单服务失败(兜底依赖 paymentNotifyCompensateJob): orderId={}, tradeNo={}", orderId, tradeNo, e);
         }
