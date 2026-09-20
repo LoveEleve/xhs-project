@@ -64,3 +64,7 @@ SkyWalking 9.7 文档；本项目 FINAL-HANDOFF 排查记录与运行态。
 
 ## 真实性说明
 22 span（旧环境）/插件改动/OAP 版本/存储端口为历史实证；2026-09-18 起本环境已接入并验证（15 服务注册、29 span 跨进程、段量数据），采样/关闭/升级参数一并披露。
+
+## 本轮补充（2026-09-20 APM 实测）
+- 15/15 服务注册；真实链路 gateway→home 53 span（CROSS_PROCESS/CROSS_THREAD 完整，含 GatewayFilter）。
+- 边界：`ignore_suffix` 对 SpringMVC 生效，gateway（WebFlux）抓取噪音列为已知边界。

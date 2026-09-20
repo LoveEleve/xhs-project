@@ -74,3 +74,8 @@ Redis 官方文档（持久化/淘汰/Sentinel/Cluster）；RV19 演练记录；
 
 ## 真实性说明
 配置参数/演练数字/脚本数量均为仓库与运行态事实；"未配 min-replicas-to-write"为主动边界。
+
+## 本轮补充（2026-09-20 故障语义实测）
+- **故障语义矩阵**：网关 401「Token 已被注销」→503「认证服务暂不可用」（fail-closed 可重试）；主库暂停 product 200（DB 回退，首跳 11.2s/后续 0.01s）；从库暂停无感；限流 fail-open。
+- 自定义 Lettuce 工厂补 **1s commandTimeout**（原 60s 默认使 DB 回退等不到）。
+- 切主 2.3s 会话无错乱（458 状态键）；更新→读 24ms 一致；点赞集合 TTL 治理（84 键回填 + Lua EXPIRE）。

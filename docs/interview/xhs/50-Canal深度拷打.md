@@ -74,3 +74,6 @@ Canal 1.1.7 文档；本项目 Canal 配置与消费端代码。
 
 ## 真实性说明
 实例/过滤/Topic/slaveId/参数均为部署配置事实；单 server 无 HA、DDL 未消费、Canal 自身无告警为主动披露的边界。
+
+## 本轮补充（2026-09-20 路线复核）
+- Canal `ts` 做 **external version + tombstone**（让 ES 拒绝旧版本写）；缓存一致性路线仍是延迟双删（**承认 Canal 更优，列为下一步**——决策台账 C9/D 类）。

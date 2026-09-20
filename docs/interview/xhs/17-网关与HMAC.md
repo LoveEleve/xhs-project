@@ -64,3 +64,10 @@ Spring Cloud Gateway 过滤器文档；HMAC 防重放公开实践（AWS SigV4 �
 
 ## 真实性说明
 顺序、签名规则、nonce 机制、per-session secret、默认关闭均为代码事实；"11/11"为测试记录；fail-open 是明确取舍。
+
+## 本轮补充（2026-09-20 信任链与脱敏实测）
+- **F-001 真事故**：信任过滤（剥离外部伪造直连 JWT）因双 `StringRedisTemplate` 注入歧义（`NoUniqueBeanDefinitionException` 被吞）**全线失效** → `@Qualifier` 修复 + 5 场景验证（覆盖生效/吊销拒绝 400+审计/内部调用/网关流量）。
+- Redis 故障语义：401「Token 已被注销」→**503「认证服务暂不可用」**（fail-closed 可重试，不再误登出）。
+- 日志脱敏：`RequestLogFilter.maskSensitiveQuery`（ticket 等敏感 query 打码）+ Logstash 管道漂移修复（挂载仓库 conf + gsub 脱敏）。
+- 限流匹配度审计：16 路由 : 16 规则全覆盖、零误伤；两风险登记（支付回调 5 QPS / counter:get 50）。
+- 残余风险：服务端口直连暴露面（网络层收敛项，登记）。

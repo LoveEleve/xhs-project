@@ -69,3 +69,7 @@ Prometheus/Alertmanager 官方文档；本项目配置与告警 e2e 报告。
 
 ## 真实性说明
 规则数/端口/receiver/exporter 均为运行态与配置事实；单点无 HA、ILM/retention 等边界已标注。
+
+## 本轮补充（2026-09-20 告警体系实测）
+- 40 规则/9 组分级上线；**通知黑洞修复**并端到端验证（firing→落盘→resolved）；SLO 错误预算 43m12s/30 天 + Burn Ledger 落地。
+- DLQ 规则三修：**0 基线预注册**（首次死信可算）、`increase([10m])`、`max by(consumer_group)`；动态发现消费组消除 15× 重复告警。

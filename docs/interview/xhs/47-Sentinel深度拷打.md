@@ -70,3 +70,7 @@ Sentinel 官方文档（Slot/LeapArray/GatewayFlowRule）；Dashboard 1.8.8（�
 
 ## 真实性说明
 规则数值/15 路由/40 处注解/0 处 @SentinelResource/端口均为运行态与代码事实；用户级限流、集群限流、熔断未配均主动披露。
+
+## 本轮补充（2026-09-20 限流审计实测）
+- 网关 16 路由 : 16 规则**全覆盖、零误伤**；两风险登记（支付回调路径 5 QPS 可能误伤重试、`counter:get` 全局 50 可能不够）。
+- **服务侧无 Sentinel 熔断规则**（仅网关 gw-flow）——诚实缺口，靠 Feign 超时+降级点兜底，规则补齐列 roadmap。
