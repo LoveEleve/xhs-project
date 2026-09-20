@@ -51,6 +51,27 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
 
     private final CounterService counterService;
     private final ObjectMapper objectMapper;
+    private final org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
+
+    /** 点赞事件版本门（2026-09-20 review）：防"后到的旧事件"改写计数（与 analytics 侧同构语义） */
+    private static final String LIKE_VERSION_PREFIX = "myxhs:counter:event:version:like:";
+    private static final long LIKE_VERSION_TTL_HOURS = 24;
+
+    private static final org.springframework.data.redis.core.script.DefaultRedisScript<Long> LIKE_VERSION_SCRIPT =
+            new org.springframework.data.redis.core.script.DefaultRedisScript<>(
+                    "local cur = redis.call('GET', KEYS[1]) " +
+                    "if cur and tonumber(cur) >= tonumber(ARGV[1]) then return 0 end " +
+                    "redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2]) " +
+                    "return 1",
+                    Long.class);
+
+    private boolean isStaleLikeEvent(Long userId, Integer bizType, Long bizId, Long actionTime) {
+        String key = LIKE_VERSION_PREFIX + userId + ":" + bizType + ":" + bizId;
+        Long passed = stringRedisTemplate.execute(LIKE_VERSION_SCRIPT,
+                java.util.List.of(key), String.valueOf(actionTime),
+                String.valueOf(LIKE_VERSION_TTL_HOURS * 3600));
+        return passed == null || passed == 0;
+    }
 
     /** 计数类型常量：1-点赞 2-收藏 3-评论 4-分享 5-浏览 6-粉丝 7-关注 */
     private static final int COUNT_TYPE_LIKE = 1;
@@ -141,6 +162,15 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
         }
         if (userId == null) {
             log.warn("[计数Consumer] 点赞事件缺少 userId，无法使用 Set-based 计数: bizType={}, bizId={}", bizType, bizId);
+            return;
+        }
+
+        // 版本门：actionTime 更旧的事件一律跳过（原实现只靠 SADD/SREM 可交换性，
+        // 实测"后到的旧 UNLIKE"会把计数改回 0，与 analytics 侧（版本校验后拒绝）产生分叉）
+        Long actionTime = toLong(eventMap.get("actionTime"));
+        if (actionTime != null && isStaleLikeEvent(userId, bizType, bizId, actionTime)) {
+            log.info("[计数Consumer] 跳过旧点赞事件(版本门): userId={}, bizType={}, bizId={}, actionTime={}",
+                    userId, bizType, bizId, actionTime);
             return;
         }
 
