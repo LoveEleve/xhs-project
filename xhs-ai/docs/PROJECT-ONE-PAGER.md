@@ -7,17 +7,17 @@
 | 指标 | 数值 | 证据 |
 |------|------|------|
 | 故障定位 | 10/10 案例完整，均值 1.63min，保守降幅 92.1% | `reports/mttr-benchmark-20260913.md` |
-| 知识问答 | KB hit@1=100%；答案级 50/50；引用 100% | `reports/kb-eval-*.md`、`answer-eval-*.md` |
+| 知识问答 | KB hit@1=100%；答案级 kb29/30+diag15/15+sec5/5（blocked=0）；引用校验拦幻觉 id | `reports/kb-eval-*.md`、`answer-eval-{kb,diag,sec}-20260920.json` |
 | 工具评测 | 选择 12/12；轨迹稳定性 0.917（4 例×3） | `reports/trajectory-eval-20260915.md` |
 | 成本 | 单次诊断 18,292/1,433 tokens ≈¥0.012–0.048；按用户日预算（软切/硬限 429） | `reports/cost-week-*.md` |
 | 安全 | 红队 8 项全拦截；审计哈希链可校验；RBAC（JWT role） | `reports/production-gaps-20260915.md` |
-| 规模 | 15 微服务/8 中间件；16 个全自研工具（MCP 20 仅运维直连） | README |
+| 规模 | 15 微服务/8 中间件；**20 个全自研工具（运维16+业务4）**，MCP 20 仅运维直连 | README |
 
 ## 二、七个可讲的故事（问题→根因→修复→证据）
 1. **重投核验是死代码**：DLQ 属性存的是 broker 物理 ID，而代码比对客户端 uniqId，永不相等 → 双 ID 匹配（RV18）
 2. **消费位点假阳性**：跨 topic 汇总位点 != 本消息已消费 → 消息队列级 `queueOffset` 核验（RV18）
 3. **"注册成功 ≠ 可用"**：AgentScope 对无只读注解的 MCP 工具默认 ASK，非交互 API 永久挂起 → 权限模式修正 + **工具级 E2E 探针门禁**（RV19/23）
-4. **框架不支持工具热替换** → 架构解法：**去 MCP 化**（16 工具全自研，kill 双 MCP 仍可诊断）（RV27）
+4. **框架不支持工具热替换** → 架构解法：**去 MCP 化**（20 工具全自研，MCP 已旁路；死进程 15.1s 快速失败/1.2s 重建）（RV27 + 2026-09-20 复核）
 5. **自愈误判引发重启风暴**（NRestarts=24）→ 全进程扫描 + 三连击 + 默认只告警（RV19/23）
 6. **工具参数面向 LLM 设计**：裸 DSL/PromQL → 业务级工具，P95 题 98s 答偏 → 50s 答对；A5 门禁沉淀（RV21/22/25）
 7. **生产化收口**：token 预算/并发护栏/保留清理/7 条告警/RBAC/审计哈希链/请求幂等/会话摘要（RV24/27/29）
@@ -39,3 +39,10 @@ Prompt 版本化 + 金标回放 → 工具/契约回归测试进 CI → Docker �
 - 手册：`docs/interview-defense-handbook.md`（18 主题 + 附录 A~U′）
 - 简历口径：`xhs-ai/docs/resume-and-metrics.md`
 - 门禁：`bash xhs-ai/scripts/gate.sh`（单测+审计+哈希链，可选评测）
+
+## 2026-09-20 增补（最新口径，覆盖上文旧数字）
+- **业务双场景**：新增 4 个业务只读工具（order_trace 跨五域+分片同哈希 / order_stats 16 分片聚合 / inventory_query / coupon_query），工具总数 **20**；业务库仅 SELECT 授权；实测抓修 2 真 Bug（LocalDateTime 序列化、无 id 列 SQL）。
+- **模型网关演练**：注入无效主模型 → 重试→备用 5/5 不中断、3 败熔断 60s、半开探测、降级 4.5s；预算硬拒 agent 429/0.2s；**chat 路径预算绕过真 Bug 已修**（429/0.3s）。
+- **摘要与恢复**：maxTokens 800→4096、block 60s→180s 两处真 Bug 修复；清 Redis 后 18.1s 三事实全中（session.rebuild 审计）。
+- **评测三批**：kb 29/30（96.7%，1 例模型波动）+ diag 15/15（修正过时用例后）+ sec 5/5；门禁脚本 `ai-eval-gate.sh` 失败重跑一次，`ci-gate.sh` 可选接入。
+- **口径作废**：旧"kill MCP 19s/39s 自愈/NRestarts=24"为去 MCP 化之前口径，不再引用。

@@ -61,3 +61,8 @@ LLM-as-judge 偏差公开研究（位置/长度/自偏好）；pass@k 评测实�
 
 ## 真实性说明
 0.917、12 次运行、归因结论为报告事实；"通过率 ≥90%/回退 ≥2% 阻断"为文档化判定口径，评测门禁手动触发（未接 CI）；judge 未接入主指标（gaps 清单记录 0 命中）。
+
+## 本轮补充（2026-09-20 评测稳定性实测）
+- **模型输出有波动**：同一题首跑 fail、复跑 pass（KB-order-create-mainline 引用了 business 卡而非期望的 code-map 卡）→ 门禁策略：失败用例自动重跑一次并合并，首跑数据保留不藏。
+- **blocked≠fail**：执行受阻（预算/网关）与回答不合格分离统计，passRate 按实际执行数；gatePass 要求 blocked==0。
+- **judge 类校验**：引用存在性硬校验抓到卡片 id 幻觉（inventory-three-stage vs 真实 -three-level）；后缀核验修复（真实文件简称不再误判）。

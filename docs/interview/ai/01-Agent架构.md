@@ -63,3 +63,7 @@ Anthropic《Building effective agents》；AgentScope 2.0 Java 文档与源码�
 
 ## 真实性说明
 工具数、maxIters、双通道、Redis 状态、预算/护栏为代码事实；"单机 ~10 并发"为 D07 估算（Agent 通道未单独压测）；"跨实例续跑未接线"见 RV17/RV18。
+
+## 本轮补充（2026-09-20 复核）
+- Agent 工具全自研、MCP 已旁路（`mcp-tools-enabled=false`）；MCP 直连死进程修复为 15.1s 快速失败 + 1.2s 重建；旧 kill-MCP 19s/39s 口径作废。
+- 工具数 16→20（新增业务只读 4 个），提示词新增 12.4 业务工具纪律（userId 必须取问题中值）。
