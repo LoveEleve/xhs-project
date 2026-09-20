@@ -148,32 +148,32 @@ rules:
 
     # 分片算法（使用 INLINE 表达式，兼容 standard 策略）
     shardingAlgorithms:
-      # 库路由：user_id % 4 → ds0~ds3
+      # 库路由（2026-09-20 review 修复倾斜）：hash(user_id) % 4 → ds0~ds3
       db-inline:
         type: INLINE
         props:
-          algorithm-expression: ds${user_id % 4}
-      # 表路由：(user_id / 4) % 4 → t_xxx_0~t_xxx_3
+          algorithm-expression: ds${(user_id.hashCode() & 0x7fffffff) % 4}
+      # 表路由：hash(user_id) / 4 % 4 → t_xxx_0~t_xxx_3（原直接取模在 Snowflake 低位偏差下全落同片）
       t-order-inline:
         type: INLINE
         props:
-          algorithm-expression: t_order_${(user_id.intdiv(4)) % 4}
+          algorithm-expression: t_order_${((user_id.hashCode() & 0x7fffffff).intdiv(4)) % 4}
       t-order-item-inline:
         type: INLINE
         props:
-          algorithm-expression: t_order_item_${(user_id.intdiv(4)) % 4}
+          algorithm-expression: t_order_item_${((user_id.hashCode() & 0x7fffffff).intdiv(4)) % 4}
       t-local-message-inline:
         type: INLINE
         props:
-          algorithm-expression: t_local_message_${(user_id.intdiv(4)) % 4}
+          algorithm-expression: t_local_message_${((user_id.hashCode() & 0x7fffffff).intdiv(4)) % 4}
       t-order-snapshot-inline:
         type: INLINE
         props:
-          algorithm-expression: t_order_snapshot_${(user_id.intdiv(4)) % 4}
+          algorithm-expression: t_order_snapshot_${((user_id.hashCode() & 0x7fffffff).intdiv(4)) % 4}
       t-order-event-inline:
         type: INLINE
         props:
-          algorithm-expression: t_order_event_${(user_id.intdiv(4)) % 4}
+          algorithm-expression: t_order_event_${((user_id.hashCode() & 0x7fffffff).intdiv(4)) % 4}
 
     # 主键生成器
     keyGenerators:

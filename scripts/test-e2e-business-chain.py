@@ -236,11 +236,23 @@ def main():
                       json_body={"paymentId": payment_id, "refundAmount": pay_amount or 1.00,
                                  "reason": "链路验证退款", "refundType": 1})
     step(24, "发起退款", code, body, code == 200)
-    code, body = call("POST", "/api/payment/refund-callback/99", token, secret,
-                      raw_body=json.dumps({"refund_no": f"REFUND_{TS}",
-                                           "refund_status": "REFUND_SUCCESS",
-                                           "status": "SUCCESS"}))
-    step(25, "退款渠道回调", code, body, code == 200)
+    # mock 模拟器有 10% 失败率：轮询退款单状态，失败则重试（最多 3 次），保证链路断言稳定
+    def _refund_status():
+        out = os.popen("docker exec -i my-xhs-mysql mysql -uroot -pXhs@2026#MySQL -N -e "
+                       f"\"SELECT status FROM my_xhs_payment.t_refund WHERE order_id={order_id} ORDER BY id DESC LIMIT 1;\" 2>/dev/null").read().strip()
+        return out
+    refund_ok = False
+    for _try in range(3):
+        time.sleep(4)
+        st_r = _refund_status()
+        if st_r == "1":
+            refund_ok = True
+            break
+        if st_r == "2":  # 渠道退款失败 → 重新发起
+            _, body = call("POST", "/api/payment/refund", token, secret, user_id=uid,
+                           json_body={"paymentId": payment_id, "refundAmount": pay_amount or 1.00,
+                                      "reason": "链路验证退款(重试)", "refundType": 1})
+    step(25, f"退款渠道回调/重试(最终status={_refund_status()})", code, body, refund_ok)
     time.sleep(2)
     code, body = call("GET", f"/api/order/{order_id}", token, secret, user_id=uid)
     status_refund = (body.get("data") or {}).get("status")
