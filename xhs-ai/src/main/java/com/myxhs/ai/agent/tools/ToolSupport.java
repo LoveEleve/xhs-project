@@ -1,6 +1,8 @@
 package com.myxhs.ai.agent.tools;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.agentscope.core.agent.RuntimeContext;
 import io.agentscope.core.message.TextBlock;
 import io.agentscope.core.message.ToolResultBlock;
@@ -16,7 +18,11 @@ import java.util.Map;
  */
 public final class ToolSupport {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    // 2026-09-20 修复：MySQL DATETIME 经 JdbcTemplate 返回 LocalDateTime，未注册 JavaTimeModule 会导致
+    // 业务工具结果序列化失败（order_trace 实测 "json serialize failed"）
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
     /** 工具错误计数（Agent 启动时注入 MeterRegistry；无注册中心时降级为 no-op） */
     private static volatile io.micrometer.core.instrument.MeterRegistry METER_REGISTRY;

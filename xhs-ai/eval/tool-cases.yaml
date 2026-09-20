@@ -43,3 +43,17 @@ cases:
   - id: TS-14
     question: "最近5分钟哪个服务 ERROR 日志最多？接着看该服务最近30分钟的 QPS 趋势是突发还是持续"
     sequence: [log_top_services, metric_trend]
+  # 2026-09-20 业务只读工具（运维+业务双场景）
+  - id: TS-15
+    question: "订单 ORD2026092012504092242420044（用户ID 2101534448857354242）现在是什么状态？支付和退款情况如何？"
+    expected: [order_trace]
+  - id: TS-16
+    question: "最近24小时全站订单量、GMV、退款成功金额分别是多少？"
+    expected: [order_stats]
+  - id: TS-17
+    question: "SKU 1 的可用库存、锁定库存、冻结库存分别是多少？"
+    expected: [inventory_query]
+  - id: TS-18
+    question: "用户 2101534448857354242 有哪些优惠券？"
+    expected: [coupon_query]
+

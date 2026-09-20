@@ -362,3 +362,28 @@
   expectCardIds: []
   expectAny: []
   mustRefuse: true
+- id: BIZ-01
+  type: business
+  question: 订单 ORD2026092012504092242420044（下单用户ID 2101534448857354242）现在的状态、支付与退款情况？
+  expectCardIds: []
+  expectAny: ["已付款", "ORD2026092012504092242420044"]
+  mustRefuse: false
+- id: BIZ-02
+  type: business
+  question: 最近24小时全站订单量和退款成功金额是多少？
+  expectCardIds: []
+  expectAny: ["订单", "退款"]
+  mustRefuse: false
+- id: BIZ-03
+  type: business
+  question: SKU 1 的可用库存、锁定库存、冻结库存分别是多少？
+  expectCardIds: []
+  expectAny: ["45", "可用库存"]
+  mustRefuse: false
+- id: BIZ-04
+  type: business
+  question: 用户 2101534448857354242 有哪些优惠券？没有就说没有。
+  expectCardIds: []
+  expectAny: ["优惠券", "没有"]
+  mustRefuse: false
+

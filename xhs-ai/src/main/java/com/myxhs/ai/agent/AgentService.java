@@ -12,6 +12,10 @@ import com.myxhs.ai.agent.tools.LogTopServicesTool;
 import com.myxhs.ai.agent.tools.MetricTopTool;
 import com.myxhs.ai.agent.tools.MetricTrendTool;
 import com.myxhs.ai.agent.tools.ConsumerLagTool;
+import com.myxhs.ai.agent.tools.CouponQueryTool;
+import com.myxhs.ai.agent.tools.InventoryQueryTool;
+import com.myxhs.ai.agent.tools.OrderStatsTool;
+import com.myxhs.ai.agent.tools.OrderTraceTool;
 import com.myxhs.ai.agent.tools.EsIndexListTool;
 import com.myxhs.ai.agent.tools.MetricQueryTool;
 import com.myxhs.ai.agent.tools.EsSearchTool;
@@ -101,6 +105,12 @@ public class AgentService {
                 仅当需要复杂 PromQL（多标签聚合/自定义函数）时才用 Prometheus 的 query/range_query。
             12.3 消费积压/消费延迟/消费者离线类问题：调用 consumer_lag_top（broker 位点与消费位点差值 TopN），不要逐组分页查。
                 不得只做口头计划或凭印象作答；工具返回空也要给出检索条件。
+            12.4 业务只读工具（回答“某订单/某用户/某SKU”类事实问题时必须调用，不得凭模型记忆作答）：
+                - order_trace：userId + orderNo → 订单状态/明细/状态事件/支付/退款/库存预扣/通知（分片按用户ID路由）；
+                - order_stats：hours → 订单量/状态分布/GMV/支付分布/退款金额（全量聚合）；
+                - inventory_query：skuId → 可用/锁定/冻结库存 + TCC冻结明细 + 补偿记录；
+                - coupon_query：userId → 用户券（面额/门槛/有效期/状态/使用订单）。
+                业务事实以工具返回为准；用户未提供 userId/orderNo/skuId 时先追问，不要猜。
             13. 引用纪律：只能引用工具实际返回的卡片 id/path 或代码位置；引用卡片一律用其 id（不带 .yaml），
                 不得编造文件名或路径（如虚构的 xx-01.md）。无法确认出处时说明"未找到出处"，宁可少引用。
             """;
@@ -132,6 +142,10 @@ public class AgentService {
     private final MetricLabelsTool metricLabelsTool;
     private final com.myxhs.ai.session.SessionSummaryService sessionSummaryService;
     private final ConsumerLagTool consumerLagTool;
+    private final OrderTraceTool orderTraceTool;
+    private final OrderStatsTool orderStatsTool;
+    private final InventoryQueryTool inventoryQueryTool;
+    private final CouponQueryTool couponQueryTool;
 
     @Value("${REDIS_SENTINEL_MASTER:mymaster}")
     private String sentinelMaster;
@@ -180,6 +194,10 @@ public class AgentService {
         toolkit.registerAgentTool(metricQueryTool);
         toolkit.registerAgentTool(esSearchTool);
         toolkit.registerAgentTool(metricLabelsTool);
+        toolkit.registerAgentTool(orderTraceTool);
+        toolkit.registerAgentTool(orderStatsTool);
+        toolkit.registerAgentTool(inventoryQueryTool);
+        toolkit.registerAgentTool(couponQueryTool);
         if (mcpToolsEnabled) {
             registerMcpWithAllowlist(toolkit);
         } else {
