@@ -76,7 +76,7 @@ MTTR 10/10·1.63min·92.1% → `reports/mttr-benchmark-*`；hit@1 100% / 答案�
 - 简历：`docs/resume-final.md`；学习对照：`docs/resume-study-map.md`
 - 深挖素材全集（docs/mining/）：platform-mining（三轮代码考古）、platform-service-deep（服务级）、platform-docs-ci（文档复盘/审查方法论/CI 真相）、platform-config-nacos-sentinel（配置实体）、file-by-file-scan（逐文件 13 点）、data-asset-map（表/Key/Topic/索引）、final-blindspots（IM/Home/通知/运维/文章）、unfixed-issue-fixes（修复台账）、ai-docs-and-platform-ops（AI 文档闭环+平台运维测试）
 - AI 深挖（xhs-ai/docs/mining/）：ai-mining（三轮）、ai-docs-closure（需求→设计→验证）、knowledge-eval-inventory（55 卡要点+题库）、observability-truth-and-gaps（可观测真相与 14 项缺口）
-- 专题深挖（2026-09-20）：`docs/interview/专题-业务全链路推演.md`、`专题-技术机制深挖.md`、`专题-架构专题.md`、`专题-决策台账.md`（架构9+选型8+方案15+权衡9，含追问变体与决策原则）
+- 专题深挖（2026-09-20）：`docs/interview/专题-业务全链路推演.md`、`专题-技术机制深挖.md`、`专题-架构专题.md`、`专题-决策台账.md`（架构9+选型8+方案15+权衡9）、`专题-自问自答-决策追问演练.md`（20 题×两层追问，含自评与弱项）
 - 手册：`docs/interview-defense-handbook.md`（19 主题 + 8 速答 + ⑥⑦ 两轮追问）
 - 速览：`xhs-ai/docs/PROJECT-ONE-PAGER.md`
 
