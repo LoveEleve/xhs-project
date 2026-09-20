@@ -110,8 +110,10 @@ public class SessionSummaryService {
     private String callModel(String prompt) {
         List<Msg> messages = List.of(new UserMessage(prompt));
         List<ChatResponse> responses = summaryModel.stream(messages, List.of(),
-                        GenerateOptions.builder().temperature(0.2).maxTokens(800).build())
-                .collectList().block(Duration.ofSeconds(60));
+                        GenerateOptions.builder().temperature(0.2)
+                        // 2026-09-20 修复：800 对 reasoning 模型不够（思考吃满后 content 为空，实测“摘要模型返回空”）
+                        .maxTokens(4096).build())
+                .collectList().block(Duration.ofSeconds(180)); // 2026-09-20 修复：60s 对 reasoning 模型在负载下不够（实测超时）
         StringBuilder sb = new StringBuilder();
         if (responses != null) {
             for (ChatResponse response : responses) {
@@ -126,7 +128,7 @@ public class SessionSummaryService {
             }
         }
         if (sb.isEmpty()) {
-            throw new IllegalStateException("摘要模型返回空");
+            throw new IllegalStateException("摘要模型返回空（推理可能被截断，maxTokens=4096 仍空则需换非推理模型）");
         }
         return sb.toString();
     }
