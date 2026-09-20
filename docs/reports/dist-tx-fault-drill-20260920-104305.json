@@ -1,0 +1,34 @@
+{
+ "runTs": "20260920-104305",
+ "scenarios": [
+  {
+   "scenario": "A 消费者宕机追平",
+   "ok": true,
+   "detail": {
+    "noteId": "2101502379502485505",
+    "base": "0",
+    "serviceDown": true,
+    "backlogWhileDown": 1,
+    "drainedLag": 0,
+    "countAfterCatchup": "1",
+    "countAfterUnlike": "0"
+   }
+  },
+  {
+   "scenario": "B MQ暂停下下单事务",
+   "ok": true,
+   "detail": {
+    "duringPause": {
+     "http": 200,
+     "orderId": null,
+     "elapsedSec": 3.1
+    },
+    "afterRecover": {
+     "http": 200,
+     "orderId": "2101502617097240577"
+    },
+    "userOrderCount": 1
+   }
+  }
+ ]
+}
