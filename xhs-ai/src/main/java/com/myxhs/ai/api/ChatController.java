@@ -16,6 +16,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -40,9 +41,13 @@ public class ChatController {
 
     /** 单轮对话（同步） */
     @PostMapping("/chat")
-    public Mono<R<String>> chat(@Valid @RequestBody ChatRequest request) {
+    public Mono<R<String>> chat(@Valid @RequestBody ChatRequest request,
+                                @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         List<Msg> messages = List.of(new UserMessage(request.message()));
         return chatModel.stream(messages, List.of(), defaultOptions())
+                // 2026-09-20 修复：原实现未注入用户上下文 → ModelGateway 预算检查整段绕过（未计量、可滥用）
+                .contextWrite(ctx -> userId == null ? ctx
+                        : ctx.put(com.myxhs.ai.model.TokenBudget.USER_ID_KEY, userId))
                 .timeout(Duration.ofSeconds(120))
                 .map(this::extractText)
                 .collect(Collectors.joining())
@@ -52,6 +57,10 @@ public class ChatController {
                         ? R.<String>fail(503, "模型未返回有效内容（推理可能被截断），请重试或换个问法")
                         : R.ok(text))
                 .onErrorResume(e -> {
+                    if (e instanceof com.myxhs.ai.model.TokenBudget.ExceededException) {
+                        log.warn("[AI] 预算拒绝: {}", e.getMessage());
+                        return Mono.just(R.fail(429, e.getMessage()));
+                    }
                     log.error("[AI] 对话失败", e);
                     return Mono.just(R.fail(500, "模型调用失败，请稍后重试"));
                 });
@@ -59,15 +68,23 @@ public class ChatController {
 
     /** 流式对话（SSE：delta → done） */
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ServerSentEvent<String>> stream(@Valid @RequestBody ChatRequest request) {
+    public Flux<ServerSentEvent<String>> stream(@Valid @RequestBody ChatRequest request,
+                                                @RequestHeader(value = "X-User-Id", required = false) Long userId) {
         List<Msg> messages = List.of(new UserMessage(request.message()));
         return chatModel.stream(messages, List.of(), defaultOptions())
+                .contextWrite(ctx -> userId == null ? ctx
+                        : ctx.put(com.myxhs.ai.model.TokenBudget.USER_ID_KEY, userId))
                 .timeout(Duration.ofSeconds(120))
                 .map(this::extractText)
                 .filter(text -> !text.isEmpty())
                 .map(text -> ServerSentEvent.<String>builder().event("delta").data(text).build())
                 .concatWith(Mono.just(ServerSentEvent.<String>builder().event("done").data("{}").build()))
                 .onErrorResume(e -> {
+                    if (e instanceof com.myxhs.ai.model.TokenBudget.ExceededException) {
+                        log.warn("[AI] 流式预算拒绝: {}", e.getMessage());
+                        return Flux.just(ServerSentEvent.<String>builder()
+                                .event("error").data("{\"code\":429,\"message\":\"今日 AI 用量已用完\"}").build());
+                    }
                     log.error("[AI] 流式对话失败", e);
                     return Flux.just(ServerSentEvent.<String>builder()
                             .event("error").data("{\"message\":\"模型调用失败，请稍后重试\"}").build());
