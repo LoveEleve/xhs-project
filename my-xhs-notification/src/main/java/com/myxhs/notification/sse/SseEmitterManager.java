@@ -298,6 +298,27 @@ public class SseEmitterManager {
     }
 
     /**
+     * 判断用户是否在**任一实例**在线（本地直连 或 Redis 路由键存在）
+     * <p>
+     * 2026-09-20 review：processEvent 原用 isOnline（仅本地）做前置判断，
+     * 当通知事件被"非用户 SSE 连接所在实例"处理时，跨实例推送被短路
+     * （多实例实测：实例B处理事件，连在实例A的 SSE 收不到推送）。
+     * 推送给客户端的动作仍由 pushNotification/pushUnreadCount 内部按"本地→路由"处理。
+     * </p>
+     */
+    public boolean isOnlineAnywhere(Long userId) {
+        if (emitters.containsKey(userId)) {
+            return true;
+        }
+        try {
+            return Boolean.TRUE.equals(stringRedisTemplate.hasKey(SSE_KEY_PREFIX + userId));
+        } catch (Exception e) {
+            log.warn("[SSE] 在线检查(Redis)失败，按离线处理: userId={}", userId, e);
+            return false;
+        }
+    }
+
+    /**
      * 获取当前在线连接数
      */
     public int getOnlineCount() {

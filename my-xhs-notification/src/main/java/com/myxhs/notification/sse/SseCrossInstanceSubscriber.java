@@ -94,6 +94,15 @@ public class SseCrossInstanceSubscriber implements MessageListener {
     private Long toLong(Object obj) {
         if (obj == null) return null;
         if (obj instanceof Number) return ((Number) obj).longValue();
+        // 2026-09-20 review：项目 Jackson 将 Long 序列化为字符串（防 JS 精度丢失），
+        // 且 TextNode.toString() 带引号 → 原 parseLong(obj.toString()) 必然失败 →
+        // 所有跨实例消息被判"格式异常"，跨实例 SSE 从未生效（多实例实测）。
+        if (obj instanceof com.fasterxml.jackson.databind.JsonNode node) {
+            if (node.isNumber()) return node.longValue();
+            if (node.isTextual()) {
+                try { return Long.parseLong(node.asText()); } catch (NumberFormatException e) { return null; }
+            }
+        }
         try { return Long.parseLong(obj.toString()); } catch (Exception e) { return null; }
     }
 }

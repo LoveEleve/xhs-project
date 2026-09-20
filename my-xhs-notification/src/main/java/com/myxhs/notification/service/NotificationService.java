@@ -69,7 +69,8 @@ public class NotificationService {
         // 聚合更新的通知 → 不增加未读计数（用户已经看到了红点）
 
         // 4. SSE 实时推送
-        if (sseEmitterManager.isOnline(event.getTargetUserId())) {
+        // 2026-09-20 review：改用 isOnlineAnywhere 以支持跨实例（多实例下事件可能由其他实例消费）
+        if (sseEmitterManager.isOnlineAnywhere(event.getTargetUserId())) {
             NotificationVO vo = toVO(result);
             sseEmitterManager.pushNotification(event.getTargetUserId(), vo);
 

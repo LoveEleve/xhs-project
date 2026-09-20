@@ -1,0 +1,12 @@
+{
+ "runTs": "20260920-114055",
+ "userA": "2101516933083070466",
+ "userB": "2101516935989723138",
+ "aOnMain": true,
+ "bOnSecond": true,
+ "receivedByB": "{\"msgType\":1,\"from\":2101516933083070466,\"ver\":1,\"seqNo\":1,\"content\":\"cross-instance-20260920-114055\",\"type\":\"CHAT\",\"timestamp\":1789875660445,\"msgId\":2101516951416365058,\"traceId\":\"imx-20260920-114055\"}",
+ "allFrames": [
+  "{\"ver\":1,\"timestamp\":1789875660445,\"type\":\"ACK\",\"msgId\":2101516951416365058,\"traceId\":\"imx-20260920-114055\"}",
+  "{\"msgType\":1,\"from\":2101516933083070466,\"ver\":1,\"seqNo\":1,\"content\":\"cross-instance-20260920-114055\",\"type\":\"CHAT\",\"timestamp\":1789875660445,\"msgId\":2101516951416365058,\"traceId\":\"imx-20260920-114055\"}"
+ ]
+}

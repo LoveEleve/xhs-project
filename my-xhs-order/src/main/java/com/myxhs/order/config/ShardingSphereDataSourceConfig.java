@@ -35,6 +35,10 @@ import java.sql.SQLException;
 @Configuration
 public class ShardingSphereDataSourceConfig {
 
+    /** 实例端口：同机多实例的唯一性来源（PORT_OVERRIDE 会覆盖 server.port） */
+    @org.springframework.beans.factory.annotation.Value("${server.port:8080}")
+    private int serverPort;
+
     @Bean
     @Primary
     public DataSource dataSource() throws SQLException, IOException {
@@ -104,12 +108,16 @@ public class ShardingSphereDataSourceConfig {
             return Integer.parseInt(propWorkerId);
         }
 
-        // 3. 基于 IP 计算
+        // 3. 基于 IP + 实例端口计算
+        //    2026-09-20 review：原实现仅用 IP → 同机多实例（容器/多活演练）取同一 worker-id
+        //    （实测两实例均 257）→ 同毫秒同序列会生成相同 Snowflake ID。端口随实例唯一。
         try {
             InetAddress addr = InetAddress.getLocalHost();
             byte[] ip = addr.getAddress();
-            // 取 IP 后两段，范围 0~65535，取模 1024（Snowflake worker-id 范围 0~1023）
-            return ((ip[2] & 0xFF) * 256 + (ip[3] & 0xFF)) % 1024;
+            int ipPart = ((ip[2] & 0xFF) * 256 + (ip[3] & 0xFF));
+            int workerId = Math.floorMod(ipPart * 31 + serverPort, 1024);
+            log.info("[ShardingSphere] worker-id 派生: ipPart={}, port={} -> {}", ipPart, serverPort, workerId);
+            return workerId;
         } catch (Exception e) {
             log.warn("[ShardingSphere] 无法获取本机IP，使用默认 worker-id=1", e);
             return 1;
