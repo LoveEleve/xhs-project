@@ -88,3 +88,13 @@ MTTR 10/10·1.63min·92.1% → `reports/mttr-benchmark-*`；hit@1 100% / 答案�
 | 缓存/乱序 | `CounterEventConsumer`（版本门） | `cache-consistency-and-outoforder-20260920.md` |
 | 对抗/故障注入 | `scripts/test-order-state-race.py`、`scripts/drill-dist-tx-faults.py`、`scripts/test-im-cross-instance.py` | `order-state-race-20260920.md`、`dist-tx-fault-drill-20260920.md` |
 | 运维/DR | `deploy/scripts/mysql-backup.sh`（重写）、ILM/清理落地 | `gap-sweep-20260920.md`、`reconcile-coverage-and-lifecycle-20260920.md` |
+
+## F. 本轮新证据（2026-09-20 第二轮 · AI）
+| 主题 | 代码/工具 | 报告 |
+|---|---|---|
+| 模型网关演练+预算绕过修复 | `ChatController`（contextWrite+429）、`ModelGateway` | `xhs-ai-model-failover-budget-drills-20260920.md` |
+| 会话摘要/恢复 | `SessionSummaryService`（maxTokens/block） | `xhs-ai-session-summary-recovery-drill-20260920.md` |
+| RAG 评测/门禁 | `AnswerEvalService`（blocked）、`CodeLocateService`（后缀）、`scripts/ai-eval-gate.sh`、`scripts/ci-gate.sh` | `xhs-ai-rag-eval-20260920.md` + `answer-eval-{kb,diag,sec}-20260920.json` |
+| 业务工具双场景 | `BusinessQueryService`、`OrderTraceTool`/`OrderStatsTool`/`InventoryQueryTool`/`CouponQueryTool` | `xhs-ai-business-tools-20260920.md` |
+| 用例维护 | `eval/tool-cases.yaml`（TS-15..18）、`eval/answer-cases.yaml`（BIZ-01..04、DIAG-01 修正） | - |
+

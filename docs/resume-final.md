@@ -152,5 +152,11 @@ xhs-ai 是面向上述 15 微服务交易系统的 AIOps 诊断与知识问答 A
 - 在线 QA 验证：chat 轻量问答（重启后 3.2s 返回 200）与 Agent 通道复杂诊断（145.6s 完整回答）双通道实测；AI 给出的日志结论经 ES 复核属实（19848 噪音 6319 条 / 19008 端口占用 8305 条）。
 - 评测隔离与资产：评测使用专用用户并在运行前清零额度（此前预算硬限曾拦评测，默认 20 万→50 万）；55 张知识卡、14 条轨迹用例、50 条答案用例、10 个运维脚本，20 篇评审（RV01~RV20）+ RV21~RV29 报告与 10 篇专项设计。
 
+- 模型网关容灾演练（2026-09-20）：注入无效主模型（404）→ 重试→自动切备用 deepseek-v4-flash，5/5 会话不中断（熔断后降级 4.5s）；连续 3 败熔断 60s + 冷却半开探测；"已出流不降级重放"真实命中；指标 primary error/retry/breaker_open、fallback ok 可查。
+- 预算绕过修复（2026-09-20）：演练抓出 `/api/ai/chat` 未注入用户上下文导致预算整段绕过（不拒绝、不计量）→ contextWrite + 429 映射修复；agent/chat 双路径硬拒 0.2–0.3s。
+- 会话摘要与恢复（2026-09-20）：修两处真缺陷（maxTokens 800 致 reasoning 空响应、60s block 过紧）后单次摘要 56.6s 压缩 25 条消息；清 Redis 状态后真对话 18.1s 三事实全中，session.rebuild 审计落库。
+- 业务工具双场景（2026-09-20）：新增 order_trace（跨订单/支付/退款/库存/通知五域，分片路由与订单服务同哈希）、order_stats（16 分片聚合：24h 55 单/GMV ¥4,771/退款 ¥3,801）、inventory_query、coupon_query 四个只读工具（业务库仅 SELECT）；实测抓修 2 个真 Bug（LocalDateTime 序列化、无 id 列 SQL）；E2E 10/10。
+- 评测闭环（2026-09-20）：检索 30/30=100%；答案级 kb 29/30=96.7% + diag 15/15（修正过时用例）+ sec 5/5=100%，blocked=0；引用校验拦截卡片 id 幻觉；门禁脚本 + CI 可选接入；三批结果归档。
+
 # 技能
 Java 17、Spring Boot / Spring Cloud、MySQL、Redis、RocketMQ、Elasticsearch、ShardingSphere、Canal、XXL-Job；分布式事务、缓存、消息、限流降级；AgentScope、MCP / Function Call、Agent 评测与成本控制。
