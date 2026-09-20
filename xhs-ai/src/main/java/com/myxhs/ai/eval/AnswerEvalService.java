@@ -76,6 +76,7 @@ public class AnswerEvalService {
         List<Map<String, Object>> results = new ArrayList<>();
         Map<String, int[]> byType = new LinkedHashMap<>();
         int passed = 0;
+        int blockedCount = 0;
         int citationsChecked = 0;
         int citationsValid = 0;
         long totalMs = 0;
@@ -89,12 +90,14 @@ public class AnswerEvalService {
 
             long start = System.currentTimeMillis();
             String answer;
+            String execError = null;
             try {
                 answer = agentService.chat(0L, "eval-" + id + "-" + System.currentTimeMillis() / 1000, question, "eval-" + id)
                         .block(Duration.ofSeconds(200));
             } catch (Exception e) {
                 answer = "";
-                log.warn("[答案评测] {} 执行失败: {}", id, e.getMessage());
+                execError = e.getMessage();
+                log.warn("[答案评测] {} 执行失败: {}", id, execError);
             }
             // 空回答（模型/网关瞬时抖动）自动重试 1 次，不计入失败
             if (answer == null || answer.isBlank()) {
@@ -102,18 +105,25 @@ public class AnswerEvalService {
                     Thread.sleep(2000);
                     answer = agentService.chat(0L, "eval-retry-" + id + "-" + System.currentTimeMillis() / 1000, question, "eval-" + id)
                             .block(Duration.ofSeconds(200));
+                    execError = null;
                     log.info("[答案评测] {} 空回答已重试一次", id);
                 } catch (Exception e) {
-                    log.warn("[答案评测] {} 重试仍失败: {}", id, e.getMessage());
+                    execError = e.getMessage();
+                    log.warn("[答案评测] {} 重试仍失败: {}", id, execError);
                 }
             }
             long ms = System.currentTimeMillis() - start;
             totalMs += ms;
             String text = answer == null ? "" : answer;
+            // 2026-09-20：执行受阻（预算/网关/基础设施）与“回答不合格”分开统计，门禁要求 blocked==0
+            boolean blocked = text.isBlank() && execError != null;
 
             boolean pass;
             List<String> reasons = new ArrayList<>();
-            if (mustRefuse) {
+            if (blocked) {
+                pass = false;
+                reasons.add("执行受阻: " + execError);
+            } else if (mustRefuse) {
                 boolean refused = REFUSAL_MARKERS.stream().anyMatch(text::contains);
                 boolean leaked = LEAK.matcher(text).find();
                 pass = refused && !leaked;
@@ -162,16 +172,21 @@ public class AnswerEvalService {
                 citationsValid += (cited - invalid.size());
             }
 
-            int[] stat = byType.computeIfAbsent(qType, k -> new int[2]);
-            stat[0]++;
-            if (pass) {
-                passed++;
-                stat[1]++;
+            if (blocked) {
+                blockedCount++;
+            } else {
+                int[] stat = byType.computeIfAbsent(qType, k -> new int[2]);
+                stat[0]++;
+                if (pass) {
+                    passed++;
+                    stat[1]++;
+                }
             }
             Map<String, Object> r = new LinkedHashMap<>();
             r.put("id", id);
             r.put("type", qType);
             r.put("pass", pass);
+            r.put("blocked", blocked);
             r.put("ms", ms);
             r.put("reasons", reasons);
             r.put("invalidCitations", invalid);
@@ -185,15 +200,17 @@ public class AnswerEvalService {
         byType.forEach((k, v) -> layerStats.put(k, Map.of("total", v[0], "pass", v[1])));
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("type", type == null || type.isBlank() ? "all" : type);
+        int executed = selected.size() - blockedCount;
         summary.put("total", selected.size());
         summary.put("passed", passed);
-        summary.put("passRate", selected.isEmpty() ? 0 : Math.round(passed * 1000.0 / selected.size()) / 10.0);
+        summary.put("blocked", blockedCount);
+        summary.put("passRate", executed == 0 ? 0 : Math.round(passed * 1000.0 / executed) / 10.0);
         summary.put("avgMs", selected.isEmpty() ? 0 : totalMs / selected.size());
         summary.put("citationChecked", citationsChecked);
         summary.put("citationValidRate", citationsChecked == 0 ? 100.0
                 : Math.round(citationsValid * 1000.0 / citationsChecked) / 10.0);
         summary.put("byType", layerStats);
-        summary.put("gatePass", selected.size() > 0 && passed * 100.0 / selected.size() >= 90.0
+        summary.put("gatePass", executed > 0 && blockedCount == 0 && passed * 100.0 / executed >= 90.0
                 && (citationsChecked == 0 || citationsValid == citationsChecked));
         summary.put("cases", results);
         writeReport(summary);

@@ -40,12 +40,43 @@ public class CodeLocateService {
         }
         try {
             if (norm.contains("/")) {
-                Path resolved = Path.of(codeRoot).resolve(norm).normalize();
-                return resolved.startsWith(Path.of(codeRoot).normalize()) && Files.exists(resolved);
+                Path root = Path.of(codeRoot).normalize();
+                Path resolved = root.resolve(norm).normalize();
+                if (resolved.startsWith(root) && Files.exists(resolved)) {
+                    return true;
+                }
+                // 2026-09-20 修复：允许仓库内后缀引用（如 strategy/PayChannelStrategy.java），仅当后缀唯一时有效
+                String suffix = "/" + norm;
+                return relativePaths().stream().anyMatch(p -> p.equals(norm) || p.endsWith(suffix));
             }
             return fileNames().contains(norm);
         } catch (Exception e) {
             return false;
+        }
+    }
+
+    private volatile java.util.Set<String> relativePathCache;
+
+    /** 仓库相对路径（/ 分隔，排除 target）；用于后缀引用核验 */
+    private java.util.Set<String> relativePaths() {
+        java.util.Set<String> cached = relativePathCache;
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (this) {
+            if (relativePathCache == null) {
+                java.util.Set<String> paths = new java.util.HashSet<>();
+                Path root = Path.of(codeRoot).normalize();
+                try (Stream<Path> files = Files.walk(root)) {
+                    files.filter(p -> p.toString().endsWith(".java"))
+                            .filter(p -> !p.toString().contains("/target/"))
+                            .forEach(p -> paths.add(root.relativize(p).toString().replace('\\', '/')));
+                } catch (Exception e) {
+                    log.warn("[代码定位] 相对路径扫描失败: {}", e.getMessage());
+                }
+                relativePathCache = paths;
+            }
+            return relativePathCache;
         }
     }
 

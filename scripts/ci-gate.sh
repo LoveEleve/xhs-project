@@ -16,6 +16,12 @@ if grep -rn "printStackTrace()" my-xhs-common/src/main/java; then echo "❌ 禁�
 if grep -rn "System\.out\.println" my-xhs-common/src/main/java; then echo "❌ 禁止 System.out.println"; FAIL=1; fi
 if grep -rn "@Disabled" my-xhs-common/src/test/java; then echo "❌ 禁止提交 @Disabled 测试"; FAIL=1; fi
 
+# 可选：AI 评测门禁（需 xhs-ai 服务在跑；AI_EVAL_GATE=1 开启）
+if [ "${AI_EVAL_GATE:-0}" = "1" ]; then
+  echo "== [4/4] AI 评测门禁（KB 检索 + 答案级） =="
+  bash scripts/ai-eval-gate.sh || FAIL=1
+fi
+
 if [ "$FAIL" = "0" ]; then
   echo "== ✅ 门禁通过 =="
 else
