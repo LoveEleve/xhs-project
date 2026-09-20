@@ -6,6 +6,14 @@
 set -euo pipefail
 
 BLADE="/opt/chaosblade/chaosblade-1.7.4/blade"
+# 预检（2026-09-20）：blade 缺失时给出明确原因（历史上 /opt/chaosblade.tar.gz 曾是 OSS AccessDenied XML）
+if [ ! -x "$BLADE" ]; then
+    echo "[FAIL] chaosblade 未安装: $BLADE"
+    echo "       官方下载: https://chaosblade.oss-cn-hangzhou.aliyuncs.com/agent/github/1.7.4/chaosblade-1.7.4-linux-amd64.tar.gz"
+    echo "       解压到 /opt/chaosblade/（目录结构需为 /opt/chaosblade/chaosblade-1.7.4/blade）"
+    echo "       注意：JVM 类实验在 JDK17+Spring Boot fat-jar 上实测不生效，网络/OS 级实验可用（tc netem 已验证）"
+    exit 1
+fi
 REPORT_DIR="/data/chaos-reports/$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$REPORT_DIR"
 

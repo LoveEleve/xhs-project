@@ -70,8 +70,11 @@ public class ProductAggService {
                      } catch (DownstreamUnavailableException e) {
                          throw e;
                      } catch (Exception e) {
-                         log.warn("[商品详情] 获取SPU异常: spuId={}", spuId, e);
-                         return Collections.emptyMap();
+                         // 2026-09-20 review：原实现吞异常返回 emptyMap → 上层判空返回 404「商品不存在」，
+                         // 把"依赖超时/不可用"伪装成"资源不存在"（netem 4s 注入实测）。
+                         // 修复：依赖异常统一转 DownstreamUnavailable → 上层 503「服务繁忙」，与真实 404 区分。
+                         log.warn("[商品详情] 获取SPU异常(按依赖降级处理): spuId={}", spuId, e);
+                         throw new DownstreamUnavailableException("商品服务繁忙，请稍后重试");
                      }
                 }, aggregatorPool);
 
@@ -99,6 +102,13 @@ public class ProductAggService {
         try {
             CompletableFuture.allOf(spuFuture, counterFuture).get(3, TimeUnit.SECONDS);
         } catch (TimeoutException e) {
+            // 2026-09-20 review：聚合超时(3s)与 Feign 读超时(3s)存在竞态——聚合超时先触发时
+            // spuFuture 尚未完成，后续判空会误返回 404「商品不存在」。SPU 未完成即视为依赖降级。
+            if (!spuFuture.isDone()) {
+                log.warn("[商品详情] 第1层聚合超时且SPU未返回，按依赖降级处理: spuId={}", spuId);
+                spuFuture.cancel(true);
+                throw new DownstreamUnavailableException("商品服务繁忙，请稍后重试");
+            }
             log.warn("[商品详情] 第1层聚合超时，部分数据降级");
         } catch (Exception e) {
             log.warn("[商品详情] 第1层聚合异常", e);
