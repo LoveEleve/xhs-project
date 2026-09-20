@@ -50,3 +50,4 @@ deploy/docker/my-xhs-deploy-zip/backup_20260824_201502/
 
 # 运行时进程 PID（不入库）
 pids/
+__pycache__/
