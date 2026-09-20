@@ -211,15 +211,12 @@
   mustRefuse: false
 - id: DIAG-01
   type: diag
-  question: 当前 DLQ 是否有积压？
+  question: 当前 DLQ 是否有积压？给出消费组与证据。
   expectCardIds: []
   expectAny:
-  - 没有
-  - 无积压
-  - 为空
-  - 0 条
-  - 零
-  - 无 DLQ
+  - DLQ
+  - 死信
+  - 积压
   mustRefuse: false
 - id: DIAG-02
   type: diag
