@@ -5,10 +5,10 @@
 ## 一、实现
 
 ### 1.1 Zone 自动发现（ZoneLocator 组合）
-- 接口 `ZoneLocator` + 三个实现，按 `getOrder` 组合（`CompositeZoneLocator`：取第一个成功定位的结果）：
-  - `EnvVarZoneLocator`：环境变量 `MYXHS_ZONE`（显式优先）；
-  - `FileZoneLocator`：zone 文件（容器/挂载场景）；
-  - `IpRangeZoneLocator`：**网段映射**（如 `192.168.0.0/24=zone-a,10.0.0.0/8=zone-b`，支持 CIDR 前缀匹配）；
+- 接口 `ZoneLocator` + 三个实现，`CompositeZoneLocator` 按 `getOrder` **升序取第一个非空**（优先级：env 10 > file 20 > ipRange 30）：
+  - `EnvVarZoneLocator`（order=10）：环境变量 `MYXHS_ZONE`（显式优先）；
+  - `FileZoneLocator`（order=20）：读取可配置的 zone 文件（类云元数据文件模式，如 ECS metadata file）；
+  - `IpRangeZoneLocator`（order=30）：**网段映射**（如 `192.168.0.0/24=zone-a,10.0.0.0/8=zone-b`，CIDR 前缀匹配）；
 - `ZoneEnvironmentPostProcessor`：在**注册前**生效（Spring 环境后置处理），因此注册到 Nacos 的实例 metadata 自动携带 zone，无需人工标注。
 
 ### 1.2 Zone 传播（HTTP/Feign）

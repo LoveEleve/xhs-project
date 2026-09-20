@@ -64,7 +64,7 @@
 ## 本项目真实证据
 - 流量面：`ZonePreferenceFilter`/`ZoneLoadBalancerConfiguration`（子 context 接线）、`ZoneRouteMetrics`（决策指标）；网关 `gateway/zone/*`；报告 `docs/reports/zone-pilot-20260918.md`（240/240、RTO 3.06/4.79s）、`gateway-zone-pilot-20260918.md`（12/12、5.5s）、`d4-zone-drills-20260918.md`（RTO 分布）；
 - 数据面：`zone/datasource/DynamicDataSource.java`（JDBC 热切换 402 行）、`DynamicZoneDataSourceConfig`、`ReadWriteRoutingDataSource`（zone 感知 + 从库恢复修复）、`ZoneRedisReadFromResolver`、`scripts/zone-redis-sync.py`（双主同步 LWW+对账）、报告 `dynamic-zone-jdbc-spring-20260918.md`（热切 +206）、`mysql-zone-datasource-20260918.md`、`redis-zone-drill-20260918.md`、`redis-server-multi-active-20260918.md`（双主/冲突/故障/恢复）；
-- 动态/自动化：`ZoneAdminController`（热切）、`ZoneEnvironmentPostProcessor`（env/文件/网段自动发现）、`ZonePropagationFilter/Interceptor`（X-Zone 传播）；
+- 动态/自动化：`ZoneAdminController`（热切）、`ZoneEnvironmentPostProcessor`（env/文件/网段自动发现）、`ZonePropagationFilter/Interceptor`（X-Zone 传播）、`zone/locator/*`（env/文件/网段自动发现）；报告 `zone-propagation-and-discovery-20260918.md`；
 - 发布加固：`release-service.sh`（PID 校验 + 端口占用清理 + 多实例）。
 
 ## 版本与来源
