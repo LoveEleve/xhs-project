@@ -41,7 +41,7 @@
 | 模块 | 入口 | 深挖素材 |
 |------|------|---------|
 | Agent 装配/提示词/工具注册 | `agent/AgentService.java:71-182` | AI §1/§2 |
-| 16 个工具 | `agent/tools/*Tool.java`（清单见素材 §2） | AI §2 |
+| 20 个工具（运维16+业务4） | `agent/tools/*Tool.java`、`business/BusinessQueryService.java`（清单见素材 §2） | AI §2 |
 | 审批/HITL | `approval/*`（状态机/指纹/核验/恢复/事件总线） | AI §4 |
 | 评测 | `eval/*` + `scripts/tool-eval.sh`、`gate.sh` | AI §6；`reports/trajectory-eval-*` |
 | 模型网关/预算 | `model/ModelGateway.java`、`TokenBudgetService.java` | AI §3/§4 |
@@ -52,7 +52,7 @@
 | 运维脚本 | `scripts/{gate,audit-gate,audit-verify,audit-check.sql,red-team,load-test,cost-week,traffic-gen,order-flow}.sh` | AI §6 |
 
 ### B2 关键数字 → 证据（同速览 `xhs-ai/docs/PROJECT-ONE-PAGER.md`）
-MTTR 10/10·1.63min·92.1% → `reports/mttr-benchmark-*`；hit@1 100% / 答案级 50/50 → `reports/kb-eval-*、answer-eval-*`；工具 12/12、轨迹 0.917 → `reports/trajectory-eval-*`；成本 18,292/1,433 → `reports/cost-week-*`；哈希链/幂等/摘要 → `reports/production-gaps-*`；去 MCP 化/预算 → `reports/live-drill-*`、`reviews/19,23,27`
+MTTR 10/10·1.63min·92.1% → `reports/mttr-benchmark-*`；hit@1 100% / 答案级 kb29/30+diag15/15+sec5/5（blocked=0）→ `reports/kb-eval-*、answer-eval-*`；工具 12/12、轨迹 0.917 → `reports/trajectory-eval-*`；成本 18,292/1,433 → `reports/cost-week-*`；哈希链/幂等/摘要 → `reports/production-gaps-*`；去 MCP 化/预算 → `reports/live-drill-*`、`reviews/19,23,27`
 
 ### B3 面试深挖推荐 6 条（新挖）
 1. 精确配置数字：预算 50 万/软 80%、并发 2/8、幂等 600s、摘要 20/12000、审批 10min/600s —— AI §3
@@ -76,7 +76,8 @@ MTTR 10/10·1.63min·92.1% → `reports/mttr-benchmark-*`；hit@1 100% / 答案�
 - 简历：`docs/resume-final.md`；学习对照：`docs/resume-study-map.md`
 - 深挖素材全集（docs/mining/）：platform-mining（三轮代码考古）、platform-service-deep（服务级）、platform-docs-ci（文档复盘/审查方法论/CI 真相）、platform-config-nacos-sentinel（配置实体）、file-by-file-scan（逐文件 13 点）、data-asset-map（表/Key/Topic/索引）、final-blindspots（IM/Home/通知/运维/文章）、unfixed-issue-fixes（修复台账）、ai-docs-and-platform-ops（AI 文档闭环+平台运维测试）
 - AI 深挖（xhs-ai/docs/mining/）：ai-mining（三轮）、ai-docs-closure（需求→设计→验证）、knowledge-eval-inventory（55 卡要点+题库）、observability-truth-and-gaps（可观测真相与 14 项缺口）
-- 手册：`docs/interview-defense-handbook.md`（18 主题 + 附录 A~U′）
+- 专题深挖（2026-09-20）：`docs/interview/专题-业务全链路推演.md`、`专题-技术机制深挖.md`、`专题-架构专题.md`
+- 手册：`docs/interview-defense-handbook.md`（19 主题 + 8 速答 + ⑥⑦ 两轮追问）
 - 速览：`xhs-ai/docs/PROJECT-ONE-PAGER.md`
 
 ## E. 本轮新证据（2026-09-20）

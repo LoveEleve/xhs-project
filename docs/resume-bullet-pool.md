@@ -168,7 +168,7 @@
 | ⭐ 评测隔离与门禁：门禁一键 = 65 测试（61 单测+4 契约）+ 审计一致性 + 哈希链（+可选 LLM 评测）；CI 工作流 | gate.sh；.github/workflows | 已有 |
 | 成本实测三态：软切、硬限 429、计量 5577 tokens | live-drill §4.4 | 已有 |
 | 崩溃恢复：批准后 60s 补执行 + executing 600s 回收 | production-gaps | 已有 |
-| 去 MCP 化 kill 演练 19s/39s | live-drill §4.6 | 已有 |
+| MCP 旁路 + 死进程快速失败（15.1s 失败 / 1.2s 重建） | honesty-audit §2（2026-09-20） | 旧 19s/39s 口径作废 |
 | 会话摘要演练：47 条→27 条摘要，删状态仍答 ZEBRA-42/87 | production-gaps | 已有 |
 | 诚实边界（可写进"边界"）：跨实例事件只发不收（除指标）、capture_mode/ai_feedback 未接线、DLQ 尾部扫描 200 条上限、/chat 不计预算 | 素材 §6 | ⚠️ 主动写边界反而加分 |
 

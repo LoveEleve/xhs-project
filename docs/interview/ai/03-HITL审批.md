@@ -62,3 +62,7 @@ LangGraph interrupt / Anthropic HITL 模式公开资料；本项目 approval 模
 
 ## 真实性说明
 状态值与 SQL、指纹、CAS、补执行、回收、级联拒绝均为代码事实；"跨实例业务续跑订阅未接线"为主动披露边界（事件广播已有，订阅执行未接）；审批状态为小写字符串（非大写枚举）。
+
+## 本轮补充（2026-09-20 真实运行审计）
+- HITL 全闭环实测：pending→approved→自动执行→重投成功（approval 26），新 msgId 可查；审批决策与执行结果均入审计。
+- 边界：MCP 工具被 Agent 绕过（mcp-tools-enabled=false，仅运维直连）；审批原文指纹执行前复核已实现。

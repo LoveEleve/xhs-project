@@ -47,7 +47,7 @@ Anthropic《Building effective agents》把"工作流"和"Agent"做了清晰区�
 - `api/AgentController:46,90`：同步 300s / SSE（delta/tool/approval_required/final）+ X-Request-Id 幂等。
 - 状态：`RedisAgentStateStore`；F7 重建 + 滚动摘要实测（删状态仍能答历史事实）。
 - 预算/并发：50 万/软 80%/硬 429；护栏 2/8；ToolBudget 软 36/硬 40。
-- 去 MCP 化实测（live-drill）：ES MCP 死后问"文档数 top3 索引" **19s** 命中 `es_index_list`；Prom MCP 死后问"up=0 实例" **39s** 命中 `metric_query`。
+- 去 MCP 化（2026-09-20 复核）：Agent 工具全自研、MCP 已旁路（`mcp-tools-enabled=false`）；MCP 直连死进程修复为 **15.1s 快速失败 + 1.2s 重建**。旧 live-drill 的 ES-19s/Prom-39s 自愈属去 MCP 化之前口径（`McpHealthMonitor` 当前不启用），不再引用。
 
 ## 发散追问地图（横向）
 - workflow vs agent 边界：确定性编排优先；什么场景必须上 Agent。

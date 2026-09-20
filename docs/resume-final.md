@@ -116,17 +116,17 @@ xhs 是一个内容与交易并重的社交电商平台，共 15 个 Spring Clou
 # 项目二 · 小红书 AI 运维诊断与知识问答 Agent（【时间】 | 独立开发）
 
 ## 项目介绍
-xhs-ai 是面向上述 15 微服务交易系统的 AIOps 诊断与知识问答 Agent，从零设计并实现。以自然语言为入口，自动编排 DLQ / 日志 / 指标 / 知识 / 代码五类共 16 个自研工具，输出可回链的定位结论；对死信重投等危险变更实施 HITL 审批与可校验审计；配套检索/答案/Agent 三层评测体系与按用户 token 预算治理。技术栈 AgentScope 2.0 Java（Harness / HITL / Redis 状态存储）、Spring Boot 3.2.5、JDK 17；模型走双通道——聊天 deepseek-v4-pro、Agent 工具循环 qwen3.8-flash、降级 deepseek-v4-flash；接入 RocketMQ Admin / Elasticsearch / Prometheus（VictoriaMetrics）/ MySQL / Redis，单机 systemd 托管，接入 ELK 与 Prometheus 告警。
+xhs-ai 是面向上述 15 微服务交易系统的 AIOps 诊断与知识问答 Agent，从零设计并实现。以自然语言为入口，自动编排 DLQ / 日志 / 指标 / 知识 / 代码 / 业务六类共 20 个自研工具（运维 16 + 业务 4），输出可回链的定位结论；对死信重投等危险变更实施 HITL 审批与可校验审计；配套检索/答案/Agent 三层评测体系与按用户 token 预算治理。技术栈 AgentScope 2.0 Java（Harness / HITL / Redis 状态存储）、Spring Boot 3.2.5、JDK 17；模型走双通道——聊天 deepseek-v4-pro、Agent 工具循环 qwen3.8-flash、降级 deepseek-v4-flash；接入 RocketMQ Admin / Elasticsearch / Prometheus（VictoriaMetrics）/ MySQL / Redis，单机 systemd 托管，接入 ELK 与 Prometheus 告警。
 
 ## 职责描述（Responsibilities）
 - 需求与架构：主导需求工程（34 个业务场景，REQ→AC→TC 全链路追溯，含 NFR/STRIDE 威胁模型）；确定分层架构与 23 条 ADR（AgentScope 选型、Redis 状态存储、BM25 先行+向量止损、模型网关自研、策略引擎、扩展框架两代 SPI→Sidecar、技能仓库 GitSkill、沙箱 v1 不启用等）；划清框架边界（Flyway 只管 ai_*，不碰 agentscope_*）。
 - 测试与工程规范：设计六层测试矩阵——单测/契约（实测 65：61 单测 + 4 条 LLM fixture 契约）/ 集成（IT 冒烟 6 项）/ E2E（自动化 12 项，含 SSE 与权限负向） / 评测（50 条答案 + 14 条轨迹）/ 红队 8 项 + 性能 4 场景；按 E1~E7 工程规范执行（依赖 BOM+Enforcer、出网收敛到两个域名、受控只读 SQL 三层、审计只追加、灰度与回滚流程）。
-- 工具与编排：设计 16 个自研工具（DLQ 诊断/重投、日志检索/Top 服务、指标 Top/趋势/PromQL 兜底、标签探索、消费积压、ES 索引/DSL 兜底、代码定位、知识卡目录/检索/读取）；ES DSL 与 PromQL 全部在服务端拼装，模型只填业务参数，并对参数做 clamp、服务名/索引/PromQL 白名单校验；DLQ 详情可按 originMsgId→msgId→keys 逐级检索日志取首错（匹配 message/MSG_ID/UNIQ_KEY/keys 字段），把死信与首条失败日志自动关联。统一错误返回与只读标记。16 个工具：dlq_topic_list / dlq_message_detail / dlq_redeliver / consumer_lag_top / log_search / log_top_services / es_search / es_index_list / metric_top / metric_trend / metric_query / metric_labels / knowledge_catalog / knowledge_search / card_read / code_locate。
+- 工具与编排：设计 20 个自研工具（运维 16：DLQ 诊断/重投、日志检索/Top 服务、指标 Top/趋势/PromQL 兜底、标签探索、消费积压、ES 索引/DSL 兜底、代码定位、知识卡目录/检索/读取；业务 4：order_trace 订单全链（跨订单/支付/退款/库存/通知，分片路由与订单服务同哈希）、order_stats 经营指标（16 分片聚合）、inventory_query 库存、coupon_query 优惠券，业务库仅 SELECT 授权）；ES DSL 与 PromQL 全部在服务端拼装，模型只填业务参数，并对参数做 clamp、服务名/索引/PromQL 白名单校验；DLQ 详情可按 originMsgId→msgId→keys 逐级检索日志取首错（匹配 message/MSG_ID/UNIQ_KEY/keys 字段），把死信与首条失败日志自动关联。统一错误返回与只读标记。20 个工具：dlq_topic_list / dlq_message_detail / dlq_redeliver / consumer_lag_top / log_search / log_top_services / es_search / es_index_list / metric_top / metric_trend / metric_query / metric_labels / knowledge_catalog / knowledge_search / card_read / code_locate / order_trace / order_stats / inventory_query / coupon_query。
 - 提示词与行为约束：系统提示 13 条硬约束（同一工具最多 1 次、参数报错禁止重调、总工具调用 ≤4、系统本体问题必须走知识检索、锚点事实两关键词各查一次并读卡、引用只允许卡片 id），配合 ReAct 循环（maxIters=12、温度 0.2）控制行为边界。
 - HITL 审批闭环：设计"诊断→提案→审批→执行→核验→审计"状态机；审批超时 fail-closed、同会话同指纹 pending 复用、原文指纹执行前复核；审批决策跨实例 pub/sub 事件通知（业务续跑订阅未接线）；重投后按消息所在队列的消费位点核验是否真被消费，可区分 reentered_dlq / verified_consumed / 无位点证据；always 授权写会话授权表（先撤销旧授权，后续同工具直执）、reject 级联拒绝同会话其余待审；审批执行崩溃自动补执行、卡在 executing 超时回收为失败交人工重试。
 - 评测体系：检索级（30 条 hit@1）、答案级（50 条关键词 + 引用存在性硬校验，SEC 拒答用例）、Agent 级（工具选择 12 题、轨迹部分分、4 例 × 3 次稳定性）；KB 门禁 hit@1≥90%、答案门禁通过率≥90% 且引用必须全部有效；评测与单测、审计一致性、审计哈希链组成门禁脚本（本地一键），评测集 14 条轨迹用例 + 50 条答案用例 + 8 项红队断言。
 - 模型网关与成本：网关实现传输重试（仅连接超时/重置/流中断，已出流不降级重放）、熔断半开（冷却后放行探测、成功清零）、备用与轻量模型降级、调用/耗时/Token 指标；按用户 token 预算三段（真实 usage 计量 → 软限 80% 切轻量模型 → 硬限 429），工具 schema token 预算指标（软 12k），单用户/全局并发护栏，请求幂等（X-Request-Id，重复提交回放、处理中 409）。
-- 可靠性与恢复：Agent 状态存 Redis（进程重启可续聊）；状态丢失时从 ai_message 重建最近对话 + 滚动摘要注入；会话摘要任务（保留最近 20 条、超 50 条触发、轻量模型压缩 ≤300 字）；数据保留清理（消息 90 天 / 审计 365 天 / 状态空闲 30 天后过期）；MCP 子进程自愈（探测 + 三连击 + 限流 + systemd 拉起，默认仅告警）；去 MCP 化后 16 个工具全部自研，kill 两个 MCP 进程仍可完成 ES/Prom 诊断。
+- 可靠性与恢复：Agent 状态存 Redis（进程重启可续聊）；状态丢失时从 ai_message 重建最近对话 + 滚动摘要注入；会话摘要任务（保留最近 20 条、超 50 条触发、轻量模型压缩 ≤300 字）；数据保留清理（消息 90 天 / 审计 365 天 / 状态空闲 30 天后过期）；MCP 子进程自愈（探测 + 三连击 + 限流 + systemd 拉起，默认仅告警）；去 MCP 化后 20 个工具全部自研，kill 两个 MCP 进程仍可完成 ES/Prom 诊断。
 - 接口与部署：对外提供 7 组 REST 接口（对话、Agent、审批、知识、MCP 直连、会话、评测），三级鉴权（内部令牌 / 平台 JWT / 管理令牌 ADMIN），未授权一律 401；systemd 托管，JSON 日志 100MB 滚动保留 7 天，Prometheus 指标仅本机回环抓取。
 - 安全与权限：RBAC 消费平台 JWT 角色（ADMIN/OPERATOR/VIEWER），管理端点（重索引/评测/诊断/MCP 直连）收敛 ADMIN；审计只追加 + 哈希链防篡改（SHA-256 前向链 + 链头行锁）+ 参数脱敏与密钥形态打码；敏感数据出网默认脱敏；红队 8 项回归（未授权/注入/密钥诱导/越权审批/危险工具/洪水/方法混淆/直调）；MCP 白名单与工具名缓存（TTL 10min，未知工具快速失败），管理端点全部收敛 ADMIN。
 - 可观测与运营：17 个自定义指标（工具数/schema token/工具调用与失败率/运行时长/模型调用与 Token/熔断/预算决策/审批事件与恢复/MCP 健康/清理量）；7 条 Prometheus 告警（实例可用/5xx/熔断/预算拒绝/MCP 健康/P95/schema 预算）；traceId 贯穿 HTTP、工具调用与审计；会话按 (userId, sessionId) 归属校验防越权读取；ADMIN 运维端点（消费位点诊断、会话摘要、知识重索引）。
@@ -136,7 +136,7 @@ xhs-ai 是面向上述 15 微服务交易系统的 AIOps 诊断与知识问答 A
 
 ## 关键结果（Key Achievements）
 - 故障定位效率：10 个真实故障案例 10/10 给出完整证据，Agent 平均 1.63 分钟；人工口径保守重构 20.6 分钟，降幅约 92.1%。
-- 知识问答质量：55 张知识卡 BM25 检索 30 条 hit@1=100%；答案级首轮 47/50、引用有效性 97.8%，修复 + 定向复测后聚合 50/50、引用 100%（幻觉引用被硬校验拦截）。
+- 知识问答质量：55 张知识卡 BM25 检索 30 条 hit@1=100%；答案级首轮 47/50、引用有效性 97.8%，定向修复后 50/50；2026-09-20 三批复跑 kb29/30+diag15/15+sec5/5（blocked=0，1 例卡片 id 幻觉被硬校验拦截）。
 - Agent 评测：工具选择 12/12；轨迹评测支持部分分，4 例 × 3 次稳定性 0.917；服务端拼装 DSL 后，同一道 P95 排查题从 98 秒答偏变为 50 秒答对。
 - 变更闭环：审批重投全链路实测（pending→approved→重投→核验），毒丸消息二次入死信被准确判为 reentered_dlq，无误报成功；审计 SQL 验证"未审批高危执行 0"。
 - 成本治理：单次诊断 18,292 / 1,433 tokens ≈ ¥0.012–0.048（估算，费率待网关确认；74% 为语料推算非同期 A/B）；预算三态实测（软限切轻量、硬限 429、单次问答计量 5,577 tokens）。
@@ -145,7 +145,7 @@ xhs-ai 是面向上述 15 微服务交易系统的 AIOps 诊断与知识问答 A
 - 依赖治理：Enforcer 三规则全过（Java 17/重复类/依赖收敛），处置 4 项版本冲突（okhttp 降级、jedis 漂移、org.json 重复、MCP json 包豁免并附退出条件）。
 - 故障演练：FMEA 设计覆盖 18 种失败模式，实做 9 个场景——停 ES 受控降级（stats 返回 indexed=-1，恢复后 55 卡自动重建）、Redis Sentinel 切主 2.3s（458 个状态键无损、会话续跑）、滚动重启停机 13s（重启后同会话继续）、kill MCP 进程级自愈，另有 5 个真实流量场景（DLQ 根因/日志检索/指标/审批重投/全链路下单）。
 - 压测：N=100 会话，C=5 全部成功（P50 13.5s / P95 39.0s / P99 46.5s）；C=20 时 61% 成功、39 个请求客户端 120s 中止，服务端熔断降级、不崩不重启。
-- 去 MCP 化：kill 两个 MCP 子进程后，ES 索引问题 19s、PromQL 问题 39s 正常作答；MCP 工具仅保留 /api/ai/mcp/** 运维直连。
+- 去 MCP 化（2026-09-20 复核）：Agent 20 个工具全部自研、`mcp-tools-enabled=false`，MCP 不参与关键路径；MCP 直连死进程从永久挂起修复为 **15.1s 快速失败 + 1.2s 按需重建**；旧 kill-MCP 19s/39s 自愈为去 MCP 化之前口径，不再引用。
 - 安全验证：红队 8 项全拦截；审计链篡改可检出（篡改后校验失败）；RBAC 实测 OPERATOR→403 / ADMIN→200。
 - 可观测与门禁：17 个 ai_* 指标 + 7 条告警上线；门禁一键通过（65 测试含契约 + 审计一致性 + 哈希链校验，可选 LLM 评测），CI 工作流当前仅跑单测。
 - 全量评测首跑：mimo-v2.5-pro 下 100 条 nightly 全量（smoke 20 + regression 80）取得 100% 通过率 / 96% 完成率 / 0% 幻觉率，评测体系从"关键门禁可跑"进入"完整体系成立"阶段。
