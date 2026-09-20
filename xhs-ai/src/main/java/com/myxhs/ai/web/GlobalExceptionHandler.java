@@ -57,6 +57,14 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(R.fail(400, e.getMessage()));
     }
 
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    public ResponseEntity<R<Void>> handleNoResource(
+            org.springframework.web.servlet.resource.NoResourceFoundException e) {
+        // 2026-09-20 修复：未知路径原被 generic Exception 转成 500（误导排查），应为 404
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(R.fail(404, "资源不存在: " + e.getResourcePath()));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<R<Void>> handleException(Exception e) {
         log.error("[全局异常] traceId={}", MDC.get(TraceIdFilter.MDC_KEY), e);

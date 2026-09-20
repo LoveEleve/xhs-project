@@ -82,9 +82,25 @@ public class McpClientManager {
         return wrapper;
     }
 
+    /** 逐出并关闭失效 client（下次调用会重建，实现"按需自愈"） */
+    private void evictQuietly(String name) {
+        McpClientWrapper wrapper = clients.remove(name);
+        if (wrapper != null) {
+            try { wrapper.close(); } catch (Exception e) { log.warn("[MCP] server={} 逐出关闭异常: {}", name, e.getMessage()); }
+        }
+        toolNames.remove(name);
+    }
+
     public List<Map<String, Object>> listTools(String name) {
         McpClientWrapper wrapper = client(name);
-        List<McpSchema.Tool> tools = wrapper.listTools().block(Duration.ofSeconds(60));
+        List<McpSchema.Tool> tools;
+        try {
+            // 2026-09-20 修复：原 60s 超时且失败不逐出——子进程死亡时接口长时间挂起且永不恢复
+            tools = wrapper.listTools().block(Duration.ofSeconds(15));
+        } catch (Exception e) {
+            evictQuietly(name);
+            throw new IllegalStateException("MCP server 不可用(已重置，重试可自动重建): " + name + " - " + e.getMessage());
+        }
         List<Map<String, Object>> result = new ArrayList<>();
         if (tools == null) {
             return result;
@@ -107,9 +123,15 @@ public class McpClientManager {
             }
         }
         McpClientWrapper wrapper = client(name);
-        McpSchema.CallToolResult result = wrapper
-                .callTool(tool, arguments == null ? Map.of() : arguments)
-                .block(Duration.ofSeconds(120));
+        McpSchema.CallToolResult result;
+        try {
+            result = wrapper
+                    .callTool(tool, arguments == null ? Map.of() : arguments)
+                    .block(Duration.ofSeconds(30));
+        } catch (Exception e) {
+            evictQuietly(name);
+            throw new IllegalStateException("MCP 调用失败(已重置，重试可自动重建): " + name + "/" + tool + " - " + e.getMessage());
+        }
         if (result == null) {
             throw new IllegalStateException("MCP 调用返回空结果: " + name + "/" + tool);
         }
