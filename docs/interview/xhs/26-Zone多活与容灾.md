@@ -18,6 +18,7 @@
   - 健康检查用 **liveness + 3s 间隔**（聚合 health 会因依赖抖动误摘）；
   - 网关（WebFlux）独立实现了一份反应式 zone LB；
 - **数据面**：
+  - **JDBC 多活**：`DynamicDataSource`（402 行）按 zone 组装 master/只读副本，监听 `ZoneContext` 热切换；切换前等活跃连接归零（最长 30s）保护 TCC 事务；content 试点热切后 slave 命中 **+206**（此前 master +207），无需重启；
   - MySQL：zone 感知数据源（读本 zone、写主库、从库故障降级 + 30s 探测恢复）；
   - Redis：客户端 `ReadFrom.REPLICA_PREFERRED`（读本 zone 副本、写主库、副本故障回主）；**服务端双主**（zone-a 6379 / zone-b 6381 双向同步：DUMP/RESTORE + LWW 时间戳 + 周期对账兜底）；
 - **动态化**：`ZoneContext` 属性变更事件 → 数据源热切换 + LB 路由即时变化；提供内部令牌保护的 zone 热切端点（不重启）；
@@ -45,7 +46,8 @@
 **追问2：zone 路由用 Ribbon 还是 SCLB？** Spring Cloud LoadBalancer（新），自定义 Supplier 做 zone 过滤；网关是反应式栈单独实现。
 **追问3：RTO 怎么压出来的？** `kill -9` 杀首选 zone 实例，客户端 0.3s 粒度轮询到首次成功；网络分区用 iptables DROP 模拟（比进程崩溃更慢：连接超时 vs RST）。
 **追问4：同步冲突怎么定胜负？** LWW——每 key 影子时间戳，新者覆盖；同时间戳/无时间戳用确定性 tie-break（存在优先、双侧存在 zone-a 优先）。
-**追问5：切 zone 要重启吗？** 不用——`ZoneContext` 发属性变更事件，数据源热切换（等活跃连接归零防事务中断）+ LB 路由即时生效；有内部令牌保护的端点演示过。
+**追问5：JDBC 层怎么做到不重启切数据源？** `DynamicDataSource` 代理目标随 `ZoneContext` 属性变更事件热切换；切换前检查活跃连接计数、归零才切（最长 30s），超时强切并告警（进行中 TCC 由 Cancel 兜底）。实测 content 100 次请求：zone-a 时 master +207，热切 zone-b 后 slave +206。
+**追问6：切 zone 要重启吗？** 不用——`ZoneContext` 发属性变更事件，数据源热切换（等活跃连接归零防事务中断）+ LB 路由即时生效；有内部令牌保护的端点演示过。
 
 ## 发散追问地图（横向）
 - 多活架构：同城双活/异地多活、单元化（Set）、GSLB/DNS 调度、Mesh 灰度。
@@ -61,7 +63,7 @@
 
 ## 本项目真实证据
 - 流量面：`ZonePreferenceFilter`/`ZoneLoadBalancerConfiguration`（子 context 接线）、`ZoneRouteMetrics`（决策指标）；网关 `gateway/zone/*`；报告 `docs/reports/zone-pilot-20260918.md`（240/240、RTO 3.06/4.79s）、`gateway-zone-pilot-20260918.md`（12/12、5.5s）、`d4-zone-drills-20260918.md`（RTO 分布）；
-- 数据面：`ReadWriteRoutingDataSource`（zone 感知 + 从库恢复修复）、`ZoneRedisReadFromResolver`、`scripts/zone-redis-sync.py`（双主同步 LWW+对账）、报告 `mysql-zone-datasource-20260918.md`、`redis-zone-drill-20260918.md`、`redis-server-multi-active-20260918.md`（双主/冲突/故障/恢复）；
+- 数据面：`zone/datasource/DynamicDataSource.java`（JDBC 热切换 402 行）、`DynamicZoneDataSourceConfig`、`ReadWriteRoutingDataSource`（zone 感知 + 从库恢复修复）、`ZoneRedisReadFromResolver`、`scripts/zone-redis-sync.py`（双主同步 LWW+对账）、报告 `dynamic-zone-jdbc-spring-20260918.md`（热切 +206）、`mysql-zone-datasource-20260918.md`、`redis-zone-drill-20260918.md`、`redis-server-multi-active-20260918.md`（双主/冲突/故障/恢复）；
 - 动态/自动化：`ZoneAdminController`（热切）、`ZoneEnvironmentPostProcessor`（env/文件/网段自动发现）、`ZonePropagationFilter/Interceptor`（X-Zone 传播）；
 - 发布加固：`release-service.sh`（PID 校验 + 端口占用清理 + 多实例）。
 
