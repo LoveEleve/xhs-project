@@ -8,3 +8,7 @@ spring:
     redis:
       password: Xhs@2026#Redis
       port: 6379
+      # 2026-09-20 review：命令超时 1s（原默认 60s）——Redis 故障时让 CacheHelper 的 DB 回退/降级快速生效，
+      # 避免读路径（product/counter）无界挂起；写路径由各自 catch 逻辑处理
+      timeout: 1000ms
+      connect-timeout: 1000ms

@@ -24,10 +24,16 @@ public class RedisMultiSourceConfig {
     public LettuceConnectionFactory cacheRedisConnectionFactory(
             @Value("${spring.data.redis.host:21.91.124.110}") String host,
             @Value("${spring.data.redis.cache.port:16380}") int port,
-            @Value("${spring.data.redis.password:Xhs@2026#Redis}") String password) {
+            @Value("${spring.data.redis.password:Xhs@2026#Redis}") String password,
+            @Value("${spring.data.redis.timeout:1000}") String timeoutRaw) {
         RedisStandaloneConfiguration config = new RedisStandaloneConfiguration(host, port);
         config.setPassword(password);
-        return new LettuceConnectionFactory(config);
+        // 2026-09-20 review：命令超时与业务 Redis 一致（默认 1s），防故障时调用挂起
+        long timeoutMs = 1000L;
+        try { timeoutMs = Long.parseLong(timeoutRaw.replaceAll("[^0-9]", "")); } catch (Exception ignored) { }
+        return new LettuceConnectionFactory(config,
+                org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration.builder()
+                        .commandTimeout(java.time.Duration.ofMillis(timeoutMs)).build());
     }
 
     @Bean

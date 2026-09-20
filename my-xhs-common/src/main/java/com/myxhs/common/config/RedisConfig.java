@@ -67,7 +67,13 @@ public class RedisConfig {
             @Value("${spring.data.redis.business.port:16381}") int port,
             @Value("${spring.data.redis.password:Xhs@2026#Redis}") String password,
             @Value("${myxhs.availability.zone.redis.enabled:false}") boolean zoneRedisEnabled,
-            @Value("${myxhs.availability.zone.redis.slave-zone:}") String zoneRedisSlaveZone) {
+            @Value("${myxhs.availability.zone.redis.slave-zone:}") String zoneRedisSlaveZone,
+            @Value("${spring.data.redis.timeout:1000}") String timeoutRaw) {
+
+        // 2026-09-20 review：自定义 Lettuce 工厂原未设 commandTimeout（默认 60s）→ Redis 故障时读路径无界挂起，
+        // CacheHelper 的"Redis不可用→查DB"回退永远等不到。统一 1s（可由 spring.data.redis.timeout 覆盖）。
+        long timeoutMs = 1000L;
+        try { timeoutMs = Long.parseLong(timeoutRaw.replaceAll("[^0-9]", "")); } catch (Exception ignored) { }
 
         // Zone 感知：slave-zone 的实例读走本 Zone 副本（REPLICA_PREFERRED），其余读写主库；默认关闭
         String currentZone = System.getProperty(ZoneConstants.CURRENT_ZONE_PROPERTY_NAME, ZoneConstants.DEFAULT_ZONE);
@@ -78,6 +84,7 @@ public class RedisConfig {
         }
         LettuceClientConfiguration clientConfig = LettucePoolingClientConfiguration.builder()
                 .readFrom(readFrom)
+                .commandTimeout(java.time.Duration.ofMillis(timeoutMs))
                 .build();
 
         if (StringUtils.hasText(sentinelNodes)) {

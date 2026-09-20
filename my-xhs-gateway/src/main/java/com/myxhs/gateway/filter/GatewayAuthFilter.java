@@ -121,11 +121,6 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
         final String effectiveTraceId = traceId;
         return Mono.fromCallable(() -> isBlacklisted(jti))
                 .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
-                .onErrorResume(e -> {
-                    // 黑名单查询异常：安全优先（fail-closed），拒绝该请求
-                    log.warn("[Gateway] 黑名单查询异常，按未认证处理: {}", e.getMessage());
-                    return Mono.just(Boolean.TRUE);
-                })
                 .flatMap(blacklisted -> {
                     if (Boolean.TRUE.equals(blacklisted)) {
                         log.info("[Gateway] 鉴权失败, Token 已被注销, jti={}, userId={}, path={}",
@@ -133,6 +128,13 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
                         return unauthorized(exchange, "Token 已被注销");
                     }
                     return continueChain(exchange, chain, claims, path, method, effectiveTraceId);
+                })
+                .onErrorResume(e -> {
+                    // 2026-09-20 review：原实现把 Redis 异常与“已吊销”混为一谈（均回 401「Token 已被注销」），
+                    // 实测 Redis 短暂不可用 → 全站 401（客户端会误判强制登出），且与真吊销不可区分。
+                    // 修正：保持 fail-closed（仍拒绝），但返回 503「认证服务暂不可用」→ 客户端可重试、运维可告警。
+                    log.error("[Gateway] ⚠️ 黑名单查询异常，按认证服务不可用处理(503): {}", e.getMessage());
+                    return serviceUnavailable(exchange, "认证服务暂不可用，请稍后重试");
                 });
     }
 
@@ -226,10 +228,11 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
      * TTL 等于 Token 的剩余有效期，过期后自动清除。
      * </p>
      * <p>
-     * Redis 异常处理策略：
-     * - 降级为拒绝请求（Fail-Closed），防止已注销 Token 复活
-     * - 相比 Fail-Open（漏放安全风险大），Fail-Closed 影响面更可控
-     *   仅在 Redis ≠ 健康 + Token = 已注销 的极小概率场景下误拒
+     * Redis 异常处理策略（2026-09-20 修正）：
+     * - 仍为 Fail-Closed（拒绝），防止已注销 Token 复活；
+     * - 但响应区分语义：Redis 故障 → **503 认证服务暂不可用**（可重试/可告警），
+     *   真正命中黑名单 → 401 Token 已被注销。
+     * - 可用性边界：Redis 是认证链路单点，故生产建议加"黑名单本地缓存 + 变更广播"或 Redis 多副本。
      * </p>
      */
     private boolean isBlacklisted(String jti) {
@@ -238,17 +241,35 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
             String val = stringRedisTemplate.opsForValue().get(key);
             return val != null;
         } catch (Exception e) {
-            // Redis 异常：拒绝请求（Fail-Closed），记录告警
-            // 仅在短暂的 Redis 故障窗口内影响，且仅影响已注销 Token 的请求
-            // 被误拒的请求前端通常会静默重试或引导重新登录，影响面可控
-            log.error("[Gateway] ⚠️ Redis 黑名单查询异常，拒绝请求(安全优先), jti={}", jti, e);
-            return true; // 保守策略：视为在黑名单中，拒绝
+            // 2026-09-20 review：异常必须向上抛出（原实现 return true 会伪装成“已吊销”）。
+            // 真实语义：Redis 不可用时无法完成吊销校验 → fail-closed 拒绝，但响应为 503 可重试。
+            throw new IllegalStateException("Redis 黑名单查询失败: " + e.getMessage(), e);
         }
     }
 
     /**
      * 返回 401 未授权响应
      */
+    /**
+     * 503：认证依赖（Redis）不可用——与“Token 已吊销(401)”区分，客户端可重试
+     */
+    private Mono<Void> serviceUnavailable(ServerWebExchange exchange, String message) {
+        exchange.getResponse().setStatusCode(HttpStatus.SERVICE_UNAVAILABLE);
+        exchange.getResponse().getHeaders().add(HttpHeaders.CONTENT_TYPE, "application/json;charset=UTF-8");
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("code", 503);
+        result.put("message", message);
+        result.put("data", null);
+        byte[] bytes;
+        try {
+            bytes = objectMapper.writeValueAsBytes(result);
+        } catch (JsonProcessingException e) {
+            bytes = ("{\"code\":503,\"message\":\"" + message + "\"}").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        }
+        return exchange.getResponse().writeWith(Mono.just(exchange.getResponse().bufferFactory().wrap(bytes)));
+    }
+
     private Mono<Void> unauthorized(ServerWebExchange exchange, String message) {
         exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
         exchange.getResponse().getHeaders().add(HttpHeaders.CONTENT_TYPE, "application/json;charset=UTF-8");
