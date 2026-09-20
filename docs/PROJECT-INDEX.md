@@ -78,3 +78,13 @@ MTTR 10/10·1.63min·92.1% → `reports/mttr-benchmark-*`；hit@1 100% / 答案�
 - AI 深挖（xhs-ai/docs/mining/）：ai-mining（三轮）、ai-docs-closure（需求→设计→验证）、knowledge-eval-inventory（55 卡要点+题库）、observability-truth-and-gaps（可观测真相与 14 项缺口）
 - 手册：`docs/interview-defense-handbook.md`（18 主题 + 附录 A~U′）
 - 速览：`xhs-ai/docs/PROJECT-ONE-PAGER.md`
+
+## E. 本轮新证据（2026-09-20）
+| 主题 | 代码/工具 | 报告 |
+|---|---|---|
+| 多实例正确性 | `SseEmitterManager`/`SseCrossInstanceSubscriber`（跨实例修复）、`ShardingSphereDataSourceConfig`（worker-id） | `multi-instance-validation-20260920.md` |
+| 分片哈希迁移 | `scripts/migrate-sharding-hash.py`、`scripts/sharding-distribution-check.sh` | `sharding-hash-migration-20260920.md` |
+| Redis 故障语义 | `GatewayAuthFilter`（503）、`RedisConfig`/`RedisMultiSourceConfig`（commandTimeout） | `redis-failure-semantics-20260920.md` |
+| 缓存/乱序 | `CounterEventConsumer`（版本门） | `cache-consistency-and-outoforder-20260920.md` |
+| 对抗/故障注入 | `scripts/test-order-state-race.py`、`scripts/drill-dist-tx-faults.py`、`scripts/test-im-cross-instance.py` | `order-state-race-20260920.md`、`dist-tx-fault-drill-20260920.md` |
+| 运维/DR | `deploy/scripts/mysql-backup.sh`（重写）、ILM/清理落地 | `gap-sweep-20260920.md`、`reconcile-coverage-and-lifecycle-20260920.md` |
