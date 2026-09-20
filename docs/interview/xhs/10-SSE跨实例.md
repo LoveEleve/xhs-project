@@ -60,3 +60,10 @@ SSE 规范（EventSource/Last-Event-ID）与 Spring `SseEmitter` 文档；本项
 
 ## 真实性说明
 ticket 两步法、双键/TTL/心跳/守卫/超时均为代码事实；"网关超时"未在本轮核实，不写具体数值（emitter 自身 30min 兜底）；Last-Event-ID 未实现（用落库拉取替代，属有意取舍）。
+
+## 本轮补充（2026-09-20 多实例实测：两处真 Bug 并修复）
+- 实测拓扑：SSE 连实例A，通知事件由实例B处理。**修复前完全收不到推送**：
+  ① `processEvent` 用 `isOnline()`（仅本地 map）做前置判断 → 跨实例分支被短路（`pushNotification` 的 Redis 路由成死代码）；
+  ② 订阅者 `toLong` 对 Jackson `TextNode` 解析失败（项目 Jackson 把 Long 序列化为字符串、`toString()` 带引号）→ **所有**跨实例消息判"格式异常"。
+- 修复：新增 `isOnlineAnywhere`（本地或 Redis 路由键）+ `toLong` 支持 `JsonNode`；**修复后实测推送成功**。
+- 口径：跨实例推送三件套＝路由键（TTL 续期）、pub/sub 广播、目标实例本地投递；**单实例跑绿 ≠ 多实例正确**（两个 Bug 只在双实例暴露）。

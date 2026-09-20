@@ -200,3 +200,24 @@
 - Redis 双主对账"存在优先"防误删；断线 3s 重连
 - AgentScope 工具"注册≠可用"：权限 ASK 卡 asking（空答复）
 - 模型网关"已出流不降级重放"（防重复输出）
+
+## 新增（2026-09-20）· 按主题（可选条目）
+### 多实例/分布式正确性
+- 修复跨实例 SSE 两处真 Bug：本地 `isOnline` 短路跨实例推送 + 订阅者 Jackson `TextNode` 解析失败（功能从未生效）；修复后实例B处理事件、实例A的 SSE 实时收到。
+- 同机多实例 Snowflake worker-id 仅按 IP 派生会重号（实测两实例均 257）→ 加入端口维度后 354 vs 454。
+- IM 跨实例投递 + WS 经网关（ticket 白名单 + WS 代理）双路径实测通过。
+### 分片治理
+- 分片倾斜实测 75%（131 单落 2/16 片）：Snowflake 增量 `Δms<<22` 恒被 16 整除，低流量 Δseq=0 → `user_id mod 16` 恒定；改哈希取模（hashCode&0x7fffffff）并迁移存量 682 行。
+- 新增 `sharding-distribution-check.sh`：分布倾斜阈值 + 订单↔映射一致性 + 路由抽查（exit code 可告警）；`migrate-sharding-hash.py` 支持 --dry-run。
+### 消息乱序与一致性
+- 计数消费端补 `actionTime` 版本门（Like/Favorite）；旧事件注入被拒、计数保持；comment/follow 事件缺时间戳列为生产端改造项。
+- 缓存"更新→读"24ms 一致；延迟二次删除实测 1s；ES 软删为墓碑（`_source={}`），已删内容搜索 0 命中。
+### Redis 故障语义
+- 网关 Redis 故障 401"Token 已被注销"→503"认证服务暂不可用"（fail-closed 可重试）；从库暂停无感、主库暂停 product 走 DB 回退（后续 0.01s）。
+- 自定义 Lettuce 工厂补 1s commandTimeout（原 60s 使 DB 回退等不到）；四路语义矩阵：锁 fail-closed / 限流 fail-open / 缓存 DB 回退 / 网关 503。
+### 运维/DR
+- MySQL 备份旧脚本（云模板+吞错）长期产出 20B 空文件 → 重写走 docker exec + size/gunzip 双校验，3.0MB 实体备份 + cron。
+- ES ILM 从未 apply → 落地 policy/模板/存量索引；每日清理因 cron 重启窗口未跑 → 手动清 2 索引(1.8G)+45 文件后恢复。
+### 交易与注入
+- 订单 8 场景并发对抗全过；取消vs支付=取消赢+自动退款闭环；累计两笔部分退款=全额 → 订单 5/支付单 3/库存回补。
+- 消费者宕机追平（LAG 1→0 约 11s、计数恰好一次）；MQ 暂停下单 3.1s 超时失败无半成品、重试成功仅 1 单；netem 4s 依赖变慢聚合 3.0s 准时降级（404 伪装 → 503 语义修复）。

@@ -64,3 +64,7 @@ W3C Trace Context 规范；SkyWalking/MDC 文档；本项目 trace 包代码与 
 
 ## 真实性说明
 6 标记、过滤器行为、MQ/Feign/线程池适配均为代码事实；test-4 双实例同 traceId 为实测；APM 与业务 traceId 并存是现状口径。
+
+## 本轮补充（2026-09-19 全链证据 + 三处断链修复）
+- 证据：6 服务共享同一 trace；**延时关单消息 30 分钟后消费仍带创建时 trace**；`order-async` 42/42 行带 traceId。
+- 修复：退款链定时线程开链（`startNewTrace`）、`asyncSend` 回调线程补 MDC、Feign/MQ 双通道退款并发降级为幂等成功。

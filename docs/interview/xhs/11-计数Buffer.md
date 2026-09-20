@@ -57,3 +57,8 @@
 
 ## 真实性说明
 BATCH_SIZE/5s/重试 3 次/双 Buffer/Set 化均为代码事实；"进程被杀丢最后一拍"为明确取舍；分片计数未实现（边界）。
+
+## 本轮补充（2026-09-20 乱序注入 + Buffer 实测）
+- **版本门缺口修复**：Like/Favorite 消费端补 `actionTime` 版本门（旧事件跳过，日志可证）；注入实测旧 UNLIKE/UNFAVORITE 不再改写计数；counter 侧与 analytics 侧语义对齐。
+- 限制（诚实边界）：comment/follow 事件**无时间戳字段**（生产端只发 noteId+count / follower+followee），暂无法加版本门 → 需生产端补 `actionTime`。
+- Buffer：`@Scheduled(fixedRate=5000)` 双 Buffer 交换落库，DB 滞后 ≤ ~5s；Redis 丢失场景由"Redis 恢复/DB 修正"双向对账兜底（见 18 题）。

@@ -68,3 +68,8 @@ Filebeat/Logstash/ES 官方文档；本项目 ELK 配置与清理脚本。
 
 ## 真实性说明
 配置/保留天数/巡检与清理脚本/索引体量均为仓库与运行态事实；ILM 未启用、双口径保留主动披露。
+
+## 本轮补充（2026-09-20 管道与生命周期修复）
+- 管道漂移修复：运行时原为 compose 内联 `-e` 管道（**无 filter**）→ 改为挂载仓库 `logstash.conf`（grok/date 真正生效）+ `mutate gsub` 凭据脱敏（ticket/token/password），ES 实测脱敏、明文 0 命中。
+- 网关访问日志 query 脱敏（SSE ticket → `ticket=***`）。
+- 生命周期：ES ILM 此前**从未 apply**（`managed=False`）→ 已建 policy/模板并挂存量索引；每日 4:00 脚本清理因 cron 进程重启窗口未执行 → 手动清 2 个老索引(1.8G)+45 文件，此后自动。

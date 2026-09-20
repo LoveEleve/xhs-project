@@ -65,3 +65,10 @@ Redis Sentinel/Cluster 官方文档；Lettuce/Redisson 配置文档；本项目�
 
 ## 真实性说明
 Sentinel 参数、双实例策略、池参数均为仓库配置事实；端口在不同环境不一致（以 Nacos 为准，演练环境为 6379/6380）；"Cluster 未采用"是设计决策。
+
+## 本轮补充（2026-09-20 故障注入：语义矩阵与两处修复）
+- 拓扑事实：6380=主（可写）/ 6379=只读从 / 6381 未运行；**容器命名主从颠倒**；单 sentinel（quorum=1；配置仍写 6379、运行态 6380=曾发生 failover）。
+- 修复1（网关）：Redis 故障原全站 `401 Token 已被注销`（误导+误登出）→ 改 **503「认证服务暂不可用」**（保持 fail-closed、客户端可重试）。
+- 修复2（读路径）：自定义 Lettuce 工厂无 commandTimeout（默认 60s）→ CacheHelper 的 DB 回退永不触发；补 **1s 超时**（Nacos 公共配置 + 两个自定义工厂）。
+  主库暂停实测：product **200（DB 回退）**（首跳 11s=多层超时叠加、后续 0.01s）、counter 0.26s、cart 0.64s、notification 0.58s。
+- 风险：认证链路对 Redis 是 **SPOF**；建议黑名单本地缓存 + pub/sub 变更广播或 HA；sentinel 应 3 节点且命名/配置统一。
