@@ -73,6 +73,17 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
         return passed == null || passed == 0;
     }
 
+    /** 收藏事件版本门（2026-09-20 review：与点赞同构，防"后到的旧 UNFAVORITE"改写收藏数） */
+    private static final String FAVORITE_VERSION_PREFIX = "myxhs:counter:event:version:favorite:";
+
+    private boolean isStaleFavoriteEvent(Long userId, Long noteId, Long actionTime) {
+        String key = FAVORITE_VERSION_PREFIX + userId + ":" + noteId;
+        Long passed = stringRedisTemplate.execute(LIKE_VERSION_SCRIPT,
+                java.util.List.of(key), String.valueOf(actionTime),
+                String.valueOf(LIKE_VERSION_TTL_HOURS * 3600));
+        return passed == null || passed == 0;
+    }
+
     /** 计数类型常量：1-点赞 2-收藏 3-评论 4-分享 5-浏览 6-粉丝 7-关注 */
     private static final int COUNT_TYPE_LIKE = 1;
     private static final int COUNT_TYPE_FAVORITE = 2;
@@ -212,6 +223,15 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
 
         int targetType = TARGET_TYPE_NOTE;
         int countType = COUNT_TYPE_FAVORITE;
+
+        // 版本门：actionTime 更旧的收藏/取消收藏事件跳过（与点赞同构）
+        Long userId = toLong(eventMap.get("userId"));
+        Long actionTime = toLong(eventMap.get("actionTime"));
+        if (userId != null && actionTime != null && isStaleFavoriteEvent(userId, noteId, actionTime)) {
+            log.info("[计数Consumer] 跳过旧收藏事件(版本门): userId={}, noteId={}, actionTime={}",
+                    userId, noteId, actionTime);
+            return;
+        }
 
         boolean executed;
         if ("FAVORITE".equals(tag)) {

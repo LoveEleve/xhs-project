@@ -75,6 +75,11 @@ spring:
         port: 8727
       eager: true
     openfeign:
+  client:
+    config:
+      default:
+        connect-timeout: 3000
+        read-timeout: 3000
       httpclient:
         hc5:
           enabled: true
