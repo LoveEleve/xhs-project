@@ -63,8 +63,10 @@ public class HmacSignatureFilter implements GlobalFilter, Ordered {
 
     private final StringRedisTemplate stringRedisTemplate;
 
-    /** HMAC 签名密钥（通过配置注入） */
-    private final String hmacSecretKey;
+    /** HMAC 校验失败指标（与鉴权失败指标同口径，原实现只打日志） */
+    private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
+    private final java.util.Map<String, io.micrometer.core.instrument.Counter> hmacFailureCounters =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     /** HMAC 白名单路径配置 */
     private final com.myxhs.gateway.config.AuthProperties authProperties;
@@ -81,6 +83,9 @@ public class HmacSignatureFilter implements GlobalFilter, Ordered {
     /** nonce Redis Key 前缀 */
     private static final String NONCE_KEY_PREFIX = "myxhs:gateway:nonce:";
 
+    /** per-session HMAC 密钥 Redis Key 前缀（登录时写入，网关验签时读取） */
+    private static final String HMAC_SECRET_KEY_PREFIX = "myxhs:user:hmac:secret:";
+
     /** nonce 去重 Lua 脚本：SET NX EX 原子操作 */
     private static final DefaultRedisScript<Boolean> NONCE_SET_SCRIPT;
 
@@ -92,13 +97,49 @@ public class HmacSignatureFilter implements GlobalFilter, Ordered {
         NONCE_SET_SCRIPT.setResultType(Boolean.class);
     }
 
+    /**
+     * RV34：阻塞式 Redis 读取的结果载体。
+     * <p>
+     * 读密钥需在 boundedElastic 线程上执行，若直接抛出异常，外层 onErrorResume 会连
+     * 下游过滤链的异常一并捕获（语义被扩大）。用本载体把"Redis 异常"从流里显式带出来，
+     * 保证异常处理范围与改造前完全一致。
+     * </p>
+     */
+    private static final class SecretLookup {
+
+        final String value;
+
+        final Exception error;
+
+        private SecretLookup(String value, Exception error) {
+            this.value = value;
+            this.error = error;
+        }
+
+        static SecretLookup ok(String value) {
+            return new SecretLookup(value, null);
+        }
+
+        static SecretLookup failed(Exception error) {
+            return new SecretLookup(null, error);
+        }
+    }
+
     public HmacSignatureFilter(StringRedisTemplate stringRedisTemplate,
                                com.myxhs.gateway.config.AuthProperties authProperties,
-                               ObjectMapper objectMapper) {
+                               ObjectMapper objectMapper,
+                               io.micrometer.core.instrument.MeterRegistry meterRegistry) {
         this.stringRedisTemplate = stringRedisTemplate;
-        this.hmacSecretKey = authProperties.getHmacSecret();
         this.authProperties = authProperties;
         this.objectMapper = objectMapper;
+        this.meterRegistry = meterRegistry;
+    }
+
+    private void countHmacFailure(String reason) {
+        hmacFailureCounters.computeIfAbsent(reason, r ->
+                io.micrometer.core.instrument.Counter.builder("myxhs_gateway_hmac_failures_total")
+                        .tag("reason", r)
+                        .register(meterRegistry)).increment();
     }
 
     @Override
@@ -127,6 +168,7 @@ public class HmacSignatureFilter implements GlobalFilter, Ordered {
         // 2. 非白名单路径必须携带完整的签名 Header
         if (!StringUtils.hasText(timestamp) || !StringUtils.hasText(nonce) || !StringUtils.hasText(signature)) {
             log.info("[Gateway-HMAC] 签名校验失败, 非白名单路径缺少签名Header, path={}", path);
+            countHmacFailure("missing_headers");
             return forbidden(exchange, "签名校验失败：非公开接口必须携带 X-Timestamp、X-Nonce、X-Signature");
         }
 
@@ -136,6 +178,7 @@ public class HmacSignatureFilter implements GlobalFilter, Ordered {
             requestTime = Long.parseLong(timestamp);
         } catch (NumberFormatException e) {
             log.info("[Gateway-HMAC] 签名校验失败, timestamp格式错误, path={}", path);
+            countHmacFailure("bad_timestamp");
             return forbidden(exchange, "签名校验失败：X-Timestamp 格式错误");
         }
 
@@ -143,6 +186,7 @@ public class HmacSignatureFilter implements GlobalFilter, Ordered {
         if (Math.abs(currentTime - requestTime) > TIMESTAMP_TOLERANCE_MS) {
             log.info("[Gateway-HMAC] 签名校验失败, 请求已过期, requestTime={}, currentTime={}, path={}",
                     requestTime, currentTime, path);
+            countHmacFailure("expired");
             return forbidden(exchange, "签名校验失败：请求已过期");
         }
 
@@ -152,69 +196,91 @@ public class HmacSignatureFilter implements GlobalFilter, Ordered {
         String userId = request.getHeaders().getFirst("X-User-Id");
         if (userId == null) {
             log.info("[Gateway-HMAC] 签名校验失败, 缺少 X-User-Id, path={}", path);
+            countHmacFailure("no_user");
             return forbidden(exchange, "签名校验失败：缺少用户身份");
         }
-        String perUserSecret;
-        try {
-            perUserSecret = stringRedisTemplate.opsForValue().get(
-                    "myxhs:user:hmac:secret:" + userId);
-        } catch (Exception e) {
-            // P2-11: Redis 故障时拒绝请求（fail-closed），避免 500 与签名校验绕过
-            log.warn("[Gateway-HMAC] Redis 读取 HMAC 密钥异常, path={}, userId={}, err={}", path, userId, e.getMessage());
-            return forbidden(exchange, "签名校验暂不可用，请稍后重试");
-        }
-        if (perUserSecret == null) {
-            log.info("[Gateway-HMAC] 签名校验失败, HMAC密钥已过期, userId={}, path={}", userId, path);
-            return forbidden(exchange, "签名校验失败：HMAC 密钥已过期，请重新登录");
-        }
-        // 统一反序列化处理：RedisTemplate 用 Jackson 序列化 String 可能多一层引号。
-        // 使用 com.fasterxml.jackson.databind.ObjectMapper 直接反序列化替代手工 strip，
-        // 避免密钥本身以引号开头/结尾时被截断。
-        try {
-            perUserSecret = objectMapper.readValue(perUserSecret, String.class);
-        } catch (Exception e) {
-            log.warn("[Gateway-HMAC] HMAC 密钥反序列化失败，使用原始值: userId={}", userId);
-        }
-
-        // 6. 重新计算 HMAC-SHA256 签名（用 per-session secret）
+        // 6. 组装签名串
         // T-009/010/011: 签名串 = method|path|query|ts|nonce|bodyHash（竖线分隔 + query + body 摘要）
-        String method = request.getMethod().name();
-        String query = request.getURI().getRawQuery();
-        if (query == null) query = "";
+        final String fUserId = userId;
+        final String fPath = path;
+        final String fNonce = nonce;
+        final String fSignature = signature;
+        final String fMethod = request.getMethod().name();
+        String rawQuery = request.getURI().getRawQuery();
+        final String fQuery = (rawQuery == null) ? "" : rawQuery;
         byte[] cachedBody = exchange.getAttribute(BodyCacheFilter.CACHED_BODY_ATTR);
-        String bodyHash = "";
-        if (cachedBody != null && cachedBody.length > 0) {
-            bodyHash = sha256Hex(cachedBody);
-        }
-        String signStr = method + "|" + path + "|" + query + "|" + timestamp + "|" + nonce + "|" + bodyHash;
-        String expectedSignature = hmacSha256(signStr, perUserSecret);
+        final String fBodyHash = (cachedBody != null && cachedBody.length > 0) ? sha256Hex(cachedBody) : "";
+        final String signStr = fMethod + "|" + fPath + "|" + fQuery + "|"
+                + timestamp + "|" + fNonce + "|" + fBodyHash;
 
-        if (expectedSignature == null || !MessageDigest.isEqual(
-                expectedSignature.getBytes(StandardCharsets.UTF_8),
-                signature.getBytes(StandardCharsets.UTF_8))) {
-            log.debug("[Gateway-HMAC] 签名校验失败, 签名不匹配, method={}, path={}, timestamp={}, nonce={}, userId={}",
-                    method, path, timestamp, nonce, userId);
-            return forbidden(exchange, "签名校验失败：签名不匹配");
-        }
+        // RV34：本过滤器有两处阻塞式 StringRedisTemplate 调用（读 HMAC 密钥、nonce 去重），
+        // 原先直接在 filter() 方法体里执行 → 会阻塞 Netty EventLoop 线程。
+        // 现统一移出 EventLoop（boundedElastic），与 GatewayAuthFilter RV33（黑名单查询移出 EventLoop）同一模式。
+        return Mono.fromCallable(() -> {
+                    try {
+                        return SecretLookup.ok(stringRedisTemplate.opsForValue()
+                                .get(HMAC_SECRET_KEY_PREFIX + fUserId));
+                    } catch (Exception e) {
+                        return SecretLookup.failed(e);
+                    }
+                })
+                .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
+                .flatMap(lookup -> {
+                    if (lookup.error != null) {
+                        // P2-11: Redis 故障时拒绝请求（fail-closed），避免 500 与签名校验绕过
+                        log.warn("[Gateway-HMAC] Redis 读取 HMAC 密钥异常, path={}, userId={}, err={}",
+                                fPath, fUserId, lookup.error.getMessage());
+                        return forbidden(exchange, "签名校验暂不可用，请稍后重试");
+                    }
+                    if (lookup.value == null) {
+                        log.info("[Gateway-HMAC] 签名校验失败, HMAC密钥已过期, userId={}, path={}", fUserId, fPath);
+                        countHmacFailure("secret_expired");
+                        return forbidden(exchange, "签名校验失败：HMAC 密钥已过期，请重新登录");
+                    }
+                    // 统一反序列化处理：RedisTemplate 用 Jackson 序列化 String 可能多一层引号。
+                    // 使用 com.fasterxml.jackson.databind.ObjectMapper 直接反序列化替代手工 strip，
+                    // 避免密钥本身以引号开头/结尾时被截断。
+                    String perUserSecret = lookup.value;
+                    try {
+                        perUserSecret = objectMapper.readValue(lookup.value, String.class);
+                    } catch (Exception e) {
+                        log.warn("[Gateway-HMAC] HMAC 密钥反序列化失败，使用原始值: userId={}", fUserId);
+                    }
 
-        // 7. 验签通过后再消费 nonce（RV30：原顺序为先占 nonce 再验签，错误签名可抢占合法 nonce 造成重放误判/DoS）
-        try {
-            Boolean isNew = stringRedisTemplate.execute(
-                    NONCE_SET_SCRIPT,
-                    Collections.singletonList(NONCE_KEY_PREFIX + nonce),
-                    String.valueOf(TimeUnit.MINUTES.toSeconds(5))
-            );
-            if (Boolean.FALSE.equals(isNew)) {
-                log.info("[Gateway-HMAC] 签名校验失败, nonce重复, nonce={}, path={}", nonce, path);
-                return forbidden(exchange, "签名校验失败：重复请求");
-            }
-        } catch (Exception e) {
-            // Redis 异常降级：放行请求（签名校验是安全增强，不能因 Redis 故障阻断正常流量）
-            log.error("[Gateway-HMAC] Redis nonce去重异常, nonce={}, path={}", nonce, path, e);
-        }
+                    // 7. 重新计算 HMAC-SHA256 签名（用 per-session secret）
+                    String expectedSignature = hmacSha256(signStr, perUserSecret);
+                    if (expectedSignature == null || !MessageDigest.isEqual(
+                            expectedSignature.getBytes(StandardCharsets.UTF_8),
+                            fSignature.getBytes(StandardCharsets.UTF_8))) {
+                        log.debug("[Gateway-HMAC] 签名校验失败, 签名不匹配, method={}, path={}, timestamp={}, nonce={}, userId={}",
+                                fMethod, fPath, timestamp, fNonce, fUserId);
+                        countHmacFailure("mismatch");
+                        return forbidden(exchange, "签名校验失败：签名不匹配");
+                    }
 
-        log.debug("[Gateway-HMAC] 签名校验通过, path={}, nonce={}, userId={}", path, nonce, userId);
-        return chain.filter(exchange);
+                    // 8. 验签通过后再消费 nonce（RV30：原顺序为先占 nonce 再验签，错误签名可抢占合法 nonce 造成重放误判/DoS）
+                    // RV34：同样移出 Netty EventLoop（boundedElastic）
+                    return Mono.fromCallable(() -> stringRedisTemplate.execute(
+                                    NONCE_SET_SCRIPT,
+                                    Collections.singletonList(NONCE_KEY_PREFIX + fNonce),
+                                    String.valueOf(TimeUnit.MINUTES.toSeconds(5))))
+                            .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
+                            .onErrorResume(e -> {
+                                // Redis 异常降级：放行请求（签名校验是安全增强，不能因 Redis 故障阻断正常流量）
+                                log.error("[Gateway-HMAC] Redis nonce去重异常, nonce={}, path={}", fNonce, fPath, e);
+                                return Mono.just(Boolean.TRUE);
+                            })
+                            .flatMap(isNew -> {
+                                if (Boolean.FALSE.equals(isNew)) {
+                                    log.info("[Gateway-HMAC] 签名校验失败, nonce重复, nonce={}, path={}", fNonce, fPath);
+                                    countHmacFailure("nonce_reused");
+                                    return forbidden(exchange, "签名校验失败：重复请求");
+                                }
+                                log.debug("[Gateway-HMAC] 签名校验通过, path={}, nonce={}, userId={}",
+                                        fPath, fNonce, fUserId);
+                                return chain.filter(exchange);
+                            });
+                });
     }
 
     @Override
