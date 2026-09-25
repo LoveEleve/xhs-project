@@ -1,0 +1,10 @@
+{
+  "id" : "chg-f76e814e",
+  "projectId" : "my-xhs-common",
+  "requirement" : "为 my-xhs-common 补充读写分离路由异常恢复的可测验收条件",
+  "status" : "DONE",
+  "currentStage" : null,
+  "version" : 9,
+  "projectDir" : "/data/workspace/source-code/xhs-project/my-xhs-common",
+  "minLineCoverage" : 0.2
+}

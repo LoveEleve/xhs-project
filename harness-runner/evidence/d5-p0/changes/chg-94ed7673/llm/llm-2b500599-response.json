@@ -1,0 +1,1 @@
+{"summary":"（fake provider）对需求「为 coverage-demo 补充可测验收条件（P0 加固演示：HITL + 并发锁）」的验收条件草案","ac":[{"id":"AC-1","statement":"为 coverage-demo 补充可测验收条件（P0 加固演示：HITL + 并发锁） 的主流程可在自动化测试中稳定复现并验证"},{"id":"AC-2","statement":"边界与异常输入（空值/非法参数）有明确且可验证的预期行为"},{"id":"AC-3","statement":"失败场景返回可观测的错误信息，且不影响其他既有功能"}]}

@@ -1,0 +1,26 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] --------------------------< demo:bench-demo >---------------------------
+[INFO] Building bench-demo 1.0
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ bench-demo ---
+[INFO] skip non existing resourceDirectory /tmp/junit11206610586568410204/bench-demo/src/main/resources
+[INFO] 
+[INFO] --- compiler:3.13.0:compile (default-compile) @ bench-demo ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ bench-demo ---
+[INFO] skip non existing resourceDirectory /tmp/junit11206610586568410204/bench-demo/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ bench-demo ---
+[INFO] Recompiling the module because of added or removed source files.
+[INFO] 
+[INFO] --- surefire:3.2.5:test (default-test) @ bench-demo ---
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  0.704 s
+[INFO] Finished at: 2026-09-25T12:25:11+08:00
+[INFO] ------------------------------------------------------------------------

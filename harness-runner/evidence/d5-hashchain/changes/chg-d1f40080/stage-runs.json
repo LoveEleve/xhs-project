@@ -1,0 +1,45 @@
+[ {
+  "id" : "run-c54a9219",
+  "changeId" : "chg-d1f40080",
+  "stage" : "HARNESSING",
+  "attempt" : 1,
+  "status" : "PASSED",
+  "startedAt" : "2026-09-25T04:05:53.117253265Z",
+  "finishedAt" : "2026-09-25T04:05:53.188312006Z",
+  "gates" : [ {
+    "type" : "AC_TESTABLE",
+    "passed" : true,
+    "reason" : "AC 可测性校验通过（3 条）",
+    "command" : "llm:fake-deterministic",
+    "exitCode" : 0,
+    "durationMs" : 1,
+    "timedOut" : false,
+    "outputExcerpt" : "{\"summary\":\"（fake provider）对需求「验证事件哈希链与防篡改（D5.7 演示）」的验收条件草案\",\"ac\":[{\"id\":\"AC-1\",\"statement\":\"验证事件哈希链与防篡改（D5.7 演示） 的主流程可在自动化测试中稳定复现并验证\"},{\"id\":\"AC-2\",\"statement\":\"边界与异常输入（空值/非法参数）有明确且可验证的预期行为\"},{\"id\":\"AC-3\",\"statement\":\"失败场景返回可观测的错误信息，且不影响其他既有功能\"}]}",
+    "outputTruncated" : false,
+    "outputRef" : null,
+    "metrics" : {
+      "acCount" : 3
+    }
+  } ]
+}, {
+  "id" : "run-eb82e975",
+  "changeId" : "chg-d1f40080",
+  "stage" : "CODING",
+  "attempt" : 1,
+  "status" : "FAILED",
+  "startedAt" : "2026-09-25T04:05:54.435624617Z",
+  "finishedAt" : "2026-09-25T04:05:54.495736880Z",
+  "gates" : [ {
+    "type" : "COMPILE",
+    "passed" : false,
+    "reason" : "exitCode=-1",
+    "command" : "mvn -B -ntp compile",
+    "exitCode" : -1,
+    "durationMs" : 7,
+    "timedOut" : false,
+    "outputExcerpt" : "命令启动失败: Cannot run program \"mvn\" (in directory \"/tmp/opencode/coverage-demo\"): error=2, No such file or directory",
+    "outputTruncated" : false,
+    "outputRef" : "/data/workspace/source-code/xhs-project/harness-runner/evidence/d5-hashchain/logs/compile-1790309154479-1.log",
+    "metrics" : { }
+  } ]
+} ]

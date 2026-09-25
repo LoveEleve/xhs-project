@@ -1,0 +1,18 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] -------------------------< demo:coverage-demo >-------------------------
+[INFO] Building coverage-demo 1.0
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ coverage-demo ---
+[INFO] skip non existing resourceDirectory /tmp/opencode/coverage-demo/src/main/resources
+[INFO] 
+[INFO] --- compiler:3.13.0:compile (default-compile) @ coverage-demo ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  0.692 s
+[INFO] Finished at: 2026-09-24T21:31:22+08:00
+[INFO] ------------------------------------------------------------------------

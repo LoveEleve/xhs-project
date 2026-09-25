@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mutations partial="true">
+    <mutation detected='true' status='KILLED'>
+        <sourceFile>Calc.java</sourceFile>
+        <mutatedClass>demo.Calc</mutatedClass>
+        <mutatedMethod>add</mutatedMethod>
+        <lineNumber>5</lineNumber>
+        <description>Replaced integer addition with subtraction</description>
+    </mutation>
+    <mutation detected='true' status='KILLED'>
+        <sourceFile>Calc.java</sourceFile>
+        <mutatedClass>demo.Calc</mutatedClass>
+        <mutatedMethod>add</mutatedMethod>
+    </mutation>
+    <mutation detected='true' status='KILLED'>
+        <sourceFile>Calc.java</sourceFile>
+        <mutatedClass>demo.Calc</mutatedClass>
+        <mutatedMethod>sub</mutatedMethod>
+    </mutation>
+    <mutation detected='false' status='SURVIVED'>
+        <sourceFile>Calc.java</sourceFile>
+        <mutatedClass>demo.Calc</mutatedClass>
+        <mutatedMethod>sub</mutatedMethod>
+    </mutation>
+    <mutation detected='false' status='SURVIVED'>
+        <sourceFile>Calc.java</sourceFile>
+        <mutatedClass>demo.Calc</mutatedClass>
+        <mutatedMethod>sub</mutatedMethod>
+    </mutation>
+    <mutation detected='false' status='NO_COVERAGE'>
+        <sourceFile>Calc.java</sourceFile>
+        <mutatedClass>demo.Calc</mutatedClass>
+        <mutatedMethod>unused</mutatedMethod>
+    </mutation>
+    <mutation detected='false' status='TIMED_OUT'>
+        <sourceFile>Calc.java</sourceFile>
+        <mutatedClass>demo.Calc</mutatedClass>
+    </mutation>
+    <mutation detected='false' status='NON_VIABLE'>
+        <sourceFile>Calc.java</sourceFile>
+        <mutatedClass>demo.Calc</mutatedClass>
+    </mutation>
+</mutations>

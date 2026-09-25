@@ -1,0 +1,10 @@
+{
+  "id" : "chg-d1f40080",
+  "projectId" : "coverage-demo",
+  "requirement" : "验证事件哈希链与防篡改（D5.7 演示）",
+  "status" : "FAILED",
+  "currentStage" : "CODING",
+  "version" : 5,
+  "projectDir" : "/tmp/opencode/coverage-demo",
+  "minLineCoverage" : 0.5
+}

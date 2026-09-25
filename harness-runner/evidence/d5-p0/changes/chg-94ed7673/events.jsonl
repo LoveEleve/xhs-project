@@ -1,0 +1,16 @@
+{"changeId":"chg-94ed7673","type":"CHANGE_CREATED","stage":null,"message":"为 coverage-demo 补充可测验收条件（P0 加固演示：HITL + 并发锁）","occurredAt":"2026-09-24T13:30:43.662785896Z"}
+{"changeId":"chg-94ed7673","type":"STAGE_STARTED","stage":"HARNESSING","message":"attempt=1","occurredAt":"2026-09-24T13:30:44.328049286Z"}
+{"changeId":"chg-94ed7673","type":"STAGE_PASSED","stage":"HARNESSING","message":"AC_TESTABLE=PASS","occurredAt":"2026-09-24T13:30:44.420991752Z"}
+{"changeId":"chg-94ed7673","type":"APPROVAL_REQUESTED","stage":"HARNESSING","message":"阶段通过，等待人工确认","occurredAt":"2026-09-24T13:30:44.433910841Z"}
+{"changeId":"chg-94ed7673","type":"APPROVED","stage":"CODING","message":"人工确认通过","occurredAt":"2026-09-24T13:30:45.568301276Z"}
+{"changeId":"chg-94ed7673","type":"STAGE_STARTED","stage":"CODING","message":"attempt=1","occurredAt":"2026-09-24T13:31:20.119636365Z"}
+{"changeId":"chg-94ed7673","type":"STAGE_PASSED","stage":"CODING","message":"COMPILE=PASS","occurredAt":"2026-09-24T13:31:22.149934499Z"}
+{"changeId":"chg-94ed7673","type":"STAGE_STARTED","stage":"TEST_WRITE","message":"attempt=1","occurredAt":"2026-09-24T13:31:22.793388686Z"}
+{"changeId":"chg-94ed7673","type":"STAGE_PASSED","stage":"TEST_WRITE","message":"TEST=PASS","occurredAt":"2026-09-24T13:31:25.570395050Z"}
+{"changeId":"chg-94ed7673","type":"STAGE_STARTED","stage":"REVIEW","message":"attempt=1","occurredAt":"2026-09-24T13:31:26.171180064Z"}
+{"changeId":"chg-94ed7673","type":"STAGE_PASSED","stage":"REVIEW","message":"无可执行门禁","occurredAt":"2026-09-24T13:31:26.241021515Z"}
+{"changeId":"chg-94ed7673","type":"STAGE_STARTED","stage":"CI","message":"attempt=1","occurredAt":"2026-09-24T13:31:26.826518498Z"}
+{"changeId":"chg-94ed7673","type":"STAGE_PASSED","stage":"CI","message":"COMPILE=PASS, COVERAGE=PASS","occurredAt":"2026-09-24T13:31:33.445626670Z"}
+{"changeId":"chg-94ed7673","type":"STAGE_STARTED","stage":"DEPLOY_VERIFY","message":"attempt=1","occurredAt":"2026-09-24T13:31:34.078510678Z"}
+{"changeId":"chg-94ed7673","type":"STAGE_PASSED","stage":"DEPLOY_VERIFY","message":"无可执行门禁","occurredAt":"2026-09-24T13:31:34.158581044Z"}
+{"changeId":"chg-94ed7673","type":"CHANGE_DONE","stage":null,"message":"全部阶段通过","occurredAt":"2026-09-24T13:31:34.164271256Z"}

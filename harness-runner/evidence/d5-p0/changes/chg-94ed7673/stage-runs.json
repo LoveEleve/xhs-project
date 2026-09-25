@@ -1,0 +1,130 @@
+[ {
+  "id" : "run-5c491714",
+  "changeId" : "chg-94ed7673",
+  "stage" : "HARNESSING",
+  "attempt" : 1,
+  "status" : "PASSED",
+  "startedAt" : "2026-09-24T13:30:44.323464338Z",
+  "finishedAt" : "2026-09-24T13:30:44.392570869Z",
+  "gates" : [ {
+    "type" : "AC_TESTABLE",
+    "passed" : true,
+    "reason" : "AC 可测性校验通过（3 条）",
+    "command" : "llm:fake-deterministic",
+    "exitCode" : 0,
+    "durationMs" : 1,
+    "timedOut" : false,
+    "outputExcerpt" : "{\"summary\":\"（fake provider）对需求「为 coverage-demo 补充可测验收条件（P0 加固演示：HITL + 并发锁）」的验收条件草案\",\"ac\":[{\"id\":\"AC-1\",\"statement\":\"为 coverage-demo 补充可测验收条件（P0 加固演示：HITL + 并发锁） 的主流程可在自动化测试中稳定复现并验证\"},{\"id\":\"AC-2\",\"statement\":\"边界与异常输入（空值/非法参数）有明确且可验证的预期行为\"},{\"id\":\"AC-3\",\"statement\":\"失败场景返回可观测的错误信息，且不影响其他既有功能\"}]}",
+    "outputTruncated" : false,
+    "outputRef" : null,
+    "metrics" : {
+      "acCount" : 3
+    }
+  } ]
+}, {
+  "id" : "run-0801c50c",
+  "changeId" : "chg-94ed7673",
+  "stage" : "CODING",
+  "attempt" : 1,
+  "status" : "PASSED",
+  "startedAt" : "2026-09-24T13:31:20.116756818Z",
+  "finishedAt" : "2026-09-24T13:31:22.115294378Z",
+  "gates" : [ {
+    "type" : "COMPILE",
+    "passed" : true,
+    "reason" : "exitCode=0",
+    "command" : "mvn -B -ntp compile",
+    "exitCode" : 0,
+    "durationMs" : 1957,
+    "timedOut" : false,
+    "outputExcerpt" : "[INFO] Scanning for projects...\n[INFO] \n[INFO] -------------------------< demo:coverage-demo >-------------------------\n[INFO] Building coverage-demo 1.0\n[INFO]   from pom.xml\n[INFO] --------------------------------[ jar ]---------------------------------\n[INFO] \n[INFO] --- resources:3.3.1:resources (default-resources) @ coverage-demo ---\n[INFO] skip non existing resourceDirectory /tmp/opencode/coverage-demo/src/main/resources\n[INFO] \n[INFO] --- compiler:3.13.0:compile (default-compile) @ coverage-demo ---\n[INFO] Nothing to compile - all classes are up to date.\n[INFO] ------------------------------------------------------------------------\n[INFO] BUILD SUCCESS\n[INFO] ------------------------------------------------------------------------\n[INFO] Total time:  0.692 s\n[INFO] Finished at: 2026-09-24T21:31:22+08:00\n[INFO] ------------------------------------------------------------------------\n",
+    "outputTruncated" : false,
+    "outputRef" : "/data/workspace/source-code/harness-runner/evidence/d5-p0/logs/compile-1790256680152-1.log",
+    "metrics" : { }
+  } ]
+}, {
+  "id" : "run-0475e59c",
+  "changeId" : "chg-94ed7673",
+  "stage" : "TEST_WRITE",
+  "attempt" : 1,
+  "status" : "PASSED",
+  "startedAt" : "2026-09-24T13:31:22.790323688Z",
+  "finishedAt" : "2026-09-24T13:31:25.546309302Z",
+  "gates" : [ {
+    "type" : "TEST",
+    "passed" : true,
+    "reason" : "exitCode=0",
+    "command" : "mvn -B -ntp test",
+    "exitCode" : 0,
+    "durationMs" : 2715,
+    "timedOut" : false,
+    "outputExcerpt" : "[INFO] Scanning for projects...\n[INFO] \n[INFO] -------------------------< demo:coverage-demo >-------------------------\n[INFO] Building coverage-demo 1.0\n[INFO]   from pom.xml\n[INFO] --------------------------------[ jar ]---------------------------------\n[INFO] \n[INFO] --- resources:3.3.1:resources (default-resources) @ coverage-demo ---\n[INFO] skip non existing resourceDirectory /tmp/opencode/coverage-demo/src/main/resources\n[INFO] \n[INFO] --- compiler:3.13.0:compile (default-compile) @ coverage-demo ---\n[INFO] Nothing to compile - all classes are up to date.\n[INFO] \n[INFO] --- resources:3.3.1:testResources (default-testResources) @ coverage-demo ---\n[INFO] skip non existing resourceDirectory /tmp/opencode/coverage-demo/src/test/resources\n[INFO] \n[INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ coverage-demo ---\n[INFO] Nothing to compile - all classes are up to date.\n[INFO] \n[INFO] --- surefire:3.2.5:test (default-test) @ coverage-demo ---\n[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider\n[INFO] \n[INFO] -------------------------------------------------------\n[INFO]  T E S T S\n[INFO] -------------------------------------------------------\n[INFO] Running demo.CalcTest\n[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.049 s -- in demo.CalcTest\n[INFO] \n[INFO] Results:\n[INFO] \n[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0\n[INFO] \n[INFO] ------------------------------------------------------------------------\n[INFO] BUILD SUCCESS\n[INFO] ------------------------------------------------------------------------\n[INFO] Total time:  1.500 s\n[INFO] Finished at: 2026-09-24T21:31:25+08:00\n[INFO] ------------------------------------------------------------------------\n",
+    "outputTruncated" : false,
+    "outputRef" : "/data/workspace/source-code/harness-runner/evidence/d5-p0/logs/test-1790256682824-1.log",
+    "metrics" : {
+      "testsRun" : 1,
+      "failures" : 0,
+      "errors" : 0,
+      "skipped" : 0
+    }
+  } ]
+}, {
+  "id" : "run-dc6b7a20",
+  "changeId" : "chg-94ed7673",
+  "stage" : "REVIEW",
+  "attempt" : 1,
+  "status" : "PASSED",
+  "startedAt" : "2026-09-24T13:31:26.168279587Z",
+  "finishedAt" : "2026-09-24T13:31:26.207374871Z",
+  "gates" : [ ]
+}, {
+  "id" : "run-c561c907",
+  "changeId" : "chg-94ed7673",
+  "stage" : "CI",
+  "attempt" : 1,
+  "status" : "PASSED",
+  "startedAt" : "2026-09-24T13:31:26.823779142Z",
+  "finishedAt" : "2026-09-24T13:31:33.408570317Z",
+  "gates" : [ {
+    "type" : "COMPILE",
+    "passed" : true,
+    "reason" : "exitCode=0",
+    "command" : "mvn -B -ntp compile",
+    "exitCode" : 0,
+    "durationMs" : 1740,
+    "timedOut" : false,
+    "outputExcerpt" : "[INFO] Scanning for projects...\n[INFO] \n[INFO] -------------------------< demo:coverage-demo >-------------------------\n[INFO] Building coverage-demo 1.0\n[INFO]   from pom.xml\n[INFO] --------------------------------[ jar ]---------------------------------\n[INFO] \n[INFO] --- resources:3.3.1:resources (default-resources) @ coverage-demo ---\n[INFO] skip non existing resourceDirectory /tmp/opencode/coverage-demo/src/main/resources\n[INFO] \n[INFO] --- compiler:3.13.0:compile (default-compile) @ coverage-demo ---\n[INFO] Nothing to compile - all classes are up to date.\n[INFO] ------------------------------------------------------------------------\n[INFO] BUILD SUCCESS\n[INFO] ------------------------------------------------------------------------\n[INFO] Total time:  0.479 s\n[INFO] Finished at: 2026-09-24T21:31:28+08:00\n[INFO] ------------------------------------------------------------------------\n",
+    "outputTruncated" : false,
+    "outputRef" : "/data/workspace/source-code/harness-runner/evidence/d5-p0/logs/compile-1790256686858-1.log",
+    "metrics" : { }
+  }, {
+    "type" : "COVERAGE",
+    "passed" : true,
+    "reason" : "行覆盖率 66.7% ≥ 阈值 50.0%",
+    "command" : "mvn -B -ntp org.jacoco:jacoco-maven-plugin:0.8.12:prepare-agent test org.jacoco:jacoco-maven-plugin:0.8.12:report",
+    "exitCode" : 0,
+    "durationMs" : 4751,
+    "timedOut" : false,
+    "outputExcerpt" : "[INFO] Scanning for projects...\n[INFO] \n[INFO] -------------------------< demo:coverage-demo >-------------------------\n[INFO] Building coverage-demo 1.0\n[INFO]   from pom.xml\n[INFO] --------------------------------[ jar ]---------------------------------\n[INFO] \n[INFO] --- jacoco:0.8.12:prepare-agent (default-cli) @ coverage-demo ---\n[INFO] argLine set to -javaagent:/env/javaEnv/maven-3.9/repo/org/jacoco/org.jacoco.agent/0.8.12/org.jacoco.agent-0.8.12-runtime.jar=destfile=/tmp/opencode/coverage-demo/target/jacoco.exec\n[INFO] \n[INFO] --- resources:3.3.1:resources (default-resources) @ coverage-demo ---\n[INFO] skip non existing resourceDirectory /tmp/opencode/coverage-demo/src/main/resources\n[INFO] \n[INFO] --- compiler:3.13.0:compile (default-compile) @ coverage-demo ---\n[INFO] Nothing to compile - all classes are up to date.\n[INFO] \n[INFO] --- resources:3.3.1:testResources (default-testResources) @ coverage-demo ---\n[INFO] skip non existing resourceDirectory /tmp/opencode/coverage-demo/src/test/resources\n[INFO] \n[INFO] --- compiler:3.13.0:testCompile (default-testCompile) @ coverage-demo ---\n[INFO] Nothing to compile - all classes are up to date.\n[INFO] \n[INFO] --- surefire:3.2.5:test (default-test) @ coverage-demo ---\n[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider\n[INFO] \n[INFO] -------------------------------------------------------\n[INFO]  T E S T S\n[INFO] -------------------------------------------------------\n[INFO] Running demo.CalcTest\n[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.083 s -- in demo.CalcTest\n[INFO] \n[INFO] Results:\n[INFO] \n[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0\n[INFO] \n[INFO] \n[INFO] --- jacoco:0.8.12:report (default-cli) @ coverage-demo ---\n[INFO] Loading execution data file /tmp/opencode/coverage-demo/target/jacoco.exec\n[INFO] Analyzed bundle 'coverage-demo' with 1 classes\n[INFO] ------------------------------------------------------------------------\n[INFO] BUILD SUCCESS\n[INFO] ------------------------------------------------------------------------\n[INFO] Total time:  3.627 s\n[INFO] Finished at: 2026-09-24T21:31:33+08:00\n[INFO] ------------------------------------------------------------------------\n",
+    "outputTruncated" : false,
+    "outputRef" : "/data/workspace/source-code/harness-runner/evidence/d5-p0/logs/coverage-1790256688603-2.log",
+    "metrics" : {
+      "testsRun" : 1,
+      "failures" : 0,
+      "errors" : 0,
+      "skipped" : 0,
+      "lineCovered" : 2,
+      "lineMissed" : 1,
+      "linePercent" : 66.7
+    }
+  } ]
+}, {
+  "id" : "run-e7694572",
+  "changeId" : "chg-94ed7673",
+  "stage" : "DEPLOY_VERIFY",
+  "attempt" : 1,
+  "status" : "PASSED",
+  "startedAt" : "2026-09-24T13:31:34.074708227Z",
+  "finishedAt" : "2026-09-24T13:31:34.112858533Z",
+  "gates" : [ ]
+} ]

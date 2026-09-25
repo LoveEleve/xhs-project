@@ -1,0 +1,17 @@
+{"changeId":"chg-f76e814e","type":"CHANGE_CREATED","stage":null,"message":"为 my-xhs-common 补充读写分离路由异常恢复的可测验收条件","occurredAt":"2026-09-24T12:18:30.499291292Z"}
+{"changeId":"chg-f76e814e","type":"STAGE_STARTED","stage":"HARNESSING","message":"attempt=1","occurredAt":"2026-09-24T12:18:31.101203957Z"}
+{"changeId":"chg-f76e814e","type":"STAGE_PASSED","stage":"HARNESSING","message":"AC_TESTABLE=PASS","occurredAt":"2026-09-24T12:18:31.194138617Z"}
+{"changeId":"chg-f76e814e","type":"STAGE_STARTED","stage":"CODING","message":"attempt=1","occurredAt":"2026-09-24T12:18:59.625678850Z"}
+{"changeId":"chg-f76e814e","type":"STAGE_PASSED","stage":"CODING","message":"COMPILE=PASS","occurredAt":"2026-09-24T12:19:02.887267900Z"}
+{"changeId":"chg-f76e814e","type":"STAGE_STARTED","stage":"TEST_WRITE","message":"attempt=1","occurredAt":"2026-09-24T12:19:35.086017132Z"}
+{"changeId":"chg-f76e814e","type":"STAGE_FAILED","stage":"TEST_WRITE","message":"TEST=FAIL","occurredAt":"2026-09-24T12:19:46.700200969Z"}
+{"changeId":"chg-f76e814e","type":"CHANGE_FAILED","stage":"TEST_WRITE","message":"失败门禁: TEST(exitCode=1（testsRun=94, failures=1, errors=0）)","occurredAt":"2026-09-24T12:19:46.710662413Z"}
+{"changeId":"chg-f76e814e","type":"STAGE_STARTED","stage":"TEST_WRITE","message":"attempt=2","occurredAt":"2026-09-24T12:20:19.006228640Z"}
+{"changeId":"chg-f76e814e","type":"STAGE_PASSED","stage":"TEST_WRITE","message":"TEST=PASS","occurredAt":"2026-09-24T12:20:30.020262649Z"}
+{"changeId":"chg-f76e814e","type":"STAGE_STARTED","stage":"REVIEW","message":"attempt=1","occurredAt":"2026-09-24T12:20:58.804410940Z"}
+{"changeId":"chg-f76e814e","type":"STAGE_PASSED","stage":"REVIEW","message":"无可执行门禁","occurredAt":"2026-09-24T12:20:58.884784803Z"}
+{"changeId":"chg-f76e814e","type":"STAGE_STARTED","stage":"CI","message":"attempt=1","occurredAt":"2026-09-24T12:20:59.526156330Z"}
+{"changeId":"chg-f76e814e","type":"STAGE_PASSED","stage":"CI","message":"COMPILE=PASS, COVERAGE=PASS","occurredAt":"2026-09-24T12:21:14.513983592Z"}
+{"changeId":"chg-f76e814e","type":"STAGE_STARTED","stage":"DEPLOY_VERIFY","message":"attempt=1","occurredAt":"2026-09-24T12:21:15.181581217Z"}
+{"changeId":"chg-f76e814e","type":"STAGE_PASSED","stage":"DEPLOY_VERIFY","message":"无可执行门禁","occurredAt":"2026-09-24T12:21:15.269248092Z"}
+{"changeId":"chg-f76e814e","type":"CHANGE_DONE","stage":null,"message":"全部阶段通过","occurredAt":"2026-09-24T12:21:15.275742394Z"}

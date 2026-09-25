@@ -1,0 +1,232 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ----------------------< com.myxhs:my-xhs-common >-----------------------
+[INFO] Building my-xhs-common 1.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] --- jacoco:0.8.12:prepare-agent (default-cli) @ my-xhs-common ---
+[INFO] argLine set to -javaagent:/env/javaEnv/maven-3.9/repo/org/jacoco/org.jacoco.agent/0.8.12/org.jacoco.agent-0.8.12-runtime.jar=destfile=/data/workspace/source-code/xhs-project/my-xhs-common/target/jacoco.exec
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ my-xhs-common ---
+[INFO] Copying 3 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- compiler:3.11.0:compile (default-compile) @ my-xhs-common ---
+[INFO] Nothing to compile - all classes are up to date
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ my-xhs-common ---
+[INFO] skip non existing resourceDirectory /data/workspace/source-code/xhs-project/my-xhs-common/src/test/resources
+[INFO] 
+[INFO] --- compiler:3.11.0:testCompile (default-testCompile) @ my-xhs-common ---
+[INFO] Nothing to compile - all classes are up to date
+[INFO] 
+[INFO] --- surefire:3.2.5:test (default-test) @ my-xhs-common ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.myxhs.common.datasource.ReadWriteRoutingDataSourceTest
+Standard Commons Logging discovery in action with spring-jcl: please remove commons-logging.jar from classpath in order to avoid potential conflicts
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.220 s -- in com.myxhs.common.datasource.ReadWriteRoutingDataSourceTest
+[INFO] Running com.myxhs.common.datasource.ReadWriteRoutingDataSourceRecoveryTest
+20:21:07.516 [main] WARN com.myxhs.common.datasource.ReadWriteRoutingDataSource -- [ReadWriteDS] 从库不可用，降级到主库: connection refused
+20:21:07.524 [main] INFO com.myxhs.common.datasource.ReadWriteRoutingDataSource -- [ReadWriteDS] 从库已恢复
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.039 s -- in com.myxhs.common.datasource.ReadWriteRoutingDataSourceRecoveryTest
+[INFO] Running com.myxhs.common.aspect.SqlGuardInterceptorTest
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+20:21:09.409 [main] WARN com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] 慢SQL检测: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, elapsed=1ms, consecutiveSlows=1, sql=SELECT * FROM t_order WHERE id = ?
+20:21:09.411 [main] ERROR com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] SQL熔断触发: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, consecutiveSlows=1, elapsed=1ms
+20:21:09.906 [main] ERROR com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] SQL阻断: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, consecutiveSlows=1, sql=SELECT * FROM t_order WHERE id = ?
+20:21:09.936 [main] WARN com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] 慢SQL检测: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, elapsed=0ms, consecutiveSlows=1, sql=SELECT * FROM t_order WHERE id = ?
+20:21:09.937 [main] ERROR com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] SQL熔断触发: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, consecutiveSlows=1, elapsed=0ms
+20:21:09.941 [main] ERROR com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] SQL已熔断(observe-only): fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, consecutiveSlows=1
+20:21:09.942 [main] WARN com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] 慢SQL检测: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, elapsed=1ms, consecutiveSlows=2, sql=SELECT * FROM t_order WHERE id = ?
+20:21:09.942 [main] ERROR com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] SQL熔断触发: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, consecutiveSlows=2, elapsed=1ms
+20:21:09.971 [main] WARN com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] 慢SQL检测: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, elapsed=1ms, consecutiveSlows=1, sql=SELECT * FROM t_order WHERE id = ?
+20:21:09.971 [main] ERROR com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] SQL熔断触发: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, consecutiveSlows=1, elapsed=1ms
+20:21:09.974 [main] ERROR com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] SQL已熔断(observe-only): fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, consecutiveSlows=1
+20:21:09.975 [main] WARN com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] 慢SQL检测: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, elapsed=0ms, consecutiveSlows=2, sql=SELECT * FROM t_order WHERE id = ?
+20:21:09.975 [main] ERROR com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] SQL熔断触发: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, consecutiveSlows=2, elapsed=0ms
+20:21:09.984 [main] WARN com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] 慢SQL检测: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, elapsed=0ms, consecutiveSlows=1, sql=SELECT * FROM t_order WHERE id = ?
+20:21:09.985 [main] ERROR com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] SQL熔断触发: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, consecutiveSlows=1, elapsed=0ms
+20:21:09.989 [main] ERROR com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] SQL阻断: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, consecutiveSlows=1, sql=SELECT * FROM t_order WHERE id = ?
+20:21:10.035 [main] WARN com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] 熔断冷却到期，恢复: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?
+20:21:10.036 [main] WARN com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] 慢SQL检测: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, elapsed=1ms, consecutiveSlows=1, sql=SELECT * FROM t_order WHERE id = ?
+20:21:10.036 [main] ERROR com.myxhs.common.aspect.SqlGuardInterceptor -- [SqlGuard] SQL熔断触发: fingerprint=-1633544087:SELECT * FROM t_order WHERE id = ?, consecutiveSlows=1, elapsed=1ms
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.522 s -- in com.myxhs.common.aspect.SqlGuardInterceptorTest
+[INFO] Running com.myxhs.common.id.SegmentIdGeneratorTest
+20:21:10.894 [main] INFO com.myxhs.common.id.SegmentIdGenerator -- [号段] 加载成功, bizTag=user, range=(0, 1000], step=1000
+20:21:10.895 [main] INFO com.myxhs.common.id.SegmentIdGenerator -- [号段] 加载成功, bizTag=order, range=(100, 600], step=500
+20:21:10.921 [main] INFO com.myxhs.common.id.SegmentIdGenerator -- [号段] 加载成功, bizTag=user, range=(0, 1000], step=1000
+20:21:10.960 [main] WARN com.myxhs.common.id.SegmentIdGenerator -- [号段] 乐观锁冲突, bizTag=retry, retry=1
+20:21:10.962 [main] WARN com.myxhs.common.id.SegmentIdGenerator -- [号段] 乐观锁冲突, bizTag=retry, retry=2
+20:21:10.963 [main] INFO com.myxhs.common.id.SegmentIdGenerator -- [号段] 加载成功, bizTag=retry, range=(0, 1000], step=1000
+20:21:10.969 [main] INFO com.myxhs.common.id.SegmentIdGenerator -- [号段] 加载成功, bizTag=note, range=(0, 5], step=5
+20:21:10.970 [main] WARN com.myxhs.common.id.SegmentIdGenerator -- [号段] next未就绪，降级为同步加载, bizTag=note
+20:21:10.971 [main] INFO com.myxhs.common.id.SegmentIdGenerator -- [号段] 加载成功, bizTag=note, range=(5, 10], step=5
+20:21:10.971 [id-segment-preload] INFO com.myxhs.common.id.SegmentIdGenerator -- [号段] 加载成功, bizTag=note, range=(10, 15], step=5
+20:21:10.972 [id-segment-preload] INFO com.myxhs.common.id.SegmentIdGenerator -- [号段] 异步预加载完成, bizTag=note
+20:21:10.977 [main] WARN com.myxhs.common.id.SegmentIdGenerator -- [号段] 乐观锁冲突, bizTag=fail, retry=1
+20:21:10.977 [main] WARN com.myxhs.common.id.SegmentIdGenerator -- [号段] 乐观锁冲突, bizTag=fail, retry=2
+20:21:10.978 [main] WARN com.myxhs.common.id.SegmentIdGenerator -- [号段] 乐观锁冲突, bizTag=fail, retry=3
+20:21:10.987 [pool-2-thread-1] INFO com.myxhs.common.id.SegmentIdGenerator -- [号段] 加载成功, bizTag=order, range=(0, 10000], step=10000
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.863 s -- in com.myxhs.common.id.SegmentIdGeneratorTest
+[INFO] Running com.myxhs.common.zone.datasource.DynamicDataSourceTest
+20:21:11.015 [main] INFO com.myxhs.common.zone.datasource.DynamicDataSource -- DynamicDataSource initialized with zones: [zone-a, zone-b], defaultZone: zone-a
+20:21:11.016 [main] WARN com.myxhs.common.zone.datasource.DynamicDataSource -- No DataSource found for zone 'zone-x', falling back to defaultZone 'zone-a'
+20:21:11.016 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone-x'
+20:21:11.016 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone-x' -> 'defaultZone'
+20:21:11.019 [main] INFO com.myxhs.common.zone.datasource.DynamicDataSource -- DynamicDataSource initialized with zones: [zone-a, zone-b], defaultZone: zone-a
+20:21:11.024 [main] INFO com.myxhs.common.zone.datasource.DynamicDataSource -- DynamicDataSource initialized with zones: [zone-a, zone-b], defaultZone: zone-a
+20:21:11.026 [main] INFO com.myxhs.common.zone.datasource.DynamicDataSource -- DynamicDataSource initialized with zones: [zone-a, zone-b], defaultZone: zone-a
+20:21:11.026 [main] INFO com.myxhs.common.zone.datasource.DynamicDataSource -- DataSource switched: zone 'zone-b', old: com.myxhs.common.zone.datasource.DynamicDataSourceTest$1@774f2992, new: com.myxhs.common.zone.datasource.DynamicDataSourceTest$1@602298b, activeConnections: 0
+20:21:11.026 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone-b'
+20:21:11.026 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone-b' -> 'defaultZone'
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.018 s -- in com.myxhs.common.zone.datasource.DynamicDataSourceTest
+[INFO] Running com.myxhs.common.zone.ZoneRouteMetricsTest
+20:21:11.066 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone-a'
+20:21:11.066 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'false' -> 'true'
+20:21:11.094 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone-a' -> 'defaultZone'
+20:21:11.094 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'true' -> 'false'
+20:21:11.095 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone-a'
+20:21:11.095 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'false' -> 'true'
+20:21:11.095 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '5' -> '1'
+20:21:11.097 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone-a' -> 'defaultZone'
+20:21:11.097 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'true' -> 'false'
+20:21:11.097 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '1' -> '5'
+20:21:11.098 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone-a'
+20:21:11.098 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'false' -> 'true'
+20:21:11.098 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '5' -> '1'
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.069 s -- in com.myxhs.common.zone.ZoneRouteMetricsTest
+[INFO] Running com.myxhs.common.zone.ZoneResolverTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in com.myxhs.common.zone.ZoneResolverTest
+[INFO] Running com.myxhs.common.zone.loadbalancer.ServiceInstanceZoneResolverTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in com.myxhs.common.zone.loadbalancer.ServiceInstanceZoneResolverTest
+[INFO] Running com.myxhs.common.zone.propagation.ZonePropagationTest
+20:21:11.148 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone-a' -> 'defaultZone'
+20:21:11.149 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'true' -> 'false'
+20:21:11.149 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '1' -> '5'
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.076 s -- in com.myxhs.common.zone.propagation.ZonePropagationTest
+[INFO] Running com.myxhs.common.zone.ZoneConstantsTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.myxhs.common.zone.ZoneConstantsTest
+[INFO] Running com.myxhs.common.zone.ZoneContextTest
+20:21:11.215 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'false' -> 'true'
+20:21:11.217 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'true' -> 'false'
+20:21:11.218 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamDisabledZone' changed: 'null' -> 'zone1,zone2'
+20:21:11.219 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamDisabledZone' changed: 'zone1,zone2' -> 'null'
+20:21:11.225 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone-shanghai'
+20:21:11.225 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'enabled' changed: 'true' -> 'false'
+20:21:11.225 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'false' -> 'true'
+20:21:11.225 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceFilterOrder' changed: '10' -> '20'
+20:21:11.225 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'enabled' changed: 'false' -> 'true'
+20:21:11.225 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone-shanghai' -> 'defaultZone'
+20:21:11.225 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'true' -> 'false'
+20:21:11.225 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceFilterOrder' changed: '20' -> '10'
+20:21:11.226 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '5' -> '3'
+20:21:11.227 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '3' -> '5'
+20:21:11.228 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone-beijing'
+20:21:11.229 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone-beijing' -> 'defaultZone'
+20:21:11.229 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamZoneReadyPercentage' changed: '100' -> '80'
+20:21:11.232 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamZoneReadyPercentage' changed: '80' -> '100'
+20:21:11.232 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'enabled' changed: 'true' -> 'false'
+20:21:11.234 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'enabled' changed: 'false' -> 'true'
+20:21:11.234 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceFilterOrder' changed: '10' -> '5'
+20:21:11.236 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceFilterOrder' changed: '5' -> '10'
+20:21:11.236 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'enabled' changed: 'true' -> 'false'
+20:21:11.236 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'enabled' changed: 'false' -> 'true'
+20:21:11.238 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone-shanghai'
+20:21:11.240 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone-shanghai' -> 'defaultZone'
+20:21:11.240 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamDisabledZone' changed: 'null' -> ' zone1 , zone2 '
+[INFO] Tests run: 16, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.031 s -- in com.myxhs.common.zone.ZoneContextTest
+[INFO] Running com.myxhs.common.zone.ZonePreferenceFilterTest
+20:21:11.248 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamDisabledZone' changed: 'zone1,zone2' -> 'null'
+20:21:11.249 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone1'
+20:21:11.251 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone1' -> 'defaultZone'
+20:21:11.251 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'false' -> 'true'
+20:21:11.251 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone1'
+20:21:11.251 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamDisabledZone' changed: 'null' -> 'zone1,zone2'
+20:21:11.251 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '5' -> '1'
+20:21:11.253 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone1' -> 'defaultZone'
+20:21:11.253 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'true' -> 'false'
+20:21:11.253 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '1' -> '5'
+20:21:11.253 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamDisabledZone' changed: 'zone1,zone2' -> 'null'
+20:21:11.254 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceFilterOrder' changed: '10' -> '5'
+20:21:11.256 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceFilterOrder' changed: '5' -> '10'
+20:21:11.256 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'false' -> 'true'
+20:21:11.256 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone3'
+20:21:11.256 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '5' -> '1'
+20:21:11.259 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone3' -> 'defaultZone'
+20:21:11.259 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'true' -> 'false'
+20:21:11.260 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '1' -> '5'
+20:21:11.261 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'enabled' changed: 'true' -> 'false'
+20:21:11.263 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'enabled' changed: 'false' -> 'true'
+20:21:11.265 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'false' -> 'true'
+20:21:11.266 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone1'
+20:21:11.266 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '5' -> '1'
+20:21:11.267 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone1' -> 'defaultZone'
+20:21:11.268 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'true' -> 'false'
+20:21:11.268 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '1' -> '5'
+20:21:11.268 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'false' -> 'true'
+20:21:11.268 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone1'
+20:21:11.268 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamDisabledZone' changed: 'null' -> 'zone2'
+20:21:11.268 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '5' -> '1'
+20:21:11.268 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamZoneReadyPercentage' changed: '100' -> '75'
+20:21:11.270 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone1' -> 'defaultZone'
+20:21:11.270 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'true' -> 'false'
+20:21:11.270 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamZoneReadyPercentage' changed: '75' -> '100'
+20:21:11.270 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '1' -> '5'
+20:21:11.270 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamDisabledZone' changed: 'zone2' -> 'null'
+20:21:11.271 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'false' -> 'true'
+20:21:11.271 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone1'
+20:21:11.274 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone1' -> 'defaultZone'
+20:21:11.274 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'true' -> 'false'
+20:21:11.274 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'false' -> 'true'
+20:21:11.274 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone1'
+20:21:11.274 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '5' -> '1'
+20:21:11.276 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone1' -> 'defaultZone'
+20:21:11.276 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'true' -> 'false'
+20:21:11.276 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '1' -> '5'
+20:21:11.277 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'false' -> 'true'
+20:21:11.277 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone1'
+20:21:11.277 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '5' -> '3'
+20:21:11.277 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamZoneReadyPercentage' changed: '100' -> '80'
+20:21:11.278 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone1' -> 'defaultZone'
+20:21:11.278 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'true' -> 'false'
+20:21:11.278 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamZoneReadyPercentage' changed: '80' -> '100'
+20:21:11.278 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceUpstreamSameZoneMinAvailable' changed: '3' -> '5'
+20:21:11.283 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'false' -> 'true'
+[INFO] Tests run: 14, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.039 s -- in com.myxhs.common.zone.ZonePreferenceFilterTest
+[INFO] Running com.myxhs.common.zone.redis.config.ZoneRedisReadFromResolverTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.011 s -- in com.myxhs.common.zone.redis.config.ZoneRedisReadFromResolverTest
+[INFO] Running com.myxhs.common.zone.locator.ZoneLocatorTest
+20:21:11.318 [main] INFO com.myxhs.common.zone.locator.FileZoneLocator -- [ZoneLocator] 从文件发现 Zone: file=/tmp/myxhs-zone3913925813901438010.txt, zone=zone-b
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.018 s -- in com.myxhs.common.zone.locator.ZoneLocatorTest
+[INFO] Running com.myxhs.common.zone.admin.ZoneAdminControllerTest
+20:21:11.323 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'preferenceEnabled' changed: 'true' -> 'false'
+20:21:11.367 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'defaultZone' -> 'zone-b'
+20:21:11.369 [main] INFO com.myxhs.common.zone.ZoneContext -- Zone property 'zone' changed: 'zone-b' -> 'defaultZone'
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.047 s -- in com.myxhs.common.zone.admin.ZoneAdminControllerTest
+[INFO] Running com.myxhs.common.loadbalancer.LeastConnectionsLoadBalancerTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.211 s -- in com.myxhs.common.loadbalancer.LeastConnectionsLoadBalancerTest
+[INFO] Running com.myxhs.common.exception.GlobalExceptionHandlerTest
+20:21:11.594 [main] WARN com.myxhs.common.exception.GlobalExceptionHandler -- [业务异常] URI=, code=40001, message=缺少参数
+20:21:11.618 [main] WARN com.myxhs.common.exception.GlobalExceptionHandler -- [业务异常] URI=, code=40202, message=请求过于频繁
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.029 s -- in com.myxhs.common.exception.GlobalExceptionHandlerTest
+[INFO] Running com.myxhs.common.cache.CacheHelperTest
+[INFO] Tests run: 12, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.791 s -- in com.myxhs.common.cache.CacheHelperTest
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 93, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] 
+[INFO] --- jacoco:0.8.12:report (default-cli) @ my-xhs-common ---
+[INFO] Loading execution data file /data/workspace/source-code/xhs-project/my-xhs-common/target/jacoco.exec
+[INFO] Analyzed bundle 'my-xhs-common' with 153 classes
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  10.100 s
+[INFO] Finished at: 2026-09-24T20:21:14+08:00
+[INFO] ------------------------------------------------------------------------

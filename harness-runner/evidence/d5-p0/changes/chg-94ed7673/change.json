@@ -1,0 +1,10 @@
+{
+  "id" : "chg-94ed7673",
+  "projectId" : "coverage-demo",
+  "requirement" : "为 coverage-demo 补充可测验收条件（P0 加固演示：HITL + 并发锁）",
+  "status" : "DONE",
+  "currentStage" : null,
+  "version" : 9,
+  "projectDir" : "/tmp/opencode/coverage-demo",
+  "minLineCoverage" : 0.5
+}
