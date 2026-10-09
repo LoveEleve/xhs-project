@@ -10,7 +10,7 @@
 - Feed：大V阈值 10 万、inbox 7 天/500 条、推送批 500、粉丝>5 万写发件箱、进度 cursor TTL 1h（`FeedPushConsumer.java:53-60,145,150,134`）
 - IM/SSE：150 虚拟节点 + 环指纹复用（`ImConsistentHashLoadBalancer.java:43,126`）；route TTL=心跳×3=90s；离线 1000 条/7 天；会话 seq INCR；SSE 心跳 10s 续期 30s TTL、emitter 30min、ticket 30s 一次性（`SseEmitterManager.java:57,73,255`、`SseTicketService.java:34,62`）
 - 订单/MQ：延时关单 delay-level=16（30min，测试 5=1min）、幂等键 24h、下单锁 10s（`OrderService.java:90,132,141`）；本地消息 5 次指数退避 30/60/120/240/480s（`LocalMessageRetryJob.java:48-51`）；支付通知补发 5min 窗口/10 次/批 100
-- 线程池/连接：Tomcat 300/30、maxConnections 8192（gateway yml:7-13）；聚合器 20/50/200、batchFeign 30/80/500（隔离防饥饿）；ES 连接 5s/socket 30s、maxConnTotal 100
+- ~~线程池/连接：Tomcat 300/30、maxConnections 8192（gateway yml:7-13）~~ 【2026-09-21 更正】gateway 跑在 Netty（classpath 无 spring-boot-starter-web），server.tomcat.* 是**死配置**（已从 yml 删除）；Netty 调优入口见 gateway yml 注释。聚合器 20/50/200、batchFeign 30/80/500（隔离防饥饿）；ES 连接 5s/socket 30s、maxConnTotal 100
 - 其他 TTL：购物车 50 种/单品 99/30 天；JWT access 30min/refresh 7d；计数去重 2h/计数 30d；热搜衰减 λ=0.1/窗口 60min/IP 10 次/分
 
 ## 2. 可讲成故事的机制（20 个精选）

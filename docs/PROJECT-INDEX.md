@@ -99,3 +99,15 @@ MTTR 10/10·1.63min·92.1% → `reports/mttr-benchmark-*`；hit@1 100% / 答案�
 | 业务工具双场景 | `BusinessQueryService`、`OrderTraceTool`/`OrderStatsTool`/`InventoryQueryTool`/`CouponQueryTool` | `xhs-ai-business-tools-20260920.md` |
 | 用例维护 | `eval/tool-cases.yaml`（TS-15..18）、`eval/answer-cases.yaml`（BIZ-01..04、DIAG-01 修正） | - |
 
+## G. 2026-09-21 新增：售后 / 结算 / 回补 / 故障语义
+
+| 能力 | 代码入口 | 底稿/证据 |
+|------|---------|----------|
+| 售后域（状态机 / 优惠分摊 / 三层金额护栏 / 恢复任务） | `my-xhs-order/.../service/AftersaleService.java`、`service/DiscountAllocator.java`、`repository/AftersaleRepository.java`、`job/AftersaleRecoveryJob.java`、`controller/AftersaleController.java` | `docs/reports/aftersale-settlement-20260921.md` |
+| 结算域（T-1 日切 / 幂等重跑 / 三方对账 / 差异挂账 / 演练入口） | `my-xhs-payment/.../service/SettlementService.java`、`repository/SettlementRepository.java`、`controller/SettlementController.java`、`job/SettlementJob.java` | 同上 |
+| 支付域按订单退款（上游不感知 paymentId，回传退款单号） | `my-xhs-payment/.../service/PaymentService.java#refundByOrder`、`controller/PaymentController.java` | 同上 |
+| 库存回补（按 SKU 累计正增量 + 补偿表重试） | `my-xhs-inventory/.../service/InventoryService.java#refundRestore`、`job/InventoryCompensationJob.java` | 同上 |
+| 生产故障语义 review（Cluster / 切换窗口 / 重平衡 / Nacos 全挂） | — | `docs/reports/fault-semantics-review-20260921.md` |
+| 故障注入推演矩阵（故障 × 链路 → 行为/兜底/恢复上界） | — | `docs/reports/fault-drill-matrix-20260921.md` |
+| 迁移脚本（已有环境升级用） | `sql/migration/{order,payment,inventory,content,user,im}/V*.sql` | `deploy/docker/my-xhs-deploy-zip/DEPLOY-NOTES.md` §二 |
+| 简历（母版 / 投递版） | `docs/resume-full.md`、`docs/resume-2page.md` | — |

@@ -238,3 +238,14 @@
 ### 工程治理
 - 推平 GitHub 默认分支（4 refs 一致），清理历史误入库 pycache，评测报告 JSON 归档。
 
+### 新增（2026-09-21）· 售后 / 结算 / 故障语义
+| 备选条目 | 证据 | 口径提示 |
+|---|---|---|
+| ⭐ 售后状态机：待审核→已同意/已拒绝→退款中→已完成（含撤销、退款失败重试），全部条件更新，并发只有一个赢家 | `AftersaleService`、`t_aftersale` | 讲"条件更新当锁用，不需要分布式锁" |
+| ⭐ 优惠分摊：分单位整数运算 + 最大余数法（平局按明细 ID），退款=明细金额−分摊；部分数量向下取整、退满补齐差额 | `DiscountAllocator` | 讲"确定性可重算、账目闭合" |
+| ⭐ 三层金额护栏：SKU 跨类型累计上限 → 订单实付上限 → 支付域可退上限 | `AftersaleService.apply/audit`、`PaymentService.doRefund` | 讲"申请时+审核时各判一次" |
+| ⭐ 退款恢复任务：先查支付域事实再决策（已成功→置完成；进行中→等待；无记录→转失败重试） | `AftersaleRecoveryJob` | 讲"未知结果（超时）怎么处理" |
+| ⭐ 结算日切：T-1 按渠道聚合收款/退款 → 净额/手续费（按收款毛额）/应结算；唯一键 + 条件更新幂等重跑 | `SettlementService` | 讲"已对账需 force、先重算后清差异" |
+| ⭐ 三方对账：渠道行驱动 + 本地游标分页；差异三类挂账三态（含自动收敛 + 重现复位）；对账单未到跳过 | `SettlementService`、`t_settlement_diff` | 讲"内存有界 + 安全阀" |
+| 库存回补：按 (orderId,skuId) 累计正增量（分次不漏补、叠加不重复补）；失败落补偿表按类型重试；跨服务盲区由 restock_status 兜底 | `InventoryService#refundRestore`、`InventoryCompensationJob` | 讲"幂等窗口与补偿边界" |
+| 故障语义：Redis 挂/MySQL 主从挂/MQ 挂/支付域挂/库存域挂/XXL 停摆 的逐条行为与恢复上界 | `fault-drill-matrix-20260921.md` | 面试"故障题"直接背 |

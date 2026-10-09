@@ -17,7 +17,7 @@
 - **路由 16 条**（不是 17；`/ai-api/**` 旧路由已删，仅残留在 HMAC 白名单）
 - 路由超时 connect 0.5~2s / response 2~10s；**xhs-ai 路由 response-timeout 31min**；metadata 超时需自定义 Filter 才生效，否则走 httpclient 全局（connect 2s/response 10s）
 - httpclient：fixed 池 500 连接、max-idle 30s、max-life 45s（< 下游 keep-alive 60s，T-048）
-- server：19000、Tomcat 300/30、8192 连接、accept 100、keep-alive 60s
+- server：19000、graceful 停机、compression、http2；~~Tomcat 300/30、8192 连接、accept 100、keep-alive 60s~~ 【2026-09-21 更正】gateway 为 Netty 栈，server.tomcat.* 死配置（已删除）
 - 鉴权：`hmac-enabled=false`；JWT 白名单 24 条、HMAC 白名单 57 条
 - 灰度：`GRAY_PERCENT=10` 硬编码，仅打标签（GrayLoadBalancer 实例过滤**未实现**）
 - CORS：myxhs.com/www/m 三域 + 内网 IP
