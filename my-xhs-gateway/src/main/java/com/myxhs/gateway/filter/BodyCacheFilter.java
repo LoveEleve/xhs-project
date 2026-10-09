@@ -30,6 +30,9 @@ public class BodyCacheFilter implements GlobalFilter, Ordered {
 
     private static final long MAX_BODY_BYTES = 1024 * 1024;
 
+    /** 超限标记（chunked 请求无 Content-Length，靠 join 的 maxByteCount 兜底后置位 → 413） */
+    private static final String BODY_TOO_LARGE_ATTR = "myxhs.body.too.large";
+
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         ServerHttpRequest request = exchange.getRequest();
@@ -60,13 +63,33 @@ public class BodyCacheFilter implements GlobalFilter, Ordered {
         // 时 request.getBody() 是空 Flux，DataBufferUtils.join 返回 empty Mono，
         // flatMap 不执行 -> 请求链既不继续也不完成 -> 空响应。
         // defaultIfEmpty 提供空 body 使链路正常继续。
-        return DataBufferUtils.join(request.getBody())
+        // 先看 Content-Length 快速拒绝：原实现是把整个 body 拉进内存后才判 1MB，
+        // 未鉴权请求也能用超大 POST 打爆网关堆（chunked 无长度时由 join 的 maxByteCount 兜底）
+        long declaredLength = request.getHeaders().getContentLength();
+        if (declaredLength > MAX_BODY_BYTES) {
+            log.warn("[BodyCache] 请求体超限(Content-Length={} > {}): method={}, uri={}",
+                    declaredLength, MAX_BODY_BYTES, request.getMethod(), request.getURI());
+            exchange.getResponse().setStatusCode(org.springframework.http.HttpStatus.PAYLOAD_TOO_LARGE);
+            return exchange.getResponse().setComplete();
+        }
+
+        return DataBufferUtils.join(request.getBody(), (int) MAX_BODY_BYTES)
                 .onErrorResume(ex -> {
+                    if (ex instanceof org.springframework.core.io.buffer.DataBufferLimitException) {
+                        log.warn("[BodyCache] 请求体超限(chunked > {}): method={}, uri={}",
+                                MAX_BODY_BYTES, request.getMethod(), request.getURI());
+                        exchange.getAttributes().put(BODY_TOO_LARGE_ATTR, Boolean.TRUE);
+                        return Mono.just(exchange.getResponse().bufferFactory().wrap(new byte[0]));
+                    }
                     log.warn("[BodyCache] 请求体读取异常，按空body降级: {}", ex.getMessage());
                     return Mono.just(exchange.getResponse().bufferFactory().wrap(new byte[0]));
                 })
                 .defaultIfEmpty(exchange.getResponse().bufferFactory().wrap(new byte[0]))
                 .flatMap(dataBuffer -> {
+                    if (Boolean.TRUE.equals(exchange.getAttributes().get(BODY_TOO_LARGE_ATTR))) {
+                        exchange.getResponse().setStatusCode(org.springframework.http.HttpStatus.PAYLOAD_TOO_LARGE);
+                        return exchange.getResponse().setComplete();
+                    }
                     byte[] bytes = new byte[dataBuffer.readableByteCount()];
                     dataBuffer.read(bytes);
                     DataBufferUtils.release(dataBuffer);
@@ -90,6 +113,9 @@ public class BodyCacheFilter implements GlobalFilter, Ordered {
 
     @Override
     public int getOrder() {
-        return Ordered.HIGHEST_PRECEDENCE; // 最先执行，确保 HMAC 之前 body 已缓存
+        // 1100：在鉴权(+1000)之后、染色(+1200)/HMAC(+1500)之前。
+        // 原来用 HIGHEST_PRECEDENCE 会在鉴权前读取未认证请求的 body（放大攻击面），
+        // 而 body 的需求方只有 HMAC 验签（+1500）与下游转发。
+        return 1100;
     }
 }

@@ -1,5 +1,6 @@
 package com.myxhs.im.service;
 
+import com.myxhs.im.dto.RouteMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -45,6 +46,16 @@ public class OnlineRouteService {
     private static final String ROUTE_KEY_PREFIX = "myxhs:im:route:";
     private static final String ONLINE_KEY_PREFIX = "myxhs:im:online:";
 
+    // 键加同一 hash tag（{u:userId}）：route 与 online 两键落同一 slot，
+    // 使"续期/注销"可用单脚本原子完成（Cluster 下不再 CROSSSLOT）；键 90s TTL，格式变更自愈
+    private static String routeKey(Long userId) {
+        return ROUTE_KEY_PREFIX + "{u:" + userId + "}";
+    }
+
+    private static String onlineKey(Long userId) {
+        return ONLINE_KEY_PREFIX + "{u:" + userId + "}";
+    }
+
     /**
      * Lua 脚本：原子性地"检查 serverId 匹配后再删除"
      * <p>
@@ -70,11 +81,39 @@ public class OnlineRouteService {
 
     /**
      * 注册用户在线路由
+     *
+     * @return 注册前的旧路由（用户此前所在实例的 serverId）；null=此前不在线
      */
-    public void registerRoute(Long userId) {
+    public String registerRoute(Long userId) {
         Duration ttl = Duration.ofMillis(heartbeatInterval * 3); // 3 倍心跳间隔作为 TTL
-        stringRedisTemplate.opsForValue().set(ROUTE_KEY_PREFIX + userId, serverId, ttl);
-        stringRedisTemplate.opsForValue().set(ONLINE_KEY_PREFIX + userId, "1", ttl);
+        String previous = stringRedisTemplate.opsForValue().get(routeKey(userId));
+        stringRedisTemplate.opsForValue().set(routeKey(userId), serverId, ttl);
+        stringRedisTemplate.opsForValue().set(onlineKey(userId), "1", ttl);
+        return previous;
+    }
+
+    /**
+     * 跨实例踢线：通知旧实例关闭该用户的本地连接（msgType=97=KICK）
+     * <p>
+     * 背景：单用户单连接原实现只在本实例内生效——用户在 A、B 两实例各有一条连接时，
+     * 旧连接（A）不会收到任何关闭指令，成为"僵尸连接"（收不到消息还占资源）。
+     * 路由删除由 {@link #unregisterRoute} 的 Lua 比较删除保护，旧实例关闭连接不会误删新路由。
+     * </p>
+     */
+    public void kickRemote(String targetServerId, Long userId) {
+        RouteMessage kick = RouteMessage.builder()
+                .receiverId(userId)
+                .targetServerId(targetServerId)
+                .msgType(97)
+                .timestamp(System.currentTimeMillis())
+                .build();
+        try {
+            stringRedisTemplate.convertAndSend(ROUTE_KEY_PREFIX + targetServerId,
+                    com.alibaba.fastjson2.JSON.toJSONString(kick));
+            log.info("[IM] 已通知旧实例踢线: userId={}, target={}", userId, targetServerId);
+        } catch (Exception e) {
+            log.warn("[IM] 跨实例踢线通知失败(旧连接将随心跳过期): userId={}, target={}", userId, targetServerId, e);
+        }
     }
 
     /**
@@ -84,17 +123,23 @@ public class OnlineRouteService {
      * </p>
      */
     public void unregisterRoute(Long userId) {
-        List<String> keys = List.of(ROUTE_KEY_PREFIX + userId, ONLINE_KEY_PREFIX + userId);
+        List<String> keys = List.of(routeKey(userId), onlineKey(userId));
         stringRedisTemplate.execute(UNREGISTER_SCRIPT, keys, serverId);
     }
 
     /**
      * 续期路由（心跳时调用）
      */
+    private static final DefaultRedisScript<Long> RENEW_SCRIPT = new DefaultRedisScript<>(
+            "redis.call('EXPIRE', KEYS[1], ARGV[1]) " +
+            "redis.call('EXPIRE', KEYS[2], ARGV[1]) " +
+            "return 1", Long.class);
+
     public void renewRoute(Long userId) {
         Duration ttl = Duration.ofMillis(heartbeatInterval * 3);
-        stringRedisTemplate.expire(ROUTE_KEY_PREFIX + userId, ttl);
-        stringRedisTemplate.expire(ONLINE_KEY_PREFIX + userId, ttl);
+        // 原子续期（原实现两次 EXPIRE：中途异常会留下一个键提前过期 → 该用户被判离线转离线消息）
+        stringRedisTemplate.execute(RENEW_SCRIPT, List.of(routeKey(userId), onlineKey(userId)),
+                String.valueOf(ttl.getSeconds()));
     }
 
     /**
@@ -103,14 +148,14 @@ public class OnlineRouteService {
      * @return serverId，null 表示用户不在线
      */
     public String getRoute(Long userId) {
-        return stringRedisTemplate.opsForValue().get(ROUTE_KEY_PREFIX + userId);
+        return stringRedisTemplate.opsForValue().get(routeKey(userId));
     }
 
     /**
      * 判断用户是否在线
      */
     public boolean isOnline(Long userId) {
-        return Boolean.TRUE.equals(stringRedisTemplate.hasKey(ONLINE_KEY_PREFIX + userId));
+        return Boolean.TRUE.equals(stringRedisTemplate.hasKey(onlineKey(userId)));
     }
 
     /**

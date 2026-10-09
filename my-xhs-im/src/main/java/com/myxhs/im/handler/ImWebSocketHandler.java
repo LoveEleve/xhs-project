@@ -17,6 +17,13 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * IM WebSocket 消息处理器
  * <p>
+ * <b>客户端契约（服务端为 at-least-once 投递）</b>：
+ * 1. 收到 CHAT / OFFLINE 批次中的每条消息后必须回 <code>{"type":"ACK","msgId":...}</code>——
+ *    服务端据此 ZREM 离线持久副本；不回 ACK 会导致副本按 7 天 TTL 在每次重连时重复补发；
+ * 2. 客户端必须按 msgId 去重（接收侧删除失败/重连补发都可能产生重复）；
+ * 3. 服务端在"推送成功"时也会删副本（双保险），OFFLINE 批次一次最多 1000 条。
+ * </p>
+ * <p>
  * 核心职责：
  * 1. 管理 userId → WebSocketSession 映射（本实例在线用户）
  * 2. 分发消息到对应的业务处理方法
@@ -58,12 +65,19 @@ public class ImWebSocketHandler extends TextWebSocketHandler {
         // 踢掉旧连接（同一用户只允许一个 WebSocket 连接）
         WebSocketSession oldSession = sessions.put(userId, session);
 
-        // 先注册新路由，再关闭旧连接。旧连接 afterConnectionClosed 中 remove(userId, oldSession) 失败后不会再误删新路由。
-        onlineRouteService.registerRoute(userId);
+        // 先注册新路由（返回旧路由所在实例），再关闭旧连接。
+        // 旧连接 afterConnectionClosed 中 remove(userId, oldSession) 失败后不会再误删新路由；
+        // 跨实例场景由路由比较删除 Lua 兜底。
+        String previousServerId = onlineRouteService.registerRoute(userId);
 
         if (oldSession != null && oldSession.isOpen()) {
             log.info("[IM] 踢掉旧连接: userId={}, oldSessionId={}", userId, oldSession.getId());
             closeQuietly(oldSession, new CloseStatus(4001, "新设备登录，当前连接已断开"));
+        }
+
+        // 跨实例踢线：旧连接在其它实例上（本实例 sessions 里没有）→ 定向通知其关闭
+        if (previousServerId != null && !previousServerId.equals(onlineRouteService.getServerId())) {
+            onlineRouteService.kickRemote(previousServerId, userId);
         }
 
         // 推送离线消息
@@ -123,9 +137,15 @@ public class ImWebSocketHandler extends TextWebSocketHandler {
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         Long userId = getUserId(session);
         if (userId != null) {
-            // 只移除当前 session（防止新连接被误删）
-            sessions.remove(userId, session);
-            onlineRouteService.unregisterRoute(userId);
+            // 只有"被移除的确实是当前在册连接"时才注销路由：
+            // 重连踢旧场景下，旧连接的关闭事件晚于新连接注册，无条件注销会把新连接的路由删掉
+            // （新连接最长 30s 内被判离线、消息转离线存储）
+            boolean removed = sessions.remove(userId, session);
+            if (removed) {
+                onlineRouteService.unregisterRoute(userId);
+            } else {
+                log.info("[IM] 旧连接关闭(已被新连接替换), 保留路由: userId={}", userId);
+            }
             log.info("[IM] 连接关闭: userId={}, status={}, 在线人数={}", userId, status, sessions.size());
         }
     }
@@ -158,6 +178,21 @@ public class ImWebSocketHandler extends TextWebSocketHandler {
         } catch (IOException e) {
             log.warn("[IM] 推送失败: userId={}, error={}", userId, e.getMessage());
             return false;
+        }
+    }
+
+    /**
+     * 关闭本实例上该用户的连接（跨实例踢线指令调用）
+     * <p>
+     * 关闭会触发 afterConnectionClosed → unregisterRoute，但路由比较删除（Lua）
+     * 会因"当前路由属于新实例"而拒绝删除，不会误删新实例的路由。
+     * </p>
+     */
+    public void closeLocalSession(Long userId) {
+        WebSocketSession session = sessions.get(userId);
+        if (session != null && session.isOpen()) {
+            log.info("[IM] 收到跨实例踢线指令, 关闭本地连接: userId={}, sessionId={}", userId, session.getId());
+            closeQuietly(session, new CloseStatus(4001, "新设备登录，当前连接已断开"));
         }
     }
 

@@ -42,6 +42,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class LocalMessageRetryJob {
 
     private final LocalMessageMapper localMessageMapper;
+    private final org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
     private final RocketMQTemplate rocketMQTemplate;
     private final MeterRegistry meterRegistry;
 
@@ -84,6 +85,9 @@ public class LocalMessageRetryJob {
             log.error("[本地消息] 补发异常", e);
             XxlJobHelper.handleFail("本地消息补发异常: " + e.getMessage());
         }
+        // 本地消息表清理：每 30 秒调度，但清理只需每天一次（SETNX 日切标记，抢到才清）
+        purgeSentMessagesDaily();
+
     }
 
     /**
@@ -152,8 +156,8 @@ public class LocalMessageRetryJob {
             log.error("[本地消息] 重试耗尽，标记死信: msgId={}, transactionId={}, operationType={}, deadCount={}, 需人工介入！请检查下游服务是否正常",
                     msg.getId(), msg.getTransactionId(), msg.getOperationType(), currentDeadCount);
         } else {
-            // 指数退避: 30s * 2^(retryCount-1)
-            long delaySeconds = 30L * (1L << (retryCount - 1));
+            // 指数退避: 30s→480s 封顶，叠加 ±20% 抖动（避免多实例重放共振，P2/2026-09-27）
+            long delaySeconds = com.myxhs.common.mq.RetryBackoffUtils.exponentialSeconds(retryCount, 30, 480, 0.2);
             msg.setNextRetryTime(LocalDateTime.now().plusSeconds(delaySeconds));
             msg.setRetryCount(retryCount);
             msg.setStatus(2); // 失败
@@ -256,4 +260,32 @@ public class LocalMessageRetryJob {
             log.info("[死信扫描] 完成: 成功={}, 仍失败={}, 扫描总数={}", success, stillFailed, deadLetters.size());
         }
     }
+    /**
+     * 已发送本地消息的每日清理（有界排空，最多 20 批 × 2000 行/片·日）
+     */
+    private void purgeSentMessagesDaily() {
+        try {
+            String marker = "myxhs:order:localmsg:cleanup:" + java.time.LocalDate.now();
+            Boolean first = stringRedisTemplate.opsForValue()
+                    .setIfAbsent(marker, "1", java.time.Duration.ofHours(25));
+            if (!Boolean.TRUE.equals(first)) {
+                return;   // 今天已清理过（本任务为 30s 高频调度）
+            }
+            int total = 0;
+            for (int i = 0; i < 20; i++) {
+                int purged = localMessageMapper.deleteSentBefore(
+                        java.time.LocalDateTime.now().minusDays(7), 2000);
+                total += purged;
+                if (purged < 2000) {
+                    break;
+                }
+            }
+            if (total > 0) {
+                log.info("[本地消息] 清理 7 天前已发送消息 {} 行(按分片广播执行)", total);
+            }
+        } catch (Exception e) {
+            log.error("[本地消息] 清理已发送消息失败(下轮日记重试)", e);
+        }
+    }
+
 }

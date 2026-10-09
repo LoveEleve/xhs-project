@@ -56,8 +56,12 @@ public class InventoryController {
     @RateLimit(prefix = "myxhs:inventory:init", maxRequests = 5, windowSeconds = 60)
     public R<Void> initStock(
             @Valid @RequestBody InventoryInitRequest request,
-            @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
-        if (!accessTokenGuard.isAdminCall(adminCall)) return R.fail(403, "无权访问管理接口");
+            @RequestHeader(value = "X-Admin-Call", required = false) String adminCall,
+            @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
+        // 管理端或内部服务均可初始化：product 建 SKU 后自动初始化库存走内部令牌（X-Internal-Call）
+        if (!accessTokenGuard.isAdminCall(adminCall) && !accessTokenGuard.isInternalCall(internalCall)) {
+            return R.fail(403, "无权访问管理接口");
+        }
         inventoryService.initStock(request);
         return R.ok();
     }

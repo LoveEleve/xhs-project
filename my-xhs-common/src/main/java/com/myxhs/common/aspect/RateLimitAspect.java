@@ -43,6 +43,10 @@ import java.util.UUID;
 public class RateLimitAspect {
 
     private final StringRedisTemplate stringRedisTemplate;
+    /** fail-open 计数（Redis 故障时限流整体失效，监控侧必须可见） */
+    private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
+    private final java.util.Map<String, io.micrometer.core.instrument.Counter> failOpenCounters =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     /**
      * Lua 脚本：滑动窗口限流（原子操作）
@@ -90,6 +94,10 @@ public class RateLimitAspect {
         } catch (Exception e) {
             // Redis 不可用时降级放行（保证核心业务可用）
             log.error("[限流] Redis不可用，降级放行, key={}", key, e);
+            failOpenCounters.computeIfAbsent("redis_unavailable", r ->
+                    io.micrometer.core.instrument.Counter.builder("myxhs_common_fail_open_total")
+                            .tag("component", "rate_limit").tag("reason", r)
+                            .register(meterRegistry)).increment();
             return joinPoint.proceed();
         }
 
@@ -150,11 +158,14 @@ public class RateLimitAspect {
     }
 
     /**
-     * 获取客户端 IP
+     * 获取客户端 IP（限流 key 用）
      * <p>
-     * 安全策略：X-Forwarded-For 仅 Gateway 注入信任（内网来源），
-     * 下游服务使用 Gateway 注入的 X-Real-IP Header。
-     * 外部请求携带的 X-Forwarded-For 不可信（可被伪造绕过 IP 限流）。
+     * 安全策略（可信来源口径）：
+     * 1. X-Real-IP —— 只由 gateway 写入且覆盖客户端值，首选；
+     * 2. X-Forwarded-For 最后一段 —— gateway 追加的真实连接 IP 在末尾（伪造段只在前面）；
+     * 3. remoteAddr 降级。
+     * 历史问题：原实现只读 X-Real-IP，而 gateway 从不写它 → 恒降级为 remoteAddr（网关 IP），
+     * 所有匿名用户共用一个限流桶。
      * </p>
      */
     private String getClientIp() {
@@ -163,13 +174,24 @@ public class RateLimitAspect {
                     (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
             if (attributes != null) {
                 HttpServletRequest request = attributes.getRequest();
-                // 优先使用 Gateway 注入的 X-Real-IP（Gateway 从直连 IP 提取，不可伪造）
+                // 1. gateway 单值注入，客户端不可伪造
                 String ip = request.getHeader("X-Real-IP");
-                if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-                    // 开发/测试环境降级：直接获取连接 IP
-                    ip = request.getRemoteAddr();
+                if (ip != null && !ip.isEmpty() && !"unknown".equalsIgnoreCase(ip)) {
+                    return ip;
                 }
-                return ip;
+                // 2. XFF 取最后一段（gateway 追加的真实连接 IP 在末尾）
+                String xff = request.getHeader("X-Forwarded-For");
+                if (xff != null && !xff.isEmpty()) {
+                    String[] parts = xff.split(",");
+                    for (int i = parts.length - 1; i >= 0; i--) {
+                        String part = parts[i].trim();
+                        if (!part.isEmpty()) {
+                            return part;
+                        }
+                    }
+                }
+                // 3. 降级：连接 IP（开发/测试环境）
+                return request.getRemoteAddr();
             }
         } catch (Exception e) {
             // 非 Web 环境忽略

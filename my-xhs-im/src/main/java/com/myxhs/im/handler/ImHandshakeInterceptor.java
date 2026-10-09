@@ -2,8 +2,10 @@ package com.myxhs.im.handler;
 
 import com.myxhs.common.util.JwtUtil;
 import io.jsonwebtoken.Claims;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.http.server.ServletServerHttpRequest;
@@ -23,7 +25,10 @@ import java.util.Map;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class ImHandshakeInterceptor implements HandshakeInterceptor {
+
+    private final StringRedisTemplate stringRedisTemplate;
 
     @Value("${jwt.secret:MyXhs@2026#JwtSecretKey!ForTokenSign}")
     private String jwtSecret;
@@ -47,9 +52,20 @@ public class ImHandshakeInterceptor implements HandshakeInterceptor {
                     log.warn("[IM握手] ticket 类型错误: expected=ws_ticket, actual={}", tokenType);
                     return false;
                 }
+                // 一次性消费：ticket 会出现在 WS URL（进访问日志），GETDEL 保证用过即废（防重放）
+                String jti = claims.getId();
+                if (jti == null) {
+                    log.warn("[IM握手] ticket 无效: 缺少 jti");
+                    return false;
+                }
+                String storedUserId = stringRedisTemplate.opsForValue().getAndDelete("myxhs:im:ticket:" + jti);
+                if (storedUserId == null) {
+                    log.warn("[IM握手] ticket 已被使用或不存在(疑似重放): jti={}", jti);
+                    return false;
+                }
                 String subject = claims.getSubject();
-                if (subject == null) {
-                    log.warn("[IM握手] ticket 无效: subject 为空");
+                if (subject == null || !subject.equals(storedUserId)) {
+                    log.warn("[IM握手] ticket 无效: subject 缺失或与登记不一致");
                     return false;
                 }
                 Long userId = Long.valueOf(subject);

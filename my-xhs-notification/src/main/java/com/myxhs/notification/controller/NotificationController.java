@@ -76,7 +76,9 @@ public class NotificationController {
             @RequestParam(required = false) Integer type,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
-        size = Math.min(size, 50);
+        // page 下限 clamp（size 已 clamp；page<=0 时响应页码与实际不符）
+        page = Math.max(1, page);
+        size = Math.max(1, Math.min(size, 50));
         return R.ok(notificationService.getNotificationList(userId, type, page, size));
     }
 

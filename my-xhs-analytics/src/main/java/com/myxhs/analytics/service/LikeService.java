@@ -32,7 +32,8 @@ import java.util.stream.Collectors;
  * Redis Key 设计：
  * - 笔记点赞集合：myxhs:like:note:{noteId}（Set，member=userId）
  * - 评论点赞集合：myxhs:like:comment:{commentId}（Set，member=userId）
- * - 用户点赞笔记反向索引：myxhs:like:user:{userId}:note（Set，member=noteId）
+ * - （已移除）用户点赞笔记反向索引 myxhs:like:user:{userId}:note——当前无写入/读取方，
+ *   原javadoc保留会造成"有该能力"的误解；如需"我的点赞"列表，请先补写入+对账再启用
  * </p>
  */
 @Slf4j

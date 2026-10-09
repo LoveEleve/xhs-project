@@ -13,8 +13,15 @@ public interface OrderEventMapper extends BaseMapper<OrderEvent> {
     @Select("SELECT * FROM t_order_event WHERE order_id = #{orderId} ORDER BY event_seq ASC")
     List<OrderEvent> findByOrderId(@Param("orderId") Long orderId);
 
+    /**
+     * 按订单 + 用户查询完整事件流（带分片键 user_id → 路由到单分片，避免全分片广播）
+     */
+    @Select("SELECT * FROM t_order_event WHERE order_id = #{orderId} AND user_id = #{userId} ORDER BY event_seq ASC")
+    List<OrderEvent> findByOrderIdAndUserId(@Param("orderId") Long orderId, @Param("userId") Long userId);
+
     @Select("SELECT * FROM t_order_event WHERE order_id = #{orderId} AND user_id = #{userId} ORDER BY event_seq DESC LIMIT 1")
     OrderEvent findLastByOrderIdAndUserId(@Param("orderId") Long orderId, @Param("userId") Long userId);
+
 
     @Select("SELECT * FROM t_order_event WHERE order_id = #{orderId} ORDER BY event_seq DESC LIMIT 1")
     OrderEvent findLastByOrderId(@Param("orderId") Long orderId);

@@ -112,6 +112,10 @@ rocketmq:
     group: search-consumer-group
   producer:
     group: search-producer-group
+    # P2/2026-09-27：显式固定客户端默认重试（此前为隐式默认 2 次）；"发送超时≠失败"，双发靠消费者幂等+对账兜底
+    retry-times-when-send-failed: 2
+    retry-times-when-send-async-failed: 2
+    send-message-timeout: 3000
 
 # 搜索业务配置
 search:
@@ -200,6 +204,10 @@ spring.datasource.readwrite.enabled: true
 
 # 管理/内部接口令牌（环境变量注入，未配置时为空 → 管理接口全部拒绝(fail-closed)）
 myxhs:
+  # 启动预热：本服务负责预热的任务（逗号分隔，空=全部）；预热失败降级为按需加载
+  cache-warmup:
+    enabled: true
+    targets: search-hot-and-recommend
   admin:
     token: ${ADMIN_TOKEN:}
   internal:

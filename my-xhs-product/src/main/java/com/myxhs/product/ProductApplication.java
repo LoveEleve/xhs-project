@@ -13,6 +13,7 @@ import org.springframework.scheduling.annotation.EnableAsync;
  */
 @EnableAsync
 @SpringBootApplication(scanBasePackages = {"com.myxhs.product", "com.myxhs.common"})
+@org.springframework.cloud.openfeign.EnableFeignClients(basePackages = "com.myxhs.product.feign")
 public class ProductApplication {
     public static void main(String[] args) {
         SpringApplication.run(ProductApplication.class, args);

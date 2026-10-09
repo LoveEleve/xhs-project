@@ -119,7 +119,7 @@ class CartServiceTest {
 
         // Lua 脚本返回当前数量（表示成功）
         // 使用具体数量的 any() 匹配 varargs（5 个 String 参数）
-        when(stringRedisTemplate.execute(eq(cartAddScript), anyList(), any(), any(), any(), any(), any()))
+        when(stringRedisTemplate.execute(eq(cartAddScript), anyList(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(2L);
 
         assertThatCode(() -> cartService.addToCart(USER_ID, request))
@@ -135,7 +135,8 @@ class CartServiceTest {
                 eq("2"),
                 anyString(),
                 anyString(),
-                anyString());
+                anyString(),
+                anyString());   // 第 6 参数为 Lua 内滑动 TTL（新增后测试未同步）
     }
 
     @Test
@@ -149,7 +150,7 @@ class CartServiceTest {
         skuDTO.setId(SKU_ID);
         skuDTO.setStatus(1);
         when(productFeignClient.getSkuDetail(SKU_ID)).thenReturn(R.ok(skuDTO));
-        when(stringRedisTemplate.execute(eq(cartAddScript), anyList(), any(), any(), any(), any(), any()))
+        when(stringRedisTemplate.execute(eq(cartAddScript), anyList(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(null);
 
         assertThatThrownBy(() -> cartService.addToCart(USER_ID, request))
@@ -168,7 +169,7 @@ class CartServiceTest {
         skuDTO.setId(SKU_ID);
         skuDTO.setStatus(1);
         when(productFeignClient.getSkuDetail(SKU_ID)).thenReturn(R.ok(skuDTO));
-        when(stringRedisTemplate.execute(eq(cartAddScript), anyList(), any(), any(), any(), any(), any()))
+        when(stringRedisTemplate.execute(eq(cartAddScript), anyList(), any(), any(), any(), any(), any(), any()))
                 .thenReturn(-1L);
 
         assertThatThrownBy(() -> cartService.addToCart(USER_ID, request))
@@ -191,7 +192,7 @@ class CartServiceTest {
         assertThatThrownBy(() -> cartService.addToCart(USER_ID, request))
                 .isInstanceOf(BizException.class)
                 .hasMessageContaining("商品不存在或未上架");
-        verify(stringRedisTemplate, never()).execute(any(), anyList(), any(), any(), any(), any(), any());
+        verify(stringRedisTemplate, never()).execute(any(), anyList(), any(), any(), any(), any(), any(), any());
     }
 
     // ==================== 购物车列表 ====================

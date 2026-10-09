@@ -38,4 +38,17 @@ public class WebSocketConfig implements WebSocketConfigurer {
                 .addInterceptors(handshakeInterceptor)
                 .setAllowedOrigins(allowedOrigins.split(","));
     }
+
+    /**
+     * WS 容器帧大小上限：单条文本消息 2000 字符（UTF-8 最坏约 8KB），
+     * 64KB 足够且能拦住"单帧巨包"（超限帧在解析前即被容器拒绝，保护堆内存）。
+     */
+    @org.springframework.context.annotation.Bean
+    public org.springframework.web.socket.server.standard.ServletServerContainerFactoryBean createWebSocketContainer() {
+        org.springframework.web.socket.server.standard.ServletServerContainerFactoryBean container =
+                new org.springframework.web.socket.server.standard.ServletServerContainerFactoryBean();
+        container.setMaxTextMessageBufferSize(64 * 1024);
+        container.setMaxBinaryMessageBufferSize(64 * 1024);
+        return container;
+    }
 }

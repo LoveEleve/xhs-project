@@ -76,6 +76,10 @@ SELECT g.id, '推荐 ItemCF 更新', NOW(), NOW(), 'my-xhs', '', 'CRON', '0 0 2 
 FROM xxl_job.xxl_job_group g WHERE g.app_name='my-xhs-search'
 AND NOT EXISTS (SELECT 1 FROM xxl_job.xxl_job_info WHERE executor_handler='recommendItemCFJob');
 
+SELECT g.id, '订单事件流校准(干跑)', NOW(), NOW(), 'my-xhs', '', 'CRON', '0 0 5 * * ?', 'DO_NOTHING', 'FIRST', 'orderEventCalibrationJob', '', 'SERIAL_EXECUTION', 0, 0, 'BEAN', '', '', NOW(), '', 0, 0, 0
+FROM xxl_job.xxl_job_group g WHERE g.app_name='my-xhs-order'
+AND NOT EXISTS (SELECT 1 FROM xxl_job.xxl_job_info WHERE executor_handler='orderEventCalibrationJob');
+
 -- 验证
 SELECT g.app_name, i.executor_handler, i.schedule_conf, i.trigger_status
 FROM xxl_job.xxl_job_info i JOIN xxl_job.xxl_job_group g ON i.job_group = g.id

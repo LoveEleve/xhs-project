@@ -67,6 +67,11 @@ SELECT g.id, '订单号映射修复', NOW(), NOW(), 'my-xhs', '', 'CRON', '0 */5
 FROM xxl_job.xxl_job_group g WHERE g.app_name='my-xhs-order'
 AND NOT EXISTS (SELECT 1 FROM xxl_job.xxl_job_info WHERE executor_handler='orderMappingRepairJob');
 
+INSERT INTO xxl_job.xxl_job_info (job_group, job_desc, add_time, update_time, author, alarm_email, schedule_type, schedule_conf, misfire_strategy, executor_route_strategy, executor_handler, executor_param, executor_block_strategy, executor_timeout, executor_fail_retry_count, glue_type, glue_source, glue_remark, glue_updatetime, child_jobid, trigger_status, trigger_last_time, trigger_next_time)
+SELECT g.id, '售后单恢复(卡死回收+退款重试)', NOW(), NOW(), 'my-xhs', '', 'CRON', '0 */10 * * * ?', 'DO_NOTHING', 'FIRST', 'aftersaleRecoveryJob', '', 'SERIAL_EXECUTION', 300, 0, 'BEAN', '', '', NOW(), '', 1, 0, 0
+FROM xxl_job.xxl_job_group g WHERE g.app_name='my-xhs-order'
+AND NOT EXISTS (SELECT 1 FROM xxl_job.xxl_job_info WHERE executor_handler='aftersaleRecoveryJob');
+
 -- payment
 INSERT INTO xxl_job.xxl_job_info (job_group, job_desc, add_time, update_time, author, alarm_email, schedule_type, schedule_conf, misfire_strategy, executor_route_strategy, executor_handler, executor_param, executor_block_strategy, executor_timeout, executor_fail_retry_count, glue_type, glue_source, glue_remark, glue_updatetime, child_jobid, trigger_status, trigger_last_time, trigger_next_time)
 SELECT g.id, '支付超时检查', NOW(), NOW(), 'my-xhs', '', 'CRON', '0/30 * * * * ?', 'DO_NOTHING', 'FIRST', 'paymentTimeoutCheckJob', '', 'SERIAL_EXECUTION', 60, 0, 'BEAN', '', '', NOW(), '', 1, 0, 0
@@ -92,6 +97,15 @@ INSERT INTO xxl_job.xxl_job_info (job_group, job_desc, add_time, update_time, au
 SELECT g.id, '支付对账', NOW(), NOW(), 'my-xhs', '', 'CRON', '0 0 3 * * ?', 'FIRE_ONCE_NOW', 'FIRST', 'paymentReconcileJob', '', 'SERIAL_EXECUTION', 300, 0, 'BEAN', '', '', NOW(), '', 1, 0, 0
 FROM xxl_job.xxl_job_group g WHERE g.app_name='my-xhs-payment'
 AND NOT EXISTS (SELECT 1 FROM xxl_job.xxl_job_info WHERE executor_handler='paymentReconcileJob');
+INSERT INTO xxl_job.xxl_job_info (job_group, job_desc, add_time, update_time, author, alarm_email, schedule_type, schedule_conf, misfire_strategy, executor_route_strategy, executor_handler, executor_param, executor_block_strategy, executor_timeout, executor_fail_retry_count, glue_type, glue_source, glue_remark, glue_updatetime, child_jobid, trigger_status, trigger_last_time, trigger_next_time)
+SELECT g.id, 'T-1 结算账单生成', NOW(), NOW(), 'my-xhs', '', 'CRON', '0 0 2 * * ?', 'FIRE_ONCE_NOW', 'FIRST', 'settlementBillJob', '', 'SERIAL_EXECUTION', 300, 0, 'BEAN', '', '', NOW(), '', 1, 0, 0
+FROM xxl_job.xxl_job_group g WHERE g.app_name='my-xhs-payment'
+AND NOT EXISTS (SELECT 1 FROM xxl_job.xxl_job_info WHERE executor_handler='settlementBillJob');
+
+INSERT INTO xxl_job.xxl_job_info (job_group, job_desc, add_time, update_time, author, alarm_email, schedule_type, schedule_conf, misfire_strategy, executor_route_strategy, executor_handler, executor_param, executor_block_strategy, executor_timeout, executor_fail_retry_count, glue_type, glue_source, glue_remark, glue_updatetime, child_jobid, trigger_status, trigger_last_time, trigger_next_time)
+SELECT g.id, 'T-1 结算三方对账', NOW(), NOW(), 'my-xhs', '', 'CRON', '0 0 3 * * ?', 'FIRE_ONCE_NOW', 'FIRST', 'settlementReconcileJob', '', 'SERIAL_EXECUTION', 300, 0, 'BEAN', '', '', NOW(), '', 1, 0, 0
+FROM xxl_job.xxl_job_group g WHERE g.app_name='my-xhs-payment'
+AND NOT EXISTS (SELECT 1 FROM xxl_job.xxl_job_info WHERE executor_handler='settlementReconcileJob');
 
 -- inventory
 INSERT INTO xxl_job.xxl_job_info (job_group, job_desc, add_time, update_time, author, alarm_email, schedule_type, schedule_conf, misfire_strategy, executor_route_strategy, executor_handler, executor_param, executor_block_strategy, executor_timeout, executor_fail_retry_count, glue_type, glue_source, glue_remark, glue_updatetime, child_jobid, trigger_status, trigger_last_time, trigger_next_time)
@@ -155,6 +169,10 @@ INSERT INTO xxl_job.xxl_job_info (job_group, job_desc, add_time, update_time, au
 SELECT g.id, '未读数对账', NOW(), NOW(), 'my-xhs', '', 'CRON', '0 */10 * * * ?', 'DO_NOTHING', 'FIRST', 'unreadReconcileJob', '', 'SERIAL_EXECUTION', 60, 0, 'BEAN', '', '', NOW(), '', 1, 0, 0
 FROM xxl_job.xxl_job_group g WHERE g.app_name='my-xhs-notification'
 AND NOT EXISTS (SELECT 1 FROM xxl_job.xxl_job_info WHERE executor_handler='unreadReconcileJob');
+
+SELECT g.id, '订单事件流校准(干跑)', NOW(), NOW(), 'my-xhs', '', 'CRON', '0 0 5 * * ?', 'DO_NOTHING', 'FIRST', 'orderEventCalibrationJob', '', 'SERIAL_EXECUTION', 0, 0, 'BEAN', '', '', NOW(), '', 0, 0, 0
+FROM xxl_job.xxl_job_group g WHERE g.app_name='my-xhs-order'
+AND NOT EXISTS (SELECT 1 FROM xxl_job.xxl_job_info WHERE executor_handler='orderEventCalibrationJob');
 
 -- ---------- 3) 校验 ----------
 SELECT g.app_name, i.executor_handler, i.schedule_conf, i.trigger_status

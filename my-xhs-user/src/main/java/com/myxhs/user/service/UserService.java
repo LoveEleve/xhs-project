@@ -8,6 +8,7 @@ import com.myxhs.common.constants.RedisKeyConstants;
 import com.myxhs.common.exception.BizException;
 import com.myxhs.common.exception.RedisUnavailableException;
 import com.myxhs.common.response.ResultCode;
+import com.myxhs.common.tx.TransactionHook;
 import com.myxhs.user.dto.request.ChangePasswordRequest;
 import com.myxhs.user.dto.request.LoginRequest;
 import com.myxhs.user.dto.request.RegisterRequest;
@@ -195,7 +196,9 @@ public class UserService {
                         .eq(User::getUsername, username)
         );
         if (user == null) {
+            // 用户名不存在也要累计失败计数：原实现直接抛错 → 攻击者可无限枚举用户名（不受账号/IP 锁定约束）
             log.info("[登录] 用户不存在, username={}", username);
+            incrementLoginFail(username, clientIp);
             throw new BizException(ResultCode.PASSWORD_ERROR, "用户名或密码错误");
         }
 
@@ -254,10 +257,13 @@ public class UserService {
             throw new BizException(ResultCode.USER_NOT_FOUND);
         }
         userMapper.deleteById(targetUserId);
-        // 吊销全部活跃 token（黑名单 + 清 Redis 映射 + 删 hmac secret），防删号后凭证残留
-        tokenService.revokeAllTokens(targetUserId);
-        // 清用户缓存（防逻辑删除后缓存残留导致信息可查）
-        redisOperator.delete(RedisKeyConstants.USER_INFO + targetUserId);
+        // 吊销全部活跃 token + 清用户缓存，均放到事务提交后：
+        // ① 回滚时不做无谓吊销；② 提交前清缓存会被并发读回填旧值（逻辑删除后信息仍可查 30min）
+        final Long deletedUserId = targetUserId;
+        TransactionHook.afterCommit(() -> {
+            tokenService.revokeAllTokens(deletedUserId);
+            redisOperator.delete(RedisKeyConstants.USER_INFO + deletedUserId);
+        });
         log.info("[用户] 管理员删除用户: userId={}, username={}", targetUserId, user.getUsername());
     }
 
@@ -349,12 +355,16 @@ public class UserService {
         if (request.getEmail() != null) updateWrapper.set(User::getEmail, request.getEmail());
         if (request.getSignature() != null) updateWrapper.set(User::getSignature, request.getSignature());
 
-        // 4. 先更新 DB
-        userMapper.update(null, updateWrapper);
+        // 4. 先更新 DB（并发改到同一手机号时唯一键冲突 → 业务码而非 500）
+        try {
+            userMapper.update(null, updateWrapper);
+        } catch (DuplicateKeyException e) {
+            throw new BizException(ResultCode.PHONE_EXISTS);
+        }
 
-        // 5. 再延迟双删（正确顺序：先更新DB → 再删缓存）
+        // 5. 延迟双删放到事务提交后：事务内先删会被并发读回填旧值（提交前读到的还是旧数据）
         String cacheKey = RedisKeyConstants.USER_INFO + userId;
-        cacheHelper.delayDoubleDelete(cacheKey);
+        TransactionHook.afterCommit(() -> cacheHelper.delayDoubleDelete(cacheKey));
 
         log.info("[用户] 更新用户信息, userId={}", userId);
         return getUserInfoDirect(userId);
@@ -384,18 +394,23 @@ public class UserService {
             throw new BizException(ResultCode.PASSWORD_ERROR, "旧密码错误");
         }
 
-        // 更新密码
+        // 【顺序修正】先吊销旧凭证、再改密码：
+        // 原实现先改密码再吊销，且吊销异常被吞 → Redis 抖动时"改密成功但旧 access/refresh 最长 7 天仍可用"；
+        // 且 invalidateUserCredentials 与 revokeAllTokens 完全重复（黑名单+删同 3 个 key），已合并为严格版一次。
+        try {
+            tokenService.revokeAllTokensStrict(userId);
+        } catch (RedisUnavailableException e) {
+            log.error("[用户] 改密吊销凭证失败(Redis不可用), userId={}", userId, e);
+            throw new BizException(ResultCode.SERVICE_UNAVAILABLE, "认证服务暂时不可用，请稍后重试");
+        }
+
+        // 单条 UPDATE 自带原子性；旧凭证已在改密前失效（fail-closed）
         User updateUser = new User();
         updateUser.setId(userId);
         updateUser.setPassword(passwordEncoder.encode(request.getNewPassword()));
         userMapper.updateById(updateUser);
-        // T-012: 改密后旧凭证全部失效（黑名单 + 清 Redis + 删 hmac secret）
-        tokenService.invalidateUserCredentials(userId);
 
-        // 注销当前用户所有活跃 Token（加入黑名单 + 清除 Redis 映射）
-        tokenService.revokeAllTokens(userId);
-
-        log.info("[用户] 修改密码成功(已注销旧Token), userId={}", userId);
+        log.info("[用户] 修改密码成功(旧凭证已注销), userId={}", userId);
     }
 
     // ==================== 私有方法 ====================

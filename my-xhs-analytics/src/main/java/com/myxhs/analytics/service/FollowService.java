@@ -61,6 +61,15 @@ public class FollowService {
     /** 共同关注最大取出条数（防止大 V 关注列表过大导致 OOM） */
     private static final int MAX_COMMON_FOLLOW_FETCH = 5000;
 
+    /**
+     * 双源保护阈值：Redis 侧成员数低于 MySQL 侧的该比例时，视为"Redis 侧数据缺失"，
+     * 对账跳过删除并触发反向重建（Redis 全丢/批量淘汰场景）。
+     */
+    private static final double RELATION_GUARD_MIN_RATIO = 0.5;
+
+    /** 单次重建上限：超过则只告警不重建，避免超大列表在对账线程长时间阻塞 */
+    private static final int RELATION_REBUILD_MAX = 10_000;
+
     // ==================== 关注用户 ====================
 
     /**
@@ -212,7 +221,8 @@ public class FollowService {
      * @return 关注列表
      */
     public List<FollowVO> getFollowingList(Long userId, int page, int pageSize) {
-        pageSize = Math.min(pageSize, MAX_PAGE_SIZE);
+        // 下限保护：pageSize<=0 时 ZREVRANGE 会退化为全量（公开接口可拉大V全量列表）
+        pageSize = Math.max(1, Math.min(pageSize, MAX_PAGE_SIZE));
         String key = RedisKeyConstants.FOLLOW_LIST + userId;
 
         // ZSet 按 score 倒序分页（reverseRangeWithScores）
@@ -275,7 +285,8 @@ public class FollowService {
      * @return 粉丝列表
      */
     public List<FollowVO> getFollowerList(Long userId, int page, int pageSize) {
-        pageSize = Math.min(pageSize, MAX_PAGE_SIZE);
+        // 下限保护：pageSize<=0 时 ZREVRANGE 会退化为全量（公开接口可拉大V全量列表）
+        pageSize = Math.max(1, Math.min(pageSize, MAX_PAGE_SIZE));
         String key = RedisKeyConstants.FOLLOW_FANS + userId;
 
         long start = (long) (page - 1) * pageSize;
@@ -428,16 +439,40 @@ public class FollowService {
         String oldFollowing = stringRedisTemplate.opsForValue().get(followingCountKey);
         String oldFollower = stringRedisTemplate.opsForValue().get(followerCountKey);
 
+        // 双源保护：ZSet 为 0 但计数器 > 0 时，先按 MySQL 重建 ZSet 再比对，
+        // 避免"ZSet 丢失"被误判为"关系为空"并把计数直接清零。
+        // 重建被跳过（超大列表 > RELATION_REBUILD_MAX）时两侧都标记为"未知"：不能据此写计数。
+        boolean followingUnknown = false;
+        boolean followerUnknown = false;
+        if (actualFollowing != null && actualFollowing == 0 && parseLongSafe(oldFollowing) > 0) {
+            int rebuilt = rebuildFollowingList(userId);
+            if (rebuilt > 0) {
+                actualFollowing = stringRedisTemplate.opsForZSet().zCard(followingKey);
+            } else if (rebuilt < 0) {
+                followingUnknown = true;
+                log.warn("[关注] 关注列表超重建上限, 本轮跳过计数校准: userId={}", userId);
+            }
+        }
+        if (actualFollower != null && actualFollower == 0 && parseLongSafe(oldFollower) > 0) {
+            int rebuilt = rebuildFollowerList(userId);
+            if (rebuilt > 0) {
+                actualFollower = stringRedisTemplate.opsForZSet().zCard(followerKey);
+            } else if (rebuilt < 0) {
+                followerUnknown = true;
+                log.warn("[关注] 粉丝列表超重建上限, 本轮跳过计数校准: userId={}", userId);
+            }
+        }
+
         boolean repaired = false;
         StringBuilder sb = new StringBuilder();
 
-        if (actualFollowing != null && !String.valueOf(actualFollowing).equals(oldFollowing)) {
+        if (!followingUnknown && actualFollowing != null && !String.valueOf(actualFollowing).equals(oldFollowing)) {
             stringRedisTemplate.opsForValue().set(followingCountKey, String.valueOf(actualFollowing));
             sb.append(String.format("关注数修复: %s → %d; ", oldFollowing, actualFollowing));
             repaired = true;
         }
 
-        if (actualFollower != null && !String.valueOf(actualFollower).equals(oldFollower)) {
+        if (!followerUnknown && actualFollower != null && !String.valueOf(actualFollower).equals(oldFollower)) {
             stringRedisTemplate.opsForValue().set(followerCountKey, String.valueOf(actualFollower));
             sb.append(String.format("粉丝数修复: %s → %d; ", oldFollower, actualFollower));
             repaired = true;
@@ -453,8 +488,12 @@ public class FollowService {
     public void syncCountersToCounterModule(Long userId) {
         long follow = getFollowingCount(userId);
         long follower = getFollowerCount(userId);
-        stringRedisTemplate.opsForValue().set(RedisKeyConstants.COUNTER + "2:" + userId + ":7", String.valueOf(follow));
-        stringRedisTemplate.opsForValue().set(RedisKeyConstants.COUNTER + "2:" + userId + ":6", String.valueOf(follower));
+        // 必须带 TTL：SET 会清除既有 TTL，原实现把 counter 模块维护的 30 天续期键改成永久 key（内存泄漏面）。
+        // 口径提示：这里仍是"绝对覆盖"（绕过 counter 的增量/去重语义），已登记为待改造项。
+        stringRedisTemplate.opsForValue().set(RedisKeyConstants.COUNTER + "2:" + userId + ":7",
+                String.valueOf(follow), java.time.Duration.ofDays(30));
+        stringRedisTemplate.opsForValue().set(RedisKeyConstants.COUNTER + "2:" + userId + ":6",
+                String.valueOf(follower), java.time.Duration.ofDays(30));
     }
 
     /**
@@ -489,6 +528,23 @@ public class FollowService {
         // 2. 获取 MySQL 中所有关注目标
         java.util.List<Long> mysqlIds = followMapper.selectFollowUserIdsByUserId(userId);
         java.util.Set<Long> mysqlSet = new java.util.HashSet<>(mysqlIds);
+
+        // 双源保护：Redis 侧缺失时不做删除——
+        // 1) 完全缺失（redis=0，MySQL 有数据）：MySQL 是唯一幸存副本 → 按 MySQL 反向重建 ZSet；
+        // 2) 部分缺失（低于阈值但非 0）：无法区分"Redis 丢数据"与"MySQL 有历史孤儿行"，
+        //    既不删除也不重建（避免把陈旧关系复活），只报告、留待人工核对。
+        if (isRedisSideMissing(redisScoreMap.size(), mysqlSet.size())) {
+            if (redisScoreMap.isEmpty()) {
+                int rebuilt = rebuildFollowingList(userId);
+                log.warn("[关注对账] Redis 侧完全缺失(redis=0, mysql={}), 跳过删除并重建关注列表: userId={}, rebuilt={}",
+                        mysqlSet.size(), userId, rebuilt);
+                return String.format("Redis 侧缺失保护: 跳过删除, 重建关注列表 %d 条", rebuilt);
+            }
+            log.warn("[关注对账] Redis 侧疑似部分缺失(redis={}, mysql={}), 跳过删除与重建待人工核对: userId={}",
+                    redisScoreMap.size(), mysqlSet.size(), userId);
+            return String.format("Redis 侧部分缺失保护: 跳过删除(redis=%d, mysql=%d)",
+                    redisScoreMap.size(), mysqlSet.size());
+        }
 
         int inserted = 0;
         int deleted = 0;
@@ -548,6 +604,20 @@ public class FollowService {
         java.util.List<Long> mysqlIds = followMapper.selectFollowerUserIdsByUserId(userId);
         java.util.Set<Long> mysqlSet = new java.util.HashSet<>(mysqlIds);
 
+        // 双源保护：同关注侧——完全缺失按 MySQL 重建，部分缺失只跳过删除（不做重建，避免复活陈旧关系）
+        if (isRedisSideMissing(redisScoreMap.size(), mysqlSet.size())) {
+            if (redisScoreMap.isEmpty()) {
+                int rebuilt = rebuildFollowerList(userId);
+                log.warn("[关注对账] Redis 侧完全缺失(redis=0, mysql={}), 跳过删除并重建粉丝列表: userId={}, rebuilt={}",
+                        mysqlSet.size(), userId, rebuilt);
+                return String.format("Redis 侧缺失保护: 跳过删除, 重建粉丝列表 %d 条", rebuilt);
+            }
+            log.warn("[关注对账] Redis 侧疑似部分缺失(redis={}, mysql={}), 跳过删除与重建待人工核对: userId={}",
+                    redisScoreMap.size(), mysqlSet.size(), userId);
+            return String.format("Redis 侧部分缺失保护: 跳过删除(redis=%d, mysql=%d)",
+                    redisScoreMap.size(), mysqlSet.size());
+        }
+
         int inserted = 0, deleted = 0;
         for (java.util.Map.Entry<Long, Double> entry : redisScoreMap.entrySet()) {
             Long followerId = entry.getKey();
@@ -574,6 +644,84 @@ public class FollowService {
         return inserted > 0 || deleted > 0
                 ? String.format("粉丝侧修复: 补插入%d条, 清孤儿行%d条", inserted, deleted)
                 : "粉丝侧一致，无需修复";
+    }
+
+    // ==================== 双源保护与重建 ====================
+
+    /**
+     * Redis 侧是否疑似数据缺失
+     * <p>
+     * 判据：MySQL 有数据，而 Redis 侧成员数不足 MySQL 的一半（含 Redis 为 0）。
+     * 命中后对账不做删除，防止 Redis 故障（丢 key / 批量淘汰 / 未开 AOF 重启）
+     * 演变成 MySQL 兜底数据被清空。
+     * </p>
+     */
+    private boolean isRedisSideMissing(int redisSize, int mysqlSize) {
+        if (mysqlSize <= 0) {
+            return false;
+        }
+        return redisSize < mysqlSize * RELATION_GUARD_MIN_RATIO;
+    }
+
+    /**
+     * 用 MySQL 兜底数据重建关注列表 ZSet（score = 关注时间）
+     *
+     * @return 重建条数；-1 表示超过单次重建上限被跳过
+     */
+    public int rebuildFollowingList(Long userId) {
+        return rebuildList(RedisKeyConstants.FOLLOW_LIST + userId,
+                followMapper.selectFollowRowsByUserId(userId), true);
+    }
+
+    /**
+     * 用 MySQL 兜底数据重建粉丝列表 ZSet（score = 关注时间）
+     *
+     * @return 重建条数；-1 表示超过单次重建上限被跳过
+     */
+    public int rebuildFollowerList(Long userId) {
+        return rebuildList(RedisKeyConstants.FOLLOW_FANS + userId,
+                followMapper.selectFollowerRowsByUserId(userId), false);
+    }
+
+    /**
+     * ZSet 批量重建：关注侧取 follow_user_id，粉丝侧取 user_id；score 用 created_at 还原关注时间
+     */
+    private int rebuildList(String key, List<Follow> rows, boolean followingSide) {
+        if (rows == null || rows.isEmpty()) {
+            return 0;
+        }
+        if (rows.size() > RELATION_REBUILD_MAX) {
+            log.warn("[关注对账] 重建超限跳过: key={}, rows={}, limit={}", key, rows.size(), RELATION_REBUILD_MAX);
+            return -1;
+        }
+        Set<ZSetOperations.TypedTuple<String>> tuples = new LinkedHashSet<>();
+        for (Follow row : rows) {
+            Long member = followingSide ? row.getFollowUserId() : row.getUserId();
+            if (member == null) {
+                continue;
+            }
+            double score = row.getCreatedAt() != null
+                    ? row.getCreatedAt().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                    : System.currentTimeMillis();
+            tuples.add(new DefaultTypedTuple<>(String.valueOf(member), score));
+        }
+        if (tuples.isEmpty()) {
+            return 0;
+        }
+        stringRedisTemplate.opsForZSet().add(key, tuples);
+        log.info("[关注对账] 重建列表: key={}, size={}", key, tuples.size());
+        return tuples.size();
+    }
+
+    private long parseLongSafe(String value) {
+        if (value == null || value.isBlank()) {
+            return 0L;
+        }
+        try {
+            return Long.parseLong(value.trim());
+        } catch (NumberFormatException e) {
+            return 0L;
+        }
     }
 
     /**
@@ -623,6 +771,8 @@ public class FollowService {
             Map<String, Object> event = new HashMap<>();
             event.put("followerUserId", followerUserId);
             event.put("followeeUserId", followeeUserId);
+            // 乱序治理：事件时间戳供消费端版本门拒绝"后到的旧事件"（与 like/favorite 同构）
+            event.put("actionTime", System.currentTimeMillis());
             event.put("action", action);
             org.apache.rocketmq.client.producer.SendResult sendResult = rocketMQTemplate.syncSend(
                     "SOCIAL_TOPIC:" + action,

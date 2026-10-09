@@ -115,19 +115,11 @@ jwt:
 im:
   websocket:
     path: /api/im/ws
-    allowed-origins: "*"
+    # 生产应通过 IM_ALLOWED_ORIGINS 收紧 Origin（WS ticket 一次性消费已降低 CSWSH 风险）
+    allowed-origins: ${IM_ALLOWED_ORIGINS:*}
     max-connections: 100000
     heartbeat-interval: 30000
     idle-timeout: 300000
-
-# RocketMQ 配置
-rocketmq:
-  name-server: 192.168.0.142:9876
-  producer:
-    group: im-producer-group
-    send-message-timeout: 3000
-  consumer:
-    group: im-consumer-group
 
 # Actuator 健康检查 + 指标暴露
 management:

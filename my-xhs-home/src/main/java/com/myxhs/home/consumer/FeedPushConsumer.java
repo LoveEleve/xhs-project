@@ -4,7 +4,6 @@ import com.alibaba.fastjson2.JSON;
 import com.myxhs.common.constants.RedisKeyConstants;
 import com.myxhs.common.metrics.BusinessMetrics;
 import com.myxhs.common.trace.MqTraceHelper;
-import com.myxhs.home.feign.AnalyticsFeignClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.common.message.MessageExt;
@@ -47,7 +46,6 @@ import java.util.Set;
 public class FeedPushConsumer implements RocketMQListener<MessageExt> {
 
     private final StringRedisTemplate stringRedisTemplate;
-    private final AnalyticsFeignClient analyticsFeignClient;
     private final BusinessMetrics businessMetrics;
 
     @Value("${home.feed.big-v-threshold:100000}")
@@ -91,6 +89,8 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
             // NoteDeleteConsumer 清理时设置 5min 标记（myxhs:note:deleted:{noteId}），此处拦截跳过
             if (Boolean.TRUE.equals(stringRedisTemplate.hasKey("myxhs:note:deleted:" + noteId))) {
                 log.warn("[Feed推送] 笔记已删除，跳过推送: noteId={}, authorId={}", noteId, authorId);
+                // 必须标记完成：否则 content 的补偿 Job 读到"Redis 无 completed + MySQL push_status≠2"会每 60s 重投
+                markPushCompleted(localMsgId);
                 businessMetrics.recordMqConsume("FEED_TOPIC", "feed-push-consumer-group", true);
                 return;
             }
@@ -104,6 +104,7 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
                 stringRedisTemplate.opsForZSet().add(outboxKey, String.valueOf(noteId), publishTime);
                 stringRedisTemplate.expire(outboxKey, Duration.ofDays(inboxMaxDays));
                 log.info("[Feed推送] 大V拉模式: authorId={}, noteId={}", authorId, noteId);
+                markPushCompleted(localMsgId);
             } else {
                 // 推模式：遍历粉丝列表，写入每个粉丝的收件箱（带进度记录）
                 pushToFollowers(authorId, noteId, publishTime, localMsgId);
@@ -147,7 +148,8 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
         int expireSeconds = inboxMaxDays * 24 * 3600;
 
         // 超大粉丝量保护：超过阈值写发件箱走拉模式，避免阻塞 MQ 消费线程
-        if (totalFollowers > 50000) {
+        // 阈值统一取配置（home.feed.big-v-threshold，默认 10 万）——此前硬编码 5 万，与配置双口径冲突
+        if (totalFollowers > bigVThreshold) {
             log.warn("[Feed推送] 粉丝量过大({}), 写入发件箱走拉模式: authorId={}, noteId={}",
                     totalFollowers, authorId, noteId);
             String outboxKey = RedisKeyConstants.FEED_OUTBOX + authorId;
@@ -217,15 +219,28 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
             }
         }
 
-        // 推送完成，标记完成状态
-        if (localMsgId != null) {
-            String progressKey = PUSH_PROGRESS_PREFIX + localMsgId;
-            stringRedisTemplate.opsForHash().put(progressKey, "status", "completed");
-            stringRedisTemplate.expire(progressKey, Duration.ofHours(1));
-        }
+        // 推送完成，标记完成状态（复用 helper）
+        markPushCompleted(localMsgId);
 
         log.info("[Feed推送] 推模式完成: authorId={}, noteId={}, pushed={}/{}, localMsgId={}",
                 authorId, noteId, pushed, totalFollowers, localMsgId);
+    }
+
+    /**
+     * 标记"该推送已完成"（Redis 进度 + MySQL push_status 兜底由 content 补偿 Job 读取）
+     * <p>三条路径都要标记：正常推完、大V拉模式、已删笔记早退；漏标记会让补偿 Job 死循环重投。</p>
+     */
+    private void markPushCompleted(Long localMsgId) {
+        if (localMsgId == null) {
+            return;
+        }
+        try {
+            String progressKey = PUSH_PROGRESS_PREFIX + localMsgId;
+            stringRedisTemplate.opsForHash().put(progressKey, "status", "completed");
+            stringRedisTemplate.expire(progressKey, Duration.ofHours(1));
+        } catch (Exception e) {
+            log.warn("[Feed推送] 标记完成失败(补偿 Job 会靠 MySQL push_status 兜底): localMsgId={}", localMsgId, e);
+        }
     }
 
     /**

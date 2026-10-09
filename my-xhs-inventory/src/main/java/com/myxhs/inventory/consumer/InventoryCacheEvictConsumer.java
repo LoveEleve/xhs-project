@@ -43,12 +43,13 @@ import java.util.concurrent.TimeUnit;
  * }
  * </p>
  * <p>
- * 消费策略：
- * 1. 只处理 t_inventory 表的 UPDATE/INSERT 事件（DELETE 事件删除所有缓存 Key）
- * 2. 从 data 中提取 sku_id，删除该 SKU 的所有 Redis 缓存 Key
- * 3. 删除的 Key 包括：总库存 Key、所有分桶 Key、分桶数量 Key
- * 4. 使用 Canal es（event sequence）做版本号，防止乱序消费
- * 5. 删除操作天然幂等（删除不存在的 Key 不会报错）
+ * 消费策略（2026-09-27 更新，与实现对齐 = 回声保护）：
+ * 1. 只处理 t_inventory 表的变更；
+ * 2. **UPDATE/INSERT 事件跳过不删**：本模块是 L1(Redis) 权威架构，L2 的 MySQL 写入是 L1 操作的回声，
+ *    Redis 已是更新数据；删除会导致 preDeduct "未初始化" 与滞后快照回填 → 超卖（T-066 修复沉淀）；
+ * 3. **仅 DELETE 事件**完全删除该 SKU 的 Key（总库存/分桶/分桶数量）；
+ * 4. out-of-band 的 MySQL 直改（管理员 SQL）通过 /api/inventory/reinit 显式重建；
+ * 5. Canal es（event sequence）版本号防乱序（DELETE 路径）。
  * </p>
  * <p>
  * 版本号防乱序机制：

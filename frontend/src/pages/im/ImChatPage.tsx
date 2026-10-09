@@ -22,11 +22,46 @@ export default function ImChatPage() {
   const peerRef = useRef(peer);
   peerRef.current = peer;
 
+  // ===== IM 客户端契约（服务端为 at-least-once 投递）=====
+  // 1. 收到任何 CHAT / OFFLINE 消息都必须回 ACK(msgId)：服务端据此清理离线持久副本，
+  //    不回 ACK 会让离线副本按 7 天 TTL 反复补发；
+  // 2. 必须按 msgId 去重：重复投递（重连补发/接收侧删除失败）是设计内的可能；
+  // 3. 服务端在"推送成功"时也会删副本，ACK 是第二条保险。
+  const seenMsgIdsRef = useRef<Set<string>>(new Set());
+  const pendingTempIdsRef = useRef<string[]>([]);
+
+  const sendAck = (msgId: unknown) => {
+    if (msgId === undefined || msgId === null) return;
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ ver: 1, type: 'ACK', msgId }));
+    }
+  };
+
+  const appendIncoming = (items: ImMessageVO[]) => {
+    setMessages(prev => {
+      const next = [...prev];
+      for (const it of items) {
+        const key = String(it.id);
+        if (!seenMsgIdsRef.current.has(key)) {
+          seenMsgIdsRef.current.add(key);
+          next.push(it);
+        }
+      }
+      return next;
+    });
+  };
+
   useEffect(() => {
     if (!peer) return;
     setLoading(true);
     getImMessages(peer)
-      .then((resp) => { setMessages(resp.data.data.records || []); setLoading(false); })
+      .then((resp) => {
+        const history = resp.data.data.records || [];
+        history.forEach((m: any) => seenMsgIdsRef.current.add(String(m.id)));
+        setMessages(history);
+        setLoading(false);
+      })
       .catch((e) => { message.error(e.response?.data?.message || '加载消息失败'); setLoading(false); });
 
     // 连接 WebSocket
@@ -54,12 +89,44 @@ export default function ImChatPage() {
         ws.onmessage = (e) => {
           try {
             const data = JSON.parse(e.data);
-            if (data.type === 'CHAT' && String(data.from) === peerRef.current) {
-              setMessages(prev => [...prev, {
-                id: data.msgId, senderId: String(data.from), receiverId: String(userId),
-                content: data.content, msgType: data.msgType || 0, createdAt: new Date().toISOString(),
-              }]);
-              markImRead(peerRef.current).catch(() => {});
+            if (data.type === 'CHAT') {
+              if (String(data.from) === peerRef.current) {
+                appendIncoming([{
+                  id: data.msgId, senderId: String(data.from), receiverId: String(userId),
+                  content: data.content, msgType: data.msgType || 0, createdAt: new Date().toISOString(),
+                }]);
+                markImRead(peerRef.current).catch(() => {});
+              }
+              // 其他会话的消息也要 ACK（否则其离线副本会反复补发）
+              sendAck(data.msgId);
+            } else if (data.type === 'OFFLINE') {
+              const all = (data.msgs || []) as any[];
+              const incoming: ImMessageVO[] = all
+                .filter(m => String(m.from) === peerRef.current)
+                .map(m => ({
+                  id: m.msgId, senderId: String(m.from), receiverId: String(userId),
+                  content: m.content, msgType: m.msgType || 0,
+                  createdAt: new Date(m.timestamp || Date.now()).toISOString(),
+                }));
+              if (incoming.length) {
+                appendIncoming(incoming);
+                markImRead(peerRef.current).catch(() => {});
+              }
+              all.forEach(m => sendAck(m.msgId));
+            } else if (data.type === 'ACK') {
+              // 发送侧：把乐观消息的临时 id 换成服务端 msgId（按发送顺序配对）
+              const tempId = pendingTempIdsRef.current.shift();
+              const realId = data.msgId !== undefined && data.msgId !== null ? String(data.msgId) : '';
+              if (tempId && realId) {
+                seenMsgIdsRef.current.add(realId);
+                setMessages(prev => prev.map(m => (String(m.id) === tempId ? { ...m, id: realId } : m)));
+              }
+            } else if (data.type === 'NACK') {
+              message.error(`发送失败：${data.reason || '请重试'}`);
+              const tempId = pendingTempIdsRef.current.shift();
+              if (tempId) {
+                setMessages(prev => prev.filter(m => String(m.id) !== tempId));
+              }
             }
           } catch { /* ignore */ }
         };
@@ -90,8 +157,10 @@ export default function ImChatPage() {
       if (content) message.warning(connected ? '连接未就绪' : '连接已断开');
       return;
     }
+    const tempId = `temp-${Date.now()}`;
+    pendingTempIdsRef.current.push(tempId);
     const temp: ImMessageVO = {
-      id: String(Date.now()), senderId: String(userId), receiverId: peer,
+      id: tempId, senderId: String(userId), receiverId: peer,
       content, msgType: 0, createdAt: new Date().toISOString(),
     };
     setMessages(prev => [...prev, temp]);

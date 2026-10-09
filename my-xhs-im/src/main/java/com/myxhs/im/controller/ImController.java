@@ -45,6 +45,7 @@ public class ImController {
     private final ImWebSocketHandler webSocketHandler;
     private final OnlineRouteService onlineRouteService;
     private final AccessTokenGuard accessTokenGuard;
+    private final org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
 
     @org.springframework.beans.factory.annotation.Value("${jwt.secret:${IM_JWT_SECRET:}}")
     private String jwtSecret;
@@ -70,6 +71,11 @@ public class ImController {
     public R<Map<String, String>> createTicket(@RequestHeader("X-User-Id") Long userId) {
         // 生成短期 JWT ticket（5 分钟有效期）
         String ticket = JwtUtil.generateToken(String.valueOf(userId), "ws_ticket", 5 * 60 * 1000L, jwtSecret);
+        // 一次性票据：ticket 只能出现在 WS URL（浏览器 WS API 不能带 Header）→ 会进访问日志，
+        // 登记 jti 供握手时 GETDEL 消费，防日志泄露后被重放建立连接
+        String jti = JwtUtil.parseToken(ticket, jwtSecret).getId();
+        stringRedisTemplate.opsForValue().set("myxhs:im:ticket:" + jti, String.valueOf(userId),
+                5, java.util.concurrent.TimeUnit.MINUTES);
         return R.ok(Map.of("ticket", ticket));
     }
 
@@ -81,7 +87,9 @@ public class ImController {
             @RequestHeader("X-User-Id") Long userId,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
-        size = Math.min(size, 50);
+        // page 下限 clamp（size 已 clamp；page<=0 时响应页码与实际不符）
+        page = Math.max(1, page);
+        size = Math.max(1, Math.min(size, 50));
 
         Page<ChatUserRelation> pageResult = chatService.getConversationList(userId, page, size);
 
@@ -111,7 +119,8 @@ public class ImController {
             @PathVariable Long peerId,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "50") int size) {
-        size = Math.min(size, 100);
+        page = Math.max(1, page);
+        size = Math.max(1, Math.min(size, 100));
 
         Page<ChatMessage> pageResult = chatService.getMessageHistory(userId, peerId, page, size);
 
@@ -131,6 +140,18 @@ public class ImController {
         result.put("total", pageResult.getTotal());
         result.put("page", page);
         return R.ok(result);
+    }
+
+    /**
+     * 删除会话（软删，仅本人侧；对方发言会重新激活）
+     */
+    @DeleteMapping("/conversations/{peerId}")
+    @RateLimit(prefix = "im:conversation:delete", maxRequests = 20, windowSeconds = 60, perUser = true)
+    public R<Void> deleteConversation(
+            @RequestHeader("X-User-Id") Long userId,
+            @PathVariable Long peerId) {
+        chatService.deleteConversation(userId, peerId);
+        return R.ok();
     }
 
     /**

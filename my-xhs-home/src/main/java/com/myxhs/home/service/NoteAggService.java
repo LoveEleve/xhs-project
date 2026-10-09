@@ -167,19 +167,31 @@ public class NoteAggService {
         // 2a. 作者信息
         CompletableFuture<Map<String, Object>> authorFuture = CompletableFuture
                 .supplyAsync(() -> {
-                    if (authorId == null) return Collections.<String, Object>emptyMap();
-                    R<Map<String, Object>> r = userFeignClient.getUserPublicInfo(authorId);
-                    return (r != null && r.isSuccess() && r.getData() != null) ? r.getData() : Collections.emptyMap();
+                    // 异常必须在此兜住：否则 future 异常完成 → 后续 getNow 抛 CompletionException → 500，
+                    // 与"单路失败仅降级"的聚合语义不一致
+                    try {
+                        if (authorId == null) return Collections.<String, Object>emptyMap();
+                        R<Map<String, Object>> r = userFeignClient.getUserPublicInfo(authorId);
+                        return (r != null && r.isSuccess() && r.getData() != null) ? r.getData() : Collections.emptyMap();
+                    } catch (Exception e) {
+                        log.warn("[笔记聚合] 作者信息获取失败(降级): authorId={}", authorId, e);
+                        return Collections.<String, Object>emptyMap();
+                    }
                 }, batchFeignPool);
 
         // 2b. 关注关系
         CompletableFuture<Map<String, Boolean>> relationFuture = CompletableFuture
                 .supplyAsync(() -> {
-                    if (userId == null || authorId == null || userId.equals(authorId)) {
+                    try {
+                        if (userId == null || authorId == null || userId.equals(authorId)) {
+                            return Collections.<String, Boolean>emptyMap();
+                        }
+                        R<Map<String, Boolean>> r = analyticsFeignClient.checkRelation(userId, authorId);
+                        return (r != null && r.isSuccess() && r.getData() != null) ? r.getData() : Collections.emptyMap();
+                    } catch (Exception e) {
+                        log.warn("[笔记聚合] 关注关系获取失败(降级): userId={}, authorId={}", userId, authorId, e);
                         return Collections.<String, Boolean>emptyMap();
                     }
-                    R<Map<String, Boolean>> r = analyticsFeignClient.checkRelation(userId, authorId);
-                    return (r != null && r.isSuccess() && r.getData() != null) ? r.getData() : Collections.emptyMap();
                 }, batchFeignPool);
 
         // 2c. 热门评论（前 3 条）
@@ -188,7 +200,11 @@ public class NoteAggService {
                     try {
                         R<Map<String, Object>> r = contentFeignClient.getCommentPage(noteId, 1, 3);
                         if (r != null && r.isSuccess() && r.getData() != null) {
-                            Object list = r.getData().get("list");
+                            // content 的 PageResult 字段是 records（此前读 list 导致热门评论恒空）
+                            Object list = r.getData().get("records");
+                            if (!(list instanceof List)) {
+                                list = r.getData().get("list");   // 兼容旧字段名
+                            }
                             if (list instanceof List) {
                                 return (List<Map<String, Object>>) list;
                             }

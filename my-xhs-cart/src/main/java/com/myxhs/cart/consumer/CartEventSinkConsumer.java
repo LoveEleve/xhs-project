@@ -10,6 +10,7 @@ import com.myxhs.common.trace.MqTraceHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.common.message.MessageExt;
+import org.apache.rocketmq.spring.annotation.ConsumeMode;
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
 import org.springframework.dao.DuplicateKeyException;
@@ -39,6 +40,7 @@ import java.time.ZoneId;
         topic = "CART_TOPIC",
         consumerGroup = "cart-event-sink-group",
         selectorExpression = "*",
+        consumeMode = ConsumeMode.ORDERLY,
         maxReconsumeTimes = 3
 )
 public class CartEventSinkConsumer implements RocketMQListener<MessageExt> {

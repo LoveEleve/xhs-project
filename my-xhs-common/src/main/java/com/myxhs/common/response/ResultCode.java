@@ -90,6 +90,7 @@ public enum ResultCode {
     COUPON_EXPIRED(30015, "优惠券已过期"),
     COUPON_NOT_AVAILABLE(30016, "优惠券不满足使用条件"),
     PAYMENT_FAIL(30017, "支付失败"),
+    SKU_STOCK_NOT_INITIALIZED(30018, "SKU库存未初始化"),
 
     // ==================== 社交模块 41001~49999 ====================
     ALREADY_FOLLOWED(41001, "已关注该用户"),
@@ -144,7 +145,9 @@ public enum ResultCode {
         }
         String result = this.message;
         for (Object arg : args) {
-            result = result.replaceFirst("\\{\\}", arg != null ? arg.toString() : "null");
+            // 用 quoteReplacement：参数含 $ 或 \ 时 replaceFirst 会抛 IllegalArgumentException（业务错误变 500）
+            result = result.replaceFirst("\\{\\}",
+                    java.util.regex.Matcher.quoteReplacement(arg != null ? arg.toString() : "null"));
         }
         return result;
     }

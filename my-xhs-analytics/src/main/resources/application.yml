@@ -113,6 +113,9 @@ rocketmq:
   name-server: 192.168.0.142:9876
   producer:
     group: analytics-producer-group
+    # P2/2026-09-27：显式固定客户端默认重试（此前为隐式默认 2 次）；"发送超时≠失败"，双发靠消费者幂等+对账兜底
+    retry-times-when-send-failed: 2
+    retry-times-when-send-async-failed: 2
     send-message-timeout: 3000
 
 # Actuator 健康检查 + 指标暴露
@@ -146,6 +149,8 @@ management:
 # XXL-Job 调度中心配置
 xxl:
   job:
+    # 与其它服务一致：executor 由 common 的 XxlJobConfig 条件装配（xxl.job.enabled=true）
+    enabled: true
     admin:
       addresses: http://192.168.0.142:18080/xxl-job-admin
     accessToken: my-xhs-xxl-job-token-2026

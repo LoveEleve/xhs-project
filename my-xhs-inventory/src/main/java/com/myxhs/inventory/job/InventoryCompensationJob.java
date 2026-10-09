@@ -29,11 +29,15 @@ import java.util.concurrent.TimeUnit;
 public class InventoryCompensationJob {
 
     private final InventoryMapper inventoryMapper;
+    private final InventoryService inventoryService;
     private final StringRedisTemplate stringRedisTemplate;
     private final DefaultRedisScript<Long> releaseScript;
     private final RedissonClient redissonClient;
 
     private static final String LOCK_KEY = "lock:job:inventory:compensation";
+    /** 补偿类型：1-预扣回滚 2-退款回补 */
+    private static final int COMPENSATION_TYPE_REFUND_RESTORE = 2;
+
     private static final int MAX_RETRY = 3;
     private static final int BATCH_SIZE = 50;
 
@@ -71,7 +75,22 @@ public class InventoryCompensationJob {
             Long orderId = ((Number) row.get("order_id")).longValue();
             Long skuId = ((Number) row.get("sku_id")).longValue();
 
+            int type = row.get("type") == null ? 1 : ((Number) row.get("type")).intValue();
             try {
+                if (type == COMPENSATION_TYPE_REFUND_RESTORE) {
+                    // 退款回补补偿：调用 refundRestore（累计正增量幂等，重复重试安全）
+                    Long userId = row.get("user_id") == null ? null : ((Number) row.get("user_id")).longValue();
+                    int quantity = ((Number) row.get("quantity")).intValue();
+                    var req = new com.myxhs.inventory.dto.request.RefundRestoreRequest();
+                    req.setOrderId(orderId);
+                    req.setSkuId(skuId);
+                    req.setQuantity(quantity);
+                    req.setUserId(userId);
+                    inventoryService.refundRestore(req);
+                    inventoryMapper.markCompensationResolved(id);
+                    log.info("[库存补偿] 退款回补重试成功: orderId={}, skuId={}, qty={}", orderId, skuId, quantity);
+                    continue;
+                }
                 String predeductKey = "inventory:prededuct:" + orderId;
                 // 【F-037】从预扣 hash 读取实际来源桶号，而非固定 bucket 0
                 Object bucketNoObj = stringRedisTemplate.opsForHash().get(predeductKey, skuId + ":bucket");

@@ -86,6 +86,7 @@ ON DUPLICATE KEY UPDATE description = VALUES(description);
 CREATE DATABASE IF NOT EXISTS my_xhs_analytics DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE my_xhs_analytics;
 
+
 CREATE TABLE IF NOT EXISTS t_follow (
     id              BIGINT   NOT NULL COMMENT 'ID',
     user_id         BIGINT   NOT NULL COMMENT '用户ID',
@@ -144,6 +145,7 @@ CREATE TABLE IF NOT EXISTS t_notification (
     PRIMARY KEY (id),
     INDEX idx_user_id_created (user_id, created_at DESC),
     INDEX idx_user_type_read (user_id, type, is_read),
+    INDEX idx_created_at (created_at),
     UNIQUE INDEX uk_aggregate (user_id, type, target_id, notify_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='通知表';
 
@@ -199,7 +201,7 @@ USE my_xhs_im;
 
 CREATE TABLE IF NOT EXISTS t_chat_message (
     id              BIGINT        NOT NULL COMMENT 'ID',
-    conversation_id BIGINT        NOT NULL COMMENT '会话ID = min(A,B)<<32|max(A,B)',
+    conversation_id BIGINT        NOT NULL COMMENT '会话ID（首条消息分配雪花ID并写入 t_chat_user_relation，双方复用；勿用哈希拼接）',
     sender_id       BIGINT        NOT NULL COMMENT '发送者ID',
     receiver_id     BIGINT        NOT NULL COMMENT '接收者ID',
     content         VARCHAR(2048) NOT NULL COMMENT '消息内容',
@@ -231,7 +233,8 @@ CREATE TABLE IF NOT EXISTS t_chat_user_relation (
     PRIMARY KEY (id),
     UNIQUE INDEX uk_user_peer (user_id, peer_id),
     INDEX idx_user_id (user_id),
-    INDEX idx_updated_at (updated_at)
+    INDEX idx_updated_at (updated_at),
+    INDEX idx_user_updated (user_id, updated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户聊天关系表';
 
 -- =====================================================================
@@ -241,7 +244,7 @@ CREATE TABLE IF NOT EXISTS t_chat_user_relation (
 -- 内容服务
 CREATE DATABASE IF NOT EXISTS my_xhs_content DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE my_xhs_content;
-
+-- 用户行为记录表（P1 修复 2026-08-13：原建在 my_xhs_analytics，但 search 服务数据源=content 库 → 写入 1146 失败、行为链路失效）
 CREATE TABLE IF NOT EXISTS t_user_behavior (
     id            BIGINT   NOT NULL COMMENT 'ID',
     user_id       BIGINT   NOT NULL COMMENT '用户ID',
@@ -257,6 +260,7 @@ CREATE TABLE IF NOT EXISTS t_user_behavior (
     INDEX idx_behavior_type (behavior_type),
     INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户行为记录表（search 数据源=content 库）';
+
 
 CREATE TABLE IF NOT EXISTS t_note (
     id            BIGINT       NOT NULL COMMENT 'ID',
@@ -456,9 +460,10 @@ CREATE TABLE IF NOT EXISTS t_cart_event (
     msg_id       VARCHAR(64)  DEFAULT NULL COMMENT 'MQ消息ID',
     created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (id),
-    UNIQUE KEY uk_msg_id (msg_id),
     INDEX idx_user_id (user_id),
-    INDEX idx_sku_id (sku_id)
+    INDEX idx_sku_id (sku_id),
+    INDEX idx_created_at (created_at),
+    UNIQUE INDEX uk_msg_id (msg_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='购物车事件流水(append-only)';
 
 -- 优惠券服务
@@ -506,11 +511,14 @@ CREATE TABLE IF NOT EXISTS t_coupon_outbox (
     user_id         BIGINT       NOT NULL COMMENT '用户ID',
     template_id     BIGINT       NOT NULL COMMENT '优惠券模板ID',
     claim_no        VARCHAR(64)  NOT NULL COMMENT '幂等流水号(UUID)',
-    status          TINYINT      NOT NULL DEFAULT 0 COMMENT '0=待发送 1=已发送',
+    status          TINYINT      NOT NULL DEFAULT 0 COMMENT '0=待发送 1=已发送 2=已作废（发送失败且已回滚Redis，禁止补发）',
+    retry_count     INT          NOT NULL DEFAULT 0 COMMENT '补发失败次数（指数退避+抖动，P2/2026-09-27）',
+    next_retry_time DATETIME     NULL COMMENT '下次可补发时间（NULL=立即可发）',
     created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (id),
     UNIQUE INDEX uk_claim_no (claim_no),
-    INDEX idx_status_created (status, created_at)
+    INDEX idx_status_created (status, created_at),
+    INDEX idx_status_next_retry (status, next_retry_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='优惠券Outbox表';
 
 -- 本地消息表（Feed发送端可靠性保障）— 放在 my_xhs_content 库
@@ -524,10 +532,12 @@ CREATE TABLE IF NOT EXISTS t_local_message (
     push_status     TINYINT      NOT NULL DEFAULT 0 COMMENT '推送状态：0=未推送 1=推送中 2=已推送 3=推送失败',
     push_cursor     INT          NOT NULL DEFAULT 0 COMMENT '推送游标（已推送到第几个粉丝）',
     push_total      INT          NOT NULL DEFAULT 0 COMMENT '总粉丝数',
+    push_next_retry_time DATETIME NULL COMMENT '下次可补偿推送时间（指数退避+抖动，P3/2026-09-27）',
     created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (id),
     INDEX idx_status_retry (status, retry_count, created_at),
-    INDEX idx_push_status (push_status)
+    INDEX idx_push_status (push_status),
+    INDEX idx_push_status_next_retry (push_status, push_next_retry_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='本地消息表(Feed可靠性保障)';
 
 CREATE TABLE IF NOT EXISTS t_note_event (
@@ -563,6 +573,39 @@ CREATE TABLE IF NOT EXISTS t_order_no_mapping (
     INDEX idx_order_id (order_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单号映射表（非分片键查询路由）';
 
+-- 售后单（退货退款/仅退款）——与订单号映射同库（my_xhs_order 公共库，不走分片）
+-- 决策：售后单量级小、以 order_no / aftersale_no 为主查询键，先不分片；扩容路径=按 user_id 分片（与订单同规则）
+CREATE TABLE IF NOT EXISTS t_aftersale (
+    id                BIGINT        NOT NULL AUTO_INCREMENT COMMENT '自增ID',
+    aftersale_no      VARCHAR(32)   NOT NULL COMMENT '售后单号',
+    order_id          BIGINT        NOT NULL COMMENT '订单ID',
+    order_no          VARCHAR(64)   NOT NULL COMMENT '订单号',
+    user_id           BIGINT        NOT NULL COMMENT '用户ID',
+    sku_id            BIGINT        NOT NULL COMMENT 'SKU ID',
+    sku_name          VARCHAR(256)  DEFAULT NULL COMMENT 'SKU名称快照',
+    type              TINYINT       NOT NULL COMMENT '类型：1-仅退款 2-退货退款',
+    status            TINYINT       NOT NULL DEFAULT 0 COMMENT '状态：0-待审核 1-已同意 2-已拒绝 3-退款中 4-已完成 5-已取消 6-退款失败',
+    apply_quantity    INT           NOT NULL COMMENT '申请数量',
+    item_amount       DECIMAL(10,2) NOT NULL COMMENT '申请数量对应商品金额（未扣优惠）',
+    discount_share    DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT '优惠分摊金额',
+    refund_amount     DECIMAL(10,2) NOT NULL COMMENT '应退金额=商品金额-优惠分摊',
+    reason            VARCHAR(256)  DEFAULT NULL COMMENT '申请原因',
+    reject_reason     VARCHAR(256)  DEFAULT NULL COMMENT '驳回原因',
+    return_waybill    VARCHAR(64)   DEFAULT NULL COMMENT '退货物流单号（type=2）',
+    refund_no         VARCHAR(64)   DEFAULT NULL COMMENT '支付域退款单号（回执）',
+    restock_status    TINYINT       NOT NULL DEFAULT 0 COMMENT '库存回补状态：0-待回补 1-已回补',
+    retry_count       INT           NOT NULL DEFAULT 0 COMMENT '退款重试次数',
+    applied_at        DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '申请时间',
+    audited_at        DATETIME      DEFAULT NULL COMMENT '审核时间',
+    finished_at       DATETIME      DEFAULT NULL COMMENT '完成时间',
+    updated_at        DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (id),
+    UNIQUE INDEX uk_aftersale_no (aftersale_no),
+    UNIQUE INDEX uk_order_sku_type (order_id, sku_id, type),
+    INDEX idx_user_applied (user_id, applied_at),
+    INDEX idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='售后单（仅退款/退货退款）';
+
 -- 支付服务
 CREATE DATABASE IF NOT EXISTS my_xhs_payment DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE my_xhs_payment;
@@ -582,7 +625,8 @@ CREATE TABLE IF NOT EXISTS t_payment (
     PRIMARY KEY (id),
     UNIQUE INDEX uk_payment_no (payment_no),
     INDEX idx_order_id (order_id),
-    INDEX idx_user_id (user_id)
+    INDEX idx_user_id (user_id),
+    INDEX idx_pay_type_paid_at (pay_type, paid_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='支付记录表';
 
 CREATE TABLE IF NOT EXISTS t_refund (
@@ -605,7 +649,8 @@ CREATE TABLE IF NOT EXISTS t_refund (
     INDEX idx_payment_id (payment_id),
     INDEX idx_order_id (order_id),
     INDEX idx_user_id (user_id),
-    INDEX idx_status (status)
+    INDEX idx_status (status),
+    INDEX idx_status_success_at (status, success_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='退款单表';
 
 CREATE TABLE IF NOT EXISTS t_payment_event (
@@ -622,6 +667,72 @@ CREATE TABLE IF NOT EXISTS t_payment_event (
     INDEX idx_payment_no (payment_no),
     INDEX idx_order_id (order_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='支付事件流水(append-only)';
+
+-- 结算日账单（日切 + 幂等重跑）：唯一键 (bill_date, channel) 保证一天一渠道一张
+CREATE TABLE IF NOT EXISTS t_settlement_bill (
+    id              BIGINT        NOT NULL AUTO_INCREMENT COMMENT '自增ID',
+    bill_date       DATE          NOT NULL COMMENT '账单日期（T-1 自然日）',
+    channel         TINYINT       NOT NULL COMMENT '渠道：1-支付宝 2-微信 99-Mock',
+    pay_count       INT           NOT NULL DEFAULT 0 COMMENT '成功收款笔数',
+    pay_amount      DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '成功收款金额',
+    refund_count    INT           NOT NULL DEFAULT 0 COMMENT '成功退款笔数',
+    refund_amount   DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '成功退款金额',
+    net_amount      DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '净额=收款-退款',
+    fee_rate        DECIMAL(6,4)  NOT NULL DEFAULT 0 COMMENT '手续费率（如 0.0060）',
+    fee_amount      DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '手续费=净额×费率',
+    settle_amount   DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '应结算=净额-手续费',
+    status          TINYINT       NOT NULL DEFAULT 0 COMMENT '状态：0-初始 1-已生成 2-已对账 3-有差异 4-作废',
+    run_no          INT           NOT NULL DEFAULT 0 COMMENT '重跑次数',
+    diff_count      INT           NOT NULL DEFAULT 0 COMMENT '差异笔数（对账后回填）',
+    diff_amount     DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '差异金额合计（本地-渠道）',
+    generated_at    DATETIME      DEFAULT NULL COMMENT '生成时间',
+    reconciled_at   DATETIME      DEFAULT NULL COMMENT '对账时间',
+    remark          VARCHAR(256)  DEFAULT NULL COMMENT '备注',
+    created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_bill_date_channel (bill_date, channel),
+    INDEX idx_bill_date (bill_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='结算日账单（日切+幂等重跑）';
+
+-- 对账差异（挂账）：唯一键支持重复对账幂等（已处理的差异不会被覆盖丢失）
+CREATE TABLE IF NOT EXISTS t_settlement_diff (
+    id              BIGINT        NOT NULL AUTO_INCREMENT COMMENT '自增ID',
+    bill_date       DATE          NOT NULL COMMENT '账单日期',
+    channel         TINYINT       NOT NULL COMMENT '渠道',
+    biz_type        TINYINT       NOT NULL COMMENT '业务类型：1-支付 2-退款',
+    diff_type       TINYINT       NOT NULL COMMENT '差异类型：1-本地有渠道无 2-渠道有本地无 3-金额不一致',
+    local_no        VARCHAR(64)   NOT NULL DEFAULT '' COMMENT '本地单号（支付/退款单号）',
+    channel_no      VARCHAR(64)   NOT NULL DEFAULT '' COMMENT '渠道流水号',
+    local_amount    DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '本地金额',
+    channel_amount  DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '渠道金额',
+    diff_amount     DECIMAL(12,2) NOT NULL DEFAULT 0 COMMENT '差异金额=本地-渠道',
+    status          TINYINT       NOT NULL DEFAULT 0 COMMENT '状态：0-待处理 1-已处理 2-已忽略（自动收敛）',
+    handle_remark   VARCHAR(256)  DEFAULT NULL COMMENT '处理说明',
+    handled_at      DATETIME      DEFAULT NULL COMMENT '处理时间',
+    created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_diff_key (bill_date, channel, biz_type, diff_type, local_no, channel_no),
+    INDEX idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='结算对账差异（挂账）';
+
+-- 渠道流水（对账文件落地）：真实渠道为文件（FTP/SFTP 下载），此处落表后比对
+CREATE TABLE IF NOT EXISTS t_channel_flow (
+    id              BIGINT        NOT NULL AUTO_INCREMENT COMMENT '自增ID',
+    bill_date       DATE          NOT NULL COMMENT '账单日期',
+    channel         TINYINT       NOT NULL COMMENT '渠道',
+    channel_no      VARCHAR(64)   NOT NULL COMMENT '渠道流水号（对账单内唯一）',
+    biz_type        TINYINT       NOT NULL COMMENT '业务类型：1-支付 2-退款',
+    local_no        VARCHAR(64)   NOT NULL DEFAULT '' COMMENT '渠道回传的商户单号（我方支付/退款单号）',
+    amount          DECIMAL(12,2) NOT NULL COMMENT '金额',
+    trade_time      DATETIME      NOT NULL COMMENT '渠道交易时间',
+    source          VARCHAR(32)   NOT NULL DEFAULT 'import' COMMENT '来源：import-导入 simulate-演练生成',
+    created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_channel_no (channel, channel_no),
+    INDEX idx_bill (bill_date, channel)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='渠道流水（对账文件落地）';
 
 -- ==================== 分片数据库 0 ====================
 CREATE DATABASE IF NOT EXISTS my_xhs_order_0 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -859,10 +970,13 @@ CREATE TABLE IF NOT EXISTS t_inventory_outbox (
     quantity    INT         NOT NULL COMMENT '数量',
     action      VARCHAR(32) NOT NULL COMMENT '事件类型: PRE_DEDUCT/CONFIRM/RELEASE',
     status      TINYINT     NOT NULL DEFAULT 0 COMMENT '0-待发送 1-已发送',
+    retry_count     INT      NOT NULL DEFAULT 0 COMMENT '补发失败次数（指数退避+抖动，P2/2026-09-27）',
+    next_retry_time DATETIME NULL COMMENT '下次可补发时间（NULL=立即可发）',
     created_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (id),
     UNIQUE INDEX uk_order_sku_action (order_id, sku_id, action),
-    INDEX idx_status_created (status, created_at)
+    INDEX idx_status_created (status, created_at),
+    INDEX idx_status_next_retry (status, next_retry_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='库存事件Outbox表';
 
 -- 库存回滚失败补偿表（回滚失败时记录，Job 自动重试，超限转人工）
@@ -871,6 +985,8 @@ CREATE TABLE IF NOT EXISTS t_inventory_compensation (
     order_id    BIGINT       NOT NULL COMMENT '订单ID',
     sku_id      BIGINT       NOT NULL COMMENT 'SKU ID',
     quantity    INT          NOT NULL COMMENT '数量',
+    type        TINYINT      NOT NULL DEFAULT 1 COMMENT '补偿类型：1-预扣回滚 2-退款回补',
+    user_id     BIGINT       DEFAULT NULL COMMENT '用户ID（退款回补按用户路由库存桶；预扣回滚可空）',
     fail_reason VARCHAR(512) NOT NULL DEFAULT '' COMMENT '失败原因',
     status      TINYINT      NOT NULL DEFAULT 0 COMMENT '0-待处理 1-已处理 2-重试超限(转人工)',
     retry_count INT          NOT NULL DEFAULT 0 COMMENT '已重试次数',

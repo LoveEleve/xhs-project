@@ -11,6 +11,7 @@ import com.myxhs.common.trace.MqTraceHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.common.message.MessageExt;
+import org.apache.rocketmq.spring.annotation.ConsumeMode;
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
 import org.springframework.stereotype.Component;
@@ -36,12 +37,40 @@ import java.time.ZoneId;
         topic = "CART_TOPIC",
         consumerGroup = "cart-sync-consumer-group",
         selectorExpression = "*",
+        consumeMode = ConsumeMode.ORDERLY,
         maxReconsumeTimes = 3
 )
 public class CartSyncConsumer implements RocketMQListener<MessageExt> {
 
     private static final java.util.concurrent.ConcurrentHashMap<Long, LocalDateTime> CLEAR_BARRIERS =
             new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** 屏障保留时长：只需覆盖 MQ 重放窗口；超期条目对后续事件没有约束意义 */
+    private static final long BARRIER_RETENTION_HOURS = 24;
+    /** 屏障条目上限：超过则先清理过期、再超则整体清空（屏障丢失在有序列消费下仅退化为"按时间戳 CAS 兜底"） */
+    private static final int MAX_BARRIER_ENTRIES = 50_000;
+
+    /**
+     * 写入 CLEAR 屏障（有界内存）
+     * <p>
+     * 原实现 `CLEAR_BARRIERS.put(...)` 只增不删：活跃用户越多内存越大（无界泄漏）。
+     * 这里做两层保护：① 超过保留时长即淘汰；② 仍超上限则整体清空并告警
+     * （清空是安全的：ORDERLY 顺序消费已保证同用户事件有序，屏障只是乱序兜底）。
+     * </p>
+     */
+    private void putClearBarrier(Long userId, LocalDateTime clearTime) {
+        CLEAR_BARRIERS.put(userId, clearTime);
+        if (CLEAR_BARRIERS.size() <= MAX_BARRIER_ENTRIES) {
+            return;
+        }
+        LocalDateTime cutoff = clearTime.minusHours(BARRIER_RETENTION_HOURS);
+        CLEAR_BARRIERS.entrySet().removeIf(e -> e.getValue().isBefore(cutoff));
+        if (CLEAR_BARRIERS.size() > MAX_BARRIER_ENTRIES) {
+            log.warn("[购物车同步] CLEAR 屏障条目超上限({}), 整体清空(有序列消费下退化为时间戳CAS兜底)",
+                    CLEAR_BARRIERS.size());
+            CLEAR_BARRIERS.clear();
+        }
+    }
 
     private final CartItemMapper cartItemMapper;
     private final IdGeneratorUtil idGeneratorUtil;
@@ -191,7 +220,7 @@ public class CartSyncConsumer implements RocketMQListener<MessageExt> {
      */
     private void clearCartItems(CartSyncEvent event) {
         LocalDateTime eventTime = LocalDateTime.ofInstant(event.getTimestamp(), ZoneId.systemDefault());
-        CLEAR_BARRIERS.put(event.getUserId(), eventTime);
+        putClearBarrier(event.getUserId(), eventTime);
         // 按 updatedAt 过滤: 只删"事件时间之前最后修改"的行
         // 修复: createdAt 在 UPSERT 时不重置，CLEAR 按 createdAt 会误删"清空后重新加购"的行
         int deleted = cartItemMapper.delete(

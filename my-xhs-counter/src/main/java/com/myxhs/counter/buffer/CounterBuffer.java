@@ -221,7 +221,7 @@ public class CounterBuffer implements GracefulShutdownHook {
     private void retryFlush(List<CounterFlushDTO> batch) {
         for (int i = 1; i <= MAX_RETRY; i++) {
             try {
-                Thread.sleep(100L * i); // 递增退避
+                Thread.sleep(com.myxhs.common.mq.RetryBackoffUtils.jitter(100L * i, 0.2)); // 递增退避+抖动
                 counterMapper.batchUpsert(batch);
                 log.info("[Buffer-Trigger] 重试第 {} 次成功: {} 条", i, batch.size());
                 return;

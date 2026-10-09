@@ -36,11 +36,20 @@ import java.util.List;
 public class FeedMessageRetryJob {
 
     private final LocalMessageMapper localMessageMapper;
+
+    private final com.myxhs.common.metrics.BusinessMetrics businessMetrics;
     private final RocketMQTemplate rocketMQTemplate;
     private final ObjectMapper objectMapper;
     private final StringRedisTemplate stringRedisTemplate;
 
     private static final String PUSH_PROGRESS_PREFIX = "myxhs:feed:push:progress:";
+
+    /** 补偿重投上限：超过则置 push_status=3（终态）不再重投，避免死循环（此前无上限，60s 一轮无限重投）
+     *  取值 100：60s 一轮约 1.7 小时，避免 MQ 短时抖动（10 分钟）就被误判终态造成"永不推送" */
+    private static final int MAX_PUSH_COMPENSATE_RETRY = 100;
+    /** 告警阈值：达到该次数开始 warn（便于运维发现长时间补偿） */
+    private static final int PUSH_COMPENSATE_WARN_THRESHOLD = 10;
+    private static final String PUSH_RETRY_PREFIX = "myxhs:feed:push:retry:";
 
     /** 分布式锁 Key — 防止多实例并发执行补偿任务 */
     private static final String RETRY_LOCK_KEY = "lock:feed:retry";
@@ -141,6 +150,24 @@ public class FeedMessageRetryJob {
 
             for (LocalMessage msg : messages) {
                 try {
+                    // 重投次数上限（Redis 计数，TTL 24h）：超限置终态 3，交人工/告警，不再无脑重投
+                    String retryKey = PUSH_RETRY_PREFIX + msg.getId();
+                    Long attempts = stringRedisTemplate.opsForValue().increment(retryKey);
+                    if (attempts != null && attempts == 1L) {
+                        stringRedisTemplate.expire(retryKey, java.time.Duration.ofHours(24));
+                    }
+                    if (attempts != null && attempts == PUSH_COMPENSATE_WARN_THRESHOLD) {
+                        log.warn("[Feed推送补偿] 已重投 {} 次(上限 {}): localMsgId={}",
+                                attempts, MAX_PUSH_COMPENSATE_RETRY, msg.getId());
+                    }
+                    if (attempts != null && attempts > MAX_PUSH_COMPENSATE_RETRY) {
+                        localMessageMapper.updatePushStatus(msg.getId(), 3);
+                        businessMetrics.recordFeedPushTerminal("retry_exceeded");
+                        log.error("[Feed推送补偿] 重投超过上限({}), 置终态(3)待人工: localMsgId={}",
+                                MAX_PUSH_COMPENSATE_RETRY, msg.getId());
+                        failed++;
+                        continue;
+                    }
                     // 1. 检查 Redis 推送进度——已完成则跳过
                     String progressKey = PUSH_PROGRESS_PREFIX + msg.getId();
                     Object status = stringRedisTemplate.opsForHash().get(progressKey, "status");
@@ -176,7 +203,13 @@ public class FeedMessageRetryJob {
                                 }
                             });
                     resent++;
-                    log.info("[Feed推送补偿] 重新投递: localMsgId={}, noteId={}", msg.getId(), event.getNoteId());
+                    // P3/2026-09-27：重投即安排"下次可推时间"（60s→600s 指数退避 + ±20% 抖动），
+                    // 防止固定 60s 轮询对未完成条目反复重投；SQL 侧按 push_next_retry_time 过滤到期条目
+                    int attempt = attempts == null ? 1 : (int) Math.min(attempts, 20);
+                    long delaySeconds = com.myxhs.common.mq.RetryBackoffUtils.exponentialSeconds(attempt, 60, 600, 0.2);
+                    localMessageMapper.updatePushNextRetry(msg.getId(), LocalDateTime.now().plusSeconds(delaySeconds));
+                    log.info("[Feed推送补偿] 重新投递: localMsgId={}, noteId={}, nextRetry={}s",
+                            msg.getId(), event.getNoteId(), delaySeconds);
 
                 } catch (Exception e) {
                     failed++;

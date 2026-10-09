@@ -5,6 +5,7 @@ import com.myxhs.common.response.R;
 import com.myxhs.common.response.ResultCode;
 import com.myxhs.common.web.AccessTokenGuard;
 import com.myxhs.payment.dto.request.PayCreateRequest;
+import com.myxhs.payment.dto.request.RefundByOrderRequest;
 import com.myxhs.payment.dto.request.RefundRequest;
 import com.myxhs.payment.dto.response.PaymentVO;
 import com.myxhs.payment.service.PaymentService;
@@ -88,7 +89,14 @@ public class PaymentController {
             log.error("[支付回调] 缺少有效tradeNo，拒绝确认: paymentNo={}", paymentNo);
             return "fail";
         }
-        boolean success = extractPayResult(callbackData, payType);
+        // 三态解析：UNKNOWN（格式不符/解析失败）必须"返回 fail 让渠道重试"，
+        // 原实现按 false 处理 → 格式不符的成功回调会被标记支付失败并触发订单取消（资损/客诉）
+        int parsed = parsePayResult(callbackData, payType);
+        if (parsed < 0) {
+            log.error("[支付回调] 回调结果无法解析(要求渠道重试, 不改支付状态): paymentNo={}, payType={}", paymentNo, payType);
+            return "fail";
+        }
+        boolean success = parsed == 1;
         // P2-5: 回调体脱敏，仅记录摘要（原实现打印完整回调体，泄露支付数据）
         log.info("[支付回调] 收到回调: payType={}, paymentNo={}, success={}, bodySize={}B", payType, paymentNo, success, callbackData.length());
 
@@ -120,6 +128,39 @@ public class PaymentController {
     }
 
     /**
+     * 按订单维度发起退款（售后场景，内部调用）
+     * <p>
+     * 售后单只持有 orderId；由支付域解析 orderId → 支付单并复用 {@code /refund} 的
+     * 全套校验（归属、可退金额、锁、幂等标记），上游无需感知 paymentId。
+     * </p>
+     */
+    @PostMapping("/refund-by-order")
+    @RateLimit(prefix = "myxhs:payment:refund-by-order", maxRequests = 5, windowSeconds = 60, perUser = true,
+               message = "退款频率过高，请稍后再试")
+    public R<String> refundByOrder(@Valid @RequestBody RefundByOrderRequest request,
+                                 @RequestHeader("X-User-Id") Long userId,
+                                 @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
+        if (!accessTokenGuard.isInternalCall(internalCall)) {
+            log.warn("[退款] 非内部调用按订单退款被拒绝: userId={}, orderId={}", userId, request.getOrderId());
+            return R.fail(403, "退款请通过订单/售后服务发起");
+        }
+        return paymentService.refundByOrder(request, userId);
+    }
+
+    /**
+     * 按订单查询退款单（内部）：供售后恢复流程核对"退款是否已实际成功"
+     */
+    @GetMapping("/refunds/{orderId}")
+    public R<java.util.List<com.myxhs.payment.dto.response.RefundVO>> listRefunds(
+            @PathVariable("orderId") Long orderId,
+            @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
+        if (!accessTokenGuard.isInternalCall(internalCall)) {
+            return R.fail(403, "仅限内部服务调用");
+        }
+        return paymentService.listRefundsByOrder(orderId);
+    }
+
+    /**
      * 第三方退款回调
      */
     @PostMapping("/refund-callback/{payType}")
@@ -131,6 +172,10 @@ public class PaymentController {
             return "fail";
         }
         String refundNo = extractRefundNo(callbackData, payType);
+        if (refundNo == null) {
+            log.error("[退款回调] 无法解析退款单号(要求渠道重试, 不处理): payType={}", payType);
+            return "fail";
+        }
         boolean success = extractRefundResult(callbackData, payType);
         // P2-5: 回调体脱敏
         log.info("[退款回调] 收到回调: payType={}, refundNo={}, success={}, bodySize={}B", payType, refundNo, success, callbackData.length());
@@ -187,21 +232,36 @@ public class PaymentController {
         return null;
     }
 
-    private boolean extractPayResult(String callbackData, Integer payType) {
+    /**
+     * 解析支付结果三态：1=成功 0=失败 -1=无法解析（未知，必须让渠道重试而不是落失败态）
+     */
+    private int parsePayResult(String callbackData, Integer payType) {
         try {
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             com.fasterxml.jackson.databind.JsonNode node = mapper.readTree(callbackData);
             String tradeStatus = node.has("trade_status") ? node.get("trade_status").asText() : null;
             String resultCode = node.has("result_code") ? node.get("result_code").asText() : null;
             String status = node.has("status") ? node.get("status").asText() : null;
-            return "TRADE_SUCCESS".equals(tradeStatus)
-                    || "SUCCESS".equals(resultCode)
-                    || "SUCCESS".equals(status);
+            if ("TRADE_SUCCESS".equals(tradeStatus) || "SUCCESS".equals(resultCode) || "SUCCESS".equals(status)) {
+                return 1;
+            }
+            // 渠道中间态（等待买家付款/用户支付中）不是失败：返回 -1 保持待支付并让渠道继续重试，
+            // 否则 WAIT_BUYER_PAY/NOTPAY/USERPAYING 会被当成"支付失败"提前终结订单支付态
+            if ("WAIT_BUYER_PAY".equals(tradeStatus) || "TRADE_WAIT_BUYER_PAY".equals(tradeStatus)
+                    || "NOTPAY".equals(status) || "USERPAYING".equals(status)) {
+                return -1;
+            }
+            // 明确的失败态才返回 0；三个字段都没有 → 无法判定
+            if (tradeStatus != null || resultCode != null || status != null) {
+                return 0;
+            }
+            return -1;
         } catch (Exception e) {
             log.warn("[支付回调] 支付结果解析失败: {}", e.getMessage());
-            return false;
+            return -1;
         }
     }
+
 
     private String extractRefundNo(String callbackData, Integer payType) {
         try {
@@ -212,7 +272,8 @@ public class PaymentController {
         } catch (Exception e) {
             log.warn("[退款回调] 解析回调数据失败: {}", e.getMessage());
         }
-        return "REFUND_" + System.currentTimeMillis();
+        // 不得伪造单号：伪造会让 handleRefundCallback 查不到退款单而静默丢弃真实回调
+        return null;
     }
 
     private boolean extractRefundResult(String callbackData, Integer payType) {

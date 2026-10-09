@@ -129,8 +129,8 @@ class CounterServiceTest {
         long count = counterService.getCount(1, 20001L, 1);
 
         assertThat(count).isEqualTo(10L);
-        // 回填 Redis
-        verify(valueOperations).set(expectedKey, "10");
+        // 回填 Redis（2026-09-21 改为单条 SET 带 TTL，防中间崩溃留下永不过期计数 key）
+        verify(valueOperations).set(expectedKey, "10", java.time.Duration.ofDays(30));
     }
 
     // ==================== 批量查询 ====================

@@ -54,13 +54,18 @@ public class BehaviorReportConsumer implements RocketMQListener<MessageExt> {
                 throw new IllegalArgumentException("行为消息缺少必填字段");
             }
 
-            jdbcTemplate.update(
-                    "INSERT INTO t_user_behavior (id, user_id, note_id, behavior_type, duration) VALUES (?, ?, ?, ?, ?)",
-                    id != null ? id : 0L,
+            // INSERT IGNORE：MQ 重投（同一 eventId）幂等跳过，避免主键冲突被当"毒丸"送进 DLQ
+            int affected = jdbcTemplate.update(
+                    "INSERT IGNORE INTO t_user_behavior (id, user_id, note_id, behavior_type, duration) VALUES (?, ?, ?, ?, ?)",
+                    id,
                     userId,
                     noteId,
                     behaviorType,
                     duration != null ? duration : 0);
+            if (affected == 0) {
+                log.debug("[推荐行为] 重复投递已忽略: eventId={}, userId={}, noteId={}", id, userId, noteId);
+                return;
+            }
 
             log.debug("[推荐行为] 写入DB成功: userId={}, noteId={}, type={}",
                     userId, noteId, behaviorType);

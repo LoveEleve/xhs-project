@@ -13,6 +13,13 @@ import org.apache.ibatis.annotations.Update;
 public interface UserCouponMapper extends BaseMapper<UserCoupon> {
 
     /**
+     * 限领计数对账专用：统计某用户在某模板下已发的券数（含已使用/已过期；本表无逻辑删除列）
+     */
+    @org.apache.ibatis.annotations.Select("SELECT COUNT(*) FROM t_user_coupon "
+            + "WHERE user_id = #{userId} AND coupon_id = #{couponId}")
+    Long countIssued(@Param("userId") Long userId, @Param("couponId") Long couponId);
+
+    /**
      * 标记券已使用（乐观锁：WHERE status = 0）
      * <p>
      * 并发用券时只有一个请求能成功（status=0 → 1 是单向状态流转）。

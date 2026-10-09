@@ -1,5 +1,6 @@
 package com.myxhs.user.controller;
 
+import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
 import com.myxhs.common.response.ResultCode;
 import com.myxhs.user.dto.request.LoginRequest;
@@ -29,6 +30,8 @@ public class AuthController {
      * 获取图形验证码
      */
     @GetMapping("/captcha")
+    @RateLimit(prefix = "myxhs:user:captcha", maxRequests = 30, windowSeconds = 60, perUser = true,
+            message = "验证码获取过于频繁，请稍后再试")
     public R<CaptchaResponse> getCaptcha() {
         return R.ok(captchaService.generateCaptcha());
     }
@@ -45,14 +48,19 @@ public class AuthController {
     /**
      * 用户登录
      * <p>
-     * P2-9：取客户端 IP（gateway TrafficColoringFilter 已把 X-Forwarded-For 覆盖为真实连接 IP）
-     * 用于 IP 维度登录失败锁定，防单源账号 DoS。
+     * P2-9：取客户端 IP 用于 IP 维度登录失败锁定，防单源账号 DoS。
+     * <b>可信来源是安全前提</b>——原实现直接读 X-Forwarded-For 第一段，客户端可伪造，
+     * 攻击者用 5 个假 IP 即可锁任意账号（账号 DoS）或伪造受害者 IP 触发封禁。
+     * 现口径：优先 X-Real-IP（gateway 单值注入、客户端不可伪造）；
+     * 退化取 X-Forwarded-For 最后一段（gateway 追加的真实连接 IP 在末尾，伪造段只在前面）。
      * </p>
      */
     @PostMapping("/login")
     public R<TokenResponse> login(@Valid @RequestBody LoginRequest request,
-                                  @RequestHeader(value = "X-Forwarded-For", required = false) String clientIp) {
-        return R.ok(userService.login(request, clientIp));
+                                  @RequestHeader(value = "X-Real-IP", required = false) String realIp,
+                                  @RequestHeader(value = "X-Forwarded-For", required = false) String forwardedFor) {
+        return R.ok(userService.login(request,
+                com.myxhs.common.web.ClientIpResolver.resolve(realIp, forwardedFor, null)));
     }
 
     /**

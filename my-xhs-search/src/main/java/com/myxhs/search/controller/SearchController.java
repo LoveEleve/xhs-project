@@ -50,13 +50,16 @@ public class SearchController {
     public CompletableFuture<R<SearchResultVO<NoteSearchVO>>> searchNotes(
             @Valid NoteSearchRequest request,
             @RequestHeader(value = "X-User-Id", required = false) Long userId,
-            @RequestHeader(value = "X-Forwarded-For", required = false) String ip) {
+            @RequestHeader(value = "X-Real-IP", required = false) String realIp,
+            @RequestHeader(value = "X-Forwarded-For", required = false) String forwardedFor,
+            jakarta.servlet.http.HttpServletRequest httpRequest) {
         return CompletableFuture.supplyAsync(() -> {
             // 记录搜索词到热搜窗口
             if (request.getKeyword() != null && !request.getKeyword().isBlank()) {
                 searchHistoryService.addHistory(userId, request.getKeyword());
                 hotSearchService.recordSearchKeyword(request.getKeyword(), userId,
-                        ip != null ? ip : "unknown");
+                        com.myxhs.common.web.ClientIpResolver.resolve(realIp, forwardedFor,
+                                httpRequest != null ? httpRequest.getRemoteAddr() : null));
             }
             return R.ok(noteSearchService.searchNotes(request, userId));
         }, searchExecutor);
@@ -72,12 +75,15 @@ public class SearchController {
     public CompletableFuture<R<SearchResultVO<ProductSearchVO>>> searchProducts(
             @Valid ProductSearchRequest request,
             @RequestHeader(value = "X-User-Id", required = false) Long userId,
-            @RequestHeader(value = "X-Forwarded-For", required = false) String ip) {
+            @RequestHeader(value = "X-Real-IP", required = false) String realIp,
+            @RequestHeader(value = "X-Forwarded-For", required = false) String forwardedFor,
+            jakarta.servlet.http.HttpServletRequest httpRequest) {
         return CompletableFuture.supplyAsync(() -> {
             if (request.getKeyword() != null && !request.getKeyword().isBlank()) {
                 searchHistoryService.addHistory(userId, request.getKeyword());
                 hotSearchService.recordSearchKeyword(request.getKeyword(), userId,
-                        ip != null ? ip : "unknown");
+                        com.myxhs.common.web.ClientIpResolver.resolve(realIp, forwardedFor,
+                                httpRequest != null ? httpRequest.getRemoteAddr() : null));
             }
             return R.ok(productSearchService.searchProducts(request));
         }, searchExecutor);
@@ -150,8 +156,12 @@ public class SearchController {
     public R<Void> recordSearchKeyword(
             @RequestParam String keyword,
             @RequestHeader(value = "X-User-Id", required = false) Long userId,
-            @RequestHeader(value = "X-Forwarded-For", required = false) String ip) {
-        hotSearchService.recordSearchKeyword(keyword, userId, ip != null ? ip : "unknown");
+            @RequestHeader(value = "X-Real-IP", required = false) String realIp,
+            @RequestHeader(value = "X-Forwarded-For", required = false) String forwardedFor,
+            jakarta.servlet.http.HttpServletRequest httpRequest) {
+        hotSearchService.recordSearchKeyword(keyword, userId,
+                com.myxhs.common.web.ClientIpResolver.resolve(realIp, forwardedFor,
+                        httpRequest != null ? httpRequest.getRemoteAddr() : null));
         return R.ok();
     }
 

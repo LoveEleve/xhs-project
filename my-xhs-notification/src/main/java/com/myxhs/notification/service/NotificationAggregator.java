@@ -144,7 +144,7 @@ public class NotificationAggregator {
         if ("PENDING".equals(result)) {
             // 主通知正在写入，自旋重试（最多 3 次，指数退避 50/100/200ms）
             for (int retry = 0; retry < 3; retry++) {
-                try { Thread.sleep(50L << retry); } catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
+                try { Thread.sleep(com.myxhs.common.mq.RetryBackoffUtils.jitter(50L << retry, 0.2)); } catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
                 result = stringRedisTemplate.opsForValue().get(aggregateKey);
                 if (result != null && !"PENDING".equals(result)) break;
             }

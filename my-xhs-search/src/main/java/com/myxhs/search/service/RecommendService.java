@@ -36,6 +36,8 @@ public class RecommendService {
 
     private final List<RecallStrategy> recallStrategies;
     private final ExecutorService recallExecutor;
+    @org.springframework.beans.factory.annotation.Qualifier("recallInnerExecutor")
+    private final ExecutorService recallInnerExecutor;
     private final StringRedisTemplate stringRedisTemplate;
     private final JdbcTemplate jdbcTemplate;
     private final IdGeneratorUtil idGeneratorUtil;
@@ -63,12 +65,14 @@ public class RecommendService {
     public RecommendService(
             List<RecallStrategy> recallStrategies,
             @Qualifier("recallExecutor") ExecutorService recallExecutor,
+            @Qualifier("recallInnerExecutor") ExecutorService recallInnerExecutor,
             StringRedisTemplate stringRedisTemplate,
             JdbcTemplate jdbcTemplate,
             IdGeneratorUtil idGeneratorUtil,
             RocketMQTemplate rocketMQTemplate) {
         this.recallStrategies = recallStrategies;
         this.recallExecutor = recallExecutor;
+        this.recallInnerExecutor = recallInnerExecutor;
         this.stringRedisTemplate = stringRedisTemplate;
         this.jdbcTemplate = jdbcTemplate;
         this.idGeneratorUtil = idGeneratorUtil;
@@ -134,7 +138,7 @@ public class RecommendService {
      */
     public List<RecommendFeedVO> getSimilarNotes(Long noteId, int size) {
         try {
-            String key = RedisKeyConstants.RECOMMEND_ITEMCF + noteId;
+            String key = RedisKeyConstants.itemCfKey(noteId);
             var similar = stringRedisTemplate.opsForZSet()
                     .reverseRangeWithScores(key, 0, size - 1);
 
@@ -175,10 +179,13 @@ public class RecommendService {
      * </p>
      */
     public void reportBehavior(Long userId, BehaviorRequest request) {
+        // 事件 ID 只生成一次：MQ 路径与"降级同步写库"复用同一 ID，
+        // 使"MQ 实际已发出但 send 抛异常"的歧义场景也不会写出重复行为行（INSERT IGNORE 去重）
+        long eventId = idGeneratorUtil.nextId();
         try {
             // 构建行为事件
             Map<String, Object> event = new LinkedHashMap<>();
-            event.put("id", idGeneratorUtil.nextId());
+            event.put("id", eventId);
             event.put("userId", userId);
             event.put("noteId", request.getNoteId());
             event.put("behaviorType", request.getBehaviorType());
@@ -200,8 +207,8 @@ public class RecommendService {
             log.warn("[推荐] MQ发送失败，降级同步写DB: userId={}", userId);
             try {
                 jdbcTemplate.update(
-                        "INSERT INTO t_user_behavior (id, user_id, note_id, behavior_type, duration) VALUES (?, ?, ?, ?, ?)",
-                        idGeneratorUtil.nextId(),
+                        "INSERT IGNORE INTO t_user_behavior (id, user_id, note_id, behavior_type, duration) VALUES (?, ?, ?, ?, ?)",
+                        eventId,
                         userId,
                         request.getNoteId(),
                         request.getBehaviorType(),
@@ -227,7 +234,7 @@ public class RecommendService {
         // 为每路召回创建异步任务
         List<CompletableFuture<List<RecallItem>>> futures = recallStrategies.stream()
                 .map(strategy -> CompletableFuture
-                        .supplyAsync(() -> strategy.recall(userId, recallSizePerStrategy), recallExecutor)
+                        .supplyAsync(() -> strategy.recall(userId, recallSizePerStrategy), recallInnerExecutor)
                         .exceptionally(ex -> {
                             log.warn("[推荐] {}召回异常，降级为空", strategy.name(), ex);
                             return Collections.emptyList();

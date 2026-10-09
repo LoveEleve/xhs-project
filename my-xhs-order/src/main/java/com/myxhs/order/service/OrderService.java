@@ -128,7 +128,8 @@ public class OrderService {
         businessMetrics.recordOrderCreated("attempt");
 
         // 1. 幂等校验
-        String idempotentKey = IDEMPOTENT_KEY_PREFIX + request.getBizIdentifier();
+        // 幂等键带 userId：原实现不带 → 不同用户提交相同 bizIdentifier 会互相拒绝，且可被恶意抢占
+        String idempotentKey = IDEMPOTENT_KEY_PREFIX + userId + ":" + request.getBizIdentifier();
         Boolean setResult = stringRedisTemplate.opsForValue()
                 .setIfAbsent(idempotentKey, "1", 24, TimeUnit.HOURS);
         if (Boolean.FALSE.equals(setResult)) {
@@ -168,6 +169,15 @@ public class OrderService {
                 if (skuInfo.getSpuStatus() == null || skuInfo.getSpuStatus() != 1) {
                     throw new BizException(ResultCode.PRODUCT_OFF_SHELF,
                             "商品已下架: skuId=" + item.getSkuId());
+                }
+            }
+
+            // 3.4 拒绝同 SKU 多行：库存预扣按 (orderId, skuId) 幂等，两行同 SKU（各 60、库存 100）都能过校验
+            // 而预扣只按第一行扣 60 → 超卖；直接拒绝比静默合并更安全（要求调用方合并数量）
+            java.util.Set<Long> seenSku = new java.util.HashSet<>();
+            for (OrderCreateRequest.SkuItem item : request.getSkuItems()) {
+                if (!seenSku.add(item.getSkuId())) {
+                    throw new BizException(ResultCode.PARAM_INVALID, "同一 SKU 请合并为一行: skuId=" + item.getSkuId());
                 }
             }
 
@@ -240,10 +250,18 @@ public class OrderService {
             }
 
             if (sendResult.getSendStatus() != SendStatus.SEND_OK) {
-                stringRedisTemplate.delete(idempotentKey);
-                log.error("[订单] 事务消息发送结果异常: topic={}, producerGroup={}, orderNo={}, userId={}, sendStatus={}",
-                        ORDER_TRANSACTION_TOPIC, "order-producer-group", orderNo, userId, sendResult.getSendStatus());
-                throw new BizException(ResultCode.INTERNAL_ERROR, "下单失败: 消息发送异常");
+                // 半消息发送状态异常（SLAVE_NOT_AVAILABLE / FLUSH_*_TIMEOUT 等）时 broker 仍可能已存储并回调本地事务，
+                // 必须先看本地事务是否已提交（orderId 非空）：
+                // 已提交 → 保留幂等键按成功返回（否则"订单已创建但接口报失败 → 用户重试同 bizIdentifier 生成重复订单"）；
+                // 未提交 → 真回滚，删幂等键并报错。
+                if (context.getOrderId() == null) {
+                    stringRedisTemplate.delete(idempotentKey);
+                    log.error("[订单] 事务消息发送异常且本地事务未提交: orderNo={}, userId={}, sendStatus={}",
+                            orderNo, userId, sendResult.getSendStatus());
+                    throw new BizException(ResultCode.INTERNAL_ERROR, "下单失败: 消息发送异常");
+                }
+                log.warn("[订单] 事务消息发送状态异常但本地事务已提交, 按成功处理(由回查/本地消息兜底): orderNo={}, sendStatus={}",
+                        orderNo, sendResult.getSendStatus());
             }
 
             // 5. 本地事务已在 Listener 中执行完毕，获取 orderId
@@ -468,9 +486,18 @@ public class OrderService {
      * 查询用户订单列表
      */
     public List<OrderVO> getUserOrders(Long userId, Integer status) {
+        return getUserOrders(userId, status, null);
+    }
+
+    /**
+     * 查询用户订单列表（带条数上限，默认 100/最大 200：原实现无 LIMIT，大用户会全量返回）
+     */
+    public List<OrderVO> getUserOrders(Long userId, Integer status, Integer limit) {
+        int size = (limit == null || limit <= 0) ? 100 : Math.min(limit, 200);
         LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<Order>()
                 .eq(Order::getUserId, userId)
-                .orderByDesc(Order::getCreatedAt);
+                .orderByDesc(Order::getCreatedAt)
+                .last("LIMIT " + size);
         if (status != null) {
             wrapper.eq(Order::getStatus, status);
         }
@@ -518,6 +545,9 @@ public class OrderService {
 
         takeSnapshot(orderId, userId, "CANCELLED");
         stringRedisTemplate.delete("myxhs:order:info:" + orderId);
+        // 状态变更通知（与发货对称：原实现取消不发通知，用户端订单状态变化无感知）
+        orderNotificationPublisher.publishStatusChanged(userId, orderId, order.getOrderNo(),
+                "订单已取消", "如已支付将自动退款");
         log.info("[订单] 取消成功: userId={}, orderId={}", userId, orderId);
     }
 
@@ -738,11 +768,13 @@ public class OrderService {
                         .eq(Order::getId, orderId));
         if (order == null) {
             log.warn("[订单] 支付回调但订单不存在: orderId={}", orderId);
+            businessMetrics.recordOrderPayResult("not_found");
             return false;
         }
         if (order.getStatus() != 0) {
             log.warn("[订单] 支付回调但订单状态不是待付款: orderId={}", orderId);
-            return false; // 订单已取消或已支付
+            businessMetrics.recordOrderPayResult("race"); // 已支付/已取消/已关闭：正常竞态终态
+            return false;
         }
 
         // Event Sourcing: 追加支付事件并更新状态
@@ -756,6 +788,7 @@ public class OrderService {
             // 并发: 关单/取消先赢→支付已成功(钱已扣)但订单状态已变
             // 不抛异常: 抛异常→payment侧误判通知失败→P0-6无限重试
             log.error("[订单] 支付回调竞态(订单状态已变): orderId={}, status={}", orderId, order.getStatus(), e);
+            businessMetrics.recordOrderPayResult("race");
             return false;
         } catch (org.springframework.dao.DataAccessException e) {
             // SQL 异常：可能 setPaidAt/事件落库瞬时失败，但状态可能已改为已支付。
@@ -763,6 +796,7 @@ public class OrderService {
             // 若状态已更新则返回 true 并记录，paid_at/事件由对账兜底；若状态未更新则返回 false。
             if (statusUpdated) {
                 log.error("[订单] 支付已成功但 paid_at/事件 SQL 失败(对账兜底): orderId={}", orderId, e);
+                businessMetrics.recordOrderPayResult("transient_event_failed");
                 confirmInventoryDeduct(orderId, order.getOrderNo(), userId);
                 takeSnapshot(orderId, userId, "PAID");
                 stringRedisTemplate.delete("myxhs:order:info:" + orderId);
@@ -771,6 +805,7 @@ public class OrderService {
                 return true;
             }
             log.error("[订单] 支付事件 SQL 失败且状态未更新: orderId={}", orderId, e);
+            businessMetrics.recordOrderPayResult("transient_status_lost");
             return false;
         }
 
@@ -860,6 +895,62 @@ public class OrderService {
         } catch (Exception e) {
             log.error("[订单] 超时关单异常, 发送补偿消息: orderId={}, userId={}", orderId, userId, e);
             sendCompensationMessage("CLOSE_ORDER", orderId, userId, e.getMessage());
+        }
+    }
+
+    /**
+     * 库存失败事件收口（inventory → order，INVENTORY_FAILED_TOPIC）
+     * <p>
+     * 触发场景：预扣/确认在 MySQL 侧重试耗尽（Redis 侧未锁定成功）。
+     * 收口策略：
+     * - 待付款(0)：直接取消（原因=库存预扣失败），不等 30 分钟超时；释放已成功的其他 SKU、退券、通知用户；
+     * - 已付款(1)：记 ERROR + 指标（人工/对账介入；发货守卫为最后一道闸）；
+     * - 其他状态：幂等跳过。
+     * </p>
+     */
+    public void handleInventoryFailure(Long orderId, Long userId, String reason, Long skuId) {
+        try {
+            Order order = orderMapper.selectOne(
+                    new LambdaQueryWrapper<Order>()
+                            .eq(Order::getUserId, userId)
+                            .eq(Order::getId, orderId));
+            if (order == null) {
+                log.warn("[库存失败收口] 订单不存在: orderId={}", orderId);
+                businessMetrics.recordOrderInventoryFailure("order_missing");
+                return;
+            }
+            int status = order.getStatus();
+            if (status == 0) {
+                orderEventService.appendEvent(order, OrderEventService.EVENT_INVENTORY_FAILED_CANCELLED,
+                        Map.of("cancelReason", "库存预扣失败", "reason", reason == null ? "" : reason,
+                                "skuId", skuId == null ? 0L : skuId,
+                                "cancelTime", LocalDateTime.now().toString()));
+                orderMapper.setCancelledAt(orderId, userId);
+                // 多 SKU 场景：其他 SKU 可能已预扣成功，需释放；券已核销需退回
+                releaseInventory(orderId, order.getOrderNo(), userId);
+                returnCouponIfUsed(order);
+                takeSnapshot(orderId, userId, "INVENTORY_FAILED_CANCELLED");
+                stringRedisTemplate.delete("myxhs:order:info:" + orderId);
+                orderNotificationPublisher.publishStatusChanged(userId, orderId, order.getOrderNo(),
+                        "订单已取消", "商品库存不足，订单已自动取消");
+                businessMetrics.recordOrderInventoryFailure("auto_cancelled");
+                log.warn("[库存失败收口] 待付款订单已自动取消: orderId={}, reason={}, skuId={}",
+                        orderId, reason, skuId);
+            } else if (status == 1) {
+                businessMetrics.recordOrderInventoryFailure("manual_required_paid");
+                log.error("[库存失败收口] 已付款订单库存失败，需人工/对账介入: orderId={}, orderNo={}, reason={}, skuId={}",
+                        orderId, order.getOrderNo(), reason, skuId);
+            } else {
+                businessMetrics.recordOrderInventoryFailure("skipped_status_" + status);
+                log.info("[库存失败收口] 订单当前状态无需处理: orderId={}, status={}", orderId, status);
+            }
+        } catch (com.myxhs.common.exception.BizException e) {
+            // 状态机拒绝（并发取消/支付已流转）→ 视为已收敛，不重试
+            businessMetrics.recordOrderInventoryFailure("state_conflict");
+            log.warn("[库存失败收口] 状态流转冲突(并发取消/支付): orderId={}, msg={}", orderId, e.getMessage());
+        } catch (Exception e) {
+            log.error("[库存失败收口] 处理异常: orderId={}", orderId, e);
+            throw e instanceof RuntimeException re ? re : new RuntimeException(e);
         }
     }
 

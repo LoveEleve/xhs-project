@@ -39,9 +39,14 @@ class SkuServiceTest {
     private SpuService spuService;
     @Mock
     private IdGeneratorUtil idGeneratorUtil;
+    @Mock
+    private com.myxhs.product.feign.InventoryFeignClient inventoryFeignClient;
 
     private SkuService skuService;
     private ObjectMapper objectMapper;
+    /** 用真实 SimpleMeterRegistry（Mock 的 registry.counter() 返回 null 会导致打点 NPE） */
+    private final io.micrometer.core.instrument.simple.SimpleMeterRegistry meterRegistry =
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
 
     private static final Long SPU_ID = 10001L;
     private static final Long SKU_ID = 20001L;
@@ -49,7 +54,10 @@ class SkuServiceTest {
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper();
-        skuService = new SkuService(skuMapper, spuMapper, spuService, idGeneratorUtil, objectMapper);
+        skuService = new SkuService(skuMapper, spuMapper, spuService, idGeneratorUtil, objectMapper,
+                inventoryFeignClient, meterRegistry);
+        // 新建 SKU 后提交回调会触发库存初始化（远程调用）
+        when(inventoryFeignClient.initStock(any())).thenReturn(com.myxhs.common.response.R.ok());
     }
 
     @Test

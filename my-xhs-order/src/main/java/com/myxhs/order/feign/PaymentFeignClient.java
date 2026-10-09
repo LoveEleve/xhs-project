@@ -39,6 +39,12 @@ public interface PaymentFeignClient {
     R<Void> refund(@RequestBody RefundCreateRequest request, @RequestHeader("X-User-Id") Long userId);
 
     /**
+     * 按订单发起退款（售后场景）：上游只持有 orderId，支付域内部解析 paymentId
+     */
+    @PostMapping("/api/payment/refund-by-order")
+    R<String> refundByOrder(@RequestBody RefundByOrderRequest request, @RequestHeader("X-User-Id") Long userId);
+
+    /**
      * 发起支付的请求体（内部类）
      */
     @lombok.Data
@@ -47,6 +53,38 @@ public interface PaymentFeignClient {
         private Long userId;
         private BigDecimal amount;
         private Integer payType;
+    }
+
+    /**
+     * 按订单查询退款单（售后恢复：核对是否已实际退款成功）
+     */
+    @GetMapping("/api/payment/refunds/{orderId}")
+    R<java.util.List<RefundView>> listRefunds(@PathVariable("orderId") Long orderId);
+
+    /**
+     * 退款单视图（内部类，字段与支付域 RefundVO 对齐）
+     */
+    @lombok.Data
+    class RefundView {
+        private String refundNo;
+        private java.math.BigDecimal refundAmount;
+        /** 0-退款中 1-退款成功 2-退款失败 3-退款关闭 */
+        private Integer status;
+        private Integer refundType;
+        private String createdAt;
+        private String successAt;
+    }
+
+    /**
+     * 按订单退款的请求体（内部类）
+     */
+    @lombok.Data
+    @lombok.AllArgsConstructor
+    class RefundByOrderRequest {
+        private Long orderId;
+        private BigDecimal refundAmount;
+        private String reason;
+        private Integer refundType;
     }
 
     /**

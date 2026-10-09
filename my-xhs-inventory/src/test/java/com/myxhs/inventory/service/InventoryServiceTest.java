@@ -171,7 +171,7 @@ class InventoryServiceTest {
         // Lua 预扣脚本返回 1（成功）
         when(stringRedisTemplate.execute(
                 eq(preDeductScript), anyList(),
-                anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(1L);
         // MQ 发送成功（ObjectMapper 使用真实实例序列化，只 mock syncSend）
         SendResult sendResult = new SendResult();
@@ -206,7 +206,7 @@ class InventoryServiceTest {
         // Lua 预扣脚本返回 0（库存不足）
         when(stringRedisTemplate.execute(
                 eq(preDeductScript), anyList(),
-                anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(0L);
 
         PreDeductRequest request = new PreDeductRequest();
@@ -252,7 +252,7 @@ class InventoryServiceTest {
         when(stringRedisTemplate.hasKey(eq("inventory:paused:10001"))).thenReturn(false);
         when(valueOperations.get(eq("inventory:bucket:count:{10001}"))).thenReturn("2");
         when(hotSkuDetector.recordAndCheck(SKU_ID)).thenReturn(false);
-        when(stringRedisTemplate.execute(eq(preDeductScript), anyList(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+        when(stringRedisTemplate.execute(eq(preDeductScript), anyList(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(1L);
         when(rocketMQTemplate.syncSend(eq("INVENTORY_TOPIC:PRE_DEDUCT"), any(Message.class), eq(3000L)))
                 .thenThrow(new RuntimeException("mq down"));

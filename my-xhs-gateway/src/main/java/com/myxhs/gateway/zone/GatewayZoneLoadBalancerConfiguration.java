@@ -24,7 +24,19 @@ public class GatewayZoneLoadBalancerConfiguration {
     @ConditionalOnMissingBean
     public ZonePreferenceFilter gatewayZonePreferenceFilter(Environment environment,
                                                             ObjectProvider<MeterRegistry> meterRegistryProvider) {
-        String zone = System.getProperty("myxhs.current.availability.zone", ZonePreferenceFilter.DEFAULT_ZONE);
+        // 取值链修正：原实现只读 JVM -D 系统属性，而 gateway 不依赖 common（无 ZoneEnvironmentPostProcessor），
+        // 任何脚本/容器只设 MYXHS_ZONE 时该属性从未被设置 → zone 恒为 defaultZone，Zone 优先静默失效。
+        // 现口径：Spring Environment（yml/env 宽松绑定）→ JVM -D → MYXHS_ZONE 环境变量 → defaultZone。
+        String zone = environment.getProperty("myxhs.current.availability.zone");
+        if (zone == null || zone.isBlank()) {
+            zone = System.getProperty("myxhs.current.availability.zone");
+        }
+        if (zone == null || zone.isBlank()) {
+            zone = System.getenv("MYXHS_ZONE");
+        }
+        if (zone == null || zone.isBlank()) {
+            zone = ZonePreferenceFilter.DEFAULT_ZONE;
+        }
         int minAvailable = environment.getProperty(
                 "myxhs.availability.zone.preference.upstream.same-zone-min-available", Integer.class, 1);
         return new ZonePreferenceFilter(zone, minAvailable, meterRegistryProvider.getIfAvailable());

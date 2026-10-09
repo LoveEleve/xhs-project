@@ -23,7 +23,8 @@ public class PayCreateRequest {
 
     /** 支付金额 */
     @NotNull(message = "支付金额不能为空")
-    @Positive(message = "支付金额必须为正数")
+    /** 允许 0：全额优惠券抵扣的零元订单需发起支付（渠道不可调用，由支付域直接记账成功） */
+    @jakarta.validation.constraints.DecimalMin(value = "0.00", message = "支付金额不能为负")
     private BigDecimal amount;
 
     /** 支付方式：1-支付宝(Mock) 2-微信(Mock) */

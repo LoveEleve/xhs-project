@@ -69,6 +69,8 @@ public class SpuService {
     private final CategoryMapper categoryMapper;
     private final RedisOperator redisOperator;
     private final RedissonClient redissonClient;
+    /** P2/2026-09-27：缓存失效 MQ 兜底通道（删除失败时发 CACHE_EVICT_TOPIC，由消费者重试） */
+    private final org.apache.rocketmq.spring.core.RocketMQTemplate rocketMQTemplate;
     private final IdGeneratorUtil idGeneratorUtil;
     private final com.myxhs.product.mapper.ProductBehaviorMapper productBehaviorMapper;
 
@@ -82,6 +84,20 @@ public class SpuService {
                             r -> { Thread t = new Thread(r, "spu-async"); t.setDaemon(true); return t; },
                             new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy()
                     ));
+
+    /**
+     * 延迟双删调度器（1 线程）
+     * <p>
+     * 原实现把"sleep(1000) 后二次删缓存"塞进 SPU_ASYNC_EXECUTOR：队列满触发 CallerRunsPolicy 时
+     * 由<b>请求线程</b>执行并睡 1s（更新接口被延迟双删拖慢）。改用 schedule 到点执行，不占用请求线程、不占池内线程。
+     * </p>
+     */
+    private static final java.util.concurrent.ScheduledExecutorService SPU_DELAY_EVICT_SCHEDULER =
+            java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "spu-delay-evict");
+                t.setDaemon(true);
+                return t;
+            });
 
     /** 商品浏览事件落库线程池（可观测性）：DiscardPolicy——事件可容忍丢失，绝不影响详情响应 */
     private static final java.util.concurrent.ExecutorService SPU_VIEW_EXECUTOR =
@@ -99,6 +115,7 @@ public class SpuService {
     @PreDestroy
     public void shutdownAsyncExecutor() {
         log.info("[SPU] 关闭异步线程池...");
+        SPU_DELAY_EVICT_SCHEDULER.shutdown();
         SPU_ASYNC_EXECUTOR.shutdown();
         try {
             if (!SPU_ASYNC_EXECUTOR.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS)) {
@@ -205,35 +222,7 @@ public class SpuService {
                 }
 
                 // 分批加载（每批 5000 条，游标分页避免深分页性能问题）
-                long lastId = 0;
-                int batchSize = 5000;
-                int totalLoaded = 0;
-
-                while (true) {
-                    List<Spu> batch = spuMapper.selectList(
-                            new LambdaQueryWrapper<Spu>()
-                                    .select(Spu::getId)
-                                    .gt(Spu::getId, lastId)
-                                    .orderByAsc(Spu::getId)
-                                    .last("LIMIT " + batchSize));
-
-                    if (batch.isEmpty()) {
-                        break;
-                    }
-
-                    for (Spu spu : batch) {
-                        spuBloomFilter.add(spu.getId());
-                    }
-
-                    totalLoaded += batch.size();
-                    lastId = batch.get(batch.size() - 1).getId();
-                    log.info("[布隆过滤器] 已加载 {} 条, 最新ID={}", totalLoaded, lastId);
-
-                    // 每批之间短暂休眠，降低对 DB 和 Redis 的压力
-                    if (batch.size() == batchSize) {
-                        Thread.sleep(100);
-                    }
-                }
+                int totalLoaded = loadAllSpuIds();
 
                 bloomFilterReady.set(true);
                 log.info("[布隆过滤器] 异步加载完成, 共加载 {} 个 SPU ID, 防穿透保护已激活", totalLoaded);
@@ -249,6 +238,72 @@ public class SpuService {
                 }
             }
         }, SPU_ASYNC_EXECUTOR);
+    }
+
+    /**
+     * 全量加载 SPU ID 到布隆过滤器（分批 + 游标分页 + 批间休眠），返回加载条数
+     */
+    private int loadAllSpuIds() throws InterruptedException {
+        long lastId = 0;
+        int batchSize = 5000;
+        int totalLoaded = 0;
+        while (true) {
+            List<Spu> batch = spuMapper.selectList(
+                    new LambdaQueryWrapper<Spu>()
+                            .select(Spu::getId)
+                            .gt(Spu::getId, lastId)
+                            .orderByAsc(Spu::getId)
+                            .last("LIMIT " + batchSize));
+            if (batch.isEmpty()) {
+                break;
+            }
+            for (Spu spu : batch) {
+                spuBloomFilter.add(spu.getId());
+            }
+            totalLoaded += batch.size();
+            lastId = batch.get(batch.size() - 1).getId();
+            log.info("[布隆过滤器] 已加载 {} 条, 最新ID={}", totalLoaded, lastId);
+            if (batch.size() == batchSize) {
+                Thread.sleep(100);
+            }
+        }
+        return totalLoaded;
+    }
+
+    /**
+     * 重建布隆过滤器（管理端点）
+     * <p>
+     * 场景：过滤器数据被清空/误删，或长期运行后误判率上升需要重置容量——
+     * 此前只能重启服务（且启动时的 tryInit 幂等复用不会重建）。重建期间 bloomFilterReady=false，
+     * 请求降级为直查缓存/DB（功能正确，仅少了防穿透保护）。
+     * </p>
+     *
+     * @return 结果描述（含加载条数）
+     */
+    public String rebuildBloomFilter() {
+        RLock lock = redissonClient.getLock("myxhs:product:bloom:spu:init-lock");
+        boolean locked = false;
+        try {
+            locked = lock.tryLock(0, 300, TimeUnit.SECONDS);
+            if (!locked) {
+                throw new BizException(ResultCode.RATE_LIMIT_REJECT, "布隆过滤器正在重建中，请稍后再试");
+            }
+            bloomFilterReady.set(false);
+            redissonClient.getBloomFilter("myxhs:product:bloom:spu").delete();
+            spuBloomFilter = redissonClient.getBloomFilter("myxhs:product:bloom:spu");
+            spuBloomFilter.tryInit(1_000_000L, 0.01);
+            int loaded = loadAllSpuIds();
+            bloomFilterReady.set(true);
+            log.warn("[布隆过滤器] 手动重建完成: 加载 {} 条", loaded);
+            return "重建完成: 加载 " + loaded + " 条";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new BizException(ResultCode.INTERNAL_ERROR, "重建被中断");
+        } finally {
+            if (locked && lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
     }
 
     // ==================== 写操作 ====================
@@ -356,10 +411,7 @@ public class SpuService {
                 public void afterCommit() {
                     evictSpuCache(spuId);
                     // 延迟二次删除: 覆盖并发读异步重建窗口(异步刷新DB查询+Redis写回, 正常<1s)
-                    CompletableFuture.runAsync(() -> {
-                        try { Thread.sleep(1000); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-                        evictSpuCache(spuId);
-                    }, SPU_ASYNC_EXECUTOR);
+                    SPU_DELAY_EVICT_SCHEDULER.schedule(() -> evictSpuCache(spuId), 1, TimeUnit.SECONDS);
                 }
             });
         }
@@ -382,6 +434,16 @@ public class SpuService {
             ProductStatus.of(status);
         } catch (IllegalArgumentException e) {
             throw new BizException(ResultCode.PARAM_INVALID, "商品状态无效");
+        }
+
+        // 上架校验：至少一个上架中的 SKU（否则上架即"空商品"：可被搜到但无法下单）
+        if (ProductStatus.ON_SHELF.getCode() == status) {
+            Long enabledSkuCount = skuMapper.selectCount(new LambdaQueryWrapper<Sku>()
+                    .eq(Sku::getSpuId, spuId)
+                    .eq(Sku::getStatus, ProductStatus.ON_SHELF.getCode()));
+            if (enabledSkuCount == null || enabledSkuCount == 0) {
+                throw new BizException(ResultCode.PARAM_INVALID, "商品至少需要一个上架中的 SKU 才能上架");
+            }
         }
 
         // LambdaUpdateWrapper 按字段更新，避免 updateById 全量写覆盖并发修改的其他字段
@@ -536,24 +598,28 @@ public class SpuService {
                 return detail;
             }
 
-            try {
-                Thread.sleep(50);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                log.warn("[多级缓存] 等待持锁线程回填缓存时被中断, spuId={}", spuId);
-                return loadSpuDetailFromDb(spuId);
-            }
-
-            try {
-                RedisCacheData<SpuDetailVO> recheck = redisOperator.get(redisKey);
-                if (recheck != null && !recheck.isExpired()) {
-                    return recheck.getData();
+            // 有界等待：最多 3 轮 × 100ms 重查缓存（原只等 1 轮 50ms 就回源，
+            // 持锁线程稍慢时 N-1 个请求仍会一起打到 DB，与"防惊群"承诺不符）
+            for (int attempt = 0; attempt < 3; attempt++) {
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    log.warn("[多级缓存] 等待持锁线程回填缓存时被中断, spuId={}", spuId);
+                    return loadSpuDetailFromDb(spuId);
                 }
-            } catch (Exception e) {
-                log.warn("[多级缓存] 等待后重查缓存失败(降级), spuId={}", spuId, e);
+                try {
+                    RedisCacheData<SpuDetailVO> recheck = redisOperator.get(redisKey);
+                    if (recheck != null && !recheck.isExpired()) {
+                        return recheck.getData();
+                    }
+                } catch (Exception e) {
+                    log.warn("[多级缓存] 等待后重查缓存失败(降级), spuId={}", spuId, e);
+                    break;
+                }
             }
 
-            log.info("[多级缓存] 未获取到加载锁且缓存仍未命中, 降级查 DB, spuId={}", spuId);
+            log.info("[多级缓存] 未获取到加载锁且缓存仍未命中(3轮等待), 降级查 DB, spuId={}", spuId);
             return loadSpuDetailFromDb(spuId);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -626,12 +692,17 @@ public class SpuService {
      * </p>
      */
     public void evictSpuCache(Long spuId) {
-        // 删 Redis；Redis 故障时降级仅记日志（DB 已提交成功，客户端不应收到 500）
+        // 删 Redis；Redis 故障时降级：发 MQ 兜底（消费者在恢复后重试），DB 已提交不向客户端报 500
         String redisKey = RedisKeyConstants.PRODUCT_SPU + spuId;
         try {
             redisOperator.delete(redisKey);
         } catch (Exception e) {
-            log.warn("[多级缓存] 删除缓存失败(降级, 依赖物理TTL兜底), spuId={}", spuId, e);
+            log.warn("[多级缓存] 删除缓存失败, 发MQ兜底, spuId={}", spuId, e);
+            try {
+                rocketMQTemplate.syncSend("CACHE_EVICT_TOPIC", redisKey, 3000);
+            } catch (Exception mqEx) {
+                log.error("[多级缓存] MQ兜底发送失败(依赖逻辑过期30min/物理TTL 2h收敛), spuId={}", spuId, mqEx);
+            }
         }
     }
 

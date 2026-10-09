@@ -171,6 +171,8 @@ public class OrderCompensationConsumer implements RocketMQListener<MessageExt> {
             }
             String member = action + ":" + cm.getOrderId() + ":" + userId;
             stringRedisTemplate.opsForSet().add(ORDER_COMPENSATION_FALLBACK_KEY, member);
+            // 兜底集合必须有过期：否则坏成员（如映射表也缺失）会被每分钟重放并刷日志直到永远
+            stringRedisTemplate.expire(ORDER_COMPENSATION_FALLBACK_KEY, Duration.ofHours(24));
             log.warn("[补偿] 补偿失败已达重试上限，写入Redis兜底集合: {}", member);
         } catch (Exception e) {
             log.error("[补偿] 写入Redis兜底集合失败: orderId={}, userId={}", cm != null ? cm.getOrderId() : null, userId, e);

@@ -262,8 +262,9 @@ public class FeedService {
 
         return FeedVO.builder()
                 .notes(cards)
-                .nextCursor(minScore != null ? formatCursor(minScore) : null)
-                .hasMore(hasMoreFromRedis)
+                .nextCursor(cards.isEmpty() ? null : (minScore != null ? formatCursor(minScore) : null))
+                // 下游全超时/降级时 cards 为空，若照常返回 hasMore=true 会让前端无限翻空页
+                .hasMore(!cards.isEmpty() && hasMoreFromRedis)
                 .unreadCount(unreadCount)
                 .build();
     }
@@ -382,8 +383,23 @@ public class FeedService {
             String value = bigVValues.get(i);
             if ("1".equals(value)) {
                 bigVIds.add(Long.valueOf(followingList.get(i)));
+                continue;
             }
-            // 缓存不存在（null）时不查询粉丝数，由定时任务或粉丝数变更事件刷新
+            if (value == null) {
+                // 缓存缺失（TTL 10min 过期/实例重启）必须回源判定并回写：
+                // 否则大V会被判成普通用户 → 其笔记只写发件箱不推粉丝，粉丝最长"永久"看不到其新笔记
+                Long fid = Long.valueOf(followingList.get(i));
+                Long fans = stringRedisTemplate.opsForZSet().zCard(RedisKeyConstants.FOLLOW_FANS + fid);
+                if (fans != null && fans >= bigVThreshold) {
+                    bigVIds.add(fid);
+                    try {
+                        stringRedisTemplate.opsForValue().set("myxhs:user:bigv:" + fid, "1",
+                                java.time.Duration.ofMinutes(10));
+                    } catch (Exception e) {
+                        log.warn("[Feed] 大V标记回写失败(不影响本次判定): followerId={}", fid, e);
+                    }
+                }
+            }
         }
         if (!bigVIds.isEmpty()) {
             stringRedisTemplate.opsForSet().add(cacheKey, bigVIds.stream().map(String::valueOf).toArray(String[]::new));

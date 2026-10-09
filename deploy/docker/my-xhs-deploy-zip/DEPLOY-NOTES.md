@@ -36,6 +36,9 @@
    解析失败回退 ASYNC_FLUSH。**所有注释必须独立成行**(对方已按此规范重写)。
 8. **加固项**: SYNC_FLUSH(防断电丢消息) + autoCreateTopicEnable=false(防拼错
    topic 静默创建)。已生效, 现有 topic 不受影响, 新 topic 需显式创建。
+   **2026-09-27 新增**: `INVENTORY_FAILED_TOPIC`(库存失败收口事件; 订单侧消费者
+   `order-inventory-failed-consumer-group`)。部署时重跑 `init-rocketmq-topics.sh`(幂等)
+   创建即可; 未创建仅影响"收口"动作(30 分钟超时关单与对账兜底不受影响)。
 
 ## 三、MySQL
 
@@ -146,3 +149,31 @@
     ② SW agent 支持通过请求头关联(sw8 propagation), 确认 gateway 版本后
     将 X-Trace-Id 作为 sw8 上游头传入; ③ 或接受两套体系(日志→SW 按
     时间+服务名+接口人工关联)。详见 QUESTIONS-FOR-REVIEW.md。
+
+## 二·补、2026-09-23 升级补充（在 §二 之后执行）
+
+1. **DDL 迁移（按序执行，均一次性）**：
+   - `sql/migration/cart/V1__cart_event_uk_msg_id.sql` —— `t_cart_event` 补 `uk_msg_id`（幂等兜底）
+   - `sql/migration/cart/V2__cart_event_retention_index.sql` —— `t_cart_event` 补 `created_at` 索引（30 天保留清理）
+   - `sql/migration/content/V3__comment_perf_index.sql` —— 评论性能索引
+   - `sql/migration/im/V1__fix_conversation_id_comment.sql` —— 会话 ID 列注释修正
+   - `sql/migration/im/V2__add_user_updated_index.sql` —— 会话列表 `(user_id, updated_at)` 复合索引
+2. **无需新增 XXL 任务**：新增的保留策略清理（cart 事件流水 30 天 / order 本地消息 7 天 / 行为表 90 天）均挂在既有任务上，按"日切闸门"每天执行一次。
+3. **行为表保留策略**：`t_user_behavior` 90 天（读侧只用 7 天/24h；已具 `idx_created_at`）。
+
+## 二、2026-09-21 升级：需要执行的迁移与新任务
+
+> 已有环境（非空卷）**不会重跑 init-all.sql**，按下表执行；全新环境直接用最新 init-all.sql 即可。
+
+1. **DDL 迁移（按序执行，均幂等/一次性）**：
+   - `sql/migration/order/V2__aftersale_restock_status.sql` —— 售后单补 `restock_status`（跨服务回补兜底）
+   - `sql/migration/payment/V1__settlement_tables_and_indexes.sql` —— 结算 3 表 + `t_payment(渠道,支付时间)` / `t_refund(状态,退款时间)` 索引
+   - `sql/migration/inventory/V2__compensation_type_user.sql` —— 库存补偿表补 `type` / `user_id`（退款回补可重试）
+   - `sql/migration/coupon/V1__outbox_retry.sql` —— 券 Outbox 补 `retry_count`/`next_retry_time` + 索引（补发指数退避，2026-09-27）
+   - `sql/migration/inventory/V3__outbox_retry.sql` —— 库存 Outbox 同上（2026-09-27）
+   - `sql/migration/content/V4__feed_push_retry.sql` —— Feed 本地消息表补 `push_next_retry_time` + 索引（补偿推送退避，2026-09-27）
+2. **重新执行 `config/deploy-cloud/init-xxljob.sql`**（带 NOT EXISTS 幂等）：注册 3 个新任务
+   —— `aftersaleRecoveryJob`（10 分钟）、`settlementBillJob`（每日 02:00，misfire=补跑）、`settlementReconcileJob`（每日 03:00，misfire=补跑）
+3. **新增配置（有默认值，可不配）**：`myxhs.settlement.fee-rate`（默认 0.0060）、`myxhs.settlement.channels`（默认 1,2,99）、
+   `myxhs.cache-warmup.targets`（product=product-category-tree、search=search-hot-and-recommend）
+4. **新增内部接口（需 X-Internal-Call）**：售后审核/退款重试（order）、结算账单生成/重跑/作废/对账/差异处理/对账单导入与演练（payment）、支付域按订单退款与退款单查询（payment）

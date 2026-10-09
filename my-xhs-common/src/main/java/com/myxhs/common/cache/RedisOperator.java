@@ -38,6 +38,9 @@ public class RedisOperator {
         return e instanceof RedisConnectionFailureException
                 || e instanceof org.springframework.data.redis.RedisSystemException
                 || e instanceof io.lettuce.core.RedisConnectionException
+                // 2026-09-23 review：命令超时同样是"Redis 不可用"（类注释承诺连接不可用抛 RedisUnavailableException），
+                // 原实现超时被当"其他异常"吞掉 → 调用方无法感知故障（写路径静默丢数据、降级逻辑不触发）
+                || e instanceof io.lettuce.core.RedisCommandTimeoutException
                 || (e.getCause() != null && isConnectionFailure(e.getCause()));
     }
 

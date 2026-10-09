@@ -28,7 +28,6 @@ import java.lang.management.ThreadMXBean;
  * </p>
  */
 @Slf4j
-@ConditionalOnClass(name = "org.springframework.boot.actuate.health.HealthIndicator")
 public class ApplicationReadinessIndicator implements HealthIndicator {
 
     /** 堆内存使用率告警阈值 */

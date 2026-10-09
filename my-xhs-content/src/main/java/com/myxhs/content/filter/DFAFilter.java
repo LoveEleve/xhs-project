@@ -193,8 +193,14 @@ public class DFAFilter implements MessageListener {
     @SuppressWarnings("unchecked")
     public void buildTrie(List<String> words) {
         Map<Character, Object> root = new HashMap<>();
-        for (String word : words) {
-            if (word == null || word.isEmpty()) {
+        for (String raw : words) {
+            if (raw == null || raw.isEmpty()) {
+                continue;
+            }
+            // 与文本检测用同一套预处理（去空格/全角转半角/小写），
+            // 否则含大写、空格、全角的词永远命中不了（文本侧已被规范化）
+            String word = preprocess(raw);
+            if (word.isEmpty()) {
                 continue;
             }
             Map<Character, Object> current = root;

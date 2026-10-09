@@ -186,12 +186,16 @@ public class LeastConnectionsLoadBalancer implements ReactorServiceInstanceLoadB
 
     /**
      * 标记请求结束（在 Feign 拦截器中调用）
+     * <p>
+     * 计数下限为 0：生命周期回调理论上成对出现，但重试/异常路径若出现多余回调，
+     * 负数会让该实例永远看起来"最空闲"而被持续选中，这里做防御性收敛。
+     * </p>
      */
     public void markRequestEnd(ServiceInstance instance) {
         String key = instance.getInstanceId() != null ? instance.getInstanceId() : instance.getHost() + ":" + instance.getPort();
         AtomicInteger counter = activeRequests.get(key);
         if (counter != null) {
-            counter.decrementAndGet();
+            counter.updateAndGet(current -> current > 0 ? current - 1 : 0);
         }
     }
 }

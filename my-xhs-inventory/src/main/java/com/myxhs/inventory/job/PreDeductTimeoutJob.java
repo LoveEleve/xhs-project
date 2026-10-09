@@ -97,8 +97,9 @@ public class PreDeductTimeoutJob {
         int releaseCount = 0;
 
         try {
-            // 查询 60 秒内即将过期的预扣记录（主动提前回退）
-            long cutoffMs = System.currentTimeMillis() + 60000;
+            // 只回退"已到期"的预扣记录：原实现提前 60s 释放，窗口内支付成功 confirm 会找不到记录
+            // （预扣记录物理 TTL 已加 10 分钟缓冲，到期后回调退不再依赖"抢在 TTL 前"）
+            long cutoffMs = System.currentTimeMillis();
             java.util.Set<String> expiringOrderIds = stringRedisTemplate.opsForZSet()
                     .rangeByScore(PREDEDUCT_INDEX_KEY, 0, cutoffMs);
 

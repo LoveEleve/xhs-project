@@ -33,5 +33,6 @@ public class SkuCreateRequest {
     private Integer stock;
 
     /** 规格属性JSON，如 {"颜色":"红色","尺码":"XL"} */
+    @jakarta.validation.constraints.Size(max = 1024, message = "规格属性过长(最多1024字符)")
     private String specs;
 }

@@ -50,6 +50,8 @@ class AddressServiceTest {
     private RedissonClient redissonClient;
     @Mock
     private RLock rLock;
+    @Mock
+    private org.springframework.transaction.support.TransactionTemplate transactionTemplate;
 
     private UserAddressService userAddressService;
 
@@ -62,8 +64,14 @@ class AddressServiceTest {
         initMybatisPlusTableInfo(UserAddress.class);
 
         userAddressService = new UserAddressService(
-                userAddressMapper, redisOperator, redissonClient
+                userAddressMapper, redisOperator, redissonClient, transactionTemplate
         );
+
+        // TransactionTemplate 是 mock：直接执行回调（等价于"事务内逻辑"），锁外移/提交后写缓存的编排不变
+        when(transactionTemplate.execute(any())).thenAnswer(invocation -> {
+            org.springframework.transaction.support.TransactionCallback<?> callback = invocation.getArgument(0);
+            return callback.doInTransaction(null);
+        });
 
         // 设置 @Value 字段（不使用 Spring Context 时需手动设置）
         Field limitField = UserAddressService.class.getDeclaredField("addressLimit");

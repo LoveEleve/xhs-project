@@ -1,9 +1,11 @@
 package com.myxhs.common.config;
 
 import com.myxhs.common.loadbalancer.LeastConnectionsLoadBalancer;
+import com.myxhs.common.loadbalancer.LeastConnectionsLifecycle;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.cloud.client.ServiceInstance;
+import org.springframework.cloud.client.loadbalancer.LoadBalancerLifecycle;
 import org.springframework.cloud.loadbalancer.annotation.LoadBalancerClients;
 import org.springframework.cloud.loadbalancer.core.ReactorLoadBalancer;
 import org.springframework.cloud.loadbalancer.core.ServiceInstanceListSupplier;
@@ -52,6 +54,20 @@ public class LeastConnectionsLoadBalancerConfig {
         String name = environment.getProperty(LoadBalancerClientFactory.PROPERTY_NAME);
         return new LeastConnectionsLoadBalancer(
                 factory.getLazyProvider(name, ServiceInstanceListSupplier.class), name);
+    }
+
+    /**
+     * 请求级埋点：把"调用开始/结束"回填给负载均衡器的活跃请求数
+     * <p>
+     * 与负载均衡器同处 LoadBalancerClientFactory 子 context，Spring Cloud LoadBalancer
+     * 在每次服务调用时自动回调（LoadBalancerLifecycle）。
+     * </p>
+     */
+    @Bean
+    @ConditionalOnProperty(prefix = "loadbalancer.client", name = "name")
+    public LoadBalancerLifecycle<Object, Object, ServiceInstance> leastConnectionsLifecycle(
+            LeastConnectionsLoadBalancer leastConnectionsLoadBalancer) {
+        return new LeastConnectionsLifecycle(leastConnectionsLoadBalancer);
     }
 }
 

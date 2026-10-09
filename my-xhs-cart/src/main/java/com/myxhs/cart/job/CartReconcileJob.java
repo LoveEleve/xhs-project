@@ -8,9 +8,11 @@ import com.xxl.job.core.context.XxlJobHelper;
 import com.xxl.job.core.handler.annotation.XxlJob;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -43,7 +45,19 @@ public class CartReconcileJob {
 
     private final StringRedisTemplate stringRedisTemplate;
     private final CartItemMapper cartItemMapper;
+    private final com.myxhs.cart.mapper.CartEventMapper cartEventMapper;
     private final IdGeneratorUtil idGeneratorUtil;
+
+    /**
+     * 对账水位线（秒）：MySQL 侧存在"最近 N 秒内写入"的用户视为在途（消息已发、落库未完成），
+     * 本轮跳过、留给下一轮对账。避免对账与在线写竞争，把"正常在途差异"误判成数据不一致。
+     */
+    @Value("${myxhs.cart.reconcile.watermark-seconds:300}")
+    private long watermarkSeconds;
+
+    /** 本轮因水位线跳过的用户数（每次执行开始重置）；Atomic 因为管理端点可并发调用 reconcileUser */
+    private final java.util.concurrent.atomic.AtomicInteger watermarkSkipped =
+            new java.util.concurrent.atomic.AtomicInteger();
 
     private static final String KEY_PREFIX = "myxhs:cart:{";
     private static final String ITEMS_KEY_SUFFIX = "}:items";
@@ -73,6 +87,33 @@ public class CartReconcileJob {
         }
         try {
             doReconcile();
+            purgeStaleEvents();
+        } finally {
+            stringRedisTemplate.execute(new org.springframework.data.redis.core.script.DefaultRedisScript<>(
+                    "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+                    Long.class), java.util.List.of(lockKey), token);
+        }
+    }
+
+    /**
+     * 带分布式锁的单用户对账（管理端点复用）
+     * <p>
+     * 原管理端点直接调 {@link #reconcileUser(Long)}，绕过对账锁 → 可与定时全量/其他手动调用并发，
+     * 双方对同一用户做"读-判断-写"时可能互相覆盖（例如一方按缺失补录、另一方按差异删除）。
+     * 这里复用与定时任务同一把锁（token + Lua 比对释放）。
+     * </p>
+     */
+    public int reconcileUserWithLock(Long userId) {
+        String lockKey = "myxhs:lock:cart:reconcile";
+        String token = java.util.UUID.randomUUID().toString();
+        Boolean locked = stringRedisTemplate.opsForValue()
+                .setIfAbsent(lockKey, token, 600, java.util.concurrent.TimeUnit.SECONDS);
+        if (locked == null || !locked) {
+            throw new com.myxhs.common.exception.BizException(
+                    com.myxhs.common.response.ResultCode.RATE_LIMIT_REJECT, "已有对账任务执行中，请稍后再试");
+        }
+        try {
+            return reconcileUser(userId);
         } finally {
             stringRedisTemplate.execute(new org.springframework.data.redis.core.script.DefaultRedisScript<>(
                     "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
@@ -83,6 +124,7 @@ public class CartReconcileJob {
     private void doReconcile() {
         log.info("[购物车对账] 开始执行...");
         long startTime = System.currentTimeMillis();
+        watermarkSkipped.set(0);
         int repairCount = 0;
         int userCount = 0;
         int batchSize = 1000;  // C-16: 游标分页，每批 1000 用户
@@ -122,9 +164,9 @@ public class CartReconcileJob {
             userCount += redisOnlyCount;
 
             long elapsed = System.currentTimeMillis() - startTime;
-            log.info("[购物车对账] 完成: 对账{}个用户, 修复{}条记录, 耗时{}ms",
-                    userCount, repairCount, elapsed);
-            XxlJobHelper.handleSuccess("对账完成，修复 " + repairCount + " 条记录");
+            log.info("[购物车对账] 完成: 对账{}个用户, 修复{}条记录, 水位线跳过{}个用户, 耗时{}ms",
+                    userCount, repairCount, watermarkSkipped.get(), elapsed);
+            XxlJobHelper.handleSuccess("对账完成，修复 " + repairCount + " 条记录，水位线跳过 " + watermarkSkipped.get() + " 个用户");
         } catch (Exception e) {
             log.error("[购物车对账] 执行异常", e);
             XxlJobHelper.handleFail("购物车对账异常: " + e.getMessage());
@@ -143,6 +185,17 @@ public class CartReconcileJob {
         // 获取 MySQL 中的购物车数据
         List<CartItem> mysqlItems = cartItemMapper.selectList(
                 new LambdaQueryWrapper<CartItem>().eq(CartItem::getUserId, userId));
+
+        // 【对账水位线】MySQL 侧最近有写入 → 该用户存在在途操作（MQ 在途/事务未提交），
+        // 本轮跳过，避免与在线写竞争把正常在途差异误判为不一致；下一轮该用户静止后再对账。
+        LocalDateTime cutoff = LocalDateTime.now().minusSeconds(watermarkSeconds);
+        boolean inFlight = mysqlItems.stream()
+                .anyMatch(item -> item.getUpdatedAt() != null && item.getUpdatedAt().isAfter(cutoff));
+        if (inFlight) {
+            watermarkSkipped.incrementAndGet();
+            log.debug("[购物车对账] 命中水位线跳过(近 {}s 内有写入): userId={}", watermarkSeconds, userId);
+            return 0;
+        }
 
         // 【防双份全丢】检测 itemsKey 是否存在：
         // key 不存在有两种可能——(a)用户清空购物车（clearCart 删除 key）；(b)Redis 故障丢数据（failover/重启无AOF）。
@@ -248,5 +301,33 @@ public class CartReconcileJob {
         }
 
         return repairCount;
+    }
+
+    /**
+     * 事件流水保留策略：清理 30 天前（append-only 表必须配保留策略，否则无限增长）
+     */
+    private void purgeStaleEvents() {
+        // 有界排空：本任务每天 4 点跑一次，单批 5000 追不上日增量 → 循环到"清空或触顶"
+        final int batch = 5000;
+        final int maxBatches = 20;   // 单次最多 10 万行/日，超出部分次日继续（会打 WARN）
+        int total = 0;
+        try {
+            for (int i = 0; i < maxBatches; i++) {
+                int purged = cartEventMapper.deleteStaleEvents(
+                        java.time.LocalDateTime.now().minusDays(30), batch);
+                total += purged;
+                if (purged < batch) {
+                    break;
+                }
+                if (i == maxBatches - 1) {
+                    log.warn("[购物车对账] 事件流水清理触顶({} 行)，剩余留待次日（检查日增量是否超 10 万）", total);
+                }
+            }
+            if (total > 0) {
+                log.info("[购物车对账] 清理 30 天前事件流水 {} 行", total);
+            }
+        } catch (Exception e) {
+            log.error("[购物车对账] 事件流水清理失败(已清 {} 行, 下轮重试)", total, e);
+        }
     }
 }

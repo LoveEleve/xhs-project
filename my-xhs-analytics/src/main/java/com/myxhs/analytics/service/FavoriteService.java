@@ -149,7 +149,8 @@ public class FavoriteService {
      * @return 收藏的笔记ID列表
      */
     public List<Long> getFavoriteList(Long userId, int page, int size) {
-        size = Math.min(size, MAX_PAGE_SIZE);
+        // 下限保护：size<=0 会退化为全量（公开接口）
+        size = Math.max(1, Math.min(size, MAX_PAGE_SIZE));
         String key = RedisKeyConstants.FAVORITE_SET + userId;
 
         // ZSet 倒序分页

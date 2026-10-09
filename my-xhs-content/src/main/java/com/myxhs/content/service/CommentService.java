@@ -150,9 +150,10 @@ public class CommentService {
         } else if (parentId > 0) {
             replyTargetId = parentId;
         }
-        final Long replyTargetUserId = (replyTargetId != null)
-                ? commentMapper.selectById(replyTargetId).getUserId()
-                : null;
+        // 并发下被回复评论可能已被删除 → selectById 返回 null，原实现直接 .getUserId() NPE（500）
+        Comment replyTarget = (replyTargetId != null) ? commentMapper.selectById(replyTargetId) : null;
+        final Long replyTargetUserId = replyTarget != null ? replyTarget.getUserId() : null;
+        final Long newCommentId = comment.getId();
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
@@ -161,7 +162,7 @@ public class CommentService {
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.COMMENT_COUNT + noteId);
 
                 // 【修复R1】评论计数增量：发送 MQ 事件让 counter 服务更新笔记评论数
-                sendCommentCounterEvent(noteId, "COMMENT", 1);
+                sendCommentCounterEvent(noteId, newCommentId, "COMMENT", 1);
 
                 // 通知目标：回复→被回复者；一级评论→笔记作者（O-Comment-5）
                 final Long targetUserId = replyTargetUserId != null ? replyTargetUserId : noteAuthorUserId;
@@ -249,13 +250,14 @@ public class CommentService {
         // totalDeleted = 父评论(1) + 实际删除的子评论数
         final long totalDeleted = 1 + childDeleted;
         final Long noteId = comment.getNoteId();
+        final Long deletedCommentId = commentId;
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
                 // O-Comment-1：COMMENT_LIST 死缓存已移除，保留 COMMENT_COUNT
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.COMMENT_COUNT + noteId);
                 // 发送单条 UNCOMMENT 事件（带计数），避免循环发送 N 条独立 MQ
-                sendCommentCounterEvent(noteId, "UNCOMMENT", totalDeleted);
+                sendCommentCounterEvent(noteId, totalDeleted == 1 ? deletedCommentId : null, "UNCOMMENT", totalDeleted);
             }
         });
     }
@@ -419,7 +421,8 @@ public class CommentService {
                 .map(this::toCommentVO)
                 .collect(Collectors.toList());
 
-        return PageResult.of(pageNum, pageSize, result.getTotal(), items);
+        // 回包页码使用 clamp 后的值（原实现回原值，pageNum<=0 时响应页码与实际不符）
+        return PageResult.of(Math.max(1, pageNum), pageSize, result.getTotal(), items);
     }
 
     // ==================== 私有方法 ====================
@@ -450,10 +453,15 @@ public class CommentService {
      * 使用 asyncSend 避免阻塞评论发表事务的 afterCommit 回调。
      * </p>
      */
-    private void sendCommentCounterEvent(Long noteId, String action, long count) {
+    private void sendCommentCounterEvent(Long noteId, Long commentId, String action, long count) {
         try {
             Map<String, Object> event = new HashMap<>();
             event.put("noteId", noteId);
+            // 乱序治理：commentId 作为版本锚点（单条增删），actionTime 供版本门收敛
+            if (commentId != null) {
+                event.put("commentId", commentId);
+            }
+            event.put("actionTime", System.currentTimeMillis());
             if (count > 0) {
                 event.put("count", count);
             }

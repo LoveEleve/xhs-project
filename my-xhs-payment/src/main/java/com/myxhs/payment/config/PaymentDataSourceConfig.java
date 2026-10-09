@@ -45,6 +45,20 @@ public class PaymentDataSourceConfig {
      * 确保不被 ShardingSphere 拦截。
      * </p>
      */
+    /**
+     * 支付库专用事务管理器
+     * <p>
+     * 支付域写 t_payment/t_refund/t_settlement_* 走 paymentJdbcTemplate（独立 DataSource），
+     * 而全局 @Primary 事务管理器绑定的是 routingDataSource（订单/分片库）——
+     * 不指定 transactionManager 时 @Transactional 对该库完全不生效（跨 DataSource 无事务同步）。
+     * </p>
+     */
+    @Bean
+    public org.springframework.jdbc.datasource.DataSourceTransactionManager paymentTransactionManager(
+            @Qualifier("paymentDataSource") DataSource dataSource) {
+        return new org.springframework.jdbc.datasource.DataSourceTransactionManager(dataSource);
+    }
+
     @Bean
     public JdbcTemplate paymentJdbcTemplate(@Qualifier("paymentDataSource") DataSource dataSource) {
         return new JdbcTemplate(dataSource);

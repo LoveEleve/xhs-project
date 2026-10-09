@@ -20,7 +20,7 @@ public interface UserFeignClient {
     /**
      * 获取用户收货地址详情（供订单地址快照）
      */
-    @GetMapping("/api/user/address/{id}")
+    @GetMapping("/api/user/address/internal/{id}")
     R<UserAddressDTO> getAddress(@RequestHeader("X-User-Id") Long userId,
                                  @PathVariable("id") Long addressId);
 }

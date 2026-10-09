@@ -56,8 +56,10 @@ public class NoteDeleteConsumer implements RocketMQListener<MessageExt> {
             // T-126（2026-08-16）：设置短 TTL 已删标记，防 FEED_TOPIC 推送消息晚到/重投把已删笔记写回 outbox——
             // 修复前：NOTE_DELETE 清 outbox 后，重复投递的推送消息（MQ 重试/补偿重投）再次 ZADD 已删笔记
             // → 大V outbox 残留已删笔记（实测 15:55/15:56 两次消费同 noteId 重新入 outbox）
+            // TTL 从 5min 提到 7 天：5min 之后晚到的重投仍能把已删笔记写回 outbox（实测过漏网），
+            // 7 天与 MQ/补偿窗口对齐（仅每个被删笔记一个小 key）
             stringRedisTemplate.opsForValue().set(
-                    "myxhs:note:deleted:" + noteId, "1", java.time.Duration.ofMinutes(5));
+                    "myxhs:note:deleted:" + noteId, "1", java.time.Duration.ofDays(7));
             log.info("[NoteDelete] 清理完成: authorId={}, noteId={}, outboxRemoved={}, followingCleaned={}",
                     authorId, noteId, removed, followingCleaned);
 
@@ -83,11 +85,21 @@ public class NoteDeleteConsumer implements RocketMQListener<MessageExt> {
                 org.springframework.data.redis.core.ScanOptions.scanOptions()
                         .match(RedisKeyConstants.RECOMMEND_FOLLOWING_LATEST + "*")
                         .count(500).build())) {
+            int scanned = 0;
             while (cursor.hasNext()) {
                 String key = cursor.next();
                 Long r = stringRedisTemplate.opsForZSet().remove(key, String.valueOf(noteId));
                 if (r != null && r > 0) {
                     cleaned++;
+                }
+                // 限速：key 多时避免长占 Redis 单线程（每 500 个 key 让出 10ms）
+                if (++scanned % 500 == 0) {
+                    try {
+                        Thread.sleep(10);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
                 }
             }
         } catch (Exception e) {

@@ -145,6 +145,10 @@ spring.datasource.readwrite.enabled: true
 
 # 管理/内部接口令牌（环境变量注入，未配置时用默认值）
 myxhs:
+  # 启动预热：本服务负责预热的任务（逗号分隔，空=全部）；预热失败降级为按需加载
+  cache-warmup:
+    enabled: true
+    targets: product-category-tree
   admin:
     token: ${ADMIN_TOKEN:}
   internal:
@@ -152,3 +156,12 @@ myxhs:
 
 jwt:
   secret: ${JWT_SECRET:MyXhs@2026#JwtSecretKey!ForTokenSign}
+
+# RocketMQ 配置（P2/2026-09-27：缓存失效 MQ 兜底通道；此前 product 无 MQ）
+rocketmq:
+  name-server: 192.168.0.142:9876
+  producer:
+    group: product-producer-group
+    retry-times-when-send-failed: 2
+    retry-times-when-send-async-failed: 2
+    send-message-timeout: 3000

@@ -13,6 +13,15 @@ import java.util.List;
 public interface LocalMessageMapper extends BaseMapper<LocalMessage> {
 
     /** 标记消息成功 */
+    /**
+     * 清理已发送的本地消息（status=1 成功行一单一行、永久保留 → 表随订单量线性增长；
+     * 消息只承担"下单事务与 MQ 投递"的过渡，7 天后无重查价值）。无分片键 → ShardingSphere
+     * 广播到各分片，各片删至多 limit 行。
+     */
+    @org.apache.ibatis.annotations.Delete(
+            "DELETE FROM t_local_message WHERE status = 1 AND created_at < #{cutoff} LIMIT #{limit}")
+    int deleteSentBefore(@Param("cutoff") java.time.LocalDateTime cutoff, @Param("limit") int limit);
+
     @Update("UPDATE t_local_message SET status = 1, updated_at = NOW() WHERE id = #{id}")
     int markSuccess(@Param("id") Long id);
 

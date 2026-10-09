@@ -66,6 +66,19 @@ public class InventoryService {
     private final ObjectMapper objectMapper;
     private final DefaultRedisScript<Long> preDeductScript;
     private final DefaultRedisScript<Long> releaseScript;
+    /**
+     * 退款回补累计脚本：key 存"已受理的应回补数量"，仅返回正增量（0=跳过）
+     * KEYS[1]=累计键, ARGV[1]=本次请求的累计应回补数量, ARGV[2]=TTL 秒
+     */
+    /** 补偿类型：1-预扣回滚 2-退款回补 */
+    private static final int COMPENSATION_TYPE_REFUND_RESTORE = 2;
+
+    private static final String REFUND_RESTORE_DELTA_SCRIPT =
+            "local cur = tonumber(redis.call('GET', KEYS[1]) or '0') "
+                    + "local target = tonumber(ARGV[1]) "
+                    + "if target <= cur then return 0 end "
+                    + "redis.call('SET', KEYS[1], tostring(target), 'EX', tonumber(ARGV[2])) "
+                    + "return target - cur";
     private final DefaultRedisScript<Long> confirmScript;
     private final BusinessMetrics businessMetrics;
     private final org.redisson.api.RedissonClient redissonClient;
@@ -75,6 +88,15 @@ public class InventoryService {
 
     @Value("${inventory.bucket.hot-count:8}")
     private int hotBucketCount;
+
+    /** 预扣记录物理 TTL 相对到期时间的缓冲（秒）：保证超时任务到期后仍可回退 */
+    private static final int PREDEDUCT_RECORD_TTL_BUFFER_SECONDS = 600;
+
+    /** 热点检测采样率（每 N 次预扣检测一次；1=不采样） */
+    @Value("${inventory.hot.detect-sample-rate:5}")
+    private int hotDetectSampleRate;
+
+    private final java.util.concurrent.atomic.AtomicLong hotDetectCounter = new java.util.concurrent.atomic.AtomicLong();
 
     @Value("${inventory.prededuct.expire-seconds:1800}")
     private int preDeductExpireSeconds;
@@ -267,11 +289,11 @@ public class InventoryService {
                 if (!skuExists(skuId)) {
                     throw new BizException(ResultCode.PARAM_INVALID, "SKU不存在");
                 }
-                throw new BizException(ResultCode.PARAM_INVALID, "库存未初始化");
+                throw new BizException(ResultCode.SKU_STOCK_NOT_INITIALIZED, "库存未初始化");
             }
             bucketCountStr = stringRedisTemplate.opsForValue().get(bucketCountKey(skuId));
             if (bucketCountStr == null) {
-                throw new BizException(ResultCode.PARAM_INVALID, "库存未初始化");
+                throw new BizException(ResultCode.SKU_STOCK_NOT_INITIALIZED, "库存未初始化");
             }
             log.info("[库存] canal缓存失效后自愈重建: skuId={}, bucketCount={}", skuId, bucketCountStr);
         }
@@ -284,7 +306,11 @@ public class InventoryService {
         }
 
         // 【M9】热点检测（异步触发扩容，不阻塞当前请求）
-        if (hotSkuDetector.recordAndCheck(skuId) && bucketCount < hotBucketCount) {
+        // 降采样：检测含 4 次 Redis RTT，采样 1/5 摊薄热路径开销（检测灵敏度同比下降，
+        // 热点扩容本属"锦上添花"，正确性不依赖它）
+        int sampleRate = Math.max(1, hotDetectSampleRate);   // 防配置为 0 时除零
+        boolean hotSampleHit = (hotDetectCounter.incrementAndGet() % sampleRate) == 0;
+        if (hotSampleHit && hotSkuDetector.recordAndCheck(skuId) && bucketCount < hotBucketCount) {
             final int currentBuckets = bucketCount;
             inventoryAsyncExecutor.execute(() -> {
                 try {
@@ -320,7 +346,9 @@ public class InventoryService {
                 // 双精度精度丢失 → 路由恒偏（2088133360045031426 → 偶数 → 恒桶0）。
                 // 改为 Java 侧精确取模后传入 ARGV[7]（Java long 精确）。
                 String.valueOf(Math.floorMod(request.getUserId(), (long) bucketCount)),
-                String.valueOf(preDeductExpireSeconds)
+                String.valueOf(preDeductExpireSeconds),
+                // 记录物理 TTL = 到期 + 缓冲：让超时任务在"到期后"仍能读到记录做回退（不再需要提前释放）
+                String.valueOf(preDeductExpireSeconds + PREDEDUCT_RECORD_TTL_BUFFER_SECONDS)
         );
 
         if (result == null) {
@@ -349,7 +377,7 @@ public class InventoryService {
                 // 幂等：重复预扣不报错，视为成功（幂等占位保留）
                 return true;
             }
-            case -2 -> throw new BizException(ResultCode.PARAM_INVALID, "库存未初始化");
+            case -2 -> throw new BizException(ResultCode.SKU_STOCK_NOT_INITIALIZED, "库存未初始化");
             default -> throw new BizException(ResultCode.INTERNAL_ERROR, "库存操作异常: result=" + result);
         }
     }
@@ -470,7 +498,16 @@ public class InventoryService {
 
             // 获取来源桶号（release.lua 需要桶 Key 作为 KEYS[3]）
             Object bucketNoObj = stringRedisTemplate.opsForHash().get(predeductKey, fieldName + ":bucket");
-            int bucketNo = bucketNoObj != null ? Integer.parseInt(bucketNoObj.toString()) : 0;
+            int bucketNo = 0;
+            if (bucketNoObj != null) {
+                try {
+                    bucketNo = Integer.parseInt(bucketNoObj.toString());
+                } catch (NumberFormatException e) {
+                    // 脏桶号按桶 0 处理并告警（原实现直接 500；其它路径均容错）
+                    log.warn("[库存] 预扣记录桶号非法, 按桶0处理: orderId={}, skuId={}, raw={}",
+                            orderId, skuId, bucketNoObj);
+                }
+            }
 
             String totalKeyStr = totalKey(skuId);
             String bucketKeyStr = bucketKey(skuId, bucketNo);
@@ -523,13 +560,9 @@ public class InventoryService {
             String bucketCountStr = stringRedisTemplate.opsForValue().get(bucketCountKey(skuId));
             int bucketCount = bucketCountStr != null ? Integer.parseInt(bucketCountStr) : defaultBucketCount;
 
-            // lockedStock 不缓存在 Redis，从 MySQL 查
-            Integer lockedStock = null;
-            Inventory inv = inventoryMapper.selectOne(
-                    new LambdaQueryWrapper<Inventory>()
-                            .select(Inventory::getLockedStock)
-                            .eq(Inventory::getSkuId, skuId));
-            if (inv != null) lockedStock = inv.getLockedStock();
+            // lockedStock 展示字段：原实现每请求查一次 MySQL（Redis 缓存形同虚设）。
+            // 改 5s 短缓存：允许秒级滞后（变化路径不主动失效，locked 对账/预扣链路以 DB 为准可收敛）
+            Integer lockedStock = readLockedStockCached(skuId);
 
             return StockVO.builder()
                     .skuId(skuId)
@@ -628,6 +661,34 @@ public class InventoryService {
     }
 
     /**
+     * 读取 lockedStock（5s Redis 短缓存）
+     */
+    private Integer readLockedStockCached(Long skuId) {
+        String key = "inventory:locked:cache:" + skuId;
+        try {
+            String cached = stringRedisTemplate.opsForValue().get(key);
+            if (cached != null) {
+                return Integer.valueOf(cached);
+            }
+        } catch (Exception e) {
+            log.warn("[库存] locked 缓存读取失败(降级查DB): skuId={}", skuId);
+        }
+        Inventory inv = inventoryMapper.selectOne(
+                new LambdaQueryWrapper<Inventory>()
+                        .select(Inventory::getLockedStock)
+                        .eq(Inventory::getSkuId, skuId));
+        Integer locked = inv != null ? inv.getLockedStock() : null;
+        if (locked != null) {
+            try {
+                stringRedisTemplate.opsForValue().set(key, String.valueOf(locked), 5, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (Exception ignored) {
+                // 缓存写失败不影响返回
+            }
+        }
+        return locked;
+    }
+
+    /**
      * Rebuild Redis bucket from MySQL (T-066 self-heal).
      * <p>
      * canal INSERT cache-eviction deletes Redis stock keys (total, buckets, bucket-count)
@@ -696,7 +757,9 @@ public class InventoryService {
      * <p>
      * 全额退款后调用：confirm 已清预扣记录 → release 无记录可退（G5 实证退款不退库存）。
      * 独立语义：Redis total/路由桶 +qty + MQ REFUND_RESTORE（L2 同步 MySQL available_stock）。
-     * 幂等：SETNX inventory:refund:{orderId}（24h）防重复回补（退款回调可能重投/重试）。
+     * 幂等（累计语义，2026-09-21）：key inventory:refund:{orderId}:{skuId} 记录"已受理的应回补数量"，
+     * 只回补正增量——重复调用/重试 delta=0 跳过；分次退货（先 1 件后 2 件）不会漏补；
+     * 与全额退款路径叠加时后到者 delta=0，不会重复回补。失败时回滚累计值允许重试。
      * </p>
      */
     public void refundRestore(com.myxhs.inventory.dto.request.RefundRestoreRequest request) {
@@ -704,14 +767,36 @@ public class InventoryService {
         Long skuId = request.getSkuId();
         int quantity = request.getQuantity();
 
-        // 幂等：同一订单的每个 SKU 各自回补一次
-        String idemKey = "inventory:refund:" + orderId + ":" + skuId;
-        Boolean first = stringRedisTemplate.opsForValue()
-                .setIfAbsent(idemKey, "1", java.time.Duration.ofHours(24));
-        if (!Boolean.TRUE.equals(first)) {
-            log.info("[库存退款回补] 幂等跳过（已回补）: orderId={}, skuId={}", orderId, skuId);
+        // 幂等（累计语义）：key 记录"该订单该 SKU 已受理的应回补数量"，只回补正增量——
+        // - 重复调用 / Feign 重试：target 不变 → delta=0 → 跳过（幂等）
+        // - 分次售后：先退 1 件补 1，再退剩余 2 件补 2（不漏补）
+        // - 售后与全额退款路径叠加：任一先到，后到者 delta=0（不重复补）
+        // 扩容暂停窗口（preDeduct/release/confirm 都检查）：窗口内回补可能落旧桶被重分配覆盖，
+        // 且必须在推进累计键之前判断——否则重试时 delta=0 会静默跳过（漏补）
+        if (Boolean.TRUE.equals(stringRedisTemplate.hasKey("inventory:paused:" + skuId))) {
+            log.warn("[库存退款回补] SKU扩容暂停窗口内, 落补偿表稍后重试: orderId={}, skuId={}", orderId, skuId);
+            recordRefundRestoreCompensation(orderId, skuId, quantity, request.getUserId(), "resize-paused");
             return;
         }
+
+        String idemKey = "inventory:refund:" + orderId + ":" + skuId;
+        Long delta;
+        try {
+            delta = stringRedisTemplate.execute(new DefaultRedisScript<>(REFUND_RESTORE_DELTA_SCRIPT, Long.class),
+                    java.util.List.of(idemKey), String.valueOf(quantity),
+                    String.valueOf(java.time.Duration.ofDays(30).getSeconds()));
+        } catch (Exception e) {
+            // Redis 不可用：不能直接返回（调用方会当作回补成功而不再重试）——落补偿表由 Job 重试
+            log.error("[库存退款回补] 累计幂等键读取失败, 落补偿表待重试: orderId={}, skuId={}", orderId, skuId, e);
+            recordRefundRestoreCompensation(orderId, skuId, quantity, request.getUserId(), e.getMessage());
+            return;
+        }
+        if (delta == null || delta <= 0) {
+            log.info("[库存退款回补] 幂等跳过（本次请求 {} 件, 累计已受理）: orderId={}, skuId={}",
+                    quantity, orderId, skuId);
+            return;
+        }
+        int restoreQty = delta.intValue();
         try {
             // 防御（T-078）：Redis total 缺失时先自愈重建（canal 延迟删除/Redis 故障场景），
             // 否则 INCR 空 key 从 0 开始 → 错误回补
@@ -730,21 +815,45 @@ public class InventoryService {
             String totalKeyStr = totalKey(skuId);
             String bucketKeyStr = bucketKey(skuId, bucketNo);
 
-            // Redis 原子回补（total + 桶）
+            // Redis 原子回补（total + 桶），数量取正增量
             String script = "return redis.call('INCRBY', KEYS[1], ARGV[1]) + redis.call('INCRBY', KEYS[2], ARGV[1])";
             stringRedisTemplate.execute(new DefaultRedisScript<>(script, Long.class),
-                    java.util.List.of(totalKeyStr, bucketKeyStr), String.valueOf(quantity));
-            log.info("[库存退款回补] Redis回补: orderId={}, skuId={}, qty={}, bucket={}",
-                    orderId, skuId, quantity, bucketNo);
+                    java.util.List.of(totalKeyStr, bucketKeyStr), String.valueOf(restoreQty));
+            log.info("[库存退款回补] Redis回补: orderId={}, skuId={}, delta={}, bucket={}",
+                    orderId, skuId, restoreQty, bucketNo);
 
-            // MQ 同步 MySQL（available_stock +qty）
-            if (!sendInventoryEvent(orderId, skuId, quantity, "REFUND_RESTORE")) {
+            // MQ 同步 MySQL（available_stock +delta）
+            if (!sendInventoryEvent(orderId, skuId, restoreQty, "REFUND_RESTORE")) {
                 log.error("[库存退款回补] MQ发送失败(依赖Outbox/对账兜底): orderId={}, skuId={}", orderId, skuId);
             }
         } catch (Exception e) {
-            // 失败删除幂等键允许重试（极端情况 Redis 不可用）
-            stringRedisTemplate.delete(idemKey);
+            // 回滚累计值到本次之前（best-effort），允许重试，避免"没回补却记成已受理"
+            try {
+                stringRedisTemplate.opsForValue().set(idemKey, String.valueOf(quantity - restoreQty),
+                        30, java.util.concurrent.TimeUnit.DAYS);
+            } catch (Exception rollbackEx) {
+                log.error("[库存退款回补] 累计值回滚失败(可能漏补, 需人工核对): orderId={}, skuId={}",
+                        orderId, skuId, rollbackEx);
+            }
+            // 落补偿表由 InventoryCompensationJob 自动重试（type=2 退款回补）；已有待处理记录则不重复堆积
+            // 注意：补偿行存"累计目标"（quantity），不是本次增量 delta——
+            // 重试接口按累计目标判定，存 delta 会被当成目标导致重试无效（静默少补）
+            recordRefundRestoreCompensation(orderId, skuId, quantity, request.getUserId(), String.valueOf(e.getMessage()));
             throw e;
+        }
+    }
+
+    /**
+     * 写"退款回补"补偿记录（type=2），由 InventoryCompensationJob 自动重试；已有待处理记录则不重复堆积
+     */
+    private void recordRefundRestoreCompensation(Long orderId, Long skuId, int quantity, Long userId, String reason) {
+        try {
+            if (inventoryMapper.countPendingCompensation(orderId, skuId, COMPENSATION_TYPE_REFUND_RESTORE) == 0) {
+                inventoryMapper.insertCompensationWithType(orderId, skuId, quantity,
+                        COMPENSATION_TYPE_REFUND_RESTORE, userId, reason);
+            }
+        } catch (Exception ce) {
+            log.error("[库存退款回补] 补偿记录写入失败, 需人工介入: orderId={}, skuId={}", orderId, skuId, ce);
         }
     }
 
@@ -756,10 +865,18 @@ public class InventoryService {
             String predeductKeyStr = predeductKey(orderId);
             String totalKeyStr = totalKey(skuId);
 
-            // 获取来源桶号（与 releaseStock 逻辑一致）
+            // 获取来源桶号（与 releaseStock 逻辑一致；脏值按桶 0 并告警，不因回滚路径 500）
             Object bucketNoObj = stringRedisTemplate.opsForHash()
                     .get(predeductKeyStr, skuId + ":bucket");
-            int bucketNo = bucketNoObj != null ? Integer.parseInt(bucketNoObj.toString()) : 0;
+            int bucketNo = 0;
+            if (bucketNoObj != null) {
+                try {
+                    bucketNo = Integer.parseInt(bucketNoObj.toString());
+                } catch (NumberFormatException e) {
+                    log.warn("[库存] 预扣回滚桶号非法, 按桶0处理: orderId={}, skuId={}, raw={}",
+                            orderId, skuId, bucketNoObj);
+                }
+            }
             String bucketKeyStr = bucketKey(skuId, bucketNo);
 
             stringRedisTemplate.execute(

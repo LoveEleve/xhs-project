@@ -10,6 +10,7 @@
 -- ARGV[3] = MAX_CART_SIZE
 -- ARGV[4] = MAX_ITEM_QUANTITY
 -- ARGV[5] = sortScore (时间戳)
+-- ARGV[6] = ttlSeconds (购物车 Key 滑动 TTL 秒数，脚本内设置)
 --
 -- 返回：
 --   >0 且 <10000 : 新商品成功（合并后的实际数量）
@@ -23,6 +24,11 @@ if redis.call('HEXISTS', KEYS[1], ARGV[1]) == 1 then
     local maxQty = tonumber(ARGV[4])
     if mergedQty > maxQty then mergedQty = maxQty end
     redis.call('HSET', KEYS[1], ARGV[1], mergedQty)
+    if tonumber(ARGV[6]) and tonumber(ARGV[6]) > 0 then
+        redis.call('EXPIRE', KEYS[1], ARGV[6])
+        redis.call('EXPIRE', KEYS[2], ARGV[6])
+        redis.call('EXPIRE', KEYS[3], ARGV[6])
+    end
     return mergedQty + 10000
 else
     -- 新商品：检查品种上限 + 数量截断 + 加入
@@ -34,5 +40,10 @@ else
     redis.call('HSET', KEYS[1], ARGV[1], qty)
     redis.call('SADD', KEYS[2], ARGV[1])
     redis.call('ZADD', KEYS[3], 'NX', ARGV[5], ARGV[1])
+    if tonumber(ARGV[6]) and tonumber(ARGV[6]) > 0 then
+        redis.call('EXPIRE', KEYS[1], ARGV[6])
+        redis.call('EXPIRE', KEYS[2], ARGV[6])
+        redis.call('EXPIRE', KEYS[3], ARGV[6])
+    end
     return qty
 end

@@ -10,6 +10,7 @@
 -- ARGV[3] = maxCartSize (购物车上限，如 50)
 -- ARGV[4] = maxItemQuantity (单品上限，如 99)
 -- ARGV[5] = timestamp (加购时间戳)
+-- ARGV[6] = ttlSeconds (购物车 Key 滑动 TTL 秒数；脚本内设置，避免创建成功但 Java 侧刷新失败导致 Key 永不过期)
 --
 -- 返回值：
 --   > 10000 : 操作成功且为新商品（实际数量 = 返回值 - 10000，调用方发 ADD 事件 checked=1）
@@ -56,6 +57,13 @@ end
 -- 6. 记录加购时间（仅新商品记录，NX 语义）
 if exists == 0 then
     redis.call('ZADD', sortKey, 'NX', timestamp, skuId)
+end
+
+-- 6.5 滑动 TTL：在脚本内设置（原子且不受 Java 侧刷新失败影响）
+if tonumber(ARGV[6]) and tonumber(ARGV[6]) > 0 then
+    redis.call('EXPIRE', itemsKey, ARGV[6])
+    redis.call('EXPIRE', checkedKey, ARGV[6])
+    redis.call('EXPIRE', sortKey, ARGV[6])
 end
 
 -- 7. 新商品加 10000 标志（T-107），调用方据此决定 checked 事件值

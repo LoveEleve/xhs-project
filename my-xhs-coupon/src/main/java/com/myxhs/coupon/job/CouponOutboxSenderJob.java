@@ -49,12 +49,9 @@ public class CouponOutboxSenderJob {
     private final RocketMQTemplate rocketMQTemplate;
     private final ObjectMapper objectMapper;
     private final RedissonClient redissonClient;
-    private final org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
-    private final CouponService couponService;
 
     private static final String LOCK_KEY = "myxhs:lock:job:coupon:outbox";
     private static final String COUPON_CLAIM_TOPIC = "COUPON_CLAIM_TOPIC";
-    private static final String RETURN_REPAIR_FALLBACK_KEY = "myxhs:coupon:return:repair:pending";
     private static final int BATCH_SIZE = 200;
 
     @Scheduled(fixedRate = 5000)
@@ -87,13 +84,15 @@ public class CouponOutboxSenderJob {
                     } else {
                         log.warn("[CouponOutbox] 补发SendResult非SEND_OK: userId={}, templateId={}, claimNo={}, status={}",
                                 userId, templateId, claimNo, result.getSendStatus());
+                        scheduleRetry(id, row);
                     }
                 } catch (Exception e) {
                     log.warn("[CouponOutbox] 补发失败: userId={}, templateId={}, claimNo={}",
                             userId, templateId, claimNo, e);
+                    scheduleRetry(id, row);
                 }
             }
-            replayReturnRepairFallback();
+            // （2026-09-23 删除）退券 Redis 补偿重放段：生产者零调用的旧语义残留，见 CouponService 注释
         } catch (Exception e) {
             log.error("[CouponOutbox] 扫描异常", e);
         } finally {
@@ -103,30 +102,21 @@ public class CouponOutboxSenderJob {
         }
     }
 
-    private void replayReturnRepairFallback() {
+    /**
+     * 补发失败：指数退避（30s→480s 封顶）+ ±20% 抖动，写回 next_retry_time（P2/2026-09-27）。
+     * 连续失败 >10 次打 WARN（长期失败可见）；记录不丢弃——券事件必须最终送达。
+     */
+    private void scheduleRetry(Long id, Map<String, Object> row) {
         try {
-            java.util.Set<String> pending = stringRedisTemplate.opsForSet().members(RETURN_REPAIR_FALLBACK_KEY);
-            if (pending == null || pending.isEmpty()) {
-                return;
-            }
-            for (String member : pending) {
-                String[] parts = member.split(":", 2);
-                if (parts.length != 2) {
-                    stringRedisTemplate.opsForSet().remove(RETURN_REPAIR_FALLBACK_KEY, member);
-                    continue;
-                }
-                try {
-                    Long templateId = Long.valueOf(parts[0]);
-                    Long userId = Long.valueOf(parts[1]);
-                    couponService.repairReturnCouponRedis(userId, templateId);
-                    stringRedisTemplate.opsForSet().remove(RETURN_REPAIR_FALLBACK_KEY, member);
-                    log.info("[CouponOutbox] 退券Redis兜底重放成功: {}", member);
-                } catch (Exception e) {
-                    log.warn("[CouponOutbox] 退券Redis兜底重放失败: {}", member, e);
-                }
+            int attempt = ((Number) row.getOrDefault("retry_count", 0)).intValue() + 1;
+            long delaySeconds = com.myxhs.common.mq.RetryBackoffUtils.exponentialSeconds(attempt, 30, 480, 0.2);
+            outboxMapper.markOutboxRetry(id, java.time.LocalDateTime.now().plusSeconds(delaySeconds));
+            if (attempt > 10) {
+                log.warn("[CouponOutbox] 连续补发失败 {} 次: id={}, nextRetry={}s", attempt, id, delaySeconds);
             }
         } catch (Exception e) {
-            log.error("[CouponOutbox] 退券Redis兜底扫描异常", e);
+            log.warn("[CouponOutbox] 写回重试时间失败(下轮仍会重试): id={}, error={}", id, e.getMessage());
         }
     }
+
 }

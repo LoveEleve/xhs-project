@@ -1,3 +1,4 @@
 com.myxhs.common.zone.ZoneContextAutoConfiguration
 com.myxhs.common.zone.redis.config.RedisInterceptorAutoConfiguration
 com.myxhs.common.zone.propagation.ZonePropagationAutoConfiguration
+com.myxhs.common.health.HealthIndicatorAutoConfiguration

@@ -3,7 +3,6 @@ package com.myxhs.common.metrics;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import jdk.internal.vm.annotation.Contended;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
@@ -21,7 +20,6 @@ import java.util.concurrent.TimeUnit;
  * - Timer：耗时分布，适合记录操作延迟（下单耗时 P50/P90/P99）
  * - Gauge：可增可减，适合当前状态（热点 SKU 数、MQ 积压量）
  */
-@Contended
 @Component
 public class BusinessMetrics {
 
@@ -53,6 +51,22 @@ public class BusinessMetrics {
         counter("orders.timeout.closed").increment();
     }
 
+    /**
+     * 记录订单事件流校准差异（consistent / mismatch/terminal）
+     * <p>每日校准干跑：状态与事件流分叉必须可见（只报告不自动覆盖）。</p>
+     */
+    public void recordOrderCalibration(String result) {
+        counter("orders.calibration.total", "result", result).increment();
+    }
+
+    /**
+     * 记录支付结果回写订单的异常分布（race / transient_event_failed / transient_status_lost / not_found）
+     * <p>原实现这些分支只打日志：false 返回里"竞态正常"与"瞬态失败"混在一起，运维无法区分。</p>
+     */
+    public void recordOrderPayResult(String reason) {
+        counter("orders.pay_result.total", "reason", reason).increment();
+    }
+
     // ==================== 库存指标 ====================
 
     /** 记录库存预扣结果 */
@@ -68,6 +82,16 @@ public class BusinessMetrics {
     /** 记录库存确认/释放 */
     public void recordInventoryAction(String action) {
         counter("inventory.action.total", "action", action).increment();
+    }
+
+    /** 记录库存链路失败（预扣耗尽/确认失败等需业务收口的场景） */
+    public void recordInventoryFailure(String reason) {
+        counter("inventory.failure.total", "reason", reason).increment();
+    }
+
+    /** 记录订单侧对库存失败事件的处理结果（auto_cancelled/manual_required_paid/...） */
+    public void recordOrderInventoryFailure(String result) {
+        counter("order.inventory_failure.total", "result", result).increment();
     }
 
     // ==================== 支付指标 ====================
@@ -94,6 +118,36 @@ public class BusinessMetrics {
     /** 记录优惠券领取/使用 */
     public void recordCouponAction(String action, boolean success) {
         counter("coupon.action.total", "action", action, "result", success ? "success" : "fail").increment();
+    }
+
+    /**
+     * 记录 Feed 推送补偿"终态"（重投超上限，已停止重投，需人工介入）
+     */
+    public void recordFeedPushTerminal(String reason) {
+        counter("feed.push.terminal.total", "reason", reason).increment();
+    }
+
+    // ==================== 售后 / 结算指标 ====================
+
+    /** 记录售后申请结果（applied / duplicated） */
+    public void recordAftersaleApply(String result) {
+        counter("aftersale.apply.total", "result", result).increment();
+    }
+
+    /** 记录售后退款执行结果（成功/失败） */
+    public void recordAftersaleRefund(boolean success) {
+        counter("aftersale.refund.total", "result", success ? "success" : "fail").increment();
+    }
+
+    /** 记录结算对账差异（渠道 + 差异类型） */
+    public void recordSettlementDiff(Integer channel, Integer diffType) {
+        counter("settlement.diff.total", "channel", String.valueOf(channel),
+                "diffType", String.valueOf(diffType)).increment();
+    }
+
+    /** 记录结算对账结果（reconciled / hasDiff / skipped） */
+    public void recordSettlementReconcile(String result) {
+        counter("settlement.reconcile.total", "result", result).increment();
     }
 
     // ==================== MQ 指标 ====================
@@ -135,6 +189,11 @@ public class BusinessMetrics {
                 Counter.builder("orders.created.total").tags("status", "").description("业务指标: orders.created.total").register(registry),
                 Counter.builder("orders.paid.total").tags("channel", "", "result", "").description("业务指标: orders.paid.total").register(registry),
                 Counter.builder("orders.timeout.closed").description("业务指标: orders.timeout.closed").register(registry),
+                Counter.builder("feed.push.terminal.total").tags("reason", "").description("业务指标: feed.push.terminal.total").register(registry),
+                Counter.builder("aftersale.apply.total").tags("result", "").description("业务指标: aftersale.apply.total").register(registry),
+                Counter.builder("aftersale.refund.total").tags("result", "").description("业务指标: aftersale.refund.total").register(registry),
+                Counter.builder("settlement.diff.total").tags("channel", "", "diffType", "").description("业务指标: settlement.diff.total").register(registry),
+                Counter.builder("settlement.reconcile.total").tags("result", "").description("业务指标: settlement.reconcile.total").register(registry),
                 Counter.builder("inventory.prededuct.total").tags("result", "").description("业务指标: inventory.prededuct.total").register(registry),
                 Counter.builder("inventory.action.total").tags("action", "").description("业务指标: inventory.action.total").register(registry),
                 Counter.builder("payment.callback.total").tags("status", "").description("业务指标: payment.callback.total").register(registry),

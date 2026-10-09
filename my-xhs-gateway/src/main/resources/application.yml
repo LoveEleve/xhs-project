@@ -1,16 +1,15 @@
 server:
   port: 19000
   shutdown: graceful
-  tomcat:
-    # Tomcat 线程数按服务特性差异化：网关(入口,IO密集)=300, 库存(锁竞争)=100, 支付(等回调)=100, 其他=150
-    threads:
-      max: 300
-      min-spare: 30
-    max-connections: 8192
-    accept-count: 100
-    connection-timeout: 30000          # 连接超时 30s
-    keep-alive-timeout: 60000          # Keep-Alive 超时 60s
-    max-keep-alive-requests: 200       # 单连接最大 200 次请求
+  # ⚠️ 本服务运行在 Netty（WebFlux + spring-cloud-starter-gateway，classpath 无 spring-boot-starter-web），
+  # 因此 server.tomcat.* 是死配置：只有 Tomcat 的 WebServerFactory 才读这些 key，
+  # common 的 MyXhsTomcatCustomizer 也不在 gateway 的 classpath 上（gateway 不依赖 common）。
+  # 此前这里配的 threads/max-connections/accept-count/keep-alive 全部被静默忽略，已于 2026-09-21 删除。
+  # Netty 栈的真实调优入口（按需再加，勿照搬 servlet 口径）：
+  #   上游连接池与超时：spring.cloud.gateway.httpclient.pool.* / connect-timeout / response-timeout（见 routes metadata）
+  #   连接空闲/握手：  server.netty.connection-timeout / server.netty.idle-timeout
+  #   EventLoop 线程数：reactor.netty.ioWorkerCount（默认 CPU×2，IO 密集可上调）
+  #   注意：SSE/WebSocket 长连接场景慎配 idle-timeout（可能误杀空闲长连接）
   compression:
     enabled: true
     mime-types: application/json,application/xml,text/html,text/xml,text/plain,text/css,application/javascript
@@ -23,9 +22,8 @@ spring:
     import:
       - optional:nacos:my-xhs-common.yaml?group=DEFAULT_GROUP&refreshEnabled=true
       - optional:nacos:my-xhs-gateway.yaml?group=DEFAULT_GROUP&refreshEnabled=true
-  mvc:
-    pathmatch:
-      matching-strategy: ant_path_matcher
+  # ⚠️ 原 spring.mvc.pathmatch.matching-strategy=ant_path_matcher 同为死配置（Spring MVC 不在 classpath；
+  # WebFlux 固定用 PathPatternParser，Boot 3.2 的 WebFluxProperties 没有 matching-strategy 键，无需替代配置），已删除。
   application:
     name: my-xhs-gateway
   # Gateway 是 WebFlux 网关，无数据库

@@ -115,7 +115,9 @@ public class GlobalExceptionHandler implements ErrorWebExceptionHandler {
             // 其 cause 链不含 ConnectException/TimeoutException 类型（超时被包装），原实现落入 500。
             // 识别 ResponseStatusException 直接采用其 statusCode，保证 504/404 等语义正确。
             if (current instanceof org.springframework.web.server.ResponseStatusException rse) {
-                return HttpStatus.resolve(rse.getStatusCode().value());
+                // resolve 对非标准状态码返回 null（原实现直接返回 → 调用方 status.value() NPE）
+                HttpStatus resolved = HttpStatus.resolve(rse.getStatusCode().value());
+                return resolved != null ? resolved : HttpStatus.INTERNAL_SERVER_ERROR;
             }
             if (current instanceof java.net.ConnectException) {
                 return HttpStatus.SERVICE_UNAVAILABLE;

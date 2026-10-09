@@ -56,11 +56,21 @@ public class SseEmitterManager {
     private static final String SSE_KEY_PREFIX = "myxhs:notification:sse:";
     private static final Duration SSE_TTL = Duration.ofSeconds(30);
 
-    /** Redis Pub/Sub Channel：跨实例 SSE 推送 */
-    private static final String NOTIFY_SSE_CHANNEL = "myxhs:notification:sse:channel";
+    /**
+     * Redis Pub/Sub Channel 前缀：跨实例 SSE 推送
+     * <p>
+     * 定向 Channel（每实例一个）：原实现所有实例订阅同一 Channel + 广播，
+     * 非目标实例收到后丢弃（N-1 次无效投递）；改为按路由值定向发布，
+     * 与 im 模块的路由模式一致。路由值由 {@link #getServerId()} 保证唯一。
+     * </p>
+     */
+    private static final String NOTIFY_SSE_CHANNEL_PREFIX = "myxhs:notification:sse:channel:";
 
-    /** 服务实例标识（IP:Port） */
+    /** 服务实例标识（IP:Port#PID，同主机多实例也可区分） */
     private volatile String serverId;
+
+    @org.springframework.beans.factory.annotation.Value("${server.port:19013}")
+    private int serverPort;
 
     /**
      * 建立 SSE 连接
@@ -69,7 +79,16 @@ public class SseEmitterManager {
      * 注册 onCompletion/onTimeout/onError 回调清理资源。
      * </p>
      */
+    /** 单实例 SSE 连接上限（与 IM 的 MAX_CONNECTIONS 同口径；连接 hold 的是 Tomcat async 请求，必须设帽） */
+    private static final int MAX_CONNECTIONS = 50_000;
+
     public SseEmitter createConnection(Long userId) {
+        // 容量保护：原实现无上限（已在线用户重复连接会 put 覆盖，但新用户可无限建连 → 打爆实例）
+        if (emitters.size() >= MAX_CONNECTIONS && !emitters.containsKey(userId)) {
+            log.warn("[SSE] 连接数超限: current={}, max={}, userId={}", emitters.size(), MAX_CONNECTIONS, userId);
+            throw new com.myxhs.common.exception.BizException(
+                    com.myxhs.common.response.ResultCode.SERVICE_UNAVAILABLE, "实时连接数已达上限，请稍后重试");
+        }
         SseEmitter emitter = new SseEmitter(TimeUnit.MINUTES.toMillis(30)); // 30分钟超时兜底
 
         // 原子替换：put 返回旧值，保证同一 userId 不会并发创建两个有效连接
@@ -143,8 +162,8 @@ public class SseEmitterManager {
         // 2. 查询 Redis 路由，判断是否在其他实例在线
         String targetServerId = stringRedisTemplate.opsForValue().get(SSE_KEY_PREFIX + userId);
         if (targetServerId != null) {
-            // 用户在其他实例在线 → 通过 Redis Pub/Sub 跨实例推送
-            return publishCrossInstance(userId, "notification", data);
+            // 用户在其他实例在线 → 通过 Redis Pub/Sub 定向推送到该实例
+            return publishCrossInstance(targetServerId, userId, "notification", data);
         }
 
         // 3. 用户不在线
@@ -165,7 +184,7 @@ public class SseEmitterManager {
         // 2. 查询 Redis 路由，判断是否在其他实例在线
         String targetServerId = stringRedisTemplate.opsForValue().get(SSE_KEY_PREFIX + userId);
         if (targetServerId != null) {
-            publishCrossInstance(userId, "unread-count", countData);
+            publishCrossInstance(targetServerId, userId, "unread-count", countData);
         }
     }
 
@@ -223,26 +242,34 @@ public class SseEmitterManager {
     }
 
     /**
-     * 通过 Redis Pub/Sub 发布跨实例推送消息
+     * 通过 Redis Pub/Sub 定向发布跨实例推送消息
      * <p>
      * 消息格式：JSON {"userId":123,"event":"notification","data":{...}}
-     * 所有 SSE 实例都会收到，只有目标用户在线的实例才会处理。
+     * 只投递到路由指向的实例；返回值语义是"已发布"（Pub/Sub 即发即忘，
+     * 不保证目标实例消费成功——通知的权威来源是列表 API，SSE 只是实时加速）。
      * </p>
      */
-    private boolean publishCrossInstance(Long userId, String eventName, Object data) {
+    private boolean publishCrossInstance(String targetServerId, Long userId, String eventName, Object data) {
         try {
             Map<String, Object> message = Map.of(
                     "userId", userId,
                     "event", eventName,
                     "data", data);
             String json = objectMapper.writeValueAsString(message);
-            stringRedisTemplate.convertAndSend(NOTIFY_SSE_CHANNEL, json);
-            log.debug("[SSE] 跨实例推送发布: userId={}, event={}", userId, eventName);
+            stringRedisTemplate.convertAndSend(NOTIFY_SSE_CHANNEL_PREFIX + targetServerId, json);
+            log.debug("[SSE] 跨实例推送发布: userId={}, event={}, target={}", userId, eventName, targetServerId);
             return true;
         } catch (Exception e) {
-            log.warn("[SSE] 跨实例推送发布失败: userId={}, event={}", userId, eventName, e);
+            log.warn("[SSE] 跨实例推送发布失败: userId={}, event={}, target={}", userId, eventName, targetServerId, e);
             return false;
         }
+    }
+
+    /**
+     * 本实例的订阅 Channel（订阅方与发布方共用同一命名规则）
+     */
+    public String getChannelName() {
+        return NOTIFY_SSE_CHANNEL_PREFIX + getServerId();
     }
 
     /**
@@ -262,15 +289,21 @@ public class SseEmitterManager {
         long ts = System.currentTimeMillis();
 
         // 1. Pipeline 批量续期 Redis
-        stringRedisTemplate.executePipelined((RedisCallback<Object>) connection -> {
-            StringRedisConnection stringConn = (StringRedisConnection) connection;
-            for (Long userId : emitters.keySet()) {
-                stringConn.set(SSE_KEY_PREFIX + userId, sid,
-                        Expiration.seconds(30),
-                        org.springframework.data.redis.connection.RedisStringCommands.SetOption.UPSERT);
-            }
-            return null;
-        });
+        //    异常隔离：Redis 抖动时本轮续期失败不影响下面的"本地死连接清理"（原实现直接抛出，
+        //    清理循环被跳过 → 死连接滞留到 emitter 30 分钟超时）
+        try {
+            stringRedisTemplate.executePipelined((RedisCallback<Object>) connection -> {
+                StringRedisConnection stringConn = (StringRedisConnection) connection;
+                for (Long userId : emitters.keySet()) {
+                    stringConn.set(SSE_KEY_PREFIX + userId, sid,
+                            Expiration.seconds(30),
+                            org.springframework.data.redis.connection.RedisStringCommands.SetOption.UPSERT);
+                }
+                return null;
+            });
+        } catch (Exception e) {
+            log.warn("[SSE] 心跳续期失败(本轮跳过, 下轮重试): 在线连接数={}", emitters.size(), e);
+        }
 
         // 2. 发送心跳事件给客户端（检测连接存活）
         for (Map.Entry<Long, SseEmitter> entry : emitters.entrySet()) {
@@ -330,12 +363,17 @@ public class SseEmitterManager {
      */
     public String getServerId() {
         if (serverId == null) {
-            try {
-                String host = InetAddress.getLocalHost().getHostAddress();
-                String port = System.getProperty("server.port", "19013");
-                serverId = host + ":" + port;
-            } catch (Exception e) {
-                serverId = "unknown:" + System.currentTimeMillis();
+            synchronized (this) {
+                if (serverId == null) {
+                    try {
+                        String host = InetAddress.getLocalHost().getHostAddress();
+                        // 原实现 System.getProperty("server.port") 读不到 Spring 配置（恒取默认 19013），
+                        // 同主机多实例 serverId 完全相同 → 跨实例路由值无法区分实例；追加 PID 保证唯一
+                        serverId = host + ":" + serverPort + "#" + ProcessHandle.current().pid();
+                    } catch (Exception e) {
+                        serverId = "unknown:" + System.currentTimeMillis();
+                    }
+                }
             }
         }
         return serverId;

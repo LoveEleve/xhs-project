@@ -17,7 +17,7 @@ import java.util.Map;
 /**
  * SSE 跨实例推送 Redis Pub/Sub 消费者
  * <p>
- * 订阅 Redis Channel（myxhs:notification:sse:channel），收到跨实例推送消息后：
+ * 订阅本实例专属 Channel（myxhs:notification:sse:channel:{serverId}，定向发布），收到跨实例推送消息后：
  * 1. 解析消息中的 userId 和 event 类型
  * 2. 检查目标用户是否在本实例在线
  * 3. 在线则推送给本实例的 SseEmitter
@@ -38,8 +38,6 @@ public class SseCrossInstanceSubscriber implements MessageListener {
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
 
-    private static final String NOTIFY_SSE_CHANNEL = "myxhs:notification:sse:channel";
-
     private RedisMessageListenerContainer container;
 
     /**
@@ -51,12 +49,14 @@ public class SseCrossInstanceSubscriber implements MessageListener {
      */
     @PostConstruct
     public void init() {
+        // 定向 Channel：只订阅本实例专属 Channel（发布方按路由值定向发布）
+        String channel = sseEmitterManager.getChannelName();
         container = new RedisMessageListenerContainer();
         container.setConnectionFactory(stringRedisTemplate.getConnectionFactory());
-        container.addMessageListener(this, new ChannelTopic(NOTIFY_SSE_CHANNEL));
+        container.addMessageListener(this, new ChannelTopic(channel));
         container.afterPropertiesSet();
         container.start();
-        log.info("[SSE] 跨实例推送订阅已启动: channel={}", NOTIFY_SSE_CHANNEL);
+        log.info("[SSE] 跨实例推送订阅已启动: channel={}", channel);
     }
 
     @PreDestroy

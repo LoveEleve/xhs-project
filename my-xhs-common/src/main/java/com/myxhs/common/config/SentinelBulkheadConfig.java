@@ -7,14 +7,14 @@ import org.springframework.context.annotation.Configuration;
 import jakarta.annotation.PostConstruct;
 
 /**
- * Sentinel 舱壁隔离 + 热点参数限流配置
- * 
- * 舱壁隔离（Bulkhead）：为不同服务的 Feign 调用配置独立线程池，
- * 防止库存慢查询拖慢订单创建、支付回调阻塞 Feed 推送。
- * 
- * Sentinel 的舱壁通过 threadPoolMaxSize + maxQueueSize 实现：
- * - 超过 maxQueueSize 的请求直接拒绝（快速失败）
- * - 不同资源（resource）使用不同的线程池参数
+ * Sentinel 限流/降级规则加载声明
+ * <p>
+ * 【2026-09-23 修正】原实现用 {@code System.setProperty("csp.sentinel.bulkhead.*")} 宣称配置"舱壁隔离"，
+ * 但这些键并非 Sentinel 的配置项（Sentinel 没有开箱的 Feign 线程池舱壁），属无效配置——
+ * 实际生效的隔离手段是：① Sentinel 流控/降级规则（Nacos 数据源推送，见 GatewayConfig/SentinelDataSourceHandler）；
+ * ② Feign 全局关闭重试 + 连接/读超时（FeignSafeConfig + 各服务 yml）；③ 自研最小连接 LB。
+ * 因此本类只保留启动日志，不再设置任何伪配置；"Feign 线程池舱壁"列为本项目设计项。
+ * </p>
  */
 @Slf4j
 @Configuration
@@ -23,19 +23,7 @@ public class SentinelBulkheadConfig {
 
     @PostConstruct
     public void init() {
-        log.info("[Sentinel] 舱壁隔离配置初始化");
-        // 1. 设置默认舱壁规则（本地降级，Nacos 不可用时使用）
-        initDefaultBulkheadRules();
-        // 2. 注册 Nacos 数据源动态加载规则（注释说明实际配置在 Nacos Console）
-        // 规则 dataId: my-xhs-sentinel-bulkhead-rules
-        // 规则 group: SENTINEL_GROUP
-    }
-
-    private void initDefaultBulkheadRules() {
-        // 默认线程池：核心5，最大10，队列20，适用于大多数 Feign 调用
-        // 具体规则通过 Nacos 动态配置推送后覆盖
-        System.setProperty("csp.sentinel.bulkhead.max.thread.pool.size", "10");
-        System.setProperty("csp.sentinel.bulkhead.max.queue.size", "20");
-        log.info("[Sentinel] 默认舱壁参数: threadPoolMaxSize=10, maxQueueSize=20");
+        // 规则由 Nacos 数据源推送（spring.cloud.sentinel.datasource.*），此处仅声明启动状态
+        log.info("[Sentinel] 限流/降级规则由 Nacos 数据源加载（Feign 线程池舱壁为设计项，见类注释）");
     }
 }

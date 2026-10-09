@@ -1,7 +1,10 @@
 package com.myxhs.coupon.job;
 
+import com.myxhs.common.metrics.BusinessMetrics;
 import com.myxhs.coupon.entity.CouponTemplate;
+import com.myxhs.coupon.mapper.CouponOutboxMapper;
 import com.myxhs.coupon.mapper.CouponTemplateMapper;
+import com.myxhs.coupon.mapper.UserCouponMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,13 +25,17 @@ class CouponReconcileJobTest {
 
     @Mock private StringRedisTemplate stringRedisTemplate;
     @Mock private CouponTemplateMapper templateMapper;
+    @Mock private UserCouponMapper userCouponMapper;
+    @Mock private CouponOutboxMapper outboxMapper;
+    @Mock private BusinessMetrics businessMetrics;
     @Mock private ValueOperations<String, String> valueOperations;
 
     private CouponReconcileJob job;
 
     @BeforeEach
     void setUp() {
-        job = new CouponReconcileJob(stringRedisTemplate, templateMapper);
+        // 2026-09-21：构造新增 3 个依赖（限领计数对账 + 卡住 Outbox 检查 + 指标）
+        job = new CouponReconcileJob(stringRedisTemplate, templateMapper, userCouponMapper, outboxMapper, businessMetrics);
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
     }
 
@@ -46,7 +53,9 @@ class CouponReconcileJobTest {
 
         job.reconcile();
 
-        verify(templateMapper).updateById(template);
+        // 2026-09-21 语义变更：对账改为"定向更新 remain_count"（原生 SQL，不依赖 MP lambda 缓存；
+        // updateById 全字段写会覆盖并发扣减）→ 断言修正为 定向更新 + 值来自 Redis(7)
+        verify(templateMapper).updateRemainCountOnly(1L, 7);
     }
 
     @Test

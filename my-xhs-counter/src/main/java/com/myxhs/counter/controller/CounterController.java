@@ -32,7 +32,7 @@ public class CounterController {
      * 查询单个计数（公开）
      */
     @GetMapping("/get")
-    @RateLimit(windowSeconds = 1, maxRequests = 50, prefix = "myxhs:counter:get",
+    @RateLimit(windowSeconds = 1, maxRequests = 50, perUser = true, prefix = "myxhs:counter:get",
             message = "查询过于频繁")
     public R<Long> getCount(
             @RequestParam("targetType") Integer targetType,

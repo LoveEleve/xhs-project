@@ -44,6 +44,9 @@ class InventoryCompensationJobTest {
     private DefaultRedisScript<Long> releaseScript;
     @Mock
     private RedissonClient redissonClient;
+    /** 2026-09-21：补偿任务新增 type=2（退款回补）分流，构造需要 InventoryService */
+    @Mock
+    private com.myxhs.inventory.service.InventoryService inventoryService;
     @Mock
     private RLock lock;
     @Mock
@@ -53,7 +56,7 @@ class InventoryCompensationJobTest {
 
     @BeforeEach
     void setUp() throws InterruptedException {
-        job = new InventoryCompensationJob(inventoryMapper, stringRedisTemplate, releaseScript, redissonClient);
+        job = new InventoryCompensationJob(inventoryMapper, inventoryService, stringRedisTemplate, releaseScript, redissonClient);
         when(redissonClient.getLock(anyString())).thenReturn(lock);
         when(lock.tryLock(0L, 25, TimeUnit.SECONDS)).thenReturn(true);
         when(lock.isHeldByCurrentThread()).thenReturn(true);

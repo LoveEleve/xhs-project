@@ -141,7 +141,8 @@ public final class RedisKeyConstants {
     // ==================== 搜索服务 ====================
 
     /** 热搜榜实时排行 myxhs:search:hot:realtime */
-    public static final String SEARCH_HOT_REALTIME = PROJECT_PREFIX + "search:hot:realtime";
+    /** 热搜实时榜（带 {realtime} hash tag：与 ":tmp" 同 slot，RENAME 集群合法） */
+    public static final String SEARCH_HOT_REALTIME = PROJECT_PREFIX + "search:hot:{realtime}";
 
     /** 热搜滑动窗口分钟桶 myxhs:search:window:{yyyyMMddHHmm} */
     public static final String SEARCH_WINDOW = PROJECT_PREFIX + "search:window:";
@@ -166,11 +167,21 @@ public final class RedisKeyConstants {
     /** Item-CF 相似矩阵 myxhs:recommend:itemcf:{noteId} → ZSet(相似noteId, 相似度) */
     public static final String RECOMMEND_ITEMCF = PROJECT_PREFIX + "recommend:itemcf:";
 
+    /**
+     * ItemCF 相似度键（带 {item:noteId} hash tag）
+     * <p>与 "<此键>:tmp" 同 slot，使"写临时键 → RENAME 替换"在 Redis Cluster 下不 CROSSSLOT。
+     * 原实现前缀 + noteId 无 tag，集群下每次刷新 RENAME 直接失败（相似度全空）。</p>
+     */
+    public static String itemCfKey(long noteId) {
+        return PROJECT_PREFIX + "recommend:itemcf:{item:" + noteId + "}";
+    }
+
     /** 用户兴趣标签 myxhs:recommend:user:tags:{userId} → Hash(tag, weight) */
     public static final String RECOMMEND_USER_TAGS = PROJECT_PREFIX + "recommend:user:tags:";
 
     /** 全局热门池 myxhs:recommend:hot:global → ZSet(noteId, hotScore) */
-    public static final String RECOMMEND_HOT_GLOBAL = PROJECT_PREFIX + "recommend:hot:global";
+    /** 热门池键带 hash tag：与 ":tmp" 键同 slot，Refresh 的 RENAME 在 Cluster 下不 CROSSSLOT */
+    public static final String RECOMMEND_HOT_GLOBAL = PROJECT_PREFIX + "recommend:hot:{global}";
 
     /** 关注用户最新内容 myxhs:recommend:following:latest:{userId} → ZSet(noteId, timestamp) */
     public static final String RECOMMEND_FOLLOWING_LATEST = PROJECT_PREFIX + "recommend:following:latest:";

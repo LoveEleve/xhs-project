@@ -137,7 +137,8 @@ public class CartService {
                 String.valueOf(request.getQuantity()),
                 String.valueOf(MAX_CART_SIZE),
                 String.valueOf(MAX_ITEM_QUANTITY),
-                String.valueOf(System.currentTimeMillis())
+                String.valueOf(System.currentTimeMillis()),
+                String.valueOf(CART_TTL.getSeconds())   // Lua 内滑动 TTL
         );
 
         if (result == null) {
@@ -515,14 +516,32 @@ public class CartService {
         String checkedKey = checkedKey(userId);
         String sortKey = sortKey(userId);
 
+        // 批量预取 SKU 信息：原实现逐条 Feign（最多 50 次 × read-timeout 5s → 最坏数百秒阻塞合并）。
+        // 批量结果非空时按"在架 + SPU 在架"过滤；批量失败（返回空）时回退逐条校验，保持可用性优先的既有语义。
+        List<Long> mergeSkuIds = request.getItems().stream()
+                .filter(i -> i.getSkuId() != null)
+                .map(CartMergeRequest.MergeItem::getSkuId)
+                .distinct()
+                .collect(java.util.stream.Collectors.toList());
+        Map<Long, ProductFeignClient.SkuDTO> skuInfoMap = batchGetSkuInfo(mergeSkuIds);
+        boolean batchAvailable = !skuInfoMap.isEmpty();
+
         for (CartMergeRequest.MergeItem item : request.getItems()) {
             if (item.getSkuId() == null || item.getQuantity() == null || item.getQuantity() <= 0) {
                 continue;
             }
 
             // G3-02-15（2026-08-16）：合并同样校验 SKU 存在性（幽灵条目不入购物车）
-            if (!skuExists(item.getSkuId())) {
-                log.warn("[购物车] 合并跳过（SKU不存在）: userId={}, skuId={}", userId, item.getSkuId());
+            boolean valid;
+            if (batchAvailable) {
+                ProductFeignClient.SkuDTO sku = skuInfoMap.get(item.getSkuId());
+                valid = sku != null && sku.getStatus() != null && sku.getStatus() == PRODUCT_STATUS_ON_SHELF
+                        && (sku.getSpuStatus() == null || sku.getSpuStatus() == 1);
+            } else {
+                valid = skuExists(item.getSkuId());   // 批量不可用 → 逐条兜底（商品服务异常时降级放行）
+            }
+            if (!valid) {
+                log.warn("[购物车] 合并跳过（SKU不存在/未上架）: userId={}, skuId={}", userId, item.getSkuId());
                 continue;
             }
 
@@ -536,7 +555,8 @@ public class CartService {
                     skuIdStr, String.valueOf(item.getQuantity()),
                     String.valueOf(MAX_CART_SIZE),
                     String.valueOf(MAX_ITEM_QUANTITY),
-                    String.valueOf(System.currentTimeMillis()));
+                    String.valueOf(System.currentTimeMillis()),
+                    String.valueOf(CART_TTL.getSeconds()));   // Lua 内滑动 TTL
 
             if (mergeResult == null || Long.valueOf(0).equals(mergeResult)) {
                 log.warn("[购物车] 合并跳过（已满或上限触发）: userId={}, skuId={}", userId, item.getSkuId());
@@ -628,7 +648,10 @@ public class CartService {
                 return false;
             }
             ProductFeignClient.SkuDTO sku = response.getData();
-            return sku.getStatus() != null && sku.getStatus() == PRODUCT_STATUS_ON_SHELF;
+            // SKU 在架 且 其 SPU 也在架（原实现只看 SKU status：SPU 下架后仍可加购，列表层才标 invalid）
+            boolean skuOnShelf = sku.getStatus() != null && sku.getStatus() == PRODUCT_STATUS_ON_SHELF;
+            boolean spuOnShelf = sku.getSpuStatus() == null || sku.getSpuStatus() == 1;
+            return skuOnShelf && spuOnShelf;
         } catch (Exception e) {
             log.warn("[购物车] SKU存在性校验失败, 降级放行: skuId={}, error={}", skuId, e.getMessage());
             return true;
@@ -663,15 +686,20 @@ public class CartService {
      * C-13: 刷新购物车三结构的 TTL
      * 每次写操作后延长过期时间，30 天无操作自动清除。
      */
+    /** 三键 TTL 原子刷新（键同 {userId} slot，单脚本无部分失败） */
+    private static final org.springframework.data.redis.core.script.DefaultRedisScript<Long> REFRESH_TTL_SCRIPT =
+            new org.springframework.data.redis.core.script.DefaultRedisScript<>(
+                    "redis.call('EXPIRE', KEYS[1], ARGV[1]) " +
+                    "redis.call('EXPIRE', KEYS[2], ARGV[1]) " +
+                    "redis.call('EXPIRE', KEYS[3], ARGV[1]) " +
+                    "return 1", Long.class);
+
     private void refreshTTL(Long userId) {
         try {
-            Boolean itemsOk = stringRedisTemplate.expire(itemsKey(userId), CART_TTL);
-            Boolean checkedOk = stringRedisTemplate.expire(checkedKey(userId), CART_TTL);
-            Boolean sortOk = stringRedisTemplate.expire(sortKey(userId), CART_TTL);
-            if (!Boolean.TRUE.equals(itemsOk) || !Boolean.TRUE.equals(checkedOk) || !Boolean.TRUE.equals(sortOk)) {
-                log.warn("[购物车] TTL刷新部分失败: userId={}, itemsOk={}, checkedOk={}, sortOk={}",
-                        userId, itemsOk, checkedOk, sortOk);
-            }
+            // 原实现 3 次独立 EXPIRE：中途失败会出现三键 TTL 混合（仅"延长"语义，非永久）
+            stringRedisTemplate.execute(REFRESH_TTL_SCRIPT,
+                    List.of(itemsKey(userId), checkedKey(userId), sortKey(userId)),
+                    String.valueOf(CART_TTL.getSeconds()));
         } catch (Exception e) {
             log.error("[购物车] TTL刷新异常: userId={}", userId, e);
         }
@@ -712,9 +740,13 @@ public class CartService {
             }
 
             String payload = objectMapper.writeValueAsString(event);
-            rocketMQTemplate.asyncSend(
+            // 顺序发送：以 userId 作为分区键，同一用户的购物车变更固定落到同一 MessageQueue，
+            // 与消费端 ConsumeMode.ORDERLY 配合，从源头保证"清空/删除/加购"的先后关系，
+            // 时间戳 CAS 仅作为跨分区乱序的兜底防线。
+            rocketMQTemplate.asyncSendOrderly(
                     CART_TOPIC + ":" + action,
                     MqTraceHelper.wrapWithTraceId(MessageBuilder.withPayload(payload).build()),
+                    String.valueOf(userId),
                     new org.apache.rocketmq.client.producer.SendCallback() {
                         @Override
                         public void onSuccess(org.apache.rocketmq.client.producer.SendResult sendResult) {

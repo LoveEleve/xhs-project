@@ -24,7 +24,6 @@ import java.util.Objects;
  */
 @Slf4j
 @RequiredArgsConstructor
-@ConditionalOnClass(name = "org.springframework.boot.actuate.health.HealthIndicator")
 public class CacheRedisHealthIndicator implements HealthIndicator {
 
     private final RedisConnectionFactory cacheRedisConnectionFactory;

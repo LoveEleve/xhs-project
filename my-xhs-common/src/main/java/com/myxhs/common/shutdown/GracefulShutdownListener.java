@@ -17,16 +17,18 @@ import java.util.concurrent.TimeUnit;
  * 监听 Spring 容器关闭事件（ContextClosedEvent），在 JVM 退出前执行资源清理。
  * </p>
  * <p>
- * 【修复M5】完整优雅停机流程（收到 SIGTERM / kill -15 后）：
- * 1. Spring Boot 停止接受新的 HTTP 请求（server.shutdown=graceful）
- * 2. 等待已有请求处理完成（最长 lifecycle.timeout-per-shutdown-phase=30s）
- * 3. 触发 ContextClosedEvent → 本监听器执行：
- *    a. 通过 Nacos API 将实例标记为下线（其他服务 30s 内刷新服务列表）
- *    b. sleep 10s 等待服务列表传播（确保不再有新请求路由过来）
+ * 【修复M5 + P1 时序修正（2026-09-27，Spring 6.1 doClose 字节码核实）】实际停机顺序：
+ * 1. SIGTERM → 容器 close() → **先发布 ContextClosedEvent**（本监听器，此时 web 仍在接收请求）：
+ *    a. 通过 Nacos API 将实例标记为下线（其他服务刷新服务列表）
+ *    b. sleep 10s 等待服务列表传播（期间仍可正常服务，避免"摘除未传播"窗口的失败请求）
  *    c. 触发各模块注册的 ShutdownHook 回调（如 Counter Buffer 刷盘）
- * 4. 各 Bean 的 @PreDestroy 方法执行
- * 5. 关闭数据库连接池 / Redis 连接 / MQ Consumer
- * 6. JVM 退出
+ * 2. lifecycleProcessor.onClose() → web 停止接收新请求 + 排空在途（≤ lifecycle.timeout-per-shutdown-phase=30s）
+ * 3. destroyBeans → @PreDestroy（号段/订阅等；**线程池由 {@link ExecutorShutdownProcessor} 在此阶段关闭**）
+ * 4. 关闭数据库连接池 / Redis 连接 / MQ Consumer → JVM 退出
+ * </p>
+ * <p>
+ * 【P1 修复】线程池关闭**不在本监听器执行**（原先早于第 2 步的 web 排空，排空期依赖
+ * ExecutorService bean 的请求会 RejectedExecutionException）；已移至 destroy 阶段执行。
  * </p>
  * <p>
  * K8s 部署时的配合：
@@ -69,9 +71,7 @@ public class GracefulShutdownListener implements ApplicationListener<ContextClos
         // Step 3: 触发自定义的 ShutdownHook 回调（如 Counter Buffer 刷盘等）
         executeShutdownHooks();
 
-        // Step 4: 关闭应用内线程池（graceful shutdown）
-        shutdownExecutors();
-
+        // 线程池关闭已移至 ExecutorShutdownProcessor 的 @PreDestroy（destroy 阶段 = web 排空之后执行）
         log.info("[优雅停机] {} 优雅停机流程完成，即将退出", applicationName);
     }
 
@@ -120,24 +120,8 @@ public class GracefulShutdownListener implements ApplicationListener<ContextClos
     }
 
     /**
-     * 关闭应用内的自定义线程池
+     * 安全 sleep
      */
-    private void shutdownExecutors() {
-        try {
-            var executors = applicationContext.getBeansOfType(ExecutorService.class);
-            for (var entry : executors.entrySet()) {
-                ExecutorService executor = entry.getValue();
-                executor.shutdown();
-                if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
-                    log.warn("[优雅停机] 线程池 {} 未在5s内完成，强制关闭", entry.getKey());
-                    executor.shutdownNow();
-                }
-            }
-        } catch (Exception e) {
-            log.warn("[优雅停机] 关闭线程池失败: {}", e.getMessage());
-        }
-    }
-
     private void sleep(int seconds) {
         try {
             TimeUnit.SECONDS.sleep(seconds);

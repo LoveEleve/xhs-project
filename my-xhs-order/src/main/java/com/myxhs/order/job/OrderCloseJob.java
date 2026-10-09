@@ -101,7 +101,13 @@ public class OrderCloseJob {
             if (pending == null || pending.isEmpty()) {
                 return;
             }
+            // 每轮上限：坏成员（永久失败）不应把每分钟一轮的重放变成全量扫描+日志风暴，剩下的下轮继续
+            int replayed = 0;
             for (String member : pending) {
+                if (replayed++ >= 20) {
+                    log.warn("[兜底关单] 本轮回放上限(20)已达, 剩余 {} 条下轮继续", pending.size() - 20);
+                    break;
+                }
                 String[] parts = member.split(":", 4);
                 if (parts.length < 3) {
                     stringRedisTemplate.opsForSet().remove(ORDER_COMPENSATION_FALLBACK_KEY, member);

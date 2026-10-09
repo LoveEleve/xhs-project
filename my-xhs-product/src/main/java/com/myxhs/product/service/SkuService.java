@@ -43,16 +43,35 @@ public class SkuService {
     private final SpuService spuService;
     private final IdGeneratorUtil idGeneratorUtil;
     private final ObjectMapper objectMapper;
+    private final com.myxhs.product.feign.InventoryFeignClient inventoryFeignClient;
+    /** 库存初始化失败打点（失败仅告警，管理端可用 /api/inventory/init 重试） */
+    private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
 
     /**
      * 创建 SKU
      */
     @Transactional(rollbackFor = Exception.class)
     public Long createSku(SkuCreateRequest request) {
-        // 校验 SPU 是否存在
+        // 校验 SPU 是否存在（不要求"已上架"：正常经营流程是 建 SPU(下架) → 加 SKU → 上架，
+        // 原实现要求 SPU 已上架才能建 SKU，与"上架需至少一个上架 SKU"的校验互锁）
         Spu spu = spuMapper.selectById(request.getSpuId());
-        if (spu == null || spu.getStatus() == null || spu.getStatus() != ProductStatus.ON_SHELF.getCode()) {
+        if (spu == null) {
             throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
+        }
+
+        // P6：划线价不得低于售价（前端展示"原价 < 现价"是明显的数据错误）
+        if (request.getOriginalPrice() != null && request.getPrice() != null
+                && request.getOriginalPrice().compareTo(request.getPrice()) < 0) {
+            throw new BizException(ResultCode.PARAM_INVALID, "划线价不能低于售价");
+        }
+
+        // specs 列语义为 JSON（DDL 注释），脏 JSON 会沿购物车/订单快照链路放大 → 入库前校验
+        if (request.getSpecs() != null && !request.getSpecs().isBlank()) {
+            try {
+                objectMapper.readTree(request.getSpecs());
+            } catch (Exception e) {
+                throw new BizException(ResultCode.PARAM_INVALID, "规格属性必须是合法 JSON");
+            }
         }
 
         Sku sku = new Sku();
@@ -73,11 +92,42 @@ public class SkuService {
             @Override
             public void afterCommit() {
                 spuService.evictSpuCache(spuId);
+                initInventory(sku.getId(), sku.getStock());
             }
         });
 
         log.info("[商品] 创建 SKU 成功, skuId={}, spuId={}", sku.getId(), sku.getSpuId());
         return sku.getId();
+    }
+
+    /**
+     * 新建 SKU 后初始化库存（远程调用放提交后，不进事务）：
+     * 失败仅 ERROR + 打点（SKU 已建成，管理端可用 /api/inventory/init 重试），不伪成功
+     */
+    private void initInventory(Long skuId, Integer stock) {
+        try {
+            com.myxhs.product.feign.InventoryFeignClient.InitRequest req =
+                    new com.myxhs.product.feign.InventoryFeignClient.InitRequest();
+            req.setSkuId(skuId);
+            req.setTotalStock(stock != null ? stock : 0);
+            com.myxhs.common.response.R<Void> r = inventoryFeignClient.initStock(req);
+            if (r != null && r.isSuccess()) {
+                log.info("[商品] SKU 库存初始化成功, skuId={}, totalStock={}", skuId, req.getTotalStock());
+            } else if (r != null && r.getMessage() != null && r.getMessage().contains("已初始化")) {
+                log.info("[商品] SKU 库存已存在(跳过): skuId={}", skuId);
+            } else {
+                log.error("[商品] SKU 库存初始化失败(管理端 /api/inventory/init 可重试): skuId={}, resp={}",
+                        skuId, r != null ? r.getMessage() : "null");
+                io.micrometer.core.instrument.Counter
+                        .builder("myxhs_product_inventory_init_fail_total")
+                        .register(meterRegistry).increment();
+            }
+        } catch (Exception e) {
+            log.error("[商品] SKU 库存初始化调用异常(管理端 /api/inventory/init 可重试): skuId={}", skuId, e);
+            io.micrometer.core.instrument.Counter
+                    .builder("myxhs_product_inventory_init_fail_total")
+                    .register(meterRegistry).increment();
+        }
     }
 
     /**
@@ -113,10 +163,10 @@ public class SkuService {
             return List.of();
         }
         Set<Long> spuIds = skuList.stream().map(Sku::getSpuId).collect(Collectors.toSet());
-        // P2-1：批量预取 SPU 首图（一次 IN 查询），消除每 SKU 单独查 SPU 的 N+1
-        Map<Long, String> spuImageMap = buildSpuImageMap(spuIds);
-        // T-047：批量预取 SPU 状态，供 cart 判断 SPU 维度有效性
-        Map<Long, Integer> spuStatusMap = buildSpuStatusMap(spuIds);
+        // P2-1/T-047 合并：原实现对同一批 spuIds 查了两次 selectBatchIds（首图 + 状态），改为一次查询构建两张 Map
+        List<Spu> spuList = spuIds.isEmpty() ? List.of() : spuMapper.selectBatchIds(spuIds);
+        Map<Long, String> spuImageMap = buildSpuImageMap(spuList);
+        Map<Long, Integer> spuStatusMap = buildSpuStatusMap(spuList);
         return skuList.stream()
                 .map(sku -> toSkuVO(sku, spuImageMap.get(sku.getSpuId()), spuStatusMap.get(sku.getSpuId())))
                 .collect(Collectors.toList());
@@ -142,7 +192,7 @@ public class SkuService {
         }
         // P2-1：批量预取 SPU 首图，消除 N+1
         Map<Long, String> spuImageMap = buildSpuImageMap(
-                skuList.stream().map(Sku::getSpuId).collect(Collectors.toSet()));
+                spuMapper.selectBatchIds(skuList.stream().map(Sku::getSpuId).collect(Collectors.toSet())));
         final Integer spuStatus = spu.getStatus();
         return skuList.stream()
                 .map(sku -> toSkuVO(sku, spuImageMap.get(sku.getSpuId()), spuStatus))
@@ -152,11 +202,10 @@ public class SkuService {
     /**
      * 批量构建 SPU 首图 Map（P2-1：一次 IN 查询替代 N 次单查）
      */
-    private Map<Long, String> buildSpuImageMap(Set<Long> spuIds) {
-        if (spuIds == null || spuIds.isEmpty()) {
+    private Map<Long, String> buildSpuImageMap(List<Spu> spuList) {
+        if (spuList == null || spuList.isEmpty()) {
             return Collections.emptyMap();
         }
-        List<Spu> spuList = spuMapper.selectBatchIds(spuIds);
         Map<Long, String> result = new HashMap<>();
         for (Spu spu : spuList) {
             if (spu.getImages() == null) {
@@ -179,24 +228,15 @@ public class SkuService {
      * 构建 SPU 状态 Map（T-047：一次 IN 查询，供 SkuVO.spuStatus 填充，
      * cart 侧据此判断 SPU 维度有效性——SPU 下架后购物车条目应标记无效）
      */
-    private Map<Long, Integer> buildSpuStatusMap(Set<Long> spuIds) {
-        if (spuIds == null || spuIds.isEmpty()) {
+    private Map<Long, Integer> buildSpuStatusMap(List<Spu> spuList) {
+        if (spuList == null || spuList.isEmpty()) {
             return Collections.emptyMap();
         }
-        List<Spu> spuList = spuMapper.selectBatchIds(spuIds);
         Map<Long, Integer> result = new HashMap<>();
         for (Spu spu : spuList) {
             result.put(spu.getId(), spu.getStatus());
         }
         return result;
-    }
-
-    private SkuVO toSkuVO(Sku sku) {
-        return toSkuVO(sku, resolveSpuImage(sku.getSpuId()), null);
-    }
-
-    private SkuVO toSkuVO(Sku sku, String firstImage) {
-        return toSkuVO(sku, firstImage, null);
     }
 
     private SkuVO toSkuVO(Sku sku, String firstImage, Integer spuStatus) {
@@ -217,6 +257,7 @@ public class SkuService {
 
     /**
      * 解析 SKU 主图：SKU 表无 image 字段，图片存储在所属 SPU 的 images(JSON数组)，取第一张作主图。
+     * <p>（getSkuDetail 单查路径使用；批量路径走 buildSpuImageMap 避免 N+1）</p>
      */
     private String resolveSpuImage(Long spuId) {
         if (spuId == null) {
@@ -235,4 +276,5 @@ public class SkuService {
             return null;
         }
     }
+
 }

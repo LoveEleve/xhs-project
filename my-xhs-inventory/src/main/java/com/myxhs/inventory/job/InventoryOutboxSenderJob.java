@@ -84,11 +84,13 @@ public class InventoryOutboxSenderJob {
                         inventoryMapper.markOutboxSent(eventId);
                         log.debug("[Outbox] 补发成功: eventId={}, orderId={}, skuId={}, action={}", eventId, orderId, skuId, action);
                     } else {
-                        log.warn("[Outbox] 补发状态异常(不标记, 下轮重试): orderId={}, skuId={}, action={}, status={}",
+                        log.warn("[Outbox] 补发状态异常(延后重试): orderId={}, skuId={}, action={}, status={}",
                                 orderId, skuId, action, sendResult.getSendStatus());
+                        scheduleRetry(eventId, row);
                     }
                 } catch (Exception e) {
-                    log.warn("[Outbox] 补发失败: orderId={}, skuId={}, action={}", orderId, skuId, action, e);
+                    log.warn("[Outbox] 补发失败(延后重试): orderId={}, skuId={}, action={}", orderId, skuId, action, e);
+                    scheduleRetry(eventId, row);
                 }
             }
         } catch (Exception e) {
@@ -97,6 +99,23 @@ public class InventoryOutboxSenderJob {
             if (acquired && lock.isHeldByCurrentThread()) {
                 lock.unlock();
             }
+        }
+    }
+
+    /**
+     * 补发失败：指数退避（30s→480s 封顶）+ ±20% 抖动，写回 next_retry_time（P2/2026-09-27）。
+     * 连续失败 >10 次打 WARN；记录不丢弃——库存事件必须最终送达（对账是另一层兜底）。
+     */
+    private void scheduleRetry(Long eventId, java.util.Map<String, Object> row) {
+        try {
+            int attempt = ((Number) row.getOrDefault("retry_count", 0)).intValue() + 1;
+            long delaySeconds = com.myxhs.common.mq.RetryBackoffUtils.exponentialSeconds(attempt, 30, 480, 0.2);
+            inventoryMapper.markOutboxRetry(eventId, java.time.LocalDateTime.now().plusSeconds(delaySeconds));
+            if (attempt > 10) {
+                log.warn("[Outbox] 连续补发失败 {} 次: eventId={}, nextRetry={}s", attempt, eventId, delaySeconds);
+            }
+        } catch (Exception e) {
+            log.warn("[Outbox] 写回重试时间失败(下轮仍会重试): eventId={}, error={}", eventId, e.getMessage());
         }
     }
 }

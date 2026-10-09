@@ -413,16 +413,21 @@ public class CounterService {
         String redisKey = buildRedisKey(targetType, targetId, countType);
         String redisValue = stringRedisTemplate.opsForValue().get(redisKey);
         if (redisValue != null) {
-            return Long.parseLong(redisValue);
+            try {
+                return Long.parseLong(redisValue);
+            } catch (NumberFormatException e) {
+                // 脏值（历史/人工写入）不能 500：降级走 MySQL 并在回填时覆盖
+                log.warn("[计数] Redis 值非法, 降级查 DB 并回填: key={}, value={}", redisKey, redisValue);
+            }
         }
 
         // L2: MySQL（兜底）
         Counter counter = counterMapper.selectByTarget(targetType, targetId, countType);
         long count = counter != null ? counter.getCountValue() : 0;
 
-        // 回填 Redis
-        stringRedisTemplate.opsForValue().set(redisKey, String.valueOf(count));
-        stringRedisTemplate.expire(redisKey, java.time.Duration.ofDays(30));
+        // 回填 Redis：单条 SET 带 TTL（set+expire 两条命令之间崩溃会留下永不过期的 key）
+        stringRedisTemplate.opsForValue().set(redisKey, String.valueOf(count),
+                java.time.Duration.ofDays(30));
 
         return count;
     }

@@ -23,13 +23,18 @@ import java.util.Map;
  * 需要登录的接口通过 X-User-Id Header 获取用户 ID（由 Gateway 注入）。
  * </p>
  */
+@lombok.extern.slf4j.Slf4j
 @RestController
 @RequestMapping("/api/note")
 @RequiredArgsConstructor
 public class NoteController {
 
+    /** 批量详情单次上限 */
+    private static final int MAX_BATCH_DETAIL_SIZE = 100;
+
     private final NoteService noteService;
     private final FileStorageService fileStorageService;
+    private final com.myxhs.common.web.AccessTokenGuard accessTokenGuard;
 
     /**
      * 发布笔记
@@ -98,6 +103,14 @@ public class NoteController {
      */
     @PostMapping("/batch-detail")
     public R<Map<Long, NoteDetailVO>> batchGetNoteDetail(@RequestBody java.util.List<Long> noteIds) {
+        // 条数上限：公开接口，原实现不设限（万级 id 会放大 DB/缓存查询）
+        if (noteIds == null || noteIds.isEmpty()) {
+            return R.ok(java.util.Map.of());
+        }
+        if (noteIds.size() > MAX_BATCH_DETAIL_SIZE) {
+            log.warn("[笔记] batch-detail 超限截断: requested={}, limit={}", noteIds.size(), MAX_BATCH_DETAIL_SIZE);
+            noteIds = noteIds.subList(0, MAX_BATCH_DETAIL_SIZE);
+        }
         return R.ok(noteService.batchGetNoteDetail(noteIds));
     }
 
@@ -168,4 +181,18 @@ public class NoteController {
         noteService.shareNote(noteId, userId);
         return R.ok();
     }
+    /**
+     * 审核笔记（管理端，X-Admin-Call）：1=通过 2=驳回
+     */
+    @org.springframework.web.bind.annotation.PutMapping("/internal/audit/{noteId}")
+    public R<Void> auditNote(@org.springframework.web.bind.annotation.PathVariable Long noteId,
+                             @org.springframework.web.bind.annotation.RequestParam int status,
+                             @org.springframework.web.bind.annotation.RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
+        if (accessTokenGuard == null || !accessTokenGuard.isAdminCall(adminCall)) {
+            return R.fail(403, "无权访问管理接口");
+        }
+        noteService.auditNote(noteId, status);
+        return R.ok();
+    }
+
 }

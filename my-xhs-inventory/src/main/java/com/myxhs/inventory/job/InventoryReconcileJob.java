@@ -41,6 +41,7 @@ public class InventoryReconcileJob {
 
     private final StringRedisTemplate stringRedisTemplate;
     private final InventoryMapper inventoryMapper;
+    private final org.redisson.api.RedissonClient redissonClient;
 
     private static final String TOTAL_KEY_TPL = "inventory:{%d}:total";
 
@@ -71,6 +72,13 @@ public class InventoryReconcileJob {
      * @return 修复的记录数
      */
     public int doReconcile() {
+        // 手动端点与 XXL 调度可能重叠：抢不到锁直接跳过本轮（原实现无锁，全量对账并发跑会互相覆盖）
+        org.redisson.api.RLock lock = redissonClient.getLock("myxhs:lock:job:inventory:reconcile");
+        if (!lock.tryLock()) {
+            log.info("[库存对账] 已有实例在执行，跳过本轮");
+            return 0;
+        }
+        try {
         log.info("[库存对账] 开始执行...");
         long startTime = System.currentTimeMillis();
         int repairCount = 0;
@@ -111,11 +119,90 @@ public class InventoryReconcileJob {
             reconcileBuckets(inventory.getSkuId());
         }
 
+        // 【新增】locked_stock 对账：以 Redis 在途预扣（inventory:prededuct:* Hash）为权威重算。
+        // 修复缺口：预扣记录丢失/TTL 过期/确认失败都会留下"幽灵锁"，而 reinitStock 会把 locked 计入总库存
+        // → 可售虚增。方向保守：预扣记录不存在即视为 0（宁可少算可售，不会多卖）。
+        repairCount += reconcileLockedStock(inventories);
+
+        // 清理 7 天前的预扣幂等占位（原实现成功预扣的占位永久保留 → 表线性增长；
+        // 幂等只需覆盖"预扣 TTL + MQ 重投窗口"，7 天后无重投可能）
+        try {
+            int purged = inventoryMapper.deleteStalePredeductIdem(
+                    java.time.LocalDateTime.now().minusDays(7), 2000);
+            if (purged > 0) {
+                log.info("[库存对账] 清理过期预扣幂等占位 {} 行", purged);
+            }
+        } catch (Exception e) {
+            log.warn("[库存对账] 清理过期预扣幂等占位失败(下轮重试)", e);
+        }
+
+        // outbox（7 天）/ 补偿表（90 天）保留：同样日切一次 + 有界排空
+        purgeTablesDaily();
+
         long elapsed = System.currentTimeMillis() - startTime;
         log.info("[库存对账] 完成: 对账{}个SKU, 修复{}条, 耗时{}ms",
                 inventories.size(), repairCount, elapsed);
 
         return repairCount;
+        } finally {
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+    }
+
+    /**
+     * locked_stock 对账：扫描在途预扣记录（按 orderId 的 Hash，TTL 内即"未决"），
+     * 按 SKU 汇总后与 MySQL locked_stock 比对并修正。
+     * <p>
+     * 扫描量有界：预扣 Hash 的 TTL=预扣有效期（1800s），因此 key 数 ≈ 在途订单数；
+     * 每小时一轮，成本可控。方向保守：预扣记录缺失即视为 0（宁可少算 locked，不会多卖）；
+     * 注意：SCAN 在 Redis Cluster 下只覆盖单个节点，若未来上 Cluster 需改为逐节点扫描（当前单实例+Sentinel 无影响）；
+     * 若 L2 事件滞后于本次扫描，locked 会在事件到达后被再次抬高，最多一个事件的量，下轮对账收敛。
+     * @return 修复条数
+     * </p>
+     */
+    private int reconcileLockedStock(List<Inventory> all) {
+        java.util.Map<Long, Integer> lockedBySku = new java.util.HashMap<>();
+        try (var cursor = stringRedisTemplate.scan(org.springframework.data.redis.core.ScanOptions.scanOptions()
+                .match("inventory:prededuct:*").count(500).build())) {
+            cursor.forEachRemaining(key -> {
+                if (key.endsWith(":index")) {
+                    return;   // inventory:prededuct:index 是 ZSet 索引，不是预扣 Hash
+                }
+                try {
+                    java.util.Map<Object, Object> entries = stringRedisTemplate.opsForHash().entries(key);
+                    for (java.util.Map.Entry<Object, Object> e : entries.entrySet()) {
+                        String field = String.valueOf(e.getKey());
+                        if (field.endsWith(":bucket")) {
+                            continue;   // 桶号字段不是数量
+                        }
+                        Long skuId = Long.valueOf(field);
+                        int qty = Integer.parseInt(String.valueOf(e.getValue()));
+                        lockedBySku.merge(skuId, qty, Integer::sum);
+                    }
+                } catch (Exception ex) {
+                    log.warn("[库存对账] 预扣记录解析失败(跳过): key={}", key, ex);
+                }
+            });
+        } catch (Exception e) {
+            log.error("[库存对账] 在途预扣扫描失败, 本轮跳过 locked 对账", e);
+            return 0;
+        }
+
+        int repaired = 0;
+        for (Inventory inventory : all) {
+            int expected = lockedBySku.getOrDefault(inventory.getSkuId(), 0);
+            int current = inventory.getLockedStock() == null ? 0 : inventory.getLockedStock();
+            if (current != expected) {
+                inventoryMapper.updateLockedStockOnly(inventory.getSkuId(), expected);
+                repaired++;
+                log.info("[库存对账] locked 修复: skuId={}, {}→{}（以在途预扣为准）",
+                        inventory.getSkuId(), current, expected);
+            }
+        }
+        log.info("[库存对账] locked 对账完成: 在途SKU数={}, 修复={}", lockedBySku.size(), repaired);
+        return repaired;
     }
 
     /**
@@ -151,4 +238,39 @@ public class InventoryReconcileJob {
             log.warn("[库存对账] 分桶总量不一致已修正(原子Lua): skuId={}", skuId);
         }
     }
+    /**
+     * 库存 outbox / 补偿表保留策略（日切一次，有界排空）
+     */
+    private void purgeTablesDaily() {
+        try {
+            String marker = "myxhs:inventory:cleanup:" + java.time.LocalDate.now();
+            boolean first = Boolean.TRUE.equals(stringRedisTemplate.opsForValue()
+                    .setIfAbsent(marker, "1", java.time.Duration.ofHours(25)));
+            if (!first) {
+                return;
+            }
+            int outbox = 0;
+            for (int i = 0; i < 10; i++) {
+                int n = inventoryMapper.deleteSentOutbox(java.time.LocalDateTime.now().minusDays(7), 2000);
+                outbox += n;
+                if (n < 2000) {
+                    break;
+                }
+            }
+            int comp = 0;
+            for (int i = 0; i < 10; i++) {
+                int n = inventoryMapper.deleteSettledCompensation(java.time.LocalDateTime.now().minusDays(90), 2000);
+                comp += n;
+                if (n < 2000) {
+                    break;
+                }
+            }
+            if (outbox + comp > 0) {
+                log.info("[库存对账] 保留策略清理: outbox(7d)={} 条, compensation(90d)={} 条", outbox, comp);
+            }
+        } catch (Exception e) {
+            log.error("[库存对账] 保留策略清理失败(明日重试)", e);
+        }
+    }
+
 }

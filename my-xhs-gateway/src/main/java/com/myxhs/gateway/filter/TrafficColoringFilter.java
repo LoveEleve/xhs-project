@@ -115,6 +115,9 @@ public class TrafficColoringFilter implements GlobalFilter, Ordered {
                     } else {
                         headers.set("X-Forwarded-For", remoteAddr);
                     }
+                    // 【单一可信来源】X-Real-IP 只由网关写入并覆盖客户端值：
+                    // 下游（RateLimitAspect / user 登录锁定）只认它，客户端自带的一律失效
+                    headers.set("X-Real-IP", remoteAddr);
                 })
                 .build();
 
@@ -149,35 +152,18 @@ public class TrafficColoringFilter implements GlobalFilter, Ordered {
     }
 
     /**
-     * 获取客户端真实 IP
+     * 获取客户端真实 IP（网关自身决策用：压测标记/灰度判定）
      * <p>
-     * 【修复C3】优先级：X-Forwarded-For（取第一个） > X-Real-IP > remoteAddress
-     * 经过 Nginx/ALB 等反向代理后，remoteAddress 是代理 IP，
-     * 真实客户端 IP 在 X-Forwarded-For 的第一段。
+     * 【安全修正】网关是边缘节点（本部署无上游反代），直连 IP 才可信：
+     * 客户端自带的 X-Forwarded-For / X-Real-IP 均可伪造——伪造 10.x 曾可骗取压测标记。
+     * 因此只取 remoteAddress；若未来引入 Nginx/ALB，应改为"可信代理链校验后取最后一段"。
      * </p>
      */
     private String getClientIp(ServerHttpRequest request) {
-        // 1. X-Forwarded-For（标准多级代理头，格式：client, proxy1, proxy2）
-        String xff = request.getHeaders().getFirst("X-Forwarded-For");
-        if (StringUtils.hasText(xff)) {
-            // 取第一个 IP（即最原始的客户端 IP）
-            String clientIp = xff.split(",")[0].trim();
-            if (!clientIp.isEmpty()) {
-                return clientIp;
-            }
-        }
-
-        // 2. X-Real-IP（Nginx 常用）
-        String realIp = request.getHeaders().getFirst("X-Real-IP");
-        if (StringUtils.hasText(realIp)) {
-            return realIp.trim();
-        }
-
-        // 3. 兜底：TCP 连接的对端地址
-        if (request.getRemoteAddress() != null) {
+        // 直连 IP（网关是边缘节点，无上游反代）——原实现两个分支等价，去重
+        if (request.getRemoteAddress() != null && request.getRemoteAddress().getAddress() != null) {
             return request.getRemoteAddress().getAddress().getHostAddress();
         }
-
         return null;
     }
 }

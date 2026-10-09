@@ -159,9 +159,13 @@ public class ProductSearchService extends AbstractSearchService {
             case "price_desc" -> builder
                     .sort(s -> s.field(f -> f.field("price").order(SortOrder.Desc)))
                     .sort(s -> s.field(f -> f.field("spuId").order(SortOrder.Desc)));
-            case "sales" -> builder
-                    .sort(s -> s.field(f -> f.field("sales").order(SortOrder.Desc)))
-                    .sort(s -> s.field(f -> f.field("spuId").order(SortOrder.Desc)));
+            case "sales" -> {
+                // 全链路无销量数据源（t_spu 无 sales 字段、订单分库分表聚合代价高）→ 文档从不含 sales，
+                // 原实现按缺失字段排序 = 静默乱序。此处显式降级为相关度并告警（指标/日志可见）
+                log.warn("[商品搜索] sort=sales 暂不支持(无销量数据源)，已降级为 relevance");
+                builder.sort(s -> s.score(sc -> sc.order(SortOrder.Desc)))
+                        .sort(s -> s.field(f -> f.field("spuId").order(SortOrder.Desc)));
+            }
             default -> builder
                     .sort(s -> s.score(sc -> sc.order(SortOrder.Desc)))
                     .sort(s -> s.field(f -> f.field("spuId").order(SortOrder.Desc)));

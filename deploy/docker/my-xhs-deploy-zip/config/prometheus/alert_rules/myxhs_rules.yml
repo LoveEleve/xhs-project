@@ -95,6 +95,31 @@ groups:
           description: "Prometheus 无法采集到该实例的指标，持续 1 分钟"
 
   # ==================== 业务级告警 ====================
+      # ==================== 业务级：Feed 推送终态 / 退款失败 ====================
+      # Feed 推送补偿重投超上限（终态=3，笔记未进粉丝收件箱，需人工介入）→ P2
+      - alert: FeedPushCompensationTerminal
+        expr: increase(feed_push_terminal_total[1h]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          level: P2
+        annotations:
+          summary: "Feed 推送补偿进入终态（重投超上限）"
+          description: "近 1 小时有 {{ $value | humanize }} 条推送补偿停止重投（push_status=3），相关笔记可能未进入粉丝收件箱；排查：content 日志 '[Feed推送补偿] 重投超过上限' + t_local_message.push_status=3"
+          runbook: "① 确认 MQ/消费端是否长时间不可用；② 修复后手动把 push_status 置回 0 触发重投；③ 复盘补偿阈值是否需上调"
+
+      # 售后退款执行失败（支付域拒绝/调用异常，需重试或人工）→ P2
+      - alert: AftersaleRefundFailed
+        expr: increase(aftersale_refund_total{result="fail"}[15m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          level: P2
+        annotations:
+          summary: "售后退款执行失败"
+          description: "近 15 分钟有 {{ $value | humanize }} 笔售后退款失败；自动重试每 10 分钟一轮（上限 3 次）后需人工处理：查 order 日志 '[售后] 退款失败' 与支付域退款单"
+          runbook: "① 确认支付服务可用与支付单状态；② 用 POST /api/order/aftersale/{no}/retry-refund 手动重试；③ 若支付域已实际退款，恢复任务会核对并置完成"
+
   - name: myxhs_business_alerts
     rules:
       # 下单失败率 > 5% → P1
@@ -236,6 +261,17 @@ groups:
         annotations:
           summary: "DLQ 死信队列检测到消息"
           description: "ConsumerGroup: {{ $labels.consumerGroup }}, Topic: {{ $labels.topic }}, 数量: {{ $value }}"
+
+      # 库存失败收口：已付款订单库存失败（需人工/对账介入）→ P1
+      - alert: OrderInventoryFailurePaid
+        expr: increase(order_inventory_failure_total{result="manual_required_paid"}[10m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          level: P1
+        annotations:
+          summary: "已付款订单库存失败，需人工介入"
+          description: "近 10 分钟有已付款订单未收口：查 order_inventory_failure_total / inventory_failure_total（runbook: docs/reports/inventory-failure-closure-rule-20260927.md）"
 
   # ==================== 核心链路按 4 黄金信号告警 ====================
   - name: myxhs_core_golden_signals
@@ -445,16 +481,23 @@ groups:
           summary: "应用侧 MySQL 连接数 > 250"
           description: "当前 {{ $value }}，排查池空闲回收/僵尸连接，Runbook: docs/ops/alert-runbook.md"
 
-  # ==================== 告警管道心跳（Watchdog，SRE 标准做法） ====================
-  - name: myxhs_meta_alerts
-    rules:
-      - alert: Watchdog
-        expr: vector(1)
-        for: 1m
-        labels: { severity: none, level: P3 }
+
+      # 网关鉴权/签名失败率突增（2026-09-23 gateway 深挖配套：失败原因此前只打日志无指标）
+      - alert: GatewayAuthFailuresSpike
+        expr: sum(rate(myxhs_gateway_auth_failures_total[5m])) > 20
+        for: 5m
+        labels: { severity: warning, level: P2 }
         annotations:
-          summary: "告警管道心跳（收到即代表 Prometheus→Alertmanager→sink 全链路正常）"
-          description: "常鸣告警；若长时间收不到，说明通知链路故障（silence/挂掉）"
+          summary: "网关鉴权失败率突增（>20/s 持续 5m）"
+          description: "按 reason 定位：invalid_token/revoked=凭证攻击或大规模过期；redis_unavailable=认证依赖故障（503 放大），Runbook: docs/ops/alert-runbook.md"
+
+      - alert: GatewayHmacFailuresSpike
+        expr: sum(rate(myxhs_gateway_hmac_failures_total[5m])) > 5
+        for: 5m
+        labels: { severity: warning, level: P2 }
+        annotations:
+          summary: "网关 HMAC 校验失败率突增（>5/s 持续 5m）"
+          description: "mismatch=客户端签名实现/密钥不同步；nonce_reused=重放或客户端 nonce 生成缺陷；secret_expired=会话密钥过期未重登，Runbook: docs/ops/alert-runbook.md"
 
   # ==================== XXL-Job 调度健康（textfile 指标，2026-09-19 补齐告警缺口） ====================
   - name: myxhs_xxl_job_health
@@ -473,3 +516,24 @@ groups:
         annotations:
           summary: "XXL-Job 健康巡检失败（DB 不可达或巡检未运行）"
           description: "检查 /etc/cron.d/myxhs-xxl-job-health 与 my-xhs-mysql 连通性"
+
+
+      # 公共组件 fail-open 退化（幂等/限流保护在 Redis 故障期间静默失效，2026-09-23 common 深挖配套打点）
+      - alert: CommonFailOpenActive
+        expr: sum(rate(myxhs_common_fail_open_total[5m])) > 0
+        for: 5m
+        labels: { severity: warning, level: P2 }
+        annotations:
+          summary: "幂等/限流保护处于 fail-open 降级（Redis 依赖故障）"
+          description: "按 component 定位：idempotent=重复提交不再拦截、rate_limit=精细限流失效；先查 Redis 可用性，Runbook: docs/ops/alert-runbook.md"
+
+  # ==================== 告警管道心跳（Watchdog，SRE 标准做法） ====================
+  - name: myxhs_meta_alerts
+    rules:
+      - alert: Watchdog
+        expr: vector(1)
+        for: 1m
+        labels: { severity: none, level: P3 }
+        annotations:
+          summary: "告警管道心跳（收到即代表 Prometheus→Alertmanager→sink 全链路正常）"
+          description: "常鸣告警；若长时间收不到，说明通知链路故障（silence/挂掉）"

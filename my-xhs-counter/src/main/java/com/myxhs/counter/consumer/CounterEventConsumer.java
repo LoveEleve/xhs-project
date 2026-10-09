@@ -84,6 +84,24 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
         return passed == null || passed == 0;
     }
 
+    /** 通用版本门 key 前缀（评论/关注扩展，2026-09-21） */
+    private static final String EVENT_VERSION_PREFIX = "myxhs:counter:event:version:";
+
+    /**
+     * 通用事件版本门：actionTime 缺失或 <=0 时不做判断（兼容旧格式事件）；
+     * 命中旧事件返回 true（调用方跳过），否则写入新版本放行。
+     */
+    private boolean isStaleEvent(String scope, String entityKey, Long actionTime) {
+        if (actionTime == null || actionTime <= 0) {
+            return false;
+        }
+        String key = EVENT_VERSION_PREFIX + scope + ":" + entityKey;
+        Long passed = stringRedisTemplate.execute(LIKE_VERSION_SCRIPT,
+                java.util.List.of(key), String.valueOf(actionTime),
+                String.valueOf(LIKE_VERSION_TTL_HOURS * 3600));
+        return passed == null || passed == 0;
+    }
+
     /** 计数类型常量：1-点赞 2-收藏 3-评论 4-分享 5-浏览 6-粉丝 7-关注 */
     private static final int COUNT_TYPE_LIKE = 1;
     private static final int COUNT_TYPE_FAVORITE = 2;
@@ -260,6 +278,23 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
             return;
         }
 
+        // 版本门：按 commentId 收敛（同一评论的增删事件），不能按 noteId——
+        // 同一笔记的不同评论互不相关，按 noteId 会把"后到的旧事件"误判为旧版本而丢计数。
+        // 级联删除（count>1，父评论+楼中楼）跨多条评论，无单一锚点 → 跳过版本门。
+        long eventCount = 1L;
+        Object countObj = eventMap.get("count");
+        if (countObj != null) {
+            try { eventCount = Long.parseLong(countObj.toString()); } catch (NumberFormatException ignored) {}
+        }
+        Long commentId = toLong(eventMap.get("commentId"));
+        Long actionTime = toLong(eventMap.get("actionTime"));
+        if (commentId != null && eventCount <= 1
+                && isStaleEvent("comment", String.valueOf(commentId), actionTime)) {
+            log.warn("[计数Consumer] 旧评论事件被版本门拒绝: msgId={}, commentId={}, actionTime={}",
+                    msgId, commentId, actionTime);
+            return;
+        }
+
         int targetType = TARGET_TYPE_NOTE;
         int countType = COUNT_TYPE_COMMENT;
 
@@ -268,12 +303,7 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
             executed = counterService.incrementWithDedup(msgId, targetType, noteId, countType);
         } else {
             // O-Counter-2 修复：UNCOMMENT 事件带 count（级联删除 1+N 条）——按 count 递减，非固定 1
-            long delta = 1;
-            Object countObj = eventMap.get("count");
-            if (countObj != null) {
-                try { delta = Long.parseLong(countObj.toString()); } catch (NumberFormatException ignored) {}
-            }
-            executed = counterService.decrementWithDedup(msgId, targetType, noteId, countType, delta);
+            executed = counterService.decrementWithDedup(msgId, targetType, noteId, countType, eventCount);
         }
 
         log.info("[计数Consumer] 评论计数{}: msgId={}, targetType={}, targetId={}, countType=COMMENT, action={}",
@@ -342,6 +372,14 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
         if (followerUserId == null || followeeUserId == null) {
             log.warn("[计数Consumer] 关注事件缺少必填字段: follower={}, followee={}",
                     followerUserId, followeeUserId);
+            return;
+        }
+
+        // 版本门：同一对关注关系的事件按 actionTime 收敛，防"后到的旧 UNFOLLOW"改写双方计数
+        Long actionTime = toLong(eventMap.get("actionTime"));
+        if (isStaleEvent("follow", followerUserId + ":" + followeeUserId, actionTime)) {
+            log.warn("[计数Consumer] 旧关注事件被版本门拒绝: msgId={}, follower={}, followee={}, actionTime={}",
+                    msgId, followerUserId, followeeUserId, actionTime);
             return;
         }
 

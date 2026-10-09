@@ -67,8 +67,6 @@ public class CouponService {
     private static final String CLAIMED_KEY_TPL = "myxhs:coupon:{%d}:claimed:%d";
     private static final String TEMPLATE_KEY_PREFIX = "myxhs:coupon:template:";
     private static final String COUPON_CLAIM_TOPIC = "COUPON_CLAIM_TOPIC";
-    private static final String COUPON_RETURN_REDIS_REPAIR_TOPIC = "COUPON_RETURN_REDIS_REPAIR_TOPIC";
-    private static final String RETURN_REPAIR_FALLBACK_KEY = "myxhs:coupon:return:repair:pending";
     private static final long TEMPLATE_CACHE_SECONDS = 1800L; // 模板缓存 30 分钟
 
     private static String stockKey(Long templateId) { return String.format(STOCK_KEY_TPL, templateId); }
@@ -137,8 +135,8 @@ public class CouponService {
         if (template == null) {
             throw new BizException(ResultCode.COUPON_NOT_FOUND);
         }
-        template.setStatus(status);
-        templateMapper.updateById(template);
+        // 定向更新 status（原生 SQL）：updateById 全字段写会覆盖并发的 decrementRemainCount（丢失扣减）
+        templateMapper.updateStatusOnly(templateId, status);
 
         // 清除模板缓存（状态变更后必须失效）
         evictTemplateCache(templateId);
@@ -205,7 +203,7 @@ public class CouponService {
         if (template.getValidStart() != null && LocalDateTime.now().isBefore(template.getValidStart())) {
             throw new BizException(ResultCode.COUPON_NOT_AVAILABLE, "活动尚未开始");
         }
-        if (LocalDateTime.now().isAfter(template.getValidEnd())) {
+        if (template.getValidEnd() != null && LocalDateTime.now().isAfter(template.getValidEnd())) {
             throw new BizException(ResultCode.COUPON_EXPIRED);
         }
 
@@ -431,7 +429,19 @@ public class CouponService {
         // T-121（2026-08-16）：补 validStart 过滤——修复前"可用"列表含未来生效券
         // （用户可见但 use 时被责任链拦截，体验不一致；与 useCoupon 语义对齐）
         LocalDateTime now = LocalDateTime.now();
+        // 过滤下线模板（原实现不过滤 → 已下线模板的券仍出现在"可用"列表，用券时才被拒）
+        java.util.Set<Long> offlineTemplateIds = userCoupons.stream()
+                .map(UserCoupon::getCouponId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .filter(couponId -> {
+                    com.myxhs.coupon.entity.CouponTemplate t = templateMapper.selectById(couponId);
+                    // 模板不存在（逻辑删除）或状态非"上线"都视为下线：不能出现在可用券列表
+                    return t == null || t.getStatus() == null || t.getStatus() != 1;
+                })
+                .collect(Collectors.toSet());
         return batchToVO(userCoupons).stream()
+                .filter(vo -> !offlineTemplateIds.contains(vo.getCouponId()))
                 .filter(vo -> vo.getValidEnd() != null && vo.getValidEnd().isAfter(now)
                         && (vo.getValidStart() == null || !vo.getValidStart().isAfter(now)))
                 .collect(Collectors.toList());
@@ -548,13 +558,15 @@ public class CouponService {
             } else {
                 log.error("[优惠券] MQ发送状态异常: userId={}, templateId={}, claimNo={}, status={}",
                         userId, templateId, claimNo, sendResult.getSendStatus());
-                // 保留 Outbox 未发送记录，交由补发任务兜底，避免发送端误判失败时丢失唯一补偿锚点。
+                // 调用方会回滚 Redis 计数并报错 → 必须作废 Outbox，否则补发任务再投递会让用户"失败却拿到券 + 计数已回滚可再领"（超发）
+                outboxMapper.markOutboxCancelled(claimNo);
                 return null;
             }
         } catch (Exception e) {
             log.error("[优惠券] MQ同步发送异常: userId={}, templateId={}, claimNo={}",
                     userId, templateId, claimNo, e);
-            // 保留 Outbox 未发送记录，交由补发任务兜底。
+            // 同上：调用方回滚 Redis → 作废 Outbox，禁止补发（避免超发）
+            outboxMapper.markOutboxCancelled(claimNo);
             return null;
         }
     }
@@ -576,35 +588,12 @@ public class CouponService {
         }
     }
 
-    private void sendReturnCouponRedisRepairEvent(Long userId, Long templateId) {
-        try {
-            String payload = objectMapper.writeValueAsString(new CouponReturnRedisRepairEvent(userId, templateId));
-            rocketMQTemplate.syncSend(
-                    COUPON_RETURN_REDIS_REPAIR_TOPIC,
-                    org.springframework.messaging.support.MessageBuilder.withPayload(payload).build(),
-                    3000
-            );
-            log.info("[优惠券] 退券Redis补偿消息已发送: userId={}, templateId={}", userId, templateId);
-        } catch (Exception ex) {
-            log.error("[优惠券] 退券Redis补偿消息发送失败: userId={}, templateId={}", userId, templateId, ex);
-            try {
-                String member = templateId + ":" + userId;
-                stringRedisTemplate.opsForSet().add(RETURN_REPAIR_FALLBACK_KEY, member);
-                log.warn("[优惠券] 退券Redis补偿已写入本地兜底集合: {}", member);
-            } catch (Exception fallbackEx) {
-                log.error("[优惠券] 退券Redis补偿兜底集合写入失败: userId={}, templateId={}", userId, templateId, fallbackEx);
-            }
-        }
-    }
-
-    public void repairReturnCouponRedis(Long userId, Long templateId) {
-        String stockKey = stockKey(templateId);
-        String claimedKey = claimedKey(templateId, userId);
-        Long result = stringRedisTemplate.execute(returnCouponScript, List.of(stockKey, claimedKey));
-        log.info("[优惠券] 退券Redis补偿重放: templateId={}, userId={}, result={}", templateId, userId, result);
-        evictTemplateCache(templateId);
-    }
-
+    // 【2026-09-23 深挖删除】原"退券 Redis 补偿链"（sendReturnCouponRedisRepairEvent /
+    // repairReturnCouponRedis / RETURN_REPAIR_FALLBACK_KEY / COUPON_RETURN_REDIS_REPAIR_TOPIC
+    // 及其消费者与 Job 重放）为 RV30 之前的旧语义残留：
+    // 它会 INCR stock + DECR claimed，而现行语义（见 returnCoupon 注释）明确"退券只恢复用户券状态，
+    // 不回补 stock/remain、不减 claimed"——一旦被触发（手工投递/陈旧消息）即造成超发敞口，
+    // 且与每日对账（以已发券为准）相互打架。生产者零调用已确认，整链删除。
     /**
      * 批量转换 UserCoupon → UserCouponVO（解决 N+1 查询问题）
      * <p>
@@ -656,7 +645,5 @@ public class CouponService {
     public record CouponClaimEvent(Long userId, Long templateId, String claimNo) {
     }
 
-    public record CouponReturnRedisRepairEvent(Long userId, Long templateId) {
-    }
 }
 

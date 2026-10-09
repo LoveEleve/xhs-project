@@ -57,4 +57,16 @@ public interface FollowMapper extends BaseMapper<Follow> {
      */
     @Select("SELECT user_id FROM t_follow WHERE follow_user_id = #{userId}")
     List<Long> selectFollowerUserIdsByUserId(@Param("userId") Long userId);
+
+    /**
+     * 查询某用户全部关注行（含关注时间，用于 Redis 侧数据缺失时按 MySQL 重建 ZSet）
+     */
+    @Select("SELECT id, user_id, follow_user_id, created_at FROM t_follow WHERE user_id = #{userId}")
+    List<Follow> selectFollowRowsByUserId(@Param("userId") Long userId);
+
+    /**
+     * 查询某用户全部粉丝行（含关注时间，用于 Redis 侧数据缺失时按 MySQL 重建 ZSet）
+     */
+    @Select("SELECT id, user_id, follow_user_id, created_at FROM t_follow WHERE follow_user_id = #{userId}")
+    List<Follow> selectFollowerRowsByUserId(@Param("userId") Long userId);
 }

@@ -59,6 +59,7 @@ public interface LocalMessageMapper extends BaseMapper<LocalMessage> {
     @Select("SELECT * FROM t_local_message " +
             "WHERE status = 1 AND push_status IN (0, 1) " +
             "AND created_at < #{cutoffTime} " +
+            "AND (push_next_retry_time IS NULL OR push_next_retry_time <= NOW()) " +
             "ORDER BY id ASC LIMIT #{limit}")
     List<LocalMessage> selectPendingPushWithDelay(@Param("cutoffTime") LocalDateTime cutoffTime,
                                                    @Param("limit") int limit);
@@ -79,6 +80,10 @@ public interface LocalMessageMapper extends BaseMapper<LocalMessage> {
      */
     @Update("UPDATE t_local_message SET push_status = #{pushStatus} WHERE id = #{id}")
     int updatePushStatus(@Param("id") Long id, @Param("pushStatus") int pushStatus);
+
+    /** 补偿推送失败：指数退避+抖动写回下次可推时间（P3/2026-09-27） */
+    @Update("UPDATE t_local_message SET push_next_retry_time = #{nextRetryTime} WHERE id = #{id}")
+    int updatePushNextRetry(@Param("id") Long id, @Param("nextRetryTime") LocalDateTime nextRetryTime);
 
     /**
      * 更新总粉丝数

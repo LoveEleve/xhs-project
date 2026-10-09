@@ -25,15 +25,25 @@ public class RedisMultiSourceConfig {
             @Value("${spring.data.redis.host:21.91.124.110}") String host,
             @Value("${spring.data.redis.cache.port:16380}") int port,
             @Value("${spring.data.redis.password:Xhs@2026#Redis}") String password,
-            @Value("${spring.data.redis.timeout:1000}") String timeoutRaw) {
+            @Value("${spring.data.redis.timeout:1000}") String timeoutRaw,
+            org.springframework.beans.factory.ObjectProvider<io.lettuce.core.resource.ClientResources> clientResourcesProvider) {
         RedisStandaloneConfiguration config = new RedisStandaloneConfiguration(host, port);
         config.setPassword(password);
         // 2026-09-20 review：命令超时与业务 Redis 一致（默认 1s），防故障时调用挂起
+        // 2026-09-23 review：与业务 Redis 工厂对齐——DurationStyle 解析（"2s" 不再被解析成 2ms）+ 接线 ClientResources
         long timeoutMs = 1000L;
-        try { timeoutMs = Long.parseLong(timeoutRaw.replaceAll("[^0-9]", "")); } catch (Exception ignored) { }
-        return new LettuceConnectionFactory(config,
+        try {
+            timeoutMs = org.springframework.boot.convert.DurationStyle
+                    .detectAndParse(timeoutRaw, java.time.temporal.ChronoUnit.MILLIS).toMillis();
+        } catch (Exception ignored) { }
+        LettuceConnectionFactory factory = new LettuceConnectionFactory(config,
                 org.springframework.data.redis.connection.lettuce.LettuceClientConfiguration.builder()
                         .commandTimeout(java.time.Duration.ofMillis(timeoutMs)).build());
+        io.lettuce.core.resource.ClientResources resources = clientResourcesProvider.getIfAvailable();
+        if (resources != null) {
+            factory.setClientResources(resources);
+        }
+        return factory;
     }
 
     @Bean

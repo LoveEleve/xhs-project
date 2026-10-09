@@ -22,7 +22,10 @@ public class ProductSearchRequest {
     /** 最高价格 */
     private BigDecimal maxPrice;
 
-    /** 排序方式：relevance(相关度)/price_asc(价格升序)/price_desc(价格降序)/sales(销量) */
+    /**
+     * 排序方式：relevance(相关度)/price_asc(价格升序)/price_desc(价格降序)
+     * <p>sales(销量) 暂不支持：全链路无销量数据源，传 sales 会告警并降级为 relevance。</p>
+     */
     private String sort = "relevance";
 
     /** 每页大小 */

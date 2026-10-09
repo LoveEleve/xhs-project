@@ -53,7 +53,9 @@ public class GrayRouteFilter implements GlobalFilter, Ordered {
 
     private static final String GRAY_TAG_HEADER = "X-Gray-Tag";
 
-    private static final int GRAY_PERCENT = 10; // 默认 10% 流量进入灰度
+    /** 灰度比例（%，默认 10）：改配置即可调整，无需发版；0=关闭自动灰度 */
+    @org.springframework.beans.factory.annotation.Value("${myxhs.gray.percent:10}")
+    private int grayPercent;
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
@@ -66,7 +68,7 @@ public class GrayRouteFilter implements GlobalFilter, Ordered {
             if (userId != null && !userId.isEmpty()) {
                 // 【修复M11】使用位运算去符号位，避免 Math.abs(Integer.MIN_VALUE) 仍为负数的溢出问题
                 int hash = (userId.hashCode() & 0x7FFFFFFF) % 100;
-                if (hash < GRAY_PERCENT) {
+                if (grayPercent > 0 && hash < grayPercent) {
                     grayTag = "gray";
                     log.debug("[Gateway-灰度] userId Hash 命中灰度比例: userId={}, hashMod={}",
                             userId, hash);

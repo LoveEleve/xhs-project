@@ -38,9 +38,80 @@ public class CouponReconcileJob {
 
     private final StringRedisTemplate stringRedisTemplate;
     private final CouponTemplateMapper templateMapper;
+    private final com.myxhs.coupon.mapper.UserCouponMapper userCouponMapper;
+    private final com.myxhs.coupon.mapper.CouponOutboxMapper outboxMapper;
+    private final com.myxhs.common.metrics.BusinessMetrics businessMetrics;
 
     private static final String STOCK_KEY_TPL = "myxhs:coupon:{%d}:stock";
     private static final Duration TEMPLATE_CACHE_TTL = Duration.ofSeconds(1800);
+
+    /**
+     * 限领计数对账：SCAN 所有 claimed 计数键，与该 (用户, 模板) 的实际发券数比对并修正。
+     * <p>
+     * 语义：claimed 记录"已领次数"（含已使用/已过期券），因此以 t_user_coupon 的非删行数为准；
+     * 在途（Outbox 已写、消费未到）的领取会让计数偏大 1，日切低峰执行风险可接受；
+     * 注意：SCAN 在 Redis Cluster 下只覆盖单节点（当前单实例+Sentinel 无影响，上 Cluster 需逐节点扫描）。
+     * </p>
+     */
+    private int reconcileClaimedCounters() {
+        int repaired = 0;
+        long scanned = 0;
+        try (var cursor = stringRedisTemplate.scan(org.springframework.data.redis.core.ScanOptions.scanOptions()
+                .match("myxhs:coupon:*:claimed:*").count(500).build())) {
+            while (cursor.hasNext()) {
+                String key = cursor.next();
+                scanned++;
+                try {
+                    // key = myxhs:coupon:{templateId}:claimed:{userId}
+                    int l = key.indexOf('{');
+                    int r = key.indexOf('}');
+                    int c = key.indexOf(":claimed:");
+                    if (l < 0 || r < 0 || c < 0) {
+                        continue;
+                    }
+                    Long templateId = Long.valueOf(key.substring(l + 1, r));
+                    Long userId = Long.valueOf(key.substring(c + ":claimed:".length()));
+                    Long dbCount = userCouponMapper.countIssued(userId, templateId);
+                    int redisCount = 0;
+                    String v = stringRedisTemplate.opsForValue().get(key);
+                    if (v != null) {
+                        try { redisCount = Integer.parseInt(v); } catch (NumberFormatException ignored) { }
+                    }
+                    int expected = dbCount == null ? 0 : dbCount.intValue();
+                    if (redisCount != expected) {
+                        stringRedisTemplate.opsForValue().set(key, String.valueOf(expected));
+                        repaired++;
+                        log.warn("[券对账] 限领计数修复: templateId={}, userId={}, {}→{}（以已发券为准）",
+                                templateId, userId, redisCount, expected);
+                    }
+                } catch (Exception ex) {
+                    log.warn("[券对账] claimed 键解析失败(跳过): key={}", key, ex);
+                }
+            }
+        } catch (Exception e) {
+            log.error("[券对账] claimed 扫描失败, 本轮跳过限领计数对账", e);
+            return repaired;
+        }
+        log.info("[券对账] 限领计数对账完成: 扫描 {} 个键, 修复 {}", scanned, repaired);
+        return repaired;
+    }
+
+    /**
+     * 检查"卡住的 Outbox"：status=0（待发送）且超过 5 分钟未发出 → 领取请求可能未送达消费端
+     * （用户已被扣限领/库存但拿不到券）。这里只告警 + 打指标，补发由 CouponOutboxSenderJob 负责。
+     */
+    private void checkStuckOutbox() {
+        try {
+            Long stuck = outboxMapper.countStuck(java.time.LocalDateTime.now().minusMinutes(5));
+            if (stuck != null && stuck > 0) {
+                log.error("[券对账] 存在卡住的 Outbox 记录 {} 条（status=0 超 5 分钟）: "
+                        + "用户可能已被扣限领/库存但未拿到券, 需人工核对", stuck);
+                businessMetrics.recordCouponAction("outbox_stuck", false);
+            }
+        } catch (Exception e) {
+            log.warn("[券对账] Outbox 卡单检查失败(不影响对账): {}", e.getMessage());
+        }
+    }
 
     private static String stockKey(Long templateId) {
         return String.format(STOCK_KEY_TPL, templateId);
@@ -104,13 +175,18 @@ public class CouponReconcileJob {
 
             // 不一致 → 以 Redis 为准修复 MySQL（Redis 是实时扣减的权威数据源）
             if (redisStock != mysqlRemain) {
-                template.setRemainCount(redisStock);
-                templateMapper.updateById(template);
+                // 只更新 remain_count（原生 SQL：不依赖 MP lambda 缓存，且不覆盖并发的扣减）
+                templateMapper.updateRemainCountOnly(template.getId(), redisStock);
                 repairCount++;
                 log.info("[券对账] 修复: templateId={}, name={}, redis: {} → mysql: {}",
                         template.getId(), template.getName(), redisStock, mysqlRemain);
             }
         }
+
+        // 【新增】限领计数对账（claimed 计数无 TTL，清库/丢 key 后限领会失效 → 以已发券为准修正）
+        // + 卡住 Outbox 检查（用户被扣限领/库存却拿不到券的异常必须可见）
+        repairCount += reconcileClaimedCounters();
+        checkStuckOutbox();
 
         long elapsed = System.currentTimeMillis() - startTime;
         log.info("[券对账] 完成: 对账{}个模板, 修复{}个, 耗时{}ms",

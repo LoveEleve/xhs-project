@@ -115,6 +115,11 @@ public class ImRouteSubscriber implements MessageListener {
                 // 构建推送 JSON
                 String pushJson;
                 int msgType = routeMsg.getMsgType() != null ? routeMsg.getMsgType() : 0;
+                if (msgType == 97) {
+                    // KICK：新实例已接管该用户路由 → 关闭本实例旧连接（路由由 Lua 比较删除保护）
+                    webSocketHandler.closeLocalSession(routeMsg.getReceiverId());
+                    return;
+                }
                 if (msgType == 99 || msgType == 98) {
                     // msgType=99(已读回执)/98(TYPING)：content 字段已经是完整 JSON
                     pushJson = routeMsg.getContent();
@@ -133,6 +138,10 @@ public class ImRouteSubscriber implements MessageListener {
 
                 boolean pushed = webSocketHandler.pushToUser(routeMsg.getReceiverId(), pushJson);
                 if (pushed) {
+                    // 推送成功即删离线副本（发送侧"先落离线"的配对操作，防重连重复补发）
+                    if (routeMsg.getMsgId() != null && msgType != 99 && msgType != 98) {
+                        chatService.removeOfflineMessage(routeMsg.getReceiverId(), routeMsg.getMsgId());
+                    }
                     log.info("[IM路由] 跨实例推送成功: receiverId={}, msgId={}, traceId={}",
                             routeMsg.getReceiverId(), routeMsg.getMsgId(), traceId);
                 } else {

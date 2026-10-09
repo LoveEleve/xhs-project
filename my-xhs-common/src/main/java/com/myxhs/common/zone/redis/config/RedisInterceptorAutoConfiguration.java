@@ -53,6 +53,11 @@ public class RedisInterceptorAutoConfiguration {
 
         @Override
         public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
+            // 跳过 StringRedisTemplate：包装后不再满足 StringRedisTemplate 类型，
+            // 会让所有按该类型注入的组件（RateLimitAspect/GatewayAuthTrustFilter/RedisOperator 等）启动失败
+            if (bean instanceof org.springframework.data.redis.core.StringRedisTemplate) {
+                return bean;
+            }
             if (bean instanceof RedisTemplate && !(bean instanceof RedisTemplateWrapper)) {
                 if (interceptors == null) {
                     initInterceptors();

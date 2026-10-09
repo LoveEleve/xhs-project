@@ -45,11 +45,21 @@ public class RequestLogFilter implements GlobalFilter, Ordered {
             "secret", "signature", "sign", "authorization", "code", "captcha"
     };
 
+    /** 预编译脱敏正则（原实现每请求对每个 key 重新 compile，含 query 的请求白付 11 次编译开销） */
+    private static final java.util.List<java.util.regex.Pattern> SENSITIVE_QUERY_PATTERNS =
+            java.util.Arrays.stream(SENSITIVE_QUERY_KEYS)
+                    .map(key -> java.util.regex.Pattern.compile("(?i)(" + key + "=)[^&]*"))
+                    .toList();
+
+    /** 外部传入 traceId 的格式白名单（32 位 hex 或 1~64 位安全字符；防日志/追踪头注入） */
+    private static final java.util.regex.Pattern TRACE_ID_PATTERN =
+            java.util.regex.Pattern.compile("^[0-9a-zA-Z._-]{1,64}$");
+
     /** 将 query 中敏感参数值替换为 ***（保留参数名便于排查） */
     private static String maskSensitiveQuery(String query) {
         String masked = query;
-        for (String key : SENSITIVE_QUERY_KEYS) {
-            masked = masked.replaceAll("(?i)(" + key + "=)[^&]*", "$1***");
+        for (java.util.regex.Pattern pattern : SENSITIVE_QUERY_PATTERNS) {
+            masked = pattern.matcher(masked).replaceAll("$1***");
         }
         return masked;
     }
@@ -62,8 +72,9 @@ public class RequestLogFilter implements GlobalFilter, Ordered {
         String query = request.getURI().getRawQuery();
 
         // 1. 生成/透传 TraceId
+        //    透传前做格式校验：客户端可任意设置 X-Trace-Id，超长/异常字符会污染日志与下游追踪头
         String traceId = request.getHeaders().getFirst(TRACE_ID_HEADER);
-        if (traceId == null || traceId.isEmpty()) {
+        if (traceId == null || traceId.isEmpty() || !TRACE_ID_PATTERN.matcher(traceId).matches()) {
             traceId = UUID.randomUUID().toString().replace("-", "");
         }
 

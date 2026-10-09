@@ -11,6 +11,7 @@ import com.myxhs.order.dto.response.OrderVO;
 import com.myxhs.order.entity.Payment;
 import com.myxhs.order.feign.PaymentFeignClient;
 import com.myxhs.order.service.MockPayService;
+import com.myxhs.order.service.OrderEventService;
 import com.myxhs.order.service.OrderService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 订单接口
@@ -33,6 +35,7 @@ import java.util.List;
 public class OrderController {
 
     private final OrderService orderService;
+    private final OrderEventService orderEventService;
     private final AccessTokenGuard accessTokenGuard;
     /**
      * MockPayService 可选注入：仅在 pay.type=mock（默认）时存在。
@@ -70,8 +73,9 @@ public class OrderController {
      */
     @GetMapping("/list")
     public R<List<OrderVO>> getUserOrders(@RequestHeader("X-User-Id") Long userId,
-                                          @RequestParam(required = false) Integer status) {
-        return R.ok(orderService.getUserOrders(userId, status));
+                                          @RequestParam(required = false) Integer status,
+                                          @RequestParam(value = "limit", required = false) Integer limit) {
+        return R.ok(orderService.getUserOrders(userId, status, limit));
     }
 
     /**
@@ -110,7 +114,12 @@ public class OrderController {
     @PostMapping("/deliver")
     @RateLimit(prefix = "myxhs:order:deliver", maxRequests = 10, windowSeconds = 60, perUser = true)
     public R<Void> deliverOrder(@RequestHeader("X-User-Id") Long userId,
+                                @RequestHeader(value = "X-Admin-Call", required = false) String adminCall,
                                 @Valid @RequestBody DeliverRequest request) {
+        // 发货是商家/运营动作：只校验 X-User-Id 时买家可自行置"已发货"再确认收货（越权）
+        if (!accessTokenGuard.isAdminCall(adminCall)) {
+            return R.fail(403, "发货为商家/运营操作，请通过管理端发起");
+        }
         orderService.deliverOrder(userId, request.getOrderId(),
                 request.getLogisticsCompany(), request.getTrackingNo());
         return R.ok();
@@ -284,5 +293,21 @@ public class OrderController {
             @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
         if (!accessTokenGuard.isInternalCall(internalCall)) return R.fail(403, "仅限内部服务调用");
         return R.ok(orderService.getOrderStatus(orderId));
+    }
+
+    /**
+     * 订单状态重建与校准（按事件流回放；repair=true 时以条件更新修复偏差，需 X-Internal-Call）
+     * <p>
+     * 用于状态更新与事件落库出现偏差后的数据修复：默认 dry-run 只报告，repair=true 才写库。
+     * </p>
+     */
+    @PostMapping("/internal/reconcile/{orderId}")
+    public R<Map<String, Object>> reconcileOrderStatus(
+            @PathVariable("orderId") Long orderId,
+            @RequestParam(value = "userId", required = false) Long userId,
+            @RequestParam(value = "repair", defaultValue = "false") boolean repair,
+            @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
+        if (!accessTokenGuard.isInternalCall(internalCall)) return R.fail(403, "仅限内部服务调用");
+        return R.ok(orderEventService.reconcileStatus(orderId, userId, repair));
     }
 }

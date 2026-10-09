@@ -68,12 +68,34 @@ public class RedisConfig {
             @Value("${spring.data.redis.password:Xhs@2026#Redis}") String password,
             @Value("${myxhs.availability.zone.redis.enabled:false}") boolean zoneRedisEnabled,
             @Value("${myxhs.availability.zone.redis.slave-zone:}") String zoneRedisSlaveZone,
-            @Value("${spring.data.redis.timeout:1000}") String timeoutRaw) {
+            @Value("${spring.data.redis.timeout:1000}") String timeoutRaw,
+            @Value("${spring.data.redis.lettuce.pool.max-active:16}") int poolMaxActive,
+            @Value("${spring.data.redis.lettuce.pool.max-idle:8}") int poolMaxIdle,
+            @Value("${spring.data.redis.lettuce.pool.min-idle:2}") int poolMinIdle,
+            @Value("${spring.data.redis.lettuce.pool.max-wait:3000ms}") String poolMaxWaitRaw,
+            org.springframework.beans.factory.ObjectProvider<io.lettuce.core.resource.ClientResources> clientResourcesProvider) {
 
         // 2026-09-20 review：自定义 Lettuce 工厂原未设 commandTimeout（默认 60s）→ Redis 故障时读路径无界挂起，
         // CacheHelper 的"Redis不可用→查DB"回退永远等不到。统一 1s（可由 spring.data.redis.timeout 覆盖）。
+        // 2026-09-23 review：原实现 replaceAll("[^0-9]","") 会把 "2s" 解析成 2ms（差 1000 倍）→ 改 DurationStyle。
         long timeoutMs = 1000L;
-        try { timeoutMs = Long.parseLong(timeoutRaw.replaceAll("[^0-9]", "")); } catch (Exception ignored) { }
+        try {
+            timeoutMs = org.springframework.boot.convert.DurationStyle
+                    .detectAndParse(timeoutRaw, java.time.temporal.ChronoUnit.MILLIS).toMillis();
+        } catch (Exception ignored) { }
+
+        // 2026-09-23 review：各服务 yml 配置的 spring.data.redis.lettuce.pool.*（max-active:25 等）
+        // 此前被自定义工厂忽略（LettucePoolingClientConfiguration.builder() 不读标准键）→ 实际用默认池（maxTotal=8）。
+        // 现按标准键显式装配，配置与运行时一致。
+        org.apache.commons.pool2.impl.GenericObjectPoolConfig<Object> poolConfig =
+                new org.apache.commons.pool2.impl.GenericObjectPoolConfig<>();
+        poolConfig.setMaxTotal(poolMaxActive);
+        poolConfig.setMaxIdle(poolMaxIdle);
+        poolConfig.setMinIdle(poolMinIdle);
+        try {
+            poolConfig.setMaxWait(org.springframework.boot.convert.DurationStyle
+                    .detectAndParse(poolMaxWaitRaw, java.time.temporal.ChronoUnit.MILLIS));
+        } catch (Exception ignored) { }
 
         // Zone 感知：slave-zone 的实例读走本 Zone 副本（REPLICA_PREFERRED），其余读写主库；默认关闭
         String currentZone = System.getProperty(ZoneConstants.CURRENT_ZONE_PROPERTY_NAME, ZoneConstants.DEFAULT_ZONE);
@@ -83,6 +105,7 @@ public class RedisConfig {
                     currentZone, zoneRedisSlaveZone, readFrom);
         }
         LettuceClientConfiguration clientConfig = LettucePoolingClientConfiguration.builder()
+                .poolConfig(poolConfig)
                 .readFrom(readFrom)
                 .commandTimeout(java.time.Duration.ofMillis(timeoutMs))
                 .build();
@@ -97,14 +120,28 @@ public class RedisConfig {
             }
             sentinelConfig.setPassword(RedisPassword.of(password));
             log.info("[Redis] 使用 Sentinel 模式, master={}, nodes={}", master, sentinelNodes);
-            return new LettuceConnectionFactory(sentinelConfig, clientConfig);
+            return withClientResources(new LettuceConnectionFactory(sentinelConfig, clientConfig), clientResourcesProvider);
         } else {
             // 单节点模式（兼容现有配置）
             RedisStandaloneConfiguration standaloneConfig = new RedisStandaloneConfiguration(host, port);
             standaloneConfig.setPassword(RedisPassword.of(password));
             log.info("[Redis] 使用单节点模式, host={}:{}", host, port);
-            return new LettuceConnectionFactory(standaloneConfig, clientConfig);
+            return withClientResources(new LettuceConnectionFactory(standaloneConfig, clientConfig), clientResourcesProvider);
         }
+    }
+
+    /**
+     * 接线自定义 ClientResources（含 MicrometerCommandLatencyRecorder）：
+     * LettuceMetricsConfig 声明了该 Bean，但手写工厂默认自建 ClientResources → lettuce.* 指标恒空
+     */
+    private LettuceConnectionFactory withClientResources(
+            LettuceConnectionFactory factory,
+            org.springframework.beans.factory.ObjectProvider<io.lettuce.core.resource.ClientResources> provider) {
+        io.lettuce.core.resource.ClientResources resources = provider.getIfAvailable();
+        if (resources != null) {
+            factory.setClientResources(resources);
+        }
+        return factory;
     }
 
     @Bean

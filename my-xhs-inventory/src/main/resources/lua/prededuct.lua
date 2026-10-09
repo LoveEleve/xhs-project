@@ -22,6 +22,9 @@
 -- ARGV[5] = userId (备用)
 -- ARGV[6] = routeBucket (T-073: Java 侧精确取模桶号; Lua 双精度对 >2^53 ID 取模失真恒偏)
 -- ARGV[7] = expireSeconds (预扣记录过期时间)
+-- ARGV[8] = recordTtlSeconds (预扣记录物理 TTL；= expireSeconds + 缓冲，
+--            保证超时任务"到期后"仍能读到记录做回退——原先 TTL==score，
+--            任务只能提前 60s 释放，窗口内支付确认会找不到记录)
 --
 -- 返回值：
 --   1  : 扣减成功
@@ -38,6 +41,7 @@ local orderId = ARGV[2]
 local quantity = tonumber(ARGV[3])
 local bucketCount = tonumber(ARGV[4])
 local expireSeconds = tonumber(ARGV[7])
+local recordTtlSeconds = tonumber(ARGV[8] or ARGV[7])
 local routeBucket = tonumber(ARGV[6])
 
 -- 0. 幂等检查：同一订单不能重复预扣
@@ -71,7 +75,7 @@ if routeStock >= quantity then
     redis.call('DECRBY', totalKey, quantity)
     redis.call('HSET', predeductKey, skuId, quantity)
     redis.call('HSET', predeductKey, skuId .. ':bucket', routeBucket)
-    redis.call('EXPIRE', predeductKey, expireSeconds)
+    redis.call('EXPIRE', predeductKey, recordTtlSeconds)
     redis.call('ZADD', indexKey, expireAtMs, orderId)
     return 1  -- 成功（路由桶扣减）
 end
@@ -86,7 +90,7 @@ for offset = 1, bucketCount - 1 do
         redis.call('DECRBY', totalKey, quantity)
         redis.call('HSET', predeductKey, skuId, quantity)
         redis.call('HSET', predeductKey, skuId .. ':bucket', i)
-        redis.call('EXPIRE', predeductKey, expireSeconds)
+        redis.call('EXPIRE', predeductKey, recordTtlSeconds)
         redis.call('ZADD', indexKey, expireAtMs, orderId)
         return 1  -- 成功（从其他桶扣减）
     end

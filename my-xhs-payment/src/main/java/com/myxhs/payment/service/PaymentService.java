@@ -7,8 +7,10 @@ import com.myxhs.common.response.R;
 import com.myxhs.common.response.ResultCode;
 import com.myxhs.common.trace.MqTraceHelper;
 import com.myxhs.payment.dto.request.PayCreateRequest;
+import com.myxhs.payment.dto.request.RefundByOrderRequest;
 import com.myxhs.payment.dto.request.RefundRequest;
 import com.myxhs.payment.dto.response.PaymentVO;
+import com.myxhs.payment.dto.response.RefundVO;
 import com.myxhs.payment.entity.Payment;
 import com.myxhs.payment.entity.Refund;
 import com.myxhs.payment.feign.OrderFeignClient;
@@ -83,7 +85,9 @@ public class PaymentService {
                             1, 2, 60, java.util.concurrent.TimeUnit.SECONDS,
                             new java.util.concurrent.LinkedBlockingQueue<>(500),
                             r -> { Thread t = new Thread(r, "pay-event"); t.setDaemon(true); return t; },
-                            new java.util.concurrent.ThreadPoolExecutor.DiscardPolicy()
+                            // 事件可容忍丢失，但不能静默：拒绝时打日志（排障可查"事件为何缺行"）
+                            (r, executor) -> log.error("[支付事件] 线程池拒绝(队列满), 事件丢失: poolSize={}, queue={}",
+                                    executor.getPoolSize(), executor.getQueue().size())
                     ));
 
     /** Lua 脚本：安全释放分布式锁（只释放自己持有的锁） */
@@ -100,6 +104,9 @@ public class PaymentService {
     private static final Duration PAYING_KEY_TTL = Duration.ofMinutes(30);
 
     /** 退款中状态 Redis Key 前缀（防重复退款） */
+    private static final java.time.format.DateTimeFormatter TIME_FORMATTER =
+            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
     private static final String REFUNDING_KEY_PREFIX = "myxhs:payment:refunding:";
     /** 退款中状态 TTL（7 天，覆盖退款处理周期） */
     private static final Duration REFUNDING_KEY_TTL = Duration.ofDays(7);
@@ -186,6 +193,21 @@ public class PaymentService {
                 throw new BizException(ResultCode.ORDER_STATUS_ERROR, "订单当前状态不允许支付");
             }
 
+            // 金额校验（P1-1 补强）：与订单实付金额比对——order 侧 /pay-amount 注释明确"供支付服务校验"，
+            // 原实现完全信任上游 amount，金额错误无兜底（篡改/传错都会按错额记账）
+            R<java.math.BigDecimal> amountResp = orderFeignClient.getOrderPayAmount(orderId);
+            java.math.BigDecimal orderPayAmount = (amountResp != null && amountResp.isSuccess())
+                    ? amountResp.getData() : null;
+            if (orderPayAmount == null) {
+                log.warn("[支付] 无法确认订单金额，拒绝支付: orderId={}", orderId);
+                throw new BizException(ResultCode.ORDER_NOT_FOUND, "订单金额不可用，暂不能支付");
+            }
+            if (request.getAmount() == null || request.getAmount().compareTo(orderPayAmount) != 0) {
+                log.error("[支付] 支付金额与订单实付不一致，拒绝支付: orderId={}, 请求={}, 订单={}",
+                        orderId, request.getAmount(), orderPayAmount);
+                throw new BizException(ResultCode.PARAM_INVALID, "支付金额与订单金额不一致");
+            }
+
             // 设置 Redis 支付状态缓存（防重标记，TTL 与订单超时一致）
             stringRedisTemplate.opsForValue().set(payingKey, String.valueOf(userId), PAYING_KEY_TTL);
 
@@ -227,12 +249,26 @@ public class PaymentService {
                 log.error("[支付] 未找到支付渠道策略: payType={}", payType);
                 throw new BizException(ResultCode.PAYMENT_FAIL, "不支持的支付方式");
             }
+            // 【零元单】全额券抵扣等场景 payAmount=0：渠道均要求金额>0，无渠道可调 →
+            // 直接走支付成功路径（原实现 amount 校验拒绝 0 → 零元单永远发不起支付，只能等超时关单）
+            if (amount != null && amount.compareTo(java.math.BigDecimal.ZERO) == 0) {
+                log.info("[支付] 零元订单(全额抵扣)，跳过渠道直接记账成功: orderId={}, paymentNo={}", orderId, paymentNo);
+                handlePaySuccessInternal(orderId, userId, paymentNo, "ZERO_AMOUNT");
+                // 本地对象同步状态，返回 VO 与 DB 一致（原实现返回时仍显示"待支付"）
+                payment.setStatus(STATUS_SUCCESS);
+                payment.setPaidAt(LocalDateTime.now());
+                return R.ok(buildPaymentVO(payment));
+            }
+
             String tradeNo = strategy.pay(orderId, amount, paymentNo);
             log.info("[支付] 支付请求已发送: paymentNo={}, tradeNo={}, payType={}", paymentNo, tradeNo, payType);
 
             // 6. Mock 模式：同步标记成功；异步模式（支付宝/微信）：登记到模拟器，由定时任务发回调闭环
             if (isMockMode(payType)) {
                 handlePaySuccessInternal(orderId, userId, paymentNo, tradeNo);
+                // 本地对象同步状态（原实现同步成功后 VO 仍显示"待支付"）
+                payment.setStatus(STATUS_SUCCESS);
+                payment.setPaidAt(LocalDateTime.now());
             } else {
                 // 修复：此前漏掉 registerCallback，导致异步支付回调永远不触发、订单停留在待付款
                 callbackSimulator.registerCallback(paymentNo, payType);
@@ -289,7 +325,7 @@ public class PaymentService {
      * @param tradeNo   第三方交易号
      * @param success   是否支付成功
      */
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(transactionManager = "paymentTransactionManager", rollbackFor = Exception.class)
     public void handlePayCallback(String paymentNo, String tradeNo, boolean success) {
         // 1. 查询支付单
         Payment payment = findByPaymentNo(paymentNo);
@@ -300,6 +336,23 @@ public class PaymentService {
 
         // 2. 幂等校验：只有"待支付"状态才能处理回调
         if (payment.getStatus() != STATUS_PENDING) {
+            // 迟到成功：支付超时 Job 已把支付单置为失败(2)，但渠道实际成功（用户已付）。
+            // 原实现静默 return → "用户已付、系统记失败、无退款通道"（reconcile 只扫 status=1）。
+            // 修复：条件翻转 2→1 后复用成功链路——订单若已取消会被业务拒绝 → 既有逻辑自动全额退款；
+            // 订单若仍在待付款（超时关单未到）则正常支付成功。
+            if (success && payment.getStatus() == STATUS_FAIL) {
+                int flipped = paymentJdbcTemplate.update(
+                        "UPDATE t_payment SET status = ?, paid_at = ?, updated_at = ? "
+                                + "WHERE id = ? AND status = ? AND deleted = 0",
+                        STATUS_SUCCESS, LocalDateTime.now(), LocalDateTime.now(), payment.getId(), STATUS_FAIL);
+                if (flipped > 0) {
+                    log.warn("[支付回调] 迟到成功(支付单已置失败)，受理并走成功链路: paymentNo={}", paymentNo);
+                    // 注意：必须直接调 afterPaySuccess——此时状态已是 1，handlePaySuccessInternal 的
+                    // "WHERE status=0" 守卫会失败并提前 return（通知/自动退款都不会执行）
+                    afterPaySuccess(payment.getOrderId(), payment.getUserId(), paymentNo, tradeNo);
+                    return;
+                }
+            }
             log.info("[支付回调] 支付单已处理: paymentNo={}, status={}", paymentNo, payment.getStatus());
             return;
         }
@@ -330,7 +383,18 @@ public class PaymentService {
             log.info("[支付成功] 乐观锁冲突（已处理）: orderId={}, paymentNo={}", orderId, paymentNo);
             return;
         }
+        afterPaySuccess(orderId, userId, paymentNo, tradeNo);
+    }
 
+    /**
+     * 支付成功后的副作用（通知订单 / MQ / 事件 / 自动退款）
+     * <p>
+     * 独立成方法的原因：迟到成功路径已把状态 2→1 翻转，不能再走
+     * {@link #handlePaySuccessInternal} 的 "WHERE status=0" 守卫（否则守卫失败直接 return，
+     * 通知与自动退款都不会执行——这正是"用户已付却既没记账也没退款"的坑）。
+     * </p>
+     */
+    private void afterPaySuccess(Long orderId, Long userId, String paymentNo, String tradeNo) {
         // 更新 Redis 支付状态缓存（P2-4: 永久 key 无界 → 7 天 TTL，防重窗口内足够，订单状态由 DB 兜底）
         stringRedisTemplate.opsForValue().set("myxhs:payment:status:" + orderId, "1", java.time.Duration.ofDays(7));
 
@@ -423,8 +487,76 @@ public class PaymentService {
      * 6. Mock 模式：同步标记退款成功
      * </p>
      */
-    @Transactional(rollbackFor = Exception.class)
+    /**
+     * 按订单查询退款单（内部：供售后"卡死/未知结果"恢复时核对支付域事实）
+     * <p>
+     * 售后重试前先查这里，用"是否已有成功退款"决定是置完成还是重新发起，
+     * 避免 Feign 超时等"未知结果"场景下的盲目重试。
+     * </p>
+     */
+    public R<java.util.List<RefundVO>> listRefundsByOrder(Long orderId) {
+        java.util.List<RefundVO> list = paymentJdbcTemplate.query(
+                "SELECT refund_no, payment_id, order_id, refund_amount, status, refund_type, reason, created_at, success_at"
+                        + " FROM t_refund WHERE order_id = ? AND deleted = 0 ORDER BY created_at ASC",
+                (rs, rowNum) -> {
+                    RefundVO vo = new RefundVO();
+                    vo.setRefundNo(rs.getString("refund_no"));
+                    vo.setPaymentId(rs.getLong("payment_id"));
+                    vo.setOrderId(rs.getLong("order_id"));
+                    vo.setRefundAmount(rs.getBigDecimal("refund_amount"));
+                    vo.setStatus(rs.getInt("status"));
+                    vo.setRefundType(rs.getInt("refund_type"));
+                    vo.setReason(rs.getString("reason"));
+                    vo.setCreatedAt(formatTime(rs.getTimestamp("created_at")));
+                    vo.setSuccessAt(formatTime(rs.getTimestamp("success_at")));
+                    return vo;
+                }, orderId);
+        return R.ok(list);
+    }
+
+    private String formatTime(java.sql.Timestamp ts) {
+        return ts == null ? null : ts.toLocalDateTime().format(TIME_FORMATTER);
+    }
+
+    /**
+     * 按订单维度发起退款（售后场景）
+     * <p>
+     * 上游只持有 orderId：由支付域解析 orderId → 支付单，再复用 {@link #refund(RefundRequest)}
+     * 的全套校验（分布式锁、退款中标记、归属校验、可退金额校验、累计退款语义），
+     * 不在上游暴露支付域内部主键。
+     * </p>
+     */
+    @Transactional(transactionManager = "paymentTransactionManager", rollbackFor = Exception.class)
+    public R<String> refundByOrder(RefundByOrderRequest request, Long userId) {
+        Payment payment = findByOrderId(request.getOrderId());
+        if (payment == null) {
+            return R.fail(ResultCode.PAYMENT_FAIL, "支付单不存在，无法退款");
+        }
+        Long ownerId = userId != null ? userId : payment.getUserId();
+        if (!ownerId.equals(payment.getUserId())) {
+            log.warn("[退款] 按订单退款归属校验失败: orderId={}, userId={}, paymentUserId={}",
+                    request.getOrderId(), userId, payment.getUserId());
+            return R.fail(ResultCode.FORBIDDEN, "支付单归属校验失败");
+        }
+        RefundRequest refundRequest = new RefundRequest();
+        refundRequest.setPaymentId(payment.getId());
+        refundRequest.setUserId(ownerId);
+        refundRequest.setRefundAmount(request.getRefundAmount());
+        refundRequest.setReason(request.getReason());
+        refundRequest.setRefundType(request.getRefundType());
+        return doRefund(refundRequest);
+    }
+
+    @Transactional(transactionManager = "paymentTransactionManager", rollbackFor = Exception.class)
     public R<Void> refund(RefundRequest request) {
+        R<String> result = doRefund(request);
+        return result.isSuccess() ? R.ok() : R.fail(result.getCode(), result.getMessage());
+    }
+
+    /**
+     * 退款实现：返回支付域退款单号（供上游精确归属，无需回查）
+     */
+    private R<String> doRefund(RefundRequest request) {
         Long paymentId = request.getPaymentId();
         Long userId = request.getUserId();
         BigDecimal refundAmount = request.getRefundAmount();
@@ -518,7 +650,7 @@ public class PaymentService {
                 callbackSimulator.registerRefundCallback(refundNo);
             }
 
-            return R.ok();
+            return R.ok(refundNo);
 
         } catch (BizException e) {
             // 业务异常：清理 Redis 标记（事务已回滚 DB 的 INSERT）
@@ -545,7 +677,7 @@ public class PaymentService {
      * 乐观锁保证幂等：只有"退款中"状态的退款单才能更新。
      * </p>
      */
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(transactionManager = "paymentTransactionManager", rollbackFor = Exception.class)
     public void handleRefundCallback(String refundNo, boolean success) {
         // 1. 查询退款单
         Refund refund = findByRefundNo(refundNo);

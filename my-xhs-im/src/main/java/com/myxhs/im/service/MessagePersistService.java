@@ -76,30 +76,45 @@ public class MessagePersistService {
                         .eq(ChatUserRelation::getPeerId, peerId));
 
         if (relation == null) {
-            relation = ChatUserRelation.builder()
-                    .id(IdWorker.getId())
-                    .userId(userId)
-                    .peerId(peerId)
-                    .conversationId(conversationId)
-                    .lastMessageId(msgId)
-                    .lastContent(content)
-                    .lastMsgType(msgType)
-                    .unreadCount(unreadIncrement)
-                    .isDeleted(0)
-                    .createdAt(now)
-                    .updatedAt(now)
-                    .build();
-            chatUserRelationMapper.insert(relation);
-        } else {
-            relation.setLastMessageId(msgId);
-            relation.setLastContent(content);
-            relation.setLastMsgType(msgType);
-            relation.setUnreadCount(relation.getUnreadCount() + unreadIncrement);
-            relation.setUpdatedAt(now);
-            if (relation.getIsDeleted() == 1) {
-                relation.setIsDeleted(0); // 重新激活已删除的会话
+            try {
+                chatUserRelationMapper.insert(buildRelation(userId, peerId, conversationId,
+                        msgId, content, msgType, unreadIncrement, now));
+                return;
+            } catch (org.springframework.dao.DuplicateKeyException e) {
+                // 并发首条消息：uk_user_peer 已被另一事务插入 → 降级为定向更新
+                log.info("[IM] 会话并发创建, 降级定向更新: userId={}, peerId={}", userId, peerId);
             }
-            chatUserRelationMapper.updateById(relation);
         }
+
+        // 定向更新：unread_count 原子自增（不整行覆盖 → 不丢未读、不回退 lastMessage）
+        int updated = chatUserRelationMapper.updateOnNewMessage(
+                userId, peerId, msgId, content, msgType, unreadIncrement, now);
+        if (updated == 0) {
+            // 极端竞态：并发插入方随后回滚，行不存在 → 补插一次（再撞唯一键则说明已被插入，忽略）
+            try {
+                chatUserRelationMapper.insert(buildRelation(userId, peerId, conversationId,
+                        msgId, content, msgType, unreadIncrement, now));
+            } catch (org.springframework.dao.DuplicateKeyException ignored) {
+                log.debug("[IM] 会话补插撞唯一键(已被并发事务插入): userId={}, peerId={}", userId, peerId);
+            }
+        }
+    }
+
+    private ChatUserRelation buildRelation(Long userId, Long peerId, long conversationId,
+                                           long msgId, String content, int msgType,
+                                           int unreadIncrement, LocalDateTime now) {
+        return ChatUserRelation.builder()
+                .id(IdWorker.getId())
+                .userId(userId)
+                .peerId(peerId)
+                .conversationId(conversationId)
+                .lastMessageId(msgId)
+                .lastContent(content)
+                .lastMsgType(msgType)
+                .unreadCount(unreadIncrement)
+                .isDeleted(0)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
     }
 }

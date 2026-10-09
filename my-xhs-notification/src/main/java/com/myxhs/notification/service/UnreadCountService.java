@@ -7,7 +7,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,26 +28,18 @@ public class UnreadCountService {
 
     private final StringRedisTemplate stringRedisTemplate;
 
-    private static final String UNREAD_TOTAL_KEY = "myxhs:notification:unread:";
-    private static final String UNREAD_TYPE_KEY = "myxhs:notification:unread:type:";
+    // 键加 hash tag（{u:userId}）：total 与 type 两键落同一 slot，
+    // 使"双键 Lua"（ATOMIC_INCR / SAFE_DECR_BOTH）在 Redis Cluster 下不再 CROSSSLOT
+    private static final String UNREAD_TOTAL_KEY = "myxhs:notification:unread:{u:";
+    private static final String UNREAD_TYPE_KEY = "myxhs:notification:unread:type:{u:";
 
-    /**
-     * Lua 脚本：DECR 后不小于 0
-     * <p>
-     * 为什么用 Lua？
-     * 并发标记已读时，多个 DECR 可能导致计数变为负数。
-     * Lua 保证"读取 → 判断 → 修改"是原子的。
-     * </p>
-     */
-    private static final String SAFE_DECR_SCRIPT =
-            "local count = redis.call('GET', KEYS[1]) " +
-                    "if count == false or tonumber(count) <= 0 then return 0 end " +
-                    "return redis.call('DECR', KEYS[1])";
+    private static String totalKey(Long userId) {
+        return UNREAD_TOTAL_KEY + userId + "}";
+    }
 
-    private static final String SAFE_HDECR_SCRIPT =
-            "local count = redis.call('HGET', KEYS[1], ARGV[1]) " +
-                    "if count == false or tonumber(count) <= 0 then return 0 end " +
-                    "return redis.call('HINCRBY', KEYS[1], ARGV[1], -1)";
+    private static String typeKey(Long userId) {
+        return UNREAD_TYPE_KEY + userId + "}";
+    }
 
     /**
      * Lua 脚本：原子 INCR total + HINCRBY type
@@ -56,16 +47,30 @@ public class UnreadCountService {
      */
     private static final String ATOMIC_INCR_SCRIPT =
             "redis.call('INCR', KEYS[1]) " +
-            "return redis.call('HINCRBY', KEYS[2], ARGV[1], 1)";
+            "local v = redis.call('HINCRBY', KEYS[2], ARGV[1], 1) " +
+            // 键无 TTL 会永久堆积（用户量×活跃度线性增长）；30 天不活跃即回收，
+            // 活跃用户每次写入自动续期；若因过期被回收，10 分钟对账任务按 DB 重建（可收敛）
+            "redis.call('EXPIRE', KEYS[1], ARGV[2]) " +
+            "redis.call('EXPIRE', KEYS[2], ARGV[2]) " +
+            "return v";
 
     private static final DefaultRedisScript<Long> ATOMIC_INCR_REDIS_SCRIPT =
             new DefaultRedisScript<>(ATOMIC_INCR_SCRIPT, Long.class);
 
-    private static final DefaultRedisScript<Long> SAFE_DECR_REDIS_SCRIPT =
-            new DefaultRedisScript<>(SAFE_DECR_SCRIPT, Long.class);
+    /**
+     * 总计数 + 分类计数一并安全递减（ARGV[1] 为空表示无分类）
+     */
+    private static final String SAFE_DECR_BOTH_SCRIPT =
+            "local total = redis.call('GET', KEYS[1]) " +
+                    "if total ~= false and tonumber(total) > 0 then redis.call('DECR', KEYS[1]) end " +
+                    "if ARGV[1] ~= '' then " +
+                    "  local c = redis.call('HGET', KEYS[2], ARGV[1]) " +
+                    "  if c ~= false and tonumber(c) > 0 then redis.call('HINCRBY', KEYS[2], ARGV[1], -1) end " +
+                    "end " +
+                    "return 1";
 
-    private static final DefaultRedisScript<Long> SAFE_HDECR_REDIS_SCRIPT =
-            new DefaultRedisScript<>(SAFE_HDECR_SCRIPT, Long.class);
+    private static final DefaultRedisScript<Long> SAFE_DECR_BOTH_REDIS_SCRIPT =
+            new DefaultRedisScript<>(SAFE_DECR_BOTH_SCRIPT, Long.class);
 
     /**
      * Lua 脚本：原子性按类型重置未读计数
@@ -93,8 +98,9 @@ public class UnreadCountService {
     public void incrementUnread(Long userId, Integer type) {
         // 原子操作：total +1 + type hash +1（Lua 脚本保证同步）
         stringRedisTemplate.execute(ATOMIC_INCR_REDIS_SCRIPT,
-                List.of(UNREAD_TOTAL_KEY + userId, UNREAD_TYPE_KEY + userId),
-                String.valueOf(type));
+                List.of(totalKey(userId), typeKey(userId)),
+                String.valueOf(type),
+                String.valueOf(java.time.Duration.ofDays(30).getSeconds()));
     }
 
     /**
@@ -104,20 +110,18 @@ public class UnreadCountService {
      * </p>
      */
     public void decrementUnread(Long userId, Integer type) {
-        stringRedisTemplate.execute(SAFE_DECR_REDIS_SCRIPT, Collections.singletonList(UNREAD_TOTAL_KEY + userId));
-        if (type != null) {
-            stringRedisTemplate.execute(SAFE_HDECR_REDIS_SCRIPT,
-                    Collections.singletonList(UNREAD_TYPE_KEY + userId),
-                    String.valueOf(type));
-        }
+        // 总计数 + 分类计数一次原子递减（原实现两次独立脚本调用，中间可插入并发重置导致漂移）
+        stringRedisTemplate.execute(SAFE_DECR_BOTH_REDIS_SCRIPT,
+                List.of(totalKey(userId), typeKey(userId)),
+                type != null ? String.valueOf(type) : "");
     }
 
     /**
      * 重置未读计数（全部标记已读时调用）
      */
     public void resetUnread(Long userId) {
-        stringRedisTemplate.delete(UNREAD_TOTAL_KEY + userId);
-        stringRedisTemplate.delete(UNREAD_TYPE_KEY + userId);
+        stringRedisTemplate.delete(totalKey(userId));
+        stringRedisTemplate.delete(typeKey(userId));
     }
 
     /**
@@ -126,7 +130,7 @@ public class UnreadCountService {
     public void resetUnreadByType(Long userId, Integer type) {
         DefaultRedisScript<Long> script = new DefaultRedisScript<>(RESET_BY_TYPE_SCRIPT, Long.class);
         stringRedisTemplate.execute(script,
-                java.util.List.of(UNREAD_TOTAL_KEY + userId, UNREAD_TYPE_KEY + userId),
+                java.util.List.of(totalKey(userId), typeKey(userId)),
                 String.valueOf(type));
     }
 
@@ -135,7 +139,7 @@ public class UnreadCountService {
      */
     public UnreadCountVO getUnreadCount(Long userId) {
         // 总未读
-        String totalStr = stringRedisTemplate.opsForValue().get(UNREAD_TOTAL_KEY + userId);
+        String totalStr = stringRedisTemplate.opsForValue().get(totalKey(userId));
         int total = 0;
         if (totalStr != null) {
             try {
@@ -147,7 +151,7 @@ public class UnreadCountService {
 
         // 分类未读
         Map<Object, Object> entries = stringRedisTemplate.opsForHash()
-                .entries(UNREAD_TYPE_KEY + userId);
+                .entries(typeKey(userId));
         Map<Integer, Integer> details = new HashMap<>();
         entries.forEach((k, v) -> {
             try {
@@ -167,13 +171,13 @@ public class UnreadCountService {
      * 强制设置未读计数（对账修复时使用）
      */
     public void forceSetUnread(Long userId, int total, Map<Integer, Integer> typeCountMap) {
-        stringRedisTemplate.opsForValue().set(UNREAD_TOTAL_KEY + userId, String.valueOf(total));
-        String typeKey = UNREAD_TYPE_KEY + userId;
-        stringRedisTemplate.delete(typeKey);
+        stringRedisTemplate.opsForValue().set(totalKey(userId), String.valueOf(total));
+        String typeHashKey = typeKey(userId);
+        stringRedisTemplate.delete(typeHashKey);
         if (typeCountMap != null && !typeCountMap.isEmpty()) {
             Map<String, String> hashMap = new HashMap<>();
             typeCountMap.forEach((type, count) -> hashMap.put(String.valueOf(type), String.valueOf(count)));
-            stringRedisTemplate.opsForHash().putAll(typeKey, hashMap);
+            stringRedisTemplate.opsForHash().putAll(typeHashKey, hashMap);
         }
     }
 }

@@ -121,6 +121,9 @@ public class NoteIndexSyncConsumer implements RocketMQListener<MessageExt> {
             throw new RuntimeException("笔记索引同步失败（可重试）", e);
         } finally {
             MqTraceHelper.clearTraceId();
+            // 必须在 finally 清理：否则线程复用（消费线程池）时残留上一个 noteId，
+            // 后续消息在 set 之前异常会把这个陈旧 id 记入失败补偿集合
+            currentNoteId.remove();
         }
     }
 

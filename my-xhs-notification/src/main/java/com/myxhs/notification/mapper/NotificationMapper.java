@@ -72,4 +72,11 @@ public interface NotificationMapper extends BaseMapper<Notification> {
     int updateOrderLatest(@Param("id") Long id,
                           @Param("content") String content,
                           @Param("extraData") String extraData);
+    /**
+     * 清理保留期前的通知（(user_id, created_at) 索引支撑；LIMIT 分批防长事务）
+     */
+    @org.apache.ibatis.annotations.Delete(
+            "DELETE FROM t_notification WHERE created_at < #{before} LIMIT #{limit}")
+    int deleteStale(@Param("before") java.time.LocalDateTime before, @Param("limit") int limit);
+
 }

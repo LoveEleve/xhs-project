@@ -136,8 +136,15 @@ public class UserProfileAggService {
                         while (noteIds.size() < total && page <= 20) { // 上限保护，避免过多分页
                             R<Map<String, Object>> r = contentFeignClient.getUserNotes(targetUserId, page, size);
                             if (r == null || !r.isSuccess() || r.getData() == null) break;
+                            // total 可能是 Number 或 String（全局 Long→String 序列化配置），原先只认 Number → 上限保护失效
                             Object totalObj = r.getData().get("total");
-                            if (totalObj instanceof Number) total = ((Number) totalObj).longValue();
+                            if (totalObj != null) {
+                                try {
+                                    total = Long.parseLong(String.valueOf(totalObj));
+                                } catch (NumberFormatException ignored) {
+                                    // 解析失败保持 Long.MAX_VALUE，仅靠 page<=20 上限保护
+                                }
+                            }
                             Object records = r.getData().get("records");
                             if (!(records instanceof List)) break;
                             List<?> recs = (List<?>) records;
@@ -179,10 +186,11 @@ public class UserProfileAggService {
             log.warn("[用户主页] 聚合异常", e);
         }
 
-        Map<String, Object> userData = userFuture.getNow(Collections.emptyMap());
-        if (userFuture.isCompletedExceptionally()) {
+        // 同 ProductAggService：先判异常/超时未完成（否则超时会被当成"用户不存在"返 404）
+        if (userFuture.isCompletedExceptionally() || !userFuture.isDone()) {
             throw new DownstreamUnavailableException("用户服务不可用");
         }
+        Map<String, Object> userData = userFuture.getNow(Collections.emptyMap());
         if (userData.isEmpty()) {
             return null;
         }

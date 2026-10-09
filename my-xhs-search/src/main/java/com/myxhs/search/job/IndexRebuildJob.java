@@ -162,7 +162,7 @@ public class IndexRebuildJob {
         // ===== 重建笔记索引 =====
         while (true) {
             List<Map<String, Object>> notes = jdbcTemplate.queryForList(
-"SELECT id, user_id, title, content, cover_url, status, created_at FROM t_note " +
+"SELECT id, user_id, title, content, cover_url, status, created_at, updated_at FROM t_note " +
                             "WHERE id > ? AND deleted = 0 ORDER BY id ASC LIMIT ?",
                     lastNoteId, batchSize);
 
@@ -210,7 +210,7 @@ public class IndexRebuildJob {
         while (true) {
             List<Map<String, Object>> products = jdbcTemplate.queryForList(
                     // t_spu 在 my_xhs_product 库，search 默认数据源是 my_xhs_content，必须跨库限定
-                    "SELECT s.id, s.name, s.category_id, s.brand_id, s.description, s.images, s.status, s.created_at, " +
+                    "SELECT s.id, s.name, s.category_id, s.brand_id, s.description, s.images, s.status, s.created_at, s.updated_at, " +
                             "c.name AS category_name, MIN(k.price) AS min_price " +
                             "FROM my_xhs_product.t_spu s " +
                             "LEFT JOIN my_xhs_product.t_category c ON c.id = s.category_id AND c.deleted = 0 " +
@@ -242,13 +242,123 @@ public class IndexRebuildJob {
             throw new IllegalStateException("商品索引重建失败", e);
         }
 
+        // 死文档清理（best-effort，不阻塞完成标记）：重建只 upsert，
+        // 源表逻辑删除的行若错过 Canal 删除事件会永久残留在 ES（搜索可命中已删内容）
+        try {
+            pruneDeletedDocs();
+        } catch (Exception e) {
+            log.warn("[索引重建] 死文档清理失败(不阻塞完成标记，下轮重试)", e);
+        }
+
         long elapsed = System.currentTimeMillis() - startTime;
         log.info("[索引重建] 完成: 共索引{}条, 耗时{}ms", totalIndexed, elapsed);
 
-        // 记录完成状态
+        // 记录完成状态，并清零断点：
+        // 原实现保留 lastNoteId/lastSpuId → 次日定时"全量重建"从上次末尾 id 继续（退化为增量），
+        // 且 key 的 1 天 TTL 与次日 4 点调度存在竞态（有时读到陈旧断点、有时已过期，行为不稳定）
+        stringRedisTemplate.opsForHash().delete(REBUILD_STATUS_KEY, "lastNoteId", "lastSpuId");
         stringRedisTemplate.opsForHash().put(REBUILD_STATUS_KEY, "status", "COMPLETED");
         stringRedisTemplate.opsForHash().put(REBUILD_STATUS_KEY, "completedAt",
                 LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+    }
+
+    /**
+     * 清理源表已逻辑删除的 ES 死文档（笔记/商品/建议索引）
+     */
+    private void pruneDeletedDocs() {
+        int pruned = 0;
+        pruned += pruneByDeletedFlag("t_note", noteIndexName);
+        pruned += pruneByDeletedFlag("my_xhs_product.t_spu", productIndexName);
+        pruned += pruneSuggestForUnavailableNotes();
+        if (pruned > 0) {
+            log.info("[索引重建] 死文档清理完成: 共处理 {} 条", pruned);
+        }
+    }
+
+    /**
+     * 按"deleted = 1"扫描源表并批量删除对应 ES 文档（不存在的文档 delete 是幂等 no-op）
+     */
+    private int pruneByDeletedFlag(String qualifiedTable, String indexName) {
+        long lastId = 0;
+        int pruned = 0;
+        while (true) {
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                    "SELECT id FROM " + qualifiedTable + " WHERE deleted = 1 AND id > ? ORDER BY id ASC LIMIT ?",
+                    lastId, batchSize);
+            if (rows.isEmpty()) {
+                break;
+            }
+            BulkRequest.Builder bulkBuilder = new BulkRequest.Builder();
+            for (Map<String, Object> row : rows) {
+                long id = ((Number) row.get("id")).longValue();
+                bulkBuilder.operations(op -> op.delete(d -> d.index(indexName).id(String.valueOf(id))));
+            }
+            try {
+                esClient.bulk(bulkBuilder.build());
+                pruned += rows.size();
+            } catch (Exception e) {
+                log.warn("[索引重建] 死文档清理批次失败(跳过本轮): table={}", qualifiedTable, e);
+                break;
+            }
+            lastId = ((Number) rows.get(rows.size() - 1).get("id")).longValue();
+            if (rows.size() < batchSize) {
+                break;
+            }
+        }
+        return pruned;
+    }
+
+    /**
+     * 建议索引只保留"已发布"笔记：删除已删除/非已发布笔记的建议词条
+     */
+    private int pruneSuggestForUnavailableNotes() {
+        long lastId = 0;
+        int pruned = 0;
+        while (true) {
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                    "SELECT id FROM t_note WHERE (deleted = 1 OR status <> 2) AND id > ? ORDER BY id ASC LIMIT ?",
+                    lastId, batchSize);
+            if (rows.isEmpty()) {
+                break;
+            }
+            BulkRequest.Builder bulkBuilder = new BulkRequest.Builder();
+            for (Map<String, Object> row : rows) {
+                long id = ((Number) row.get("id")).longValue();
+                bulkBuilder.operations(op -> op.delete(d -> d.index(suggestIndexName).id("note_" + id)));
+            }
+            try {
+                esClient.bulk(bulkBuilder.build());
+                pruned += rows.size();
+            } catch (Exception e) {
+                log.warn("[索引重建] 建议索引死词条清理批次失败(跳过本轮)", e);
+                break;
+            }
+            lastId = ((Number) rows.get(rows.size() - 1).get("id")).longValue();
+            if (rows.size() < batchSize) {
+                break;
+            }
+        }
+        return pruned;
+    }
+
+    /**
+     * DB DATETIME → 毫秒时间戳（与增量链路 Canal ts 同域，用于 ES external version）
+     */
+    private long toEpochMillis(Object dbTime) {
+        if (dbTime == null) {
+            return System.currentTimeMillis();
+        }
+        if (dbTime instanceof java.sql.Timestamp ts) {
+            return ts.getTime();
+        }
+        if (dbTime instanceof java.time.LocalDateTime ldt) {
+            return ldt.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
+        }
+        try {
+            return Long.parseLong(dbTime.toString());
+        } catch (NumberFormatException e) {
+            return System.currentTimeMillis();
+        }
     }
 
     /**
@@ -262,11 +372,16 @@ public class IndexRebuildJob {
             for (Map<String, Object> note : notes) {
                 Long noteId = ((Number) note.get("id")).longValue();
                 Map<String, Object> doc = buildNoteDocument(note, countsByNote.getOrDefault(noteId, Map.of()));
+                // external version = 行 updated_at 毫秒：与增量链路（Canal ts）同域，
+                // 防"重建期间的陈旧读"覆盖并发增量写入的新文档（原实现无版本，ES 无条件覆盖）
+                long version = toEpochMillis(note.get("updated_at"));
 
                 bulkBuilder.operations(op -> op
                         .index(idx -> idx
                                 .index(noteIndexName)
                                 .id(String.valueOf(noteId))
+                                .version(version)
+                                .versionType(co.elastic.clients.elasticsearch._types.VersionType.ExternalGte)
                                 .document(doc)));
             }
 
@@ -275,6 +390,12 @@ public class IndexRebuildJob {
                 int errorCount = 0;
                 for (BulkResponseItem item : response.items()) {
                     if (item.error() != null) {
+                        // external version 冲突 = 文档已是更新版本（并发增量写入或重建重跑）→ 跳过视为成功，
+                        // 否则会把"已是最新"误判为批次失败 → 整个重建抛异常（本次引入版本机制后的关键配套）
+                        if ("version_conflict_engine_exception".equals(item.error().type())) {
+                            log.debug("[索引重建] 版本更新已存在, 跳过热数据: id={}", item.id());
+                            continue;
+                        }
                         errorCount++;
                         log.warn("[索引重建] 笔记索引失败: id={}, error={}",
                                 item.id(), item.error().reason());
@@ -308,10 +429,13 @@ public class IndexRebuildJob {
                     continue;
                 }
 
+                long version = toEpochMillis(product.get("updated_at"));
                 bulkBuilder.operations(op -> op
                         .index(idx -> idx
                                 .index(productIndexName)
                                 .id(String.valueOf(spuId))
+                                .version(version)
+                                .versionType(co.elastic.clients.elasticsearch._types.VersionType.ExternalGte)
                                 .document(doc)));
             }
 
@@ -320,6 +444,10 @@ public class IndexRebuildJob {
                 int errorCount = 0;
                 for (BulkResponseItem item : response.items()) {
                     if (item.error() != null) {
+                        if ("version_conflict_engine_exception".equals(item.error().type())) {
+                            log.debug("[索引重建] 版本更新已存在, 跳过热商品: id={}", item.id());
+                            continue;
+                        }
                         errorCount++;
                     }
                 }
@@ -367,25 +495,6 @@ public class IndexRebuildJob {
         return counts;
     }
 
-    private Map<String, Object> legacyNoteDocument(Map<String, Object> note) {
-        Map<String, Object> doc = new HashMap<>();
-        doc.put("noteId", note.getOrDefault("id", 0L));
-        doc.put("userId", note.getOrDefault("user_id", 0L));
-        doc.put("title", note.getOrDefault("title", ""));
-        doc.put("content", note.getOrDefault("content", ""));
-        doc.put("coverImage", note.getOrDefault("cover_url", ""));
-        doc.put("likeCount", 0);
-        doc.put("collectCount", 0);
-        doc.put("commentCount", 0);
-        doc.put("status", note.getOrDefault("status", 1));
-        doc.put("createdAt", note.get("created_at") != null ? note.get("created_at").toString() : null);
-        return doc;
-    }
-
-    private Map<String, Object> buildProductDocument(Map<String, Object> product) {
-        return productIndexDocumentBuilder.build(product, Map.of());
-    }
-
     /**
      * 重建搜索建议索引（suggest_index）
      * <p>
@@ -397,9 +506,14 @@ public class IndexRebuildJob {
         int total = 0;
         long lastId = 0;
         while (true) {
+            // 带互动数（点赞）做建议权重：原实现 weight 恒 1 → completion 排序无意义
             List<Map<String, Object>> notes = jdbcTemplate.queryForList(
-                    "SELECT id, title FROM t_note WHERE id > ? AND deleted = 0 AND status = 2 " +
-                            "ORDER BY id ASC LIMIT ?",
+                    "SELECT n.id, n.title, COALESCE(c.count_value, 0) AS like_count " +
+                            "FROM t_note n " +
+                            "LEFT JOIN my_xhs_counter.t_counter c ON c.target_type = 1 AND c.target_id = n.id " +
+                            "  AND c.count_type = 1 AND c.deleted = 0 " +
+                            "WHERE n.id > ? AND n.deleted = 0 AND n.status = 2 " +
+                            "ORDER BY n.id ASC LIMIT ?",
                     lastId, batchSize);
             if (notes.isEmpty()) break;
 
@@ -407,8 +521,9 @@ public class IndexRebuildJob {
             total += indexed;
 
             if (indexed < notes.size()) {
-                log.warn("[索引重建] 建议批次部分失败: 成功={}/{}", indexed, notes.size());
-                break;
+                // 与笔记/商品路径一致：部分失败即整体失败（原实现只 warn 后 break → 断点不推进也不重试，
+                // 调用方却按"重建成功"收尾 → 建议索引静默残缺）
+                throw new IllegalStateException("建议索引批次部分失败: 成功=" + indexed + "/" + notes.size());
             }
             lastId = ((Number) notes.get(notes.size() - 1).get("id")).longValue();
             if (notes.size() < batchSize) break;
@@ -426,7 +541,8 @@ public class IndexRebuildJob {
                 Long noteId = ((Number) note.get("id")).longValue();
                 String title = (String) note.getOrDefault("title", "");
                 if (title.isBlank()) continue;
-                Map<String, Object> doc = buildSuggestDoc(title);
+                long likeCount = note.get("like_count") != null ? ((Number) note.get("like_count")).longValue() : 0L;
+                Map<String, Object> doc = buildSuggestDoc(title, likeCount);
                 bulkBuilder.operations(op -> op
                         .index(idx -> idx
                                 .index(suggestIndexName)
@@ -455,10 +571,12 @@ public class IndexRebuildJob {
      * weight 用于排序，取基本值 1（后续可扩展为搜索热度权重）。
      * </p>
      */
-    private Map<String, Object> buildSuggestDoc(String title) {
+    private Map<String, Object> buildSuggestDoc(String title, long likeCount) {
         Map<String, Object> doc = new HashMap<>();
         doc.put("keyword", title);
-        doc.put("weight", 1);
+        // 权重 1~101：log10 缩放，避免头部笔记权重碾压（100 赞≈21，1 万赞≈41）
+        int weight = 1 + (int) Math.min(100, Math.round(Math.log10(1 + Math.max(0, likeCount)) * 10));
+        doc.put("weight", weight);
         return doc;
     }
 }

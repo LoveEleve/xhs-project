@@ -124,7 +124,7 @@ public class RecommendComputeJob {
         for (Map.Entry<Long, Map<Long, Integer>> entry : coOccurrence.entrySet()) {
             Long itemA = entry.getKey();
             int countA = itemCount.getOrDefault(itemA, 1);
-            String key = RedisKeyConstants.RECOMMEND_ITEMCF + itemA;
+            String key = RedisKeyConstants.itemCfKey(itemA);
             String tmpKey = key + ":tmp";
 
             stringRedisTemplate.delete(tmpKey);
@@ -190,11 +190,14 @@ public class RecommendComputeJob {
         long start = System.currentTimeMillis();
 
         try {
-            // 从 t_user_behavior 中找到有新行为但无特征记录的笔记
+            // 需要(重新)提取特征的笔记：
+            // ① 无特征记录；② 有新行为（行为时间晚于特征更新时间）
+            // 原实现只有 ① + upsert 不刷新 quality_score → 特征一旦写入就被冻结，
+            // 互动数增长后精排质量分永远是旧的
             List<Long> missingNotes = jdbcTemplate.queryForList(
                     "SELECT DISTINCT b.note_id FROM t_user_behavior b " +
                             "LEFT JOIN t_item_feature f ON b.note_id = f.note_id " +
-                            "WHERE f.note_id IS NULL LIMIT 500",
+                            "WHERE f.note_id IS NULL OR b.created_at > f.updated_at LIMIT 500",
                     Long.class);
 
             if (missingNotes.isEmpty()) {
@@ -205,8 +208,13 @@ public class RecommendComputeJob {
             // 从 ES 或 MySQL note 表读取真实标签和分类
             Map<Long, NoteFeatures> realFeatures = batchFetchRealFeatures(missingNotes);
 
-            String sql = "INSERT INTO t_item_feature (id, note_id, tags, category, quality_score) " +
-                    "VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE tags=VALUES(tags), category=VALUES(category)";
+            // 互动数一并落库（表内已有 like_count/comment_count 列，原实现只写质量分，列恒为 0）；
+            // ON DUPLICATE KEY 必须包含 quality_score：否则已存在行永远不刷新质量分
+            String sql = "INSERT INTO t_item_feature (id, note_id, tags, category, quality_score, like_count, comment_count) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE tags=VALUES(tags), category=VALUES(category), " +
+                    "quality_score=VALUES(quality_score), like_count=VALUES(like_count), comment_count=VALUES(comment_count), " +
+                    // 显式刷新 updated_at：值未变化时 ON UPDATE 不触发，否则该笔记会被"新行为"条件每轮重复选中
+                    "updated_at=NOW()";
 
             List<Object[]> batchArgs = new ArrayList<>();
             for (Long noteId : missingNotes) {
@@ -220,7 +228,9 @@ public class RecommendComputeJob {
                         noteId,
                         nf.toTagsJson(),
                         nf.category,
-                        qualityScore
+                        qualityScore,
+                        nf.likeCount,
+                        nf.commentCount
                 });
             }
 
@@ -406,19 +416,61 @@ public class RecommendComputeJob {
     @XxlJob("recommendHotPoolJob")
     public void refreshHotPool() {
         try {
-            doRefreshHotPool();
+            warmUpHotPool();
             XxlJobHelper.handleSuccess("热门池更新完成");
         } catch (Exception e) {
             log.error("[推荐-热门] 热门池更新异常", e);
             XxlJobHelper.handleFail("热门池更新异常: " + e.getMessage());
         }
+        // 行为表是全系统写入量最大的 append-only 表（每次浏览/点赞一行）；
+        // 保留 90 天（ItemCF/热池只读 7 天/24h，长期留作排查回溯），日切闸门 + 有界排空
+        purgeStaleBehaviorDaily();
     }
 
-    private void doRefreshHotPool() {
+    /** 行为保留天数（读侧只用 7 天/24h，留 90 天做回溯） */
+    private static final int BEHAVIOR_RETENTION_DAYS = 90;
+
+    /**
+     * 行为表保留策略清理：每天一次（SETNX 日切标记，热池任务每 30 分钟调度），
+     * 单轮最多 200 批 × 5000 = 100 万行（触顶打 WARN，剩余明日继续）。
+     */
+    private void purgeStaleBehaviorDaily() {
+        try {
+            String marker = "myxhs:search:behavior:cleanup:" + java.time.LocalDate.now();
+            Boolean first = stringRedisTemplate.opsForValue()
+                    .setIfAbsent(marker, "1", java.time.Duration.ofHours(25));
+            if (!Boolean.TRUE.equals(first)) {
+                return; // 今天已清理
+            }
+            java.sql.Timestamp cutoff = java.sql.Timestamp.valueOf(
+                    java.time.LocalDateTime.now().minusDays(BEHAVIOR_RETENTION_DAYS));
+            int total = 0;
+            for (int i = 0; i < 200; i++) {
+                int purged = jdbcTemplate.update(
+                        "DELETE FROM t_user_behavior WHERE created_at < ? LIMIT 5000", cutoff);
+                total += purged;
+                if (purged < 5000) {
+                    break;
+                }
+                if (i == 199) {
+                    log.warn("[推荐-行为保留] 清理触顶({} 条/日)，剩余留待明日（核对日增量是否超百万）", total);
+                }
+            }
+            if (total > 0) {
+                log.info("[推荐-行为保留] 清理 {} 天前行为 {} 条", BEHAVIOR_RETENTION_DAYS, total);
+            }
+        } catch (Exception e) {
+            log.error("[推荐-行为保留] 清理失败(明日重试；检查 created_at 索引与日增量)", e);
+        }
+    }
+
+    /**
+     * 刷新热门池（供 XxlJob 定时调度与启动预热共用）
+     */
+    public void warmUpHotPool() {
         // 前置检查
         jdbcTemplate.queryForList("SELECT 1 FROM t_user_behavior LIMIT 1");
         long start = System.currentTimeMillis();
-        // ... rest of method        long start = System.currentTimeMillis();
 
         try {
             List<Map<String, Object>> hotNotes = jdbcTemplate.queryForList(
@@ -439,6 +491,7 @@ public class RecommendComputeJob {
                 return;
             }
 
+            // {global} hash tag → tmpKey 与正式键同 slot（Cluster 下 RENAME 才合法）
             String tmpKey = RedisKeyConstants.RECOMMEND_HOT_GLOBAL + ":tmp";
             stringRedisTemplate.delete(tmpKey);
 

@@ -19,6 +19,8 @@ import static org.mockito.Mockito.*;
 class OrderMappingRepairJobTest {
 
     @Mock
+    private org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
+    @Mock
     private OrderMapper orderMapper;
     @Mock
     private OrderNoMappingRepository orderNoMappingRepository;
@@ -27,7 +29,7 @@ class OrderMappingRepairJobTest {
 
     @BeforeEach
     void setUp() {
-        job = new OrderMappingRepairJob(orderMapper, orderNoMappingRepository);
+        job = new OrderMappingRepairJob(orderMapper, orderNoMappingRepository, stringRedisTemplate);
     }
 
     @Test
@@ -40,7 +42,7 @@ class OrderMappingRepairJobTest {
 
         when(orderMapper.selectOrdersForMappingRepair(eq(0L), eq(200)))
                 .thenReturn(List.of(oldOrder));
-        when(orderNoMappingRepository.selectByOrderNo("ORD20250101000000001")).thenReturn(null);
+        when(orderNoMappingRepository.selectExistingOrderIds(anyList())).thenReturn(java.util.Set.of());
 
         job.repairMappings();
 
@@ -56,7 +58,7 @@ class OrderMappingRepairJobTest {
 
         when(orderMapper.selectOrdersForMappingRepair(eq(0L), eq(200)))
                 .thenReturn(List.of(order));
-        when(orderNoMappingRepository.selectByOrderNo("ORD20250101000000001")).thenReturn(new OrderNoMapping());
+        when(orderNoMappingRepository.selectExistingOrderIds(anyList())).thenReturn(java.util.Set.of(123456L));
 
         job.repairMappings();
 

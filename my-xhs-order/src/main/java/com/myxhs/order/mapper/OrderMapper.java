@@ -65,6 +65,15 @@ public interface OrderMapper extends BaseMapper<Order> {
      */
     @Select("SELECT * FROM t_order WHERE status = 0 AND deleted = 0 " +
             "AND created_at < #{deadline} AND id > #{lastId} ORDER BY id ASC LIMIT #{limit}")
+    /**
+     * 校准候选：已支付/已发货 + 创建于时间窗内（走 idx_status_created，无分片键广播各分片）
+     */
+    @Select("SELECT id, user_id, status FROM t_order WHERE deleted = 0 AND status IN (1, 2) "
+            + "AND created_at BETWEEN #{start} AND #{end} ORDER BY id ASC LIMIT #{limit}")
+    List<Order> selectCalibrationCandidates(@Param("start") LocalDateTime start,
+                                            @Param("end") LocalDateTime end,
+                                            @Param("limit") int limit);
+
     List<Order> selectTimeoutOrders(@Param("deadline") LocalDateTime deadline,
                                     @Param("lastId") Long lastId,
                                     @Param("limit") int limit);
@@ -77,7 +86,7 @@ public interface OrderMapper extends BaseMapper<Order> {
      * 不再限制最近时间窗口，避免持续故障后历史缺失映射永久遗漏。
      * </p>
      */
-    @Select("SELECT * FROM t_order WHERE deleted = 0 AND id > #{lastId} ORDER BY id ASC LIMIT #{limit}")
+    @Select("SELECT id, user_id, order_no FROM t_order WHERE deleted = 0 AND id > #{lastId} ORDER BY id ASC LIMIT #{limit}")
     List<Order> selectOrdersForMappingRepair(@Param("lastId") Long lastId,
                                              @Param("limit") int limit);
 }

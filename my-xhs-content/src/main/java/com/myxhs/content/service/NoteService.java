@@ -279,6 +279,10 @@ public class NoteService {
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
+                // 级联删除评论后同步失效评论数缓存（原实现只失效笔记缓存 → 评论数最长 5min 仍返回旧值）
+
+                cacheHelper.delayDoubleDelete(com.myxhs.common.constants.RedisKeyConstants.COMMENT_COUNT + noteId);
+
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.NOTE_DETAIL + finalNoteId);
                 // 补偿 counter：发送单条 UNCOMMENT 事件（带计数），避免循环发送 N 条独立 MQ
                 sendCounterEvent(finalNoteId, finalUserId, "UNCOMMENT", finalCommentCount);
@@ -374,6 +378,8 @@ public class NoteService {
         LambdaQueryWrapper<Note> wrapper = new LambdaQueryWrapper<Note>()
                 .eq(Note::getUserId, userId)
                 .eq(Note::getStatus, NoteStatus.PUBLISHED.getCode())
+                // 与详情口径一致：PUBLISHED 但审核非 APPROVED 的异常数据不得出现在公开列表
+                .eq(Note::getAuditStatus, AuditStatus.APPROVED.getCode())
                 .orderByDesc(Note::getCreatedAt);
 
         IPage<Note> result = noteMapper.selectPage(page, wrapper);
@@ -382,7 +388,8 @@ public class NoteService {
                 .map(this::toItemVO)
                 .collect(Collectors.toList());
 
-        return PageResult.of(pageNum, pageSize, result.getTotal(), items);
+        // 回包页码使用 clamp 后的值（原实现回原值，pageNum<=0 时响应页码与实际不符）
+        return PageResult.of(Math.max(1, pageNum), pageSize, result.getTotal(), items);
     }
 
     /**
@@ -402,7 +409,8 @@ public class NoteService {
                 .map(this::toItemVO)
                 .collect(Collectors.toList());
 
-        return PageResult.of(pageNum, pageSize, result.getTotal(), items);
+        // 回包页码使用 clamp 后的值（原实现回原值，pageNum<=0 时响应页码与实际不符）
+        return PageResult.of(Math.max(1, pageNum), pageSize, result.getTotal(), items);
     }
 
     // ==================== 草稿发布 ====================
@@ -504,6 +512,10 @@ public class NoteService {
         Note note = noteMapper.selectById(noteId);
         if (note == null || note.getStatus() != NoteStatus.PUBLISHED.getCode()) {
             throw new BizException(ResultCode.NOTE_NOT_FOUND);
+        }
+        // 与详情/列表口径一致：未审核通过的笔记不可分享（其余入口均已按双条件校验）
+        if (note.getAuditStatus() == null || note.getAuditStatus() != AuditStatus.APPROVED.getCode()) {
+            throw new BizException(ResultCode.NOTE_STATUS_ERROR, "笔记未通过审核，不可分享");
         }
 
         // 通过 MQ 通知 counter 服务更新 share 计数（对齐 COMMENT/VIEW 模式）
@@ -686,4 +698,30 @@ public class NoteService {
             return null;
         }
     }
+    /**
+     * 审核笔记（管理端）：通过 / 驳回
+     * <p>
+     * 原实现 audit_status 无任何变更入口（只能改库）——公开列表已按 APPROVED 过滤，
+     * 缺审核通道会导致新笔记永远不可见。此处提供最小审核闭环：状态校验 + 定向更新 + 详情缓存失效。
+     * </p>
+     *
+     * @param status 1=通过 2=驳回
+     */
+    public void auditNote(Long noteId, int status) {
+        if (status != AuditStatus.APPROVED.getCode() && status != AuditStatus.REJECTED.getCode()) {
+            throw new BizException(ResultCode.PARAM_INVALID, "审核状态仅支持 1(通过)/2(驳回)");
+        }
+        Note note = noteMapper.selectById(noteId);
+        if (note == null) {
+            throw new BizException(ResultCode.NOTE_NOT_FOUND);
+        }
+        noteMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<Note>()
+                .eq(Note::getId, noteId)
+                .set(Note::getAuditStatus, status)
+                .set(Note::getUpdatedAt, java.time.LocalDateTime.now()));
+        // 详情缓存失效（列表无缓存，直接查 DB 即生效）
+        cacheHelper.delayDoubleDelete(RedisKeyConstants.NOTE_DETAIL + noteId);
+        log.info("[笔记审核] noteId={}, auditStatus={}（原 {}）", noteId, status, note.getAuditStatus());
+    }
+
 }

@@ -189,7 +189,7 @@ public class HotSearchService {
      * 分布式安全：Redisson 分布式锁保证多实例只有一个执行。
      * </p>
      */
-    @Scheduled(fixedRate = 60_000) // 每 1 分钟（测试环境快速验证）
+    @Scheduled(fixedRateString = "${search.hot.recompute-interval-ms:60000}") // 可配（默认 1 分钟；生产建议 5 分钟降低快照写入量）
     public void calculateHotSearch() {
         RLock lock = redissonClient.getLock(LOCK_KEY);
         boolean acquired = false;
@@ -289,6 +289,39 @@ public class HotSearchService {
 
         log.info("[热搜] 热度计算完成: Top {} 词, 最高分={}", topEntries.size(),
                 topEntries.isEmpty() ? 0 : String.format("%.2f", topEntries.get(0).getValue()));
+
+        // 快照表保留 30 天：分钟级写 top-N（≈7 万行/天），无清理会到千万级
+        purgeStaleSnapshotsDaily();
+    }
+
+    /**
+     * 热搜快照保留策略：每天一次（SETNX 日切标记），保留 30 天，有界排空
+     * （idx_snapshot_time 支撑删除；分钟级快照仅用于短期趋势）
+     */
+    private void purgeStaleSnapshotsDaily() {
+        try {
+            String marker = "myxhs:search:hot:snapshot:cleanup:" + java.time.LocalDate.now();
+            boolean first = Boolean.TRUE.equals(stringRedisTemplate.opsForValue()
+                    .setIfAbsent(marker, "1", java.time.Duration.ofHours(25)));
+            if (!first) {
+                return;
+            }
+            int total = 0;
+            for (int i = 0; i < 20; i++) {
+                int purged = jdbcTemplate.update(
+                        "DELETE FROM t_hot_search_snapshot WHERE snapshot_time < ? LIMIT 5000",
+                        java.sql.Timestamp.valueOf(java.time.LocalDateTime.now().minusDays(30)));
+                total += purged;
+                if (purged < 5000) {
+                    break;
+                }
+            }
+            if (total > 0) {
+                log.info("[热搜] 清理 30 天前快照 {} 行", total);
+            }
+        } catch (Exception e) {
+            log.error("[热搜] 快照清理失败(明日重试；检查 idx_snapshot_time)", e);
+        }
     }
 
     /**

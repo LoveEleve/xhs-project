@@ -1,6 +1,7 @@
 package com.myxhs.user.controller;
 
 import com.myxhs.common.response.R;
+import com.myxhs.common.web.AccessTokenGuard;
 import com.myxhs.user.dto.request.AddressCreateRequest;
 import com.myxhs.user.dto.request.AddressUpdateRequest;
 import com.myxhs.user.dto.response.AddressVO;
@@ -24,6 +25,7 @@ import java.util.List;
 public class UserAddressController {
 
     private final UserAddressService userAddressService;
+    private final AccessTokenGuard accessTokenGuard;
 
     /**
      * 获取地址列表
@@ -54,6 +56,19 @@ public class UserAddressController {
     /**
      * 新增地址
      */
+    /**
+     * 内部调用：地址详情（明文手机号，X-Internal-Call 保护）——供订单快照等内部用途
+     */
+    @GetMapping("/internal/{id}")
+    public R<AddressVO> getAddressInternal(@RequestHeader("X-User-Id") Long userId,
+                                           @PathVariable("id") Long id,
+                                           @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
+        if (!accessTokenGuard.isInternalCall(internalCall)) {
+            return R.fail(403, "仅限内部服务调用");
+        }
+        return R.ok(userAddressService.getAddressForInternal(userId, id));
+    }
+
     @PostMapping
     public R<AddressVO> createAddress(
             @RequestHeader("X-User-Id") Long userId,

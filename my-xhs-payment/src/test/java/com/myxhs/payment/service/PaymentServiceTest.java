@@ -138,6 +138,8 @@ class PaymentServiceTest {
         when(orderFeignClient.notifyPaySuccess(anyLong(), anyString()))
                 .thenReturn(R.ok());
         // P1-1：支付前回查订单状态，默认订单待付款(0)允许支付
+        // 2026-09-23：pay() 新增金额校验（/pay-amount 比对）→ 需 stub 订单实付金额与请求一致
+        when(orderFeignClient.getOrderPayAmount(anyLong())).thenReturn(R.ok(AMOUNT));
         when(orderFeignClient.getOrderStatus(anyLong()))
                 .thenReturn(R.ok(0));
     }
@@ -170,7 +172,7 @@ class PaymentServiceTest {
         assertThat(vo).isNotNull();
         assertThat(vo.getOrderId()).isEqualTo(ORDER_ID);
         assertThat(vo.getPaymentNo()).isEqualTo(PAYMENT_NO);
-        assertThat(vo.getStatus()).isEqualTo(0); // 返回的是刚创建时的状态
+        assertThat(vo.getStatus()).isEqualTo(1); // mock 同步成功后返回成功状态（原实现返回创建时状态=0，与本轮修复同步）
 
         // 验证支付记录已插入
         verify(paymentJdbcTemplate).update(

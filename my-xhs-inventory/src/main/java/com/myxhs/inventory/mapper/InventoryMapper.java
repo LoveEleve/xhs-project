@@ -65,6 +65,23 @@ public interface InventoryMapper extends BaseMapper<Inventory> {
     int deletePredeductIdem(@Param("orderId") Long orderId, @Param("skuId") Long skuId);
 
     /**
+     * 清理过期预扣幂等占位（成功预扣的占位永久保留 → 表随订单量线性增长；
+     * 幂等只需覆盖"预扣记录/TTL + MQ 重投窗口"，7 天后无重投可能）
+     */
+    @org.apache.ibatis.annotations.Delete("DELETE FROM t_inventory_prededuct_idem WHERE created_at < #{before} LIMIT #{limit}")
+    int deleteStalePredeductIdem(@Param("before") java.time.LocalDateTime before, @Param("limit") int limit);
+
+    /** 已发送 outbox 记录保留 7 天（idx_status_created 支撑） */
+    @org.apache.ibatis.annotations.Delete(
+            "DELETE FROM t_inventory_outbox WHERE status = 1 AND created_at < #{before} LIMIT #{limit}")
+    int deleteSentOutbox(@Param("before") java.time.LocalDateTime before, @Param("limit") int limit);
+
+    /** 已处理/转人工的补偿记录保留 90 天（idx_status_retry_created 支撑） */
+    @org.apache.ibatis.annotations.Delete(
+            "DELETE FROM t_inventory_compensation WHERE status IN (1, 2) AND created_at < #{before} LIMIT #{limit}")
+    int deleteSettledCompensation(@Param("before") java.time.LocalDateTime before, @Param("limit") int limit);
+
+    /**
      * TCC Try: 冻结库存（available_stock -= qty, freezing_stock += qty）
      * @return affected rows (1=成功, 0=库存不足)
      */
@@ -89,6 +106,13 @@ public interface InventoryMapper extends BaseMapper<Inventory> {
             "freezing_stock = freezing_stock - #{qty}, updated_at = NOW() " +
             "WHERE sku_id = #{skuId} AND freezing_stock >= #{qty} AND deleted = 0")
     int cancelFreeze(@Param("skuId") Long skuId, @Param("qty") Integer qty);
+
+    /**
+     * 对账专用：仅更新 locked_stock（以 Redis 在途预扣为权威重算）
+     */
+    @Update("UPDATE t_inventory SET locked_stock = #{lockedStock}, updated_at = NOW() "
+            + "WHERE sku_id = #{skuId} AND deleted = 0")
+    int updateLockedStockOnly(@Param("skuId") Long skuId, @Param("lockedStock") int lockedStock);
 
     /**
      * 对账专用：仅更新 available_stock（不触碰 locked_stock/freezing_stock），
@@ -137,8 +161,14 @@ public interface InventoryMapper extends BaseMapper<Inventory> {
      * 查询待发送的 Outbox 事件
      */
     @org.apache.ibatis.annotations.Select("SELECT * FROM t_inventory_outbox WHERE status = 0 " +
-            "AND created_at < #{cutoff} ORDER BY id ASC LIMIT #{limit}")
+            "AND created_at < #{cutoff} " +
+            "AND (next_retry_time IS NULL OR next_retry_time <= NOW()) ORDER BY id ASC LIMIT #{limit}")
     List<java.util.Map<String, Object>> selectPendingOutbox(@Param("cutoff") LocalDateTime cutoff, @Param("limit") int limit);
+
+    /** 补发失败：递增重试次数并设置下次可发时间（指数退避+抖动，P2/2026-09-27） */
+    @org.apache.ibatis.annotations.Update("UPDATE t_inventory_outbox SET retry_count = retry_count + 1, " +
+            "next_retry_time = #{nextRetryTime} WHERE id = #{eventId}")
+    int markOutboxRetry(@Param("eventId") Long eventId, @Param("nextRetryTime") LocalDateTime nextRetryTime);
 
     /**
      * 标记 Outbox 事件已发送
@@ -160,6 +190,24 @@ public interface InventoryMapper extends BaseMapper<Inventory> {
             "VALUES (#{orderId}, #{skuId}, #{quantity}, #{reason}, NOW())")
     int insertCompensation(@Param("orderId") Long orderId, @Param("skuId") Long skuId,
             @Param("quantity") int quantity, @Param("reason") String reason);
+
+    /**
+     * 插入补偿记录（带类型）：type 1-预扣回滚 2-退款回补
+     */
+    @org.apache.ibatis.annotations.Insert("INSERT INTO t_inventory_compensation "
+            + "(order_id, sku_id, quantity, type, user_id, fail_reason, status, retry_count) "
+            + "VALUES (#{orderId}, #{skuId}, #{quantity}, #{type}, #{userId}, #{reason}, 0, 0)")
+    int insertCompensationWithType(@Param("orderId") Long orderId, @Param("skuId") Long skuId,
+            @Param("quantity") int quantity, @Param("type") int type, @Param("userId") Long userId,
+            @Param("reason") String reason);
+
+    /**
+     * 是否已有同 (订单, SKU, 类型) 的待处理补偿（避免异常反复触发时重复堆积）
+     */
+    @org.apache.ibatis.annotations.Select("SELECT COUNT(*) FROM t_inventory_compensation "
+            + "WHERE order_id = #{orderId} AND sku_id = #{skuId} AND type = #{type} AND status = 0")
+    int countPendingCompensation(@Param("orderId") Long orderId, @Param("skuId") Long skuId,
+            @Param("type") int type);
 
     /**
      * 查询待处理的补偿记录

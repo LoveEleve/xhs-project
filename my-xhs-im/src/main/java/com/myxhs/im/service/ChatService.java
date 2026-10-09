@@ -34,7 +34,7 @@ import java.util.stream.Collectors;
  * 核心职责：
  * 1. 处理聊天消息（写扩散双写 + 路由投递 + 未读计数）
  * 2. 处理已读回执（清零未读 + 通知对方）
- * 3. 处理离线消息（暂存 Redis List + 上线推送 + ACK 确认删除）
+ * 3. 处理离线消息（先落 Redis ZSet 持久副本 + 在线推送 + 客户端 ACK 确认删除；at-least-once）
  * 4. 会话列表查询 + 历史消息查询
  * </p>
  * <p>
@@ -54,6 +54,7 @@ public class ChatService {
     private final StringRedisTemplate stringRedisTemplate;
     private final OnlineRouteService onlineRouteService;
     private final MessagePersistService messagePersistService;
+    private final org.redisson.api.RedissonClient redissonClient;
 
     /** 使用 setter 注入打破循环依赖：ChatService ↔ ImWebSocketHandler */
     private ImWebSocketHandler webSocketHandler;
@@ -106,22 +107,45 @@ public class ChatService {
             return;
         }
         if (content.length() > 2000) {
-            content = content.substring(0, 2000); // 截断超长消息
+            // 截断超长消息；避免把代理对（emoji 等）从中间切开产生乱码字符
+            int end = 2000;
+            if (Character.isHighSurrogate(content.charAt(end - 1))) {
+                end -= 1;
+            }
+            content = content.substring(0, end);
         }
         int msgType = imMsg.getMsgType() != null ? imMsg.getMsgType() : 0;
 
         // 生成消息 ID、会话 ID 和会话内序列号
         long msgId = IdWorker.getId();
-        // 【P0-B 修复】会话ID不再用 min*31+max 哈希（存在确定性碰撞→跨用户串台），
-        // 改为复用关系表中已分配的全局唯一ID，无则分配雪花ID。
-        long conversationId = resolveConversationId(senderId, receiverId);
-        // 【M8】会话级序列号（Redis INCR 原子递增，保证同会话消息严格有序）
-        long seqNo = stringRedisTemplate.opsForValue().increment("myxhs:im:seq:" + conversationId);
+        // 【P0-B 补强】"会话ID分配 + 首条消息落库"放进用户对粒度的分布式锁：
+        // 双向并发首条消息（A→B 与 B→A 同时发出）会各自分配雪花ID → 同一对用户产生两个会话，
+        // 历史查询只命中其一 → 一半历史不可见。锁内先查关系表，后者必然复用先者的 ID。
+        long conversationId;
+        long seqNo;
         LocalDateTime now = LocalDateTime.now();
-
-        // 1. 持久化消息 + 更新会话（通过独立 Bean 调用，确保 @Transactional 生效）
+        org.redisson.api.RLock convLock = redissonClient.getLock(
+                "myxhs:im:conv:lock:" + Math.min(senderId, receiverId) + ":" + Math.max(senderId, receiverId));
         try {
-            messagePersistService.saveMessageWithTransaction(msgId, conversationId, senderId, receiverId, content, msgType, seqNo, now);
+            if (!convLock.tryLock(3, 10, java.util.concurrent.TimeUnit.SECONDS)) {
+                sendJson(senderSession, Map.of("ver", 1, "type", "NACK", "msgId", msgId, "reason", "发送过于频繁，请重试"));
+                return;
+            }
+            try {
+                conversationId = resolveConversationId(senderId, receiverId);
+                // 【M8】会话级序列号（Redis INCR 原子递增，保证同会话消息严格有序）
+                seqNo = stringRedisTemplate.opsForValue().increment("myxhs:im:seq:" + conversationId);
+                // 1. 持久化消息 + 更新会话（通过独立 Bean 调用，确保 @Transactional 生效）
+                messagePersistService.saveMessageWithTransaction(msgId, conversationId, senderId, receiverId, content, msgType, seqNo, now);
+            } finally {
+                if (convLock.isHeldByCurrentThread()) {
+                    convLock.unlock();
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            sendJson(senderSession, Map.of("ver", 1, "type", "NACK", "msgId", msgId, "reason", "发送失败，请重试"));
+            return;
         } catch (Exception e) {
             log.error("[IM] 写扩散双写失败: senderId={}, receiverId={}", senderId, receiverId, e);
             sendJson(senderSession, Map.of("ver", 1, "type", "NACK", "msgId", msgId, "reason", "发送失败，请重试"));
@@ -136,13 +160,18 @@ public class ChatService {
                 "from", senderId, "content", content,
                 "msgType", msgType, "timestamp", timestamp, "traceId", traceId));
 
+        // 先落离线（持久副本）再尝试在线推送 —— at-least-once 投递语义：
+        // 原实现只在"判定离线/推送失败/发布异常"时存离线，而跨实例是 Pub/Sub 即发即忘：
+        // 目标实例进程挂掉/pod 重建时 publish 成功但无人消费 → 消息永久丢失（发送者已收到 ACK）。
+        // 现在离线集合充当持久副本，客户端收消息后 ACK(ZREM) 才删除；在线路径多一次 ZADD（幂等），
+        // 未 ACK 的重连会有重复投递（客户端按 msgId 去重）。
+        storeOfflineMessage(receiverId, msgId);
+
         String targetServerId = onlineRouteService.getRoute(receiverId);
         if (targetServerId != null && targetServerId.equals(onlineRouteService.getServerId())) {
-            // 同实例直推
-            boolean pushed = webSocketHandler.pushToUser(receiverId, chatJson);
-            if (!pushed) {
-                // 推送失败（session 已关闭），存离线
-                storeOfflineMessage(receiverId, msgId);
+            // 同实例直推：成功即删离线副本（失败则保留，上线补发）
+            if (webSocketHandler.pushToUser(receiverId, chatJson)) {
+                removeOfflineMessage(receiverId, msgId);
             }
         } else if (targetServerId != null) {
             // 【M4】跨实例通过 Redis Pub/Sub 定向投递，取代 RocketMQ 广播模式
@@ -161,13 +190,10 @@ public class ChatService {
                 stringRedisTemplate.convertAndSend("myxhs:im:route:" + targetServerId,
                         JSON.toJSONString(routeMsg));
             } catch (Exception e) {
-                log.error("[IM] Pub/Sub 路由失败，降级存离线: receiverId={}", receiverId, e);
-                storeOfflineMessage(receiverId, msgId);
+                log.warn("[IM] Pub/Sub 路由失败(离线副本已存, 上线补发): receiverId={}", receiverId, e);
             }
-        } else {
-            // 用户不在线，存离线消息
-            storeOfflineMessage(receiverId, msgId);
         }
+        // 用户不在线：离线副本已在上面写入，无需额外处理
 
         // 3. 更新未读计数（Redis Hash：一个 Key 管理用户所有会话的未读数）
         try {
@@ -192,6 +218,24 @@ public class ChatService {
      * 高频 ACK 场景下性能差异显著。
      * </p>
      */
+    /**
+     * 删除离线副本（接收侧推送成功后调用）
+     * <p>
+     * "先落离线再推"后必须配套接收侧删除：否则在线消息的离线副本会一直留到 7 天/TTL，
+     * 重连时整批补发 → 重复风暴（客户端是否对所有消息 ACK 不可依赖）。
+     * </p>
+     */
+    public void removeOfflineMessage(Long userId, Long msgId) {
+        if (userId == null || msgId == null) {
+            return;
+        }
+        try {
+            stringRedisTemplate.opsForZSet().remove(OFFLINE_KEY_PREFIX + userId, String.valueOf(msgId));
+        } catch (Exception e) {
+            log.warn("[IM] 删除离线副本失败(客户端 ACK 兜底): userId={}, msgId={}", userId, msgId, e);
+        }
+    }
+
     public void handleAck(Long userId, ImMessage imMsg) {
         if (imMsg.getMsgId() == null) return;
         // 从离线 Sorted Set 中删除已确认的消息
@@ -211,15 +255,8 @@ public class ChatService {
         Long peerId = imMsg.getPeerId();
         if (peerId == null) return;
 
-        // 1. 更新 DB 未读数为 0
-        ChatUserRelation relation = chatUserRelationMapper.selectOne(
-                new LambdaQueryWrapper<ChatUserRelation>()
-                        .eq(ChatUserRelation::getUserId, userId)
-                        .eq(ChatUserRelation::getPeerId, peerId));
-        if (relation != null && relation.getUnreadCount() > 0) {
-            relation.setUnreadCount(0);
-            chatUserRelationMapper.updateById(relation);
-        }
+        // 1. 定向清零 DB 未读（原实现整行 updateById → 用旧快照覆盖并发新消息的 lastMessage/unread）
+        chatUserRelationMapper.resetUnread(userId, peerId);
 
         // 2. 清零 Redis 未读计数
         stringRedisTemplate.opsForHash().put(UNREAD_KEY_PREFIX + userId, String.valueOf(peerId), "0");
@@ -339,6 +376,15 @@ public class ChatService {
 
         // 从 DB 批量查询消息详情，按 seqNo 排序（修复 selectBatchIds 无排序的乱序 Bug）
         List<ChatMessage> messages = chatMessageMapper.selectBatchIds(msgIds);
+
+        // 清理"DB 已不存在"的离线副本（消息被清理/回滚）：否则它们永远等不到 ACK，
+        // 每次重连都会重复拉取同一批 msgId（最长挂 7 天）
+        Set<Long> foundIds = messages.stream().map(ChatMessage::getId).collect(Collectors.toSet());
+        for (Long id : msgIds) {
+            if (!foundIds.contains(id)) {
+                removeOfflineMessage(userId, id);
+            }
+        }
         if (messages.isEmpty()) return;
 
         // 【M8】按 seqNo 升序排列（保证离线消息的顺序一致性）
@@ -410,18 +456,29 @@ public class ChatService {
      * 标记与某人的消息全部已读
      */
     public void markAllRead(Long userId, Long peerId) {
-        // 1. 更新 DB 未读数为 0
-        ChatUserRelation relation = chatUserRelationMapper.selectOne(
-                new LambdaQueryWrapper<ChatUserRelation>()
-                        .eq(ChatUserRelation::getUserId, userId)
-                        .eq(ChatUserRelation::getPeerId, peerId));
-        if (relation != null && relation.getUnreadCount() > 0) {
-            relation.setUnreadCount(0);
-            chatUserRelationMapper.updateById(relation);
-        }
+        // 1. 定向清零 DB 未读（同 handleRead，防整行覆盖）
+        chatUserRelationMapper.resetUnread(userId, peerId);
 
         // 2. 清零 Redis 未读计数
         stringRedisTemplate.opsForHash().put(UNREAD_KEY_PREFIX + userId, String.valueOf(peerId), "0");
+    }
+
+    /**
+     * 删除会话（软删，仅影响本人侧列表；对方发言会重新激活）
+     */
+    public void deleteConversation(Long userId, Long peerId) {
+        if (peerId == null) {
+            return;
+        }
+        int affected = chatUserRelationMapper.softDeleteConversation(userId, peerId);
+        // 清零本人侧该会话未读（会话隐藏后红点不应残留）；best-effort：
+        // 软删已提交，Redis 抖动不应把整个请求打成 500（未读会被下次读写覆盖/收敛）
+        try {
+            stringRedisTemplate.opsForHash().put(UNREAD_KEY_PREFIX + userId, String.valueOf(peerId), "0");
+        } catch (Exception e) {
+            log.warn("[IM] 删除会话后清零未读失败(已软删, 容忍): userId={}, peerId={}", userId, peerId, e);
+        }
+        log.info("[IM] 删除会话: userId={}, peerId={}, affected={}", userId, peerId, affected);
     }
 
     /**

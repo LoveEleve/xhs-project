@@ -68,6 +68,20 @@ public class GlobalExceptionHandler {
      * 返回通用错误提示，不暴露内部细节。
      * </p>
      */
+    /**
+     * Redis 不可用（连接/超时）：统一 503 + 可重试语义
+     * <p>2026-09-23：RedisOperator 超时改为抛 RedisUnavailableException 后必须有明确出口，
+     * 否则会落入兜底 500（客户端无法区分"重试有效"）。</p>
+     */
+    @ExceptionHandler(RedisUnavailableException.class)
+    public org.springframework.http.ResponseEntity<R<Void>> handleRedisUnavailable(RedisUnavailableException e,
+                                                                                  HttpServletRequest request) {
+        log.error("[Redis不可用] URI={}, message={}", request.getRequestURI(), e.getMessage());
+        return org.springframework.http.ResponseEntity
+                .status(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE)
+                .body(R.fail(ResultCode.SERVICE_UNAVAILABLE.getCode(), "缓存/认证依赖暂不可用，请稍后重试"));
+    }
+
     @ExceptionHandler(SysException.class)
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public R<Void> handleSysException(SysException e, HttpServletRequest request) {

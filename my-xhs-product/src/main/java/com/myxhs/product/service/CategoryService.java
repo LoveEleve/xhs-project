@@ -77,6 +77,57 @@ public class CategoryService {
     }
 
     /**
+     * 启动预热：构建分类树并写入 Redis（已存在则跳过）
+     * <p>
+     * 供 CacheWarmer 在应用启动完成后调用（见 myxhs.cache-warmup.targets=product-category-tree），
+     * 把"首个请求回源 DB"提前到流量到来之前；预热失败降级为按需加载，不影响启动。
+     * </p>
+     *
+     * @return 预热的分类节点数（0 = 缓存已存在或分类树为空）
+     */
+    public int warmUpCategoryTree() {
+        try {
+            List<CategoryTreeVO> cached = redisOperator.get(CATEGORY_TREE_REDIS_KEY);
+            if (cached != null && !cached.isEmpty()) {
+                log.debug("[分类] 预热跳过: 缓存已存在");
+                return 0;
+            }
+        } catch (Exception e) {
+            log.warn("[分类] 预热跳过: Redis 不可用，降级按需加载", e);
+            return 0;
+        }
+
+        List<CategoryTreeVO> tree = buildCategoryTree();
+        if (tree.isEmpty()) {
+            log.warn("[分类] 预热跳过: 分类树为空");
+            return 0;
+        }
+        try {
+            redisOperator.set(CATEGORY_TREE_REDIS_KEY, tree, 2, TimeUnit.HOURS);
+        } catch (Exception e) {
+            log.warn("[分类] 预热回填失败(降级, DB 数据仍正常返回)", e);
+            return 0;
+        }
+        int nodes = countNodes(tree);
+        log.info("[分类] 预热完成: {} 个节点", nodes);
+        return nodes;
+    }
+
+    /**
+     * 统计分类树节点总数（含各级子节点）
+     */
+    private int countNodes(List<CategoryTreeVO> nodes) {
+        if (nodes == null || nodes.isEmpty()) {
+            return 0;
+        }
+        int count = nodes.size();
+        for (CategoryTreeVO node : nodes) {
+            count += countNodes(node.getChildren());
+        }
+        return count;
+    }
+
+    /**
      * 从 DB 构建三级分类树
      * <p>
      * 一次查出所有分类，在内存中按 parentId 分组构建树形结构。

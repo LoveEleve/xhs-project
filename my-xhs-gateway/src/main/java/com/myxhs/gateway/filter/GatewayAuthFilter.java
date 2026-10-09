@@ -46,6 +46,10 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
     private final AuthProperties authProperties;
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
+    /** 鉴权失败指标（原实现只打日志，失败率无法在 Prometheus 侧观测/告警） */
+    private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
+    private final java.util.Map<String, io.micrometer.core.instrument.Counter> authFailureCounters =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     /**
      * Token 黑名单 Redis Key 前缀
@@ -95,6 +99,7 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
         String authHeader = exchange.getRequest().getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
         if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
             log.info("[Gateway] 鉴权失败, 缺少 Authorization Header, path={}", path);
+            countAuthFailure("missing_header");
             return unauthorized(exchange, "缺少认证信息");
         }
 
@@ -106,6 +111,7 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
             claims = parseToken(token);
         } catch (JwtException e) {
             log.info("[Gateway] 鉴权失败, Token 解析异常: {}, path={}", e.getMessage(), path);
+            countAuthFailure("invalid_token");
             return unauthorized(exchange, "Token 无效或已过期");
         }
 
@@ -113,6 +119,7 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
         String tokenType = claims.get("type", String.class);
         if (!"access".equals(tokenType)) {
             log.info("[Gateway] 鉴权失败, Token 类型错误: type={}, path={}", tokenType, path);
+            countAuthFailure("wrong_type");
             return unauthorized(exchange, "Token 类型错误，请使用 Access Token");
         }
 
@@ -125,6 +132,7 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
                     if (Boolean.TRUE.equals(blacklisted)) {
                         log.info("[Gateway] 鉴权失败, Token 已被注销, jti={}, userId={}, path={}",
                                 jti, claims.getSubject(), path);
+                        countAuthFailure("revoked");
                         return unauthorized(exchange, "Token 已被注销");
                     }
                     return continueChain(exchange, chain, claims, path, method, effectiveTraceId);
@@ -134,6 +142,7 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
                     // 实测 Redis 短暂不可用 → 全站 401（客户端会误判强制登出），且与真吊销不可区分。
                     // 修正：保持 fail-closed（仍拒绝），但返回 503「认证服务暂不可用」→ 客户端可重试、运维可告警。
                     log.error("[Gateway] ⚠️ 黑名单查询异常，按认证服务不可用处理(503): {}", e.getMessage());
+                    countAuthFailure("redis_unavailable");
                     return serviceUnavailable(exchange, "认证服务暂不可用，请稍后重试");
                 });
     }
@@ -146,6 +155,7 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
         // RV30：sub 为空仍注入空 X-User-Id 会让下游拿到空身份，必须拒绝
         if (uid == null || uid.isBlank()) {
             log.info("[Gateway] 鉴权失败, Token 缺少 sub: path={}", path);
+            countAuthFailure("missing_sub");
             return unauthorized(exchange, "Token 无效：缺少用户标识");
         }
         final String role = claims.get("role", String.class);
@@ -245,6 +255,16 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
             // 真实语义：Redis 不可用时无法完成吊销校验 → fail-closed 拒绝，但响应为 503 可重试。
             throw new IllegalStateException("Redis 黑名单查询失败: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * 鉴权失败计数（按原因分标签，供 Prometheus 告警"鉴权失败率突增"）
+     */
+    private void countAuthFailure(String reason) {
+        authFailureCounters.computeIfAbsent(reason, r ->
+                io.micrometer.core.instrument.Counter.builder("myxhs_gateway_auth_failures_total")
+                        .tag("reason", r)
+                        .register(meterRegistry)).increment();
     }
 
     /**

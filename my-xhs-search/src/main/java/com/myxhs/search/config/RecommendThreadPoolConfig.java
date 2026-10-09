@@ -39,6 +39,30 @@ public class RecommendThreadPoolConfig {
     @org.springframework.beans.factory.annotation.Value("${search.recall.queue-capacity:200}")
     private int recallQueue;
 
+    /**
+     * 内层召回线程池：与 recallExecutor（外层，跑整请求）分离——
+     * 同池嵌套时外层占满 32 线程，内层 5 路召回排队 → 每请求 2s 召回超时、推荐降级/空。
+     */
+    @Bean("recallInnerExecutor")
+    public ExecutorService recallInnerExecutor() {
+        ThreadPoolExecutor executor = new ThreadPoolExecutor(
+                8, 32,
+                60, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(500),
+                new ThreadFactory() {
+                    private final AtomicInteger count = new AtomicInteger(0);
+                    @Override
+                    public Thread newThread(Runnable r) {
+                        Thread t = new Thread(r, "recall-inner-pool-" + count.incrementAndGet());
+                        t.setDaemon(true);
+                        return t;
+                    }
+                },
+                new ThreadPoolExecutor.CallerRunsPolicy()
+        );
+        return new MdcAwareExecutorService(executor);
+    }
+
     @Bean("recallExecutor")
     public ExecutorService recallExecutor() {
         ThreadPoolExecutor executor = new ThreadPoolExecutor(

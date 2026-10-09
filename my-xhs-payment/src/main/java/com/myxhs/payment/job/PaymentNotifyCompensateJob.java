@@ -160,11 +160,17 @@ public class PaymentNotifyCompensateJob {
                     // 订单服务不可达，稍后重试
                     log.warn("[补偿任务] 订单服务不可达，跳过订单 {}", orderId);
                     incrementRetryCount(countKey);
-                } else {
-                    // 订单服务返回其他错误（如订单已删除），无需补偿
-                    log.debug("[补偿任务] 订单 {} 查询返回错误(code={})，无需补偿", orderId,
-                            payAmountResult != null ? payAmountResult.getCode() : -1);
+                } else if (payAmountResult != null
+                        && payAmountResult.getCode() == com.myxhs.common.response.ResultCode.ORDER_NOT_FOUND.getCode()) {
+                    // 订单不存在 → 确定性业务结论，无需补偿
+                    log.debug("[补偿任务] 订单 {} 不存在(30008)，无需补偿", orderId);
                     stringRedisTemplate.delete(countKey);
+                } else {
+                    // 其他错误（如订单服务内部 500）是**瞬态**：原实现直接清计数 → 永久漏补偿。
+                    // 改为继续重试（超上限后由既有死信/告警路径暴露）。
+                    log.warn("[补偿任务] 订单 {} 查询返回非确定性错误(code={})，继续重试", orderId,
+                            payAmountResult != null ? payAmountResult.getCode() : -1);
+                    incrementRetryCount(countKey);
                 }
             } catch (Exception e) {
                 log.error("[补偿任务] 处理订单 {} 补偿异常", orderId, e);

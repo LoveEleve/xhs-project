@@ -94,8 +94,18 @@ public class UserController {
         return R.ok(userService.getUserPublicInfo(userId));
     }
 
+    /** 批量查询单次上限（公开接口，防无界 Set 放大 DB/缓存查询） */
+    private static final int MAX_BATCH_USER_IDS = 100;
+
     @PostMapping("/batch/info")
     public R<java.util.Map<Long, UserPublicInfoResponse>> batchGetUserPublicInfo(@RequestBody Set<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return R.ok(java.util.Collections.emptyMap());
+        }
+        if (userIds.size() > MAX_BATCH_USER_IDS) {
+            log.warn("[用户] batch/info 超限截断: requested={}, limit={}", userIds.size(), MAX_BATCH_USER_IDS);
+            userIds = userIds.stream().limit(MAX_BATCH_USER_IDS).collect(java.util.stream.Collectors.toSet());
+        }
         return R.ok(userService.batchGetUserPublicInfo(userIds));
     }
 

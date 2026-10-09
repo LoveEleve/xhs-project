@@ -59,6 +59,10 @@ class OrderControllerTest {
     @Mock
     private com.myxhs.common.web.AccessTokenGuard accessTokenGuard;
 
+    /** 2026-09-21：OrderController 新增订单状态重建/校准端点，构造需要该依赖 */
+    @Mock
+    private com.myxhs.order.service.OrderEventService orderEventService;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private static final Long USER_ID = 1001L;
@@ -67,7 +71,7 @@ class OrderControllerTest {
 
     @BeforeEach
     void setUp() {
-        OrderController controller = new OrderController(orderService, accessTokenGuard,
+        OrderController controller = new OrderController(orderService, orderEventService, accessTokenGuard,
                 new org.springframework.beans.factory.ObjectProvider<MockPayService>() {
                     @Override public MockPayService getObject() { return mockPayService; }
                     @Override public MockPayService getObject(Object... args) { return mockPayService; }
@@ -175,7 +179,8 @@ class OrderControllerTest {
     @Test
     @DisplayName("GET /api/order/list - 查询全部订单")
     void getUserOrders_all() throws Exception {
-        when(orderService.getUserOrders(USER_ID, null))
+        // 2026-09-21：/list 增加 limit 参数（防大用户全量返回），控制器改调 3 参重载
+        when(orderService.getUserOrders(USER_ID, null, null))
                 .thenReturn(Collections.singletonList(buildOrderVO()));
 
         mockMvc.perform(get("/api/order/list")
@@ -188,7 +193,7 @@ class OrderControllerTest {
     @Test
     @DisplayName("GET /api/order/list - 按状态筛选")
     void getUserOrders_filterByStatus() throws Exception {
-        when(orderService.getUserOrders(USER_ID, 0))
+        when(orderService.getUserOrders(USER_ID, 0, null))
                 .thenReturn(Collections.singletonList(buildOrderVO()));
 
         mockMvc.perform(get("/api/order/list")

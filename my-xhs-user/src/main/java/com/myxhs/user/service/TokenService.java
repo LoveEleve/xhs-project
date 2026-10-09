@@ -267,26 +267,46 @@ public class TokenService {
     }
 
     /**
-     * T-012: 改密码后使该用户全部凭证失效（黑名单当前 access/refresh + 删 hmac secret + 清 Redis token）
+     * 严格版全量吊销（安全关键路径专用，如改密）
+     * <p>
+     * 与 {@link #revokeAllTokens(Long)} 的差异：Redis 不可用时<b>向上抛</b>
+     * {@link com.myxhs.common.exception.RedisUnavailableException}，由调用方 fail-closed。
+     * 原 invalidateUserCredentials 吞异常 → "改密成功但旧凭证仍有效"的静默安全缺口，已删除。
+     * </p>
      */
-    public void invalidateUserCredentials(Long userId) {
-        try {
-            String secret = jwtProperties.getSecret();
-            Object storedAccess = redisOperator.get(RedisKeyConstants.USER_TOKEN_ACCESS + userId);
-            Object storedRefresh = redisOperator.get(RedisKeyConstants.USER_TOKEN_REFRESH + userId);
-            if (storedAccess != null) {
-                blacklistToken(String.valueOf(storedAccess));
-            }
-            if (storedRefresh != null) {
-                blacklistToken(String.valueOf(storedRefresh));
-            }
-            redisOperator.delete(RedisKeyConstants.USER_TOKEN_ACCESS + userId);
-            redisOperator.delete(RedisKeyConstants.USER_TOKEN_REFRESH + userId);
-            redisOperator.delete(RedisKeyConstants.USER_HMAC_SECRET + userId);
-            log.info("[Token] 改密后凭证已失效, userId={}", userId);
-        } catch (Exception e) {
-            log.error("[Token] 改密失效凭证异常, userId={}", userId, e);
+    public void revokeAllTokensStrict(Long userId) {
+        String accessTokenKey = RedisKeyConstants.USER_TOKEN_ACCESS + userId;
+        String refreshTokenKey = RedisKeyConstants.USER_TOKEN_REFRESH + userId;
+
+        Object accessToken = redisOperator.get(accessTokenKey);
+        Object refreshToken = redisOperator.get(refreshTokenKey);
+
+        if (accessToken != null) {
+            blacklistTokenStrict(accessToken.toString());
         }
+        if (refreshToken != null) {
+            blacklistTokenStrict(refreshToken.toString());
+        }
+
+        redisOperator.delete(accessTokenKey);
+        redisOperator.delete(refreshTokenKey);
+        redisOperator.delete(RedisKeyConstants.USER_HMAC_SECRET + userId);
+
+        log.info("[Token] 已严格吊销用户全部凭证, userId={}", userId);
+    }
+
+    /**
+     * 解析并入黑名单：Redis 故障向上抛（fail-closed）；仅"已过期/损坏无法解析"跳过
+     */
+    private void blacklistTokenStrict(String token) {
+        Claims claims;
+        try {
+            claims = JwtUtil.parseToken(token, jwtProperties.getSecret());
+        } catch (Exception e) {
+            log.warn("[Token] 凭证解析失败(可能已过期), 跳过黑名单: {}", e.getMessage());
+            return;
+        }
+        blacklistByClaims(claims);
     }
 
     /**

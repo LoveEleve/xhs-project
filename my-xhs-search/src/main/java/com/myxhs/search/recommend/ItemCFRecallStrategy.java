@@ -46,7 +46,7 @@ public class ItemCFRecallStrategy implements RecallStrategy {
             // 2. 对每个笔记，从相似矩阵取 Top 10 相似笔记
             Map<Long, Double> scoreMap = new HashMap<>();
             for (Long noteId : recentNotes) {
-                String key = RedisKeyConstants.RECOMMEND_ITEMCF + noteId;
+                String key = RedisKeyConstants.itemCfKey(noteId);
                 Set<ZSetOperations.TypedTuple<String>> similar = stringRedisTemplate.opsForZSet()
                         .reverseRangeWithScores(key, 0, 9);
 

@@ -48,6 +48,19 @@ public class PaymentFeignFallbackFactory implements FallbackFactory<PaymentFeign
             }
 
             @Override
+            public R<java.util.List<PaymentFeignClient.RefundView>> listRefunds(Long orderId) {
+                log.warn("[订单→支付] 查询退款单降级: orderId={}, 保持现状待下轮", orderId);
+                return R.fail(ResultCode.SERVICE_UNAVAILABLE, "支付服务暂不可用");
+            }
+
+            @Override
+            public R<String> refundByOrder(PaymentFeignClient.RefundByOrderRequest request, Long userId) {
+                log.error("[订单→支付] 按订单退款降级: orderId={}, refundAmount={}, 售后单转退款失败待重试",
+                        request.getOrderId(), request.getRefundAmount());
+                return R.fail(ResultCode.SERVICE_UNAVAILABLE, "支付服务暂不可用，退款将稍后重试");
+            }
+
+            @Override
             public R<Void> refund(PaymentFeignClient.RefundCreateRequest request, Long userId) {
                 log.error("[订单→支付] 发起退款降级: paymentId={}, userId={}, 需补偿重试",
                         request.getPaymentId(), userId);

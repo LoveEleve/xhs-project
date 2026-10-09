@@ -114,10 +114,11 @@ public class ProductAggService {
             log.warn("[商品详情] 第1层聚合异常", e);
         }
 
-        Map<String, Object> spuData = spuFuture.getNow(Collections.emptyMap());
-        if (spuFuture.isCompletedExceptionally()) {
+        // 必须先判异常/未完成再取值：getNow 在异常完成时会先抛 CompletionException，503 降级语义失效
+        if (spuFuture.isCompletedExceptionally() || !spuFuture.isDone()) {
             throw new DownstreamUnavailableException("商品服务不可用");
         }
+        Map<String, Object> spuData = spuFuture.getNow(Collections.emptyMap());
         if (spuData.isEmpty()) {
             return null;
         }

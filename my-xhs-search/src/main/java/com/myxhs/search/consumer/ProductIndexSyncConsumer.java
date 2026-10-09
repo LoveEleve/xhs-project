@@ -143,8 +143,16 @@ public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
         if ("t_sku".equals(table)) {
             JSONArray skuRows = canalMsg.getJSONArray("data");
             if (skuRows != null && !skuRows.isEmpty()) {
-                Long spuId = skuRows.getJSONObject(0).getLong("spu_id");
-                if (spuId != null) {
+                // 原实现只取 data[0].spu_id：批量 binlog 事件（一次改多个 SKU/多个 SPU）时，
+                // 其余 SKU 的父 SPU 不会重建索引（价格/状态变更在 ES 中滞后到下次事件或全量重建）
+                java.util.Set<Long> spuIds = new java.util.LinkedHashSet<>();
+                for (int i = 0; i < skuRows.size(); i++) {
+                    Long spuId = skuRows.getJSONObject(i).getLong("spu_id");
+                    if (spuId != null) {
+                        spuIds.add(spuId);
+                    }
+                }
+                for (Long spuId : spuIds) {
                     indexProductBySpuId(spuId, version);
                 }
             }

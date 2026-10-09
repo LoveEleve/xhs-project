@@ -188,7 +188,8 @@ public class CartController {
         if (!accessTokenGuard.isAdminCall(adminCall)) {
             return R.fail(403, "无权访问管理接口");
         }
-        int repaired = cartReconcileJob.reconcileUser(userId);
+        // 复用对账锁：避免与定时全量对账并发互相覆盖（原实现直接调 reconcileUser，无锁）
+        int repaired = cartReconcileJob.reconcileUserWithLock(userId);
         return R.ok("对账完成，修复 " + repaired + " 条记录");
     }
 }

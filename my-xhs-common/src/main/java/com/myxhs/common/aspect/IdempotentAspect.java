@@ -47,6 +47,18 @@ import java.util.concurrent.TimeoutException;
 public class IdempotentAspect {
 
     private final StringRedisTemplate stringRedisTemplate;
+    /** fail-open 计数（原实现只打日志 → Redis 故障期间"幂等失效"在监控侧不可见） */
+    private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
+    private final java.util.Map<String, io.micrometer.core.instrument.Counter> failOpenCounters =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    private void countFailOpen(String reason) {
+        failOpenCounters.computeIfAbsent(reason, r ->
+                io.micrometer.core.instrument.Counter.builder("myxhs_common_fail_open_total")
+                        .tag("component", "idempotent")
+                        .tag("reason", r)
+                        .register(meterRegistry)).increment();
+    }
 
     @Around("@annotation(idempotent)")
     public Object around(ProceedingJoinPoint joinPoint, Idempotent idempotent) throws Throwable {
@@ -60,8 +72,9 @@ public class IdempotentAspect {
             success = stringRedisTemplate.opsForValue()
                     .setIfAbsent(redisKey, "1", idempotent.expireSeconds(), TimeUnit.SECONDS);
         } catch (Exception e) {
-            // Redis 不可用时降级放行（保证核心业务可用）
+            // Redis 不可用时降级放行（保证核心业务可用），同时打点：故障期间幂等保护失效需运维可见
             log.error("[幂等] Redis不可用，降级放行, key={}", redisKey, e);
+            countFailOpen("redis_unavailable");
             return joinPoint.proceed();
         }
 

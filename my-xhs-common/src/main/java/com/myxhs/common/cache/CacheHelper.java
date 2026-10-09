@@ -206,7 +206,7 @@ public class CacheHelper {
                 }
             } else {
                 // 获取锁失败（其他线程正在查 DB），等待后重试读缓存
-                Thread.sleep(100);
+                Thread.sleep(com.myxhs.common.mq.RetryBackoffUtils.jitter(100, 0.2));
                 T retryCache;
                 try {
                     retryCache = redisOperator.get(key);
@@ -228,8 +228,12 @@ public class CacheHelper {
             Thread.currentThread().interrupt();
             log.warn("[缓存] 获取锁被中断，降级查DB, key={}", key);
             return dbFallback.get();
+        } catch (com.myxhs.common.exception.BizException | org.springframework.dao.DataAccessException e) {
+            // dbFallback 抛出的业务/DB 异常必须原样抛出：
+            // 原实现统一按"Redisson 异常"降级 → 业务异常被吞且 dbFallback 被重复执行一次
+            throw e;
         } catch (Exception e) {
-            // Redisson 连接异常，降级为无锁模式
+            // 其余（Redisson/Redis 客户端）异常，降级为无锁模式
             log.error("[缓存] 分布式锁异常，降级为无锁模式, key={}", key, e);
             return getWithCacheAside(key, dbFallback, timeout, unit);
         }
@@ -276,7 +280,7 @@ public class CacheHelper {
                 }
                 log.warn("[缓存] 删缓存重试 {}/3, key={}", i + 1, key);
                 if (i < 2) {
-                    try { Thread.sleep(50); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+                    try { Thread.sleep(com.myxhs.common.mq.RetryBackoffUtils.jitter(50, 0.2)); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
                 }
             }
             if (!deleted) {

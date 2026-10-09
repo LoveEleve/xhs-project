@@ -58,6 +58,19 @@ public class OrderNoMappingRepository {
     /**
      * 通过订单ID查询映射
      */
+    /**
+     * 批量查询已存在的映射 order_id（补录任务用：原实现逐行 selectByOrderNo = N+1）
+     */
+    public java.util.Set<Long> selectExistingOrderIds(java.util.List<Long> orderIds) {
+        if (orderIds == null || orderIds.isEmpty()) {
+            return java.util.Set.of();
+        }
+        String placeholders = orderIds.stream().map(id -> "?").collect(java.util.stream.Collectors.joining(","));
+        return new java.util.HashSet<>(jdbcTemplate.queryForList(
+                "SELECT order_id FROM t_order_no_mapping WHERE order_id IN (" + placeholders + ")",
+                Long.class, orderIds.toArray()));
+    }
+
     public OrderNoMapping selectByOrderId(Long orderId) {
         List<OrderNoMapping> list = jdbcTemplate.query(
                 "SELECT * FROM t_order_no_mapping WHERE order_id = ? LIMIT 1",

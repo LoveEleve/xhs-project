@@ -90,6 +90,17 @@ public class ProductController {
     /**
      * SPU 详情（单条浏览埋点：记录商品浏览事件）
      */
+    /**
+     * 重建布隆过滤器（管理端点）：数据清空/误判率上升时重置，此前只能重启服务
+     */
+    @PostMapping("/internal/bloom/rebuild")
+    public R<String> rebuildBloom(@RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
+        if (!accessTokenGuard.isAdminCall(adminCall)) {
+            return R.fail(403, "仅限管理调用");
+        }
+        return R.ok(spuService.rebuildBloomFilter());
+    }
+
     @GetMapping("/spu/{spuId}")
     public R<SpuDetailVO> getSpuDetail(
             @PathVariable Long spuId,

@@ -47,7 +47,9 @@ public class AsyncConfig {
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(30);
         executor.initialize();
-        return executor;
+        // TtlExecutors 包装：UserContext（TransmittableThreadLocal）等 TTL 上下文在 @Async 任务中可见
+        // （原实现未包装 → 子线程读不到用户上下文；与 TraceContextTaskDecorator 各司其职：后者管 MDC/Trace）
+        return com.alibaba.ttl.threadpool.TtlExecutors.getTtlExecutor(executor);
     }
 
     /**

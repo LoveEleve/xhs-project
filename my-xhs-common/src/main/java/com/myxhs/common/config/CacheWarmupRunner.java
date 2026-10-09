@@ -1,123 +1,89 @@
 package com.myxhs.common.config;
 
+import com.myxhs.common.cache.CacheWarmer;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.TimeUnit;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
- * 缓存预热启动器（ApplicationRunner）
+ * 缓存预热启动器
  * <p>
- * 应用启动完成后自动执行，预热以下缓存：
- * 1. 热搜 Top 50 → Redis ZSet
- * 2. 全站热门笔记 Top 100 → Redis ZSet
- * 3. 商品分类树 → Redis String
+ * 应用启动完成后执行本服务注册的全部 {@link CacheWarmer}：
+ * 1. 总开关：{@code myxhs.cache-warmup.enabled}（默认 true）
+ * 2. 任务选择：{@code myxhs.cache-warmup.targets}（逗号分隔任务名；为空 = 本服务全部任务）
  * </p>
  * <p>
- * 注意：预热失败不影响服务启动，降级为按需加载。
+ * 任务按注册顺序串行执行：单个任务失败只记日志（降级为按需加载）不阻塞启动，
+ * 结束后统一打印任务数/条目数/失败数与耗时，便于观察冷启动成本。
  * </p>
  */
 @Slf4j
 @Component
-@ConditionalOnBean({StringRedisTemplate.class, JdbcTemplate.class})
 public class CacheWarmupRunner implements ApplicationRunner {
 
-    @Autowired
-    private StringRedisTemplate stringRedisTemplate;
+    private final List<CacheWarmer> warmers;
 
-    @Autowired
-    private JdbcTemplate jdbcTemplate;
+    @Value("${myxhs.cache-warmup.enabled:true}")
+    private boolean enabled;
+
+    @Value("${myxhs.cache-warmup.targets:}")
+    private String targets;
+
+    public CacheWarmupRunner(ObjectProvider<CacheWarmer> warmers) {
+        // ObjectProvider：本服务没有注册任何预热任务时注入空集合，不报错
+        this.warmers = warmers.orderedStream().collect(Collectors.toList());
+    }
 
     @Override
     public void run(ApplicationArguments args) {
-        log.info("[缓存预热] 开始...");
+        if (!enabled) {
+            log.info("[缓存预热] 已关闭(myxhs.cache-warmup.enabled=false)");
+            return;
+        }
+
+        Set<String> wanted = parseTargets(targets);
+        List<CacheWarmer> todo = warmers.stream()
+                .filter(CacheWarmer::enabled)
+                .filter(w -> wanted.isEmpty() || wanted.contains(w.name()))
+                .collect(Collectors.toList());
+        if (todo.isEmpty()) {
+            log.info("[缓存预热] 本服务无预热任务(targets='{}')", targets);
+            return;
+        }
+
         long start = System.currentTimeMillis();
-        int warmed = 0;
-
-        try { warmed += warmHotSearch(); } catch (Exception e) { log.warn("[缓存预热] 热搜预热失败", e); }
-        try { warmed += warmHotNotes();    } catch (Exception e) { log.warn("[缓存预热] 热门笔记预热失败", e); }
-        try { warmed += warmCategoryTree();} catch (Exception e) { log.warn("[缓存预热] 分类树预热失败", e); }
-
-        long cost = System.currentTimeMillis() - start;
-        log.info("[缓存预热] 完成: {} 项, cost={}ms", warmed, cost);
+        int total = 0;
+        int failed = 0;
+        for (CacheWarmer warmer : todo) {
+            try {
+                int warmed = warmer.warm();
+                total += warmed;
+                log.info("[缓存预热] {}: {} 项", warmer.name(), warmed);
+            } catch (Exception e) {
+                failed++;
+                log.warn("[缓存预热] {} 失败(降级为按需加载): {}", warmer.name(), e.getMessage());
+            }
+        }
+        log.info("[缓存预热] 完成: 任务={}, 条目={}, 失败={}, cost={}ms",
+                todo.size(), total, failed, System.currentTimeMillis() - start);
     }
 
-    /**
-     * 预热热搜 Top 50
-     */
-    private int warmHotSearch() {
-        String key = "search:hot:global";
-        if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(key))) {
-            log.debug("[缓存预热] 热搜已存在，跳过");
-            return 0;
+    private Set<String> parseTargets(String csv) {
+        if (csv == null || csv.isBlank()) {
+            return Set.of();
         }
-        try {
-            List<Map<String, Object>> hotList = jdbcTemplate.queryForList(
-                    "SELECT keyword, search_count FROM t_search_hot ORDER BY search_count DESC LIMIT 50");
-            if (hotList.isEmpty()) return 0;
-            for (Map<String, Object> row : hotList) {
-                String keyword = (String) row.get("keyword");
-                double score = ((Number) row.get("search_count")).doubleValue();
-                stringRedisTemplate.opsForZSet().add(key, keyword, score);
-            }
-            stringRedisTemplate.expire(key, 1, TimeUnit.HOURS);
-            return hotList.size();
-        } catch (Exception e) {
-            log.debug("[缓存预热] 热搜表不存在或为空，跳过");
-            return 0;
-        }
-    }
-
-    /**
-     * 预热全站热门笔记 Top 100
-     */
-    private int warmHotNotes() {
-        String key = "recommend:hot:global";
-        if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(key))) {
-            log.debug("[缓存预热] 热门笔记已存在，跳过");
-            return 0;
-        }
-        try {
-            List<Map<String, Object>> hotList = jdbcTemplate.queryForList(
-                    "SELECT note_id, hot_score FROM t_item_feature WHERE hot_score > 0 ORDER BY hot_score DESC LIMIT 100");
-            for (Map<String, Object> row : hotList) {
-                String noteId = String.valueOf(((Number) row.get("note_id")).longValue());
-                double score = ((Number) row.get("hot_score")).doubleValue();
-                stringRedisTemplate.opsForZSet().add(key, noteId, score);
-            }
-            stringRedisTemplate.expire(key, 1, TimeUnit.HOURS);
-            return hotList.size();
-        } catch (Exception e) {
-            return 0;
-        }
-    }
-
-    /**
-     * 预热商品分类树
-     */
-    private int warmCategoryTree() {
-        String key = "product:category:tree";
-        if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(key))) {
-            return 0;
-        }
-        try {
-            List<Map<String, Object>> cats = jdbcTemplate.queryForList(
-                    "SELECT id, name, parent_id, level FROM t_category ORDER BY parent_id, sort_order");
-            if (!cats.isEmpty()) {
-                stringRedisTemplate.opsForValue().set(key, cats.toString(), 1, TimeUnit.HOURS);
-                return 1;
-            }
-        } catch (Exception e) {
-            // 表可能不存在
-        }
-        return 0;
+        return Arrays.stream(csv.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 }
