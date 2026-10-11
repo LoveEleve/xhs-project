@@ -405,7 +405,49 @@ public class AftersaleService {
         if (affected == 0) {
             throw new BizException(ResultCode.IDEMPOTENT_REJECT, "售后单状态已变化，请刷新后重试");
         }
+        // 防二次退款（2026-10-11）：上次"退款失败"可能只是响应丢失而支付域实际已成功。
+        // 重发前先核对支付域事实（对齐 resolveStuck 的认领匹配），已成功则直接收敛为完成、不再重发。
+        Aftersale fresh = aftersaleRepository.findByNo(aftersaleNo);
+        PaymentFeignClient.RefundView successRefund = findUnclaimedSuccessRefund(fresh);
+        if (successRefund != null) {
+            if (restoreStock(fresh)) {
+                aftersaleRepository.markRestocked(fresh.getId());
+            }
+            aftersaleRepository.updateOnRefundSuccess(fresh.getId(), Aftersale.STATUS_REFUNDING,
+                    Aftersale.STATUS_FINISHED, successRefund.getRefundNo());
+            log.warn("[售后重试] 支付域已存在成功退款，直接收敛为完成(防二次退款): aftersaleNo={}, refundNo={}",
+                    aftersaleNo, successRefund.getRefundNo());
+            return aftersaleRepository.findByNo(aftersaleNo);
+        }
         return executeRefund(aftersaleNo);
+    }
+
+    /**
+     * 在支付域退款单中查找"本售后单已实际成功且未被认领"的退款单（防二次退款核对，2026-10-11）
+     */
+    private PaymentFeignClient.RefundView findUnclaimedSuccessRefund(Aftersale aftersale) {
+        try {
+            R<List<PaymentFeignClient.RefundView>> resp = paymentFeignClient.listRefunds(aftersale.getOrderId());
+            if (resp == null || !resp.isSuccess() || resp.getData() == null) {
+                return null; // 查询失败：保守走正常重发流程（支付域自身有金额上限兜底）
+            }
+            java.util.Set<String> usedRefundNos = aftersaleRepository.usedRefundNos(aftersale.getOrderId());
+            for (PaymentFeignClient.RefundView refund : resp.getData()) {
+                if (refund.getRefundNo() != null && usedRefundNos.contains(refund.getRefundNo())) {
+                    continue;
+                }
+                if (!matches(aftersale, refund)) {
+                    continue;
+                }
+                if (refund.getStatus() != null && refund.getStatus() == 1) {
+                    return refund;
+                }
+            }
+            return null;
+        } catch (Exception e) {
+            log.warn("[售后重试] 支付域核对异常, 按正常重发流程处理: aftersaleNo={}", aftersale.getAftersaleNo(), e);
+            return null;
+        }
     }
 
     /**
@@ -498,6 +540,9 @@ public class AftersaleService {
                         aftersale.getAftersaleNo(), resp == null ? "无响应" : resp.getMessage());
                 return false;
             }
+            // 主链路同步落标（2026-10-11 修复）：原先仅在恢复任务两处标记，正常完成单
+            // restock_status 恒为 0 → 被恢复任务冗余重放一次后才补标；此处成功即置 1
+            aftersaleRepository.markRestocked(aftersale.getId());
             return true;
         } catch (Exception e) {
             // 跨服务失败（库存域整体不可用等）：库存域内部补偿表不会留下记录，

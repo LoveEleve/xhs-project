@@ -114,15 +114,22 @@ public class OrderCompensationConsumer implements RocketMQListener<MessageExt> {
             log.info("[补偿] 开始处理: orderId={}, userId={}, action={}, reconsumeTimes={}",
                     orderId, userId, cm.getAction(), msg.getReconsumeTimes());
 
-            // 2. 执行补偿——按 action 分发（P1-2 修复）：
+            // 2. 执行补偿——按 action 分发（P1-2 修复 + 2026-10-11 补偿自循环修复）：
             //   RELEASE_STOCK → compensateReleaseStock（不依赖订单状态，已付款/已取消都释放）
             //   RETURN_COUPON → compensateReturnCoupon（不依赖订单状态）
-            //   CLOSE_ORDER → closeTimeoutOrder（关单）
-            //   统一走专门补偿方法，避免旧实现一律调 closeTimeoutOrder 对 status!=0 订单跳过导致库存/券泄漏。
+            //   CONFIRM_STOCK → compensateConfirmStock（问题 4：确认失败补偿，清预扣记录）
+            //   CLOSE_ORDER → compensateCloseOrder（关单）
+            //   失败必须抛出：走 MQ 原生退避重试（原实现失败被吞 + 再发新消息 → 秒级自旋，
+            //   且兜底集合（reconsumeTimes>=2）永不触发）。
             switch (cm.getAction() == null ? "CLOSE_ORDER" : cm.getAction()) {
-                case "RELEASE_STOCK" -> orderService.compensateReleaseStock(orderId, userId);
-                case "RETURN_COUPON" -> orderService.compensateReturnCoupon(orderId, userId);
-                default -> orderService.closeTimeoutOrder(orderId, userId);
+                case "RELEASE_STOCK" -> ensureCompensated("RELEASE_STOCK",
+                        orderService.compensateReleaseStock(orderId, userId));
+                case "RETURN_COUPON" -> ensureCompensated("RETURN_COUPON",
+                        orderService.compensateReturnCoupon(orderId, userId));
+                case "CONFIRM_STOCK" -> ensureCompensated("CONFIRM_STOCK",
+                        orderService.compensateConfirmStock(orderId, userId));
+                default -> ensureCompensated("CLOSE_ORDER",
+                        orderService.compensateCloseOrder(orderId, userId));
             }
             log.info("[补偿] 处理成功: orderId={}, action={}", orderId, cm.getAction());
 
@@ -157,6 +164,13 @@ public class OrderCompensationConsumer implements RocketMQListener<MessageExt> {
             return Long.parseLong(v.toString());
         } catch (NumberFormatException e) {
             return null;
+        }
+    }
+
+    /** 补偿执行失败必须抛出：由外层 catch 触发 MQ 原生退避重试与兜底集合写入（补偿自循环修复 2026-10-11） */
+    private void ensureCompensated(String action, boolean success) {
+        if (!success) {
+            throw new RuntimeException("补偿执行失败(action=" + action + ")，触发MQ退避重试");
         }
     }
 

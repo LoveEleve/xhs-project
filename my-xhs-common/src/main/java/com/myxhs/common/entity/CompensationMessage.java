@@ -8,7 +8,7 @@ import lombok.NoArgsConstructor;
  * 补偿消息 DTO（MQ 消息体）
  * <p>
  * 当 Feign 调用失败时由 OrderService 发送到 ORDER_COMPENSATION_TOPIC，
- * 由 OrderCompensationConsumer 消费并重试关单。
+ * 由 OrderCompensationConsumer 消费并按 action 重试（释放库存/退券/确认库存/关单）。
  * </p>
  */
 @Data
@@ -16,7 +16,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class CompensationMessage {
 
-    /** 补偿操作类型：RELEASE_STOCK / RETURN_COUPON */
+    /** 补偿操作类型：RELEASE_STOCK / RETURN_COUPON / CONFIRM_STOCK / CLOSE_ORDER */
     private String action;
 
     /** 订单ID */

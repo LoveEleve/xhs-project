@@ -118,9 +118,26 @@ public class OrderCloseJob {
                     Long orderId = Long.valueOf(parts[1]);
                     Long userId = Long.valueOf(parts[2]);
                     switch (action) {
-                        case "RELEASE_STOCK" -> orderService.compensateReleaseStock(orderId, userId);
-                        case "RETURN_COUPON" -> orderService.compensateReturnCoupon(orderId, userId);
-                        default -> orderService.closeTimeoutOrder(orderId, userId);
+                        case "RELEASE_STOCK" -> {
+                            if (!orderService.compensateReleaseStock(orderId, userId)) {
+                                throw new IllegalStateException("重放失败-释放库存: orderId=" + orderId);
+                            }
+                        }
+                        case "RETURN_COUPON" -> {
+                            if (!orderService.compensateReturnCoupon(orderId, userId)) {
+                                throw new IllegalStateException("重放失败-退还优惠券: orderId=" + orderId);
+                            }
+                        }
+                        case "CONFIRM_STOCK" -> {
+                            if (!orderService.compensateConfirmStock(orderId, userId)) {
+                                throw new IllegalStateException("重放失败-确认库存: orderId=" + orderId);
+                            }
+                        }
+                        default -> {
+                            if (!orderService.compensateCloseOrder(orderId, userId)) {
+                                throw new IllegalStateException("重放失败-关单: orderId=" + orderId);
+                            }
+                        }
                     }
                     stringRedisTemplate.opsForSet().remove(ORDER_COMPENSATION_FALLBACK_KEY, member);
                     log.info("[兜底关单] 本地补偿兜底重放成功: {}", member);

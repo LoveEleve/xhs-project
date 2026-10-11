@@ -528,8 +528,15 @@ public class OrderService {
         }
 
         // Event Sourcing: 追加取消事件并更新状态
-        orderEventService.appendEvent(order, OrderEventService.EVENT_CANCELLED, 
-                Map.of("cancelReason", "用户主动取消", "cancelTime", LocalDateTime.now().toString()));
+        // 并发流转（支付/关单先赢）时 appendEvent 抛 IllegalStateException（乐观锁/序号冲突）→
+        // 转成业务异常语义，避免落到全局 500（对齐 onPaymentSuccess 的竞态处理，2026-10-11）
+        try {
+            orderEventService.appendEvent(order, OrderEventService.EVENT_CANCELLED, 
+                    Map.of("cancelReason", "用户主动取消", "cancelTime", LocalDateTime.now().toString()));
+        } catch (IllegalStateException e) {
+            log.warn("[订单] 取消订单竞态(状态已被并发流转): orderId={}, status={}", orderId, order.getStatus(), e);
+            throw new BizException(ResultCode.ORDER_STATUS_ERROR, "订单状态已变化，请刷新后重试");
+        }
 
         // appendEvent 只设 status=4，补设 cancelled_at
         orderMapper.setCancelledAt(orderId, userId);
@@ -560,6 +567,21 @@ public class OrderService {
      * </p>
      */
     private void releaseInventory(Long orderId, String orderNo, Long userId) {
+        if (!doReleaseInventory(orderId, orderNo, userId)) {
+            // 业务链路首次失败：发补偿消息由消费者重试
+            sendCompensationMessage("RELEASE_STOCK", orderId, userId, "释放库存失败，进入补偿重试");
+        }
+    }
+
+    /**
+     * 释放库存的纯执行体：返回是否成功，**不发送补偿消息**。
+     * <p>
+     * 补偿自循环修复（2026-10-11）：补偿消费者/兜底重放路径原先复用带"失败即再发补偿消息"的
+     * releaseInventory，导致失败被吞 + 新消息无延时 → 秒级自旋且兜底集合永不触发。
+     * 补偿侧改用本方法：拿到真实成败，失败向上抛走 MQ 原生退避重试。
+     * </p>
+     */
+    private boolean doReleaseInventory(Long orderId, String orderNo, Long userId) {
         try {
             // 库存预扣记录以 fold-hash(orderNo) 派生的 pseudoOrderId 为幂等键
             // （OrderTransactionConsumer 在半消息阶段只有 orderNo，订单未入库无法获得真实 orderId），
@@ -568,16 +590,15 @@ public class OrderService {
             Map<String, Object> request = Map.of("orderId", pseudoOrderId);
             R<Void> result = inventoryFeignClient.releaseStock(request);
             if (result == null || !result.isSuccess()) {
-                log.error("[订单] 释放库存失败，需补偿: orderId={}, result={}", orderId, result);
-                // 发送补偿消息到 MQ，由补偿消费者重试
-                sendCompensationMessage("RELEASE_STOCK", orderId, userId,
-                        "Feign返回失败: " + (result != null ? result.getMessage() : "null"));
-            } else {
-                log.info("[订单] 释放库存成功: orderId={}", orderId);
+                log.error("[订单] 释放库存失败，需补偿: orderId={}, result={}", orderId,
+                        result == null ? "null" : result.getMessage());
+                return false;
             }
+            log.info("[订单] 释放库存成功: orderId={}", orderId);
+            return true;
         } catch (Exception e) {
             log.error("[订单] 释放库存异常，需补偿: orderId={}", orderId, e);
-            sendCompensationMessage("RELEASE_STOCK", orderId, userId, e.getMessage());
+            return false;
         }
     }
 
@@ -615,6 +636,18 @@ public class OrderService {
         if (order.getCouponId() == null) {
             return; // 未使用优惠券，无需退还
         }
+        if (!doReturnCouponIfUsed(order)) {
+            sendCompensationMessage("RETURN_COUPON", order.getId(), order.getUserId(), "退还优惠券失败，进入补偿重试");
+        }
+    }
+
+    /**
+     * 退还优惠券的纯执行体：返回是否成功（未用券视为成功），**不发送补偿消息**（同步循环修复同 doReleaseInventory）。
+     */
+    private boolean doReturnCouponIfUsed(Order order) {
+        if (order.getCouponId() == null) {
+            return true;
+        }
         try {
             Map<String, Object> request = Map.of(
                     "userCouponId", order.getCouponId(),
@@ -623,15 +656,14 @@ public class OrderService {
             R<Void> result = couponFeignClient.returnCoupon(order.getUserId(), request);
             if (result == null || !result.isSuccess()) {
                 log.error("[订单] 退还优惠券失败，需补偿: orderId={}, couponId={}, result={}",
-                        order.getId(), order.getCouponId(), result);
-                sendCompensationMessage("RETURN_COUPON", order.getId(), order.getUserId(),
-                        "Feign返回失败: " + (result != null ? result.getMessage() : "null"));
-            } else {
-                log.info("[订单] 退还优惠券成功: orderId={}, couponId={}", order.getId(), order.getCouponId());
+                        order.getId(), order.getCouponId(), result == null ? "null" : result.getMessage());
+                return false;
             }
+            log.info("[订单] 退还优惠券成功: orderId={}, couponId={}", order.getId(), order.getCouponId());
+            return true;
         } catch (Exception e) {
             log.error("[订单] 退还优惠券异常，需补偿: orderId={}, couponId={}", order.getId(), order.getCouponId(), e);
-            sendCompensationMessage("RETURN_COUPON", order.getId(), order.getUserId(), e.getMessage());
+            return false;
         }
     }
 
@@ -835,25 +867,49 @@ public class OrderService {
     }
 
     /**
-     * 同步确认库存扣减（退款前调用）。
+     * 同步确认库存扣减（支付成功路径 / 退款前调用）。
      * <p>
      * 确保预扣记录被清理：confirm 成功后 Redis 删除预扣 Hash、MySQL 减 locked；
-     * 若预扣记录已清理则 no-op（幂等）。失败仅记录，退款仍继续，库存回补依赖对账兜底。
+     * 若预扣记录已清理则 no-op（幂等）。
+     * 失败进入补偿重试（2026-10-11，问题 4 修复）：原实现仅日志"依赖对账兜底"——
+     * 预扣记录未清理时会被 PreDeductTimeoutJob 到期释放（已付款订单的货被放回）；
+     * 现在失败发送 CONFIRM_STOCK 补偿消息，在超时窗口前把记录清掉，从源头掐掉该缺口。
      * </p>
      */
-    private void confirmInventoryDeductSync(Long orderId, String orderNo, Long userId) {
+    private boolean confirmInventoryDeductSync(Long orderId, String orderNo, Long userId) {
         try {
             long pseudoOrderId = derivePseudoOrderId(orderNo);
             Map<String, Object> request = Map.of("orderId", pseudoOrderId);
             R<Void> result = inventoryFeignClient.confirmDeduct(request);
             if (result == null || !result.isSuccess()) {
-                log.error("[订单] 退款前确认库存扣减失败，依赖对账兜底: orderId={}, result={}", orderId, result);
-            } else {
-                log.info("[订单] 退款前确认库存扣减成功: orderId={}", orderId);
+                log.error("[订单] 确认库存扣减失败，进入补偿重试: orderId={}, result={}", orderId,
+                        result == null ? "null" : result.getMessage());
+                sendCompensationMessage("CONFIRM_STOCK", orderId, userId,
+                        "Feign返回失败: " + (result == null ? "null" : result.getMessage()));
+                return false;
             }
+            log.info("[订单] 确认库存扣减成功: orderId={}", orderId);
+            return true;
         } catch (Exception e) {
-            log.error("[订单] 退款前确认库存扣减异常，依赖对账兜底: orderId={}", orderId, e);
+            log.error("[订单] 确认库存扣减异常，进入补偿重试: orderId={}", orderId, e);
+            sendCompensationMessage("CONFIRM_STOCK", orderId, userId, e.getMessage());
+            return false;
         }
+    }
+
+    /**
+     * 补偿：确认库存扣减（CONFIRM_STOCK，2026-10-11 问题 4 修复）
+     * <p>
+     * 供 OrderCompensationConsumer / 兜底重放使用；返回真实成败，失败由调用方抛出走 MQ 保序重试。
+     * </p>
+     */
+    public boolean compensateConfirmStock(Long orderId, Long userId) {
+        Order order = loadOrderEntity(orderId, userId);
+        if (order == null) {
+            log.warn("[补偿] 确认库存-订单不存在: orderId={}", orderId);
+            return true; // 无法定位订单，按终态处理，避免无限重试
+        }
+        return confirmInventoryDeductSync(orderId, order.getOrderNo(), userId);
     }
 
     // ==================== 超时关单 ====================
@@ -866,13 +922,23 @@ public class OrderService {
      * </p>
      */
     public void closeTimeoutOrder(Long orderId, Long userId) {
+        if (!doCloseTimeoutOrder(orderId, userId)) {
+            log.error("[订单] 超时关单失败, 发送补偿消息: orderId={}, userId={}", orderId, userId);
+            sendCompensationMessage("CLOSE_ORDER", orderId, userId, "超时关单失败，进入补偿重试");
+        }
+    }
+
+    /**
+     * 超时关单的纯执行体：返回是否成功（含幂等跳过），**不发送补偿消息**（补偿自循环修复 2026-10-11）。
+     */
+    private boolean doCloseTimeoutOrder(Long orderId, Long userId) {
         try {
             Order order = orderMapper.selectOne(
                     new LambdaQueryWrapper<Order>()
                             .eq(Order::getUserId, userId)
                             .eq(Order::getId, orderId));
             if (order == null || order.getStatus() != 0) {
-                return; // 幂等
+                return true; // 幂等：订单不存在或非待付款
             }
 
             // Event Sourcing: 追加超时取消事件并更新状态
@@ -891,11 +957,16 @@ public class OrderService {
             takeSnapshot(orderId, userId, "TIMEOUT_CANCELLED");
             stringRedisTemplate.delete("myxhs:order:info:" + orderId);
             log.info("[订单] 超时关单: orderId={}, orderNo={}", orderId, order.getOrderNo());
-
+            return true;
         } catch (Exception e) {
-            log.error("[订单] 超时关单异常, 发送补偿消息: orderId={}, userId={}", orderId, userId, e);
-            sendCompensationMessage("CLOSE_ORDER", orderId, userId, e.getMessage());
+            log.error("[订单] 超时关单执行失败: orderId={}, userId={}", orderId, userId, e);
+            return false;
         }
+    }
+
+    /** 补偿：超时关单（补偿消费者/兜底重放使用，返回真实成败） */
+    public boolean compensateCloseOrder(Long orderId, Long userId) {
+        return doCloseTimeoutOrder(orderId, userId);
     }
 
     /**
@@ -993,13 +1064,13 @@ public class OrderService {
      * status==0 导致已支付订单库存永久泄漏。
      * </p>
      */
-    public void compensateReleaseStock(Long orderId, Long userId) {
+    public boolean compensateReleaseStock(Long orderId, Long userId) {
         Order order = loadOrderEntity(orderId, userId);
         if (order == null) {
             log.warn("[补偿] 释放库存-订单不存在: orderId={}", orderId);
-            return;
+            return true; // 无法定位订单（也就无从释放），按终态处理，避免无限重试
         }
-        releaseInventory(orderId, order.getOrderNo(), userId);
+        return doReleaseInventory(orderId, order.getOrderNo(), userId);
     }
 
     /**
@@ -1008,13 +1079,13 @@ public class OrderService {
      * 供 OrderCompensationConsumer 对 RETURN_COUPON 补偿使用。
      * </p>
      */
-    public void compensateReturnCoupon(Long orderId, Long userId) {
+    public boolean compensateReturnCoupon(Long orderId, Long userId) {
         Order order = loadOrderEntity(orderId, userId);
         if (order == null) {
             log.warn("[补偿] 退券-订单不存在: orderId={}", orderId);
-            return;
+            return true; // 无法定位订单，按终态处理，避免无限重试
         }
-        returnCouponIfUsed(order);
+        return doReturnCouponIfUsed(order);
     }
 
     /** 按 userId(orderId) 路由加载订单实体（分库分表需带分片键） */
@@ -1346,8 +1417,15 @@ public class OrderService {
         }
 
         // Event Sourcing: 记录支付失败取消事件
-        orderEventService.appendEvent(order, OrderEventService.EVENT_CANCELLED,
-                Map.of("cancelReason", "支付失败", "cancelTime", LocalDateTime.now().toString()));
+        // 竞态（关单/取消先赢）时 appendEvent 抛 IllegalStateException → 终态已被并发收敛，
+        // 直接返回（回调幂等，避免 500/重试噪音，2026-10-11）
+        try {
+            orderEventService.appendEvent(order, OrderEventService.EVENT_CANCELLED,
+                    Map.of("cancelReason", "支付失败", "cancelTime", LocalDateTime.now().toString()));
+        } catch (IllegalStateException e) {
+            log.warn("[订单] 支付失败取消竞态(状态已被并发流转): orderId={}, status={}", orderId, order.getStatus(), e);
+            return;
+        }
 
         // T-070（2026-08-14 G5 执行发现）：appendEvent 只设 status=4，补设 cancelled_at
         // （cancelOrder/closeTimeoutOrder 均有，onPaymentFailed 遗漏 → 支付失败取消单无取消时点）
