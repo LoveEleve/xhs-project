@@ -347,6 +347,7 @@ public class CounterService {
      */
     public int reconcileLikeFromAnalytics() {
         int fixed = 0;
+        int skippedMissingSet = 0; // 防清零守卫跳过条数（2026-10-12）
         // 覆盖笔记和评论两种 like 计数：targetType=1(note) targetType=3(comment)
         for (int targetType : new int[]{1, 3}) {
             String typeName = targetType == 1 ? "note" : "comment";
@@ -369,7 +370,14 @@ public class CounterService {
                     // 读 analytics 权威 Set SCARD
                     String analyticsKey = RedisKeyConstants.LIKE_SET + typeName + ":" + targetId;
                     Long analyticsCount = stringRedisTemplate.opsForSet().size(analyticsKey);
-                    if (analyticsCount != null && analyticsCount != counterValue) {
+                    // 【防清零守卫 2026-10-12】SCARD 对不存在的 key 返回 0，而 Redis Set 删空会自动删 key：
+                    // "集合缺失（30d TTL 过期/数据丢失/从未写入）"与"真 0 赞"不可区分。原逻辑会把
+                    // 过期老目标的 like 计数以 0 覆盖（Redis + DB 双写且无重建路径）——缺失时跳过修正。
+                    if (analyticsCount == null || analyticsCount == 0L) {
+                        skippedMissingSet++;
+                        continue;
+                    }
+                    if (analyticsCount != counterValue) {
                         stringRedisTemplate.opsForValue().set(counterKey, String.valueOf(analyticsCount));
                         stringRedisTemplate.expire(counterKey, java.time.Duration.ofDays(30));
                         // T-113（2026-08-15）：analytics 权威修正后同步 DB——修复前只改 Redis，
@@ -395,6 +403,9 @@ public class CounterService {
                 }
             }
             try { cursor.close(); } catch (Exception e) { /* ignore */ }
+        }
+        if (skippedMissingSet > 0) {
+            log.info("[计数-对账] analytics Set 缺失/为空，跳过修正 {} 条（防清零守卫）", skippedMissingSet);
         }
         return fixed;
     }

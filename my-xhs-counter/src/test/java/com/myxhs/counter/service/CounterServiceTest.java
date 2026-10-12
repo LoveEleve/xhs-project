@@ -12,7 +12,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.core.ScanOptions;
+import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -24,7 +27,10 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -187,5 +193,51 @@ class CounterServiceTest {
 
         // 验证 Redis 也正确自增
         verify(valueOperations).increment("myxhs:counter:1:20001:1");
+    }
+
+    // ==================== 对账修复：防清零守卫（2026-10-12，模块对照 07 §7-8） ====================
+
+    @Test
+    @DisplayName("对账修复 - analytics Set 缺失(SCARD=0)时跳过修正，不清零 Redis/DB")
+    void reconcileLikeSkipsWhenAnalyticsSetMissing() {
+        Cursor<String> cursor = mock(Cursor.class);
+        SetOperations<String, String> setOps = mock(SetOperations.class);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(stringRedisTemplate.opsForSet()).thenReturn(setOps);
+        when(stringRedisTemplate.scan(any(ScanOptions.class))).thenReturn(cursor);
+        when(cursor.hasNext()).thenReturn(true, false);
+        when(cursor.next()).thenReturn("myxhs:counter:1:20001:1");
+        when(valueOperations.get("myxhs:counter:1:20001:1")).thenReturn("12");
+        when(setOps.size("myxhs:like:note:20001")).thenReturn(0L);
+
+        int fixed = counterService.reconcileLikeFromAnalytics();
+
+        assertThat(fixed).isZero();
+        verify(counterMapper, never()).updateCountValue(anyLong(), anyLong());
+        verify(valueOperations, never()).set(eq("myxhs:counter:1:20001:1"), any(String.class));
+    }
+
+    @Test
+    @DisplayName("对账修复 - analytics Set 存在且不一致时正常修正 Redis 与 DB")
+    void reconcileLikeFixesWhenAnalyticsSetExists() {
+        Cursor<String> cursor = mock(Cursor.class);
+        SetOperations<String, String> setOps = mock(SetOperations.class);
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(stringRedisTemplate.opsForSet()).thenReturn(setOps);
+        when(stringRedisTemplate.scan(any(ScanOptions.class))).thenReturn(cursor);
+        when(cursor.hasNext()).thenReturn(true, false);
+        when(cursor.next()).thenReturn("myxhs:counter:1:20001:1");
+        when(valueOperations.get("myxhs:counter:1:20001:1")).thenReturn("12");
+        when(setOps.size("myxhs:like:note:20001")).thenReturn(15L);
+        Counter dbRow = new Counter();
+        dbRow.setId(55L);
+        dbRow.setCountValue(12L);
+        when(counterMapper.selectByBusinessKey(1, 20001L, 1)).thenReturn(dbRow);
+
+        int fixed = counterService.reconcileLikeFromAnalytics();
+
+        assertThat(fixed).isEqualTo(1);
+        verify(valueOperations).set("myxhs:counter:1:20001:1", "15");
+        verify(counterMapper).updateCountValue(55L, 15L);
     }
 }
