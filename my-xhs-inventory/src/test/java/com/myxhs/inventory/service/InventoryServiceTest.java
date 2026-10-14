@@ -100,6 +100,7 @@ class InventoryServiceTest {
         ReflectionTestUtils.setField(inventoryService, "hotBucketCount", 8);
         ReflectionTestUtils.setField(inventoryService, "preDeductExpireSeconds", 1800);
         ReflectionTestUtils.setField(inventoryService, "terminatedTombstoneTtlSeconds", 86400L);
+        ReflectionTestUtils.setField(inventoryService, "confirmedMarkerTtlSeconds", 86400L);
 
         // 默认 mock stringRedisTemplate 返回操作接口
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
@@ -274,6 +275,20 @@ class InventoryServiceTest {
 
         verify(inventoryMapper).insertOutboxEvent(anyLong(), eq(ORDER_ID), eq(SKU_ID), eq(3), eq("CONFIRM"));
         verify(inventoryMapper, never()).cancelOutboxEvent(anyLong());
+    }
+
+    @Test
+    @DisplayName("确认扣减 - 记录不存在（支付确认早于预扣落）：写确认标记")
+    void confirmDeduct_missingRecord_writesConfirmedMarker() {
+        when(hashOperations.entries(eq("inventory:prededuct:123456"))).thenReturn(new HashMap<>());
+
+        ConfirmDeductRequest request = new ConfirmDeductRequest();
+        request.setOrderId(ORDER_ID);
+
+        assertThatCode(() -> inventoryService.confirmDeduct(request)).doesNotThrowAnyException();
+
+        verify(valueOperations).set(eq("inventory:confirmed:123456"), eq("1"),
+                eq(86400L), eq(java.util.concurrent.TimeUnit.SECONDS));
     }
 
     @Test

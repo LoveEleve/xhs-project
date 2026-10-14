@@ -109,6 +109,13 @@ public class InventoryService {
     @Value("${inventory.terminated.tombstone-ttl-seconds:86400}")
     private long terminatedTombstoneTtlSeconds;
 
+    /**
+     * 04B 收尾：确认标记 TTL（秒）——confirm 找不到预扣记录时写入（支付确认早于预扣落的场景）。
+     * 须 ≥ 预扣消息可能迟到的最晚时间 + 记录释放时点（约 30min），保证迟到记录落盘后仍受保护。
+     */
+    @Value("${inventory.confirmed.marker-ttl-seconds:86400}")
+    private long confirmedMarkerTtlSeconds;
+
     private final com.myxhs.inventory.hot.HotSkuDetector hotSkuDetector;
     private final com.myxhs.inventory.feign.ProductFeignClient productFeignClient;
 
@@ -155,12 +162,16 @@ public class InventoryService {
     private static final String PREDEDUCT_INDEX_KEY = "inventory:prededuct:index";
     /** 04B 终结墓碑 key（orderId）：订单终结后写入，prededuct.lua 前置检查拦截迟到预扣 */
     private static final String TERMINATED_TOMBSTONE_KEY_PREFIX = "inventory:terminated:";
+    /** 04B 收尾：确认标记 key（orderId）——confirm 时记录不存在则写入；
+     *  超时任务凭它把"已付款订单的迟到预扣记录"改判为补确认而非释放 */
+    private static final String CONFIRMED_MARKER_KEY_PREFIX = "inventory:confirmed:";
 
     private static String totalKey(Long skuId) { return String.format(TOTAL_KEY_PREFIX, skuId); }
     private static String bucketCountKey(Long skuId) { return String.format(BUCKET_COUNT_KEY_PREFIX, skuId); }
     private static String predeductKey(Long orderId) { return PREDEDUCT_KEY_PREFIX + orderId; }
     private static String bucketKey(Long skuId, int bucketNo) { return String.format(BUCKET_KEY_PREFIX, skuId) + bucketNo; }
     private static String terminatedTombstoneKey(Long orderId) { return TERMINATED_TOMBSTONE_KEY_PREFIX + orderId; }
+    private static String confirmedMarkerKey(Long orderId) { return CONFIRMED_MARKER_KEY_PREFIX + orderId; }
 
     /** MQ Topic */
     private static final String INVENTORY_TOPIC = "INVENTORY_TOPIC";
@@ -418,8 +429,13 @@ public class InventoryService {
         // 获取预扣记录中的所有 SKU
         var entries = stringRedisTemplate.opsForHash().entries(predeductKey);
         if (entries.isEmpty()) {
-            log.warn("[库存] 确认扣减-预扣记录不存在(可能已确认或已过期): orderId={}", orderId);
-            return; // 幂等：已确认或已过期，不报错
+            // 04B 收尾：三种可能不区分（a.已确认 b.已释放 c.预扣还没落——支付确认反超）。
+            // 写"确认标记"：若之后 c 的记录迟到落盘（孤儿），超时任务凭标记改判"补确认"而非释放，
+            // 否则已付款订单的库存会被放回（超卖方向）。见《订单-侦察/04-订单模块收尾Review.md》补记。
+            stringRedisTemplate.opsForValue().set(confirmedMarkerKey(orderId), "1",
+                    confirmedMarkerTtlSeconds, java.util.concurrent.TimeUnit.SECONDS);
+            log.warn("[库存] 确认扣减-预扣记录不存在(可能已确认/已过期/尚未预扣), 已写确认标记: orderId={}", orderId);
+            return; // 幂等：不报错
         }
 
         // 逐个 SKU 确认
@@ -465,6 +481,15 @@ public class InventoryService {
                         orderId, skuId, quantity);
             }
         }
+    }
+
+    /**
+     * 04B 收尾：订单是否已"确认"过（确认标记存在）。
+     * <p>confirmDeduct 在预扣记录不存在时写入该标记；PreDeductTimeoutJob 释放前凭它区分
+     * "已付款订单的迟到记录（补确认）"与"真弃单（释放）"。</p>
+     */
+    public boolean hasConfirmedMarker(Long orderId) {
+        return Boolean.TRUE.equals(stringRedisTemplate.hasKey(confirmedMarkerKey(orderId)));
     }
 
     // ==================== 释放库存 ====================

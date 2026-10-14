@@ -1,5 +1,7 @@
 package com.myxhs.inventory.job;
 
+import com.myxhs.inventory.dto.request.ConfirmDeductRequest;
+import com.myxhs.inventory.service.InventoryService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
@@ -25,6 +27,8 @@ import java.util.concurrent.TimeUnit;
  * 1. Redisson 分布式锁保证多实例部署时只有一个实例执行（防止重复扫描浪费资源）
      * 2. release.lua 脚本原子回退保证与用户主动释放不会双重回退
      * 3. Redis 回退成功后，RELEASE 事件同步发 MQ 并保留 Outbox，避免 MySQL locked_stock 永久掉队
+     * 4. 【04B 收尾】释放前检查"确认标记"（inventory:confirmed:{orderId}，confirm 找不到预扣记录时写入）：
+     *    已付款订单的迟到预扣记录改判"补确认"而非释放——防已付款订单库存被放回（超卖方向）
      * </p>
 
  * <p>
@@ -45,6 +49,7 @@ public class PreDeductTimeoutJob {
     private final org.apache.rocketmq.spring.core.RocketMQTemplate rocketMQTemplate;
     private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
     private final com.myxhs.inventory.mapper.InventoryMapper inventoryMapper;
+    private final com.myxhs.inventory.service.InventoryService inventoryService;
 
     private static final String PREDEDUCT_KEY_PREFIX = "inventory:prededuct:";
     private static final String PREDEDUCT_INDEX_KEY = "inventory:prededuct:index";
@@ -108,6 +113,10 @@ public class PreDeductTimeoutJob {
             }
 
             for (String orderIdStr : expiringOrderIds) {
+                // 04B 收尾：已"确认"过的订单（支付确认早于预扣落）→ 迟到记录是孤儿，补确认而非释放
+                if (settleAsConfirmedIfMarked(orderIdStr)) {
+                    continue;
+                }
                 String key = PREDEDUCT_KEY_PREFIX + orderIdStr;
                 int released = releasePreDeduct(key);
                 if (released == 0) {
@@ -123,6 +132,34 @@ public class PreDeductTimeoutJob {
         } catch (Exception e) {
             log.error("[预扣超时] 扫描异常", e);
         }
+    }
+
+    /**
+     * 04B 收尾：若订单已"确认"过（确认标记存在——支付确认早于预扣落时由 confirmDeduct 写入），
+     * 则本记录不是弃单：改判为"补确认"（删记录，库存保持扣减），绝不释放（释放即超卖方向）。
+     *
+     * @return true = 已按补确认处理（调用方跳过释放）
+     */
+    private boolean settleAsConfirmedIfMarked(String orderIdStr) {
+        Long orderId;
+        try {
+            orderId = Long.parseLong(orderIdStr);
+        } catch (NumberFormatException e) {
+            return false;
+        }
+        if (!inventoryService.hasConfirmedMarker(orderId)) {
+            return false;
+        }
+        try {
+            ConfirmDeductRequest request = new ConfirmDeductRequest();
+            request.setOrderId(orderId);
+            inventoryService.confirmDeduct(request);
+            log.warn("[预扣超时] 订单已支付确认(确认早于预扣落), 改判补确认(不释放): orderId={}", orderId);
+        } catch (Exception e) {
+            // 补确认失败（如扩容暂停/Redis 抖动）：本轮不释放（释放即超卖方向），下轮重试
+            log.error("[预扣超时] 补确认失败(本轮不释放, 下轮重试): orderId={}", orderId, e);
+        }
+        return true;
     }
 
     /**
