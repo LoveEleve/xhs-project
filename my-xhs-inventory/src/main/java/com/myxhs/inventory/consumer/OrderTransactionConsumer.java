@@ -6,6 +6,7 @@ import com.myxhs.common.mq.MessageIdempotentHelper;
 import com.myxhs.common.trace.MqTraceHelper;
 import com.myxhs.inventory.dto.request.PreDeductRequest;
 import com.myxhs.inventory.service.InventoryService;
+import com.myxhs.inventory.util.PseudoOrderIdUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.common.message.MessageExt;
@@ -89,22 +90,11 @@ public class OrderTransactionConsumer implements RocketMQListener<MessageExt> {
                 return;
             }
 
-            // 从 orderNo 派生伪 orderId（用作库存预扣幂等键）
-            // T-067（2026-08-14 G5 执行发现）：原 fold-hash(*31+char) 与 OrderService.derivePseudoOrderId
-            // 的 SHA-256 前 8 字节（P2-12 修复）不一致 → 预扣 key 与释放/确认 key 对不上 → 库存永远无法释放（泄漏）。
-            // 统一为 SHA-256 前 8 字节（Big-endian signed long，与 OrderService 完全一致）。
-            long pseudoOrderId;
-            try {
-                byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
-                        .digest(orderNo.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                long r = 0;
-                for (int i = 0; i < 8; i++) {
-                    r = (r << 8) | (digest[i] & 0xFF);
-                }
-                pseudoOrderId = r;
-            } catch (java.security.NoSuchAlgorithmException e) {
-                throw new IllegalStateException("SHA-256 不可用", e);
-            }
+            // 从 orderNo 派生伪 orderId（库存预扣幂等键）
+            // T-067（2026-08-14 G5 执行发现）：原 fold-hash(*31+char) 与订单域 SHA-256 实现不一致 →
+            // 预扣 key 与释放/确认 key 对不上 → 库存永远无法释放（泄漏）。
+            // 统一收敛到 PseudoOrderIdUtil（与终结/释放侧共用同一实现，算法必须完全一致）。
+            long pseudoOrderId = PseudoOrderIdUtil.derive(orderNo);
 
             for (JsonNode item : skuItems) {
                 Long skuId = resolveLong(item.get("skuId"), "skuId");

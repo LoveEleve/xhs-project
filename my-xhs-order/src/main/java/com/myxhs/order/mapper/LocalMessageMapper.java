@@ -32,6 +32,15 @@ public interface LocalMessageMapper extends BaseMapper<LocalMessage> {
     int markSuccessByTransactionId(@Param("transactionId") String transactionId,
                                    @Param("userId") Long userId);
 
+    /** 04B：按事务ID+分片键+操作类型标记已投递（终结事件 Outbox 即时发送成功后调用，防补发 Job 重复投递；
+     *  带 operation_type 避免同一订单的 ORDER_CREATED / ORDER_TERMINATED 互相误标） */
+    @Update("UPDATE t_local_message SET status = 1, updated_at = NOW() " +
+            "WHERE transaction_id = #{transactionId} AND user_id = #{userId} " +
+            "AND operation_type = #{operationType} AND status = 0")
+    int markSuccessByTransactionIdAndType(@Param("transactionId") String transactionId,
+                                          @Param("userId") Long userId,
+                                          @Param("operationType") String operationType);
+
     /** T-072（2026-08-14）：补发失败重试/死信状态更新——按 id 广播更新（不碰分片键 user_id，
      *  原 updateById 全字段更新含 user_id 触发 ShardingSphere "can not update sharding value"） */
     @Update("UPDATE t_local_message SET status = #{status}, retry_count = #{retryCount}, " +
@@ -47,6 +56,21 @@ public interface LocalMessageMapper extends BaseMapper<LocalMessage> {
     /** 根据事务ID查询（事务消息回查使用） */
     @Select("SELECT * FROM t_local_message WHERE transaction_id = #{transactionId} LIMIT 1")
     LocalMessage selectByTransactionId(@Param("transactionId") String transactionId);
+
+    /** 04B：根据事务ID + 分片键 + 操作类型查询（终结事务回查使用；**必须带 operation_type**——
+     *  同一订单 transactionId（orderNo）下同时存在创建侧 ORDER_CREATED 行，
+     *  不过滤会在终结事务回滚时误命中创建行 → 误判 COMMIT → 对未终结订单执行副作用） */
+    @Select("SELECT * FROM t_local_message WHERE transaction_id = #{transactionId} " +
+            "AND user_id = #{userId} AND operation_type = #{operationType} LIMIT 1")
+    LocalMessage selectByTransactionIdAndUserIdAndOperationType(@Param("transactionId") String transactionId,
+                                                                @Param("userId") Long userId,
+                                                                @Param("operationType") String operationType);
+
+    /** 04B：根据事务ID + 操作类型查询（无 userId 兜底回查，广播到各分片） */
+    @Select("SELECT * FROM t_local_message WHERE transaction_id = #{transactionId} " +
+            "AND operation_type = #{operationType} LIMIT 1")
+    LocalMessage selectByTransactionIdAndOperationType(@Param("transactionId") String transactionId,
+                                                       @Param("operationType") String operationType);
 
     /** 根据事务ID + userId 查询（分库分表精确路由） */
     @Select("SELECT * FROM t_local_message WHERE transaction_id = #{transactionId} " +

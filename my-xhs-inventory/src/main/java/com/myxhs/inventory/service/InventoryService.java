@@ -80,6 +80,7 @@ public class InventoryService {
                     + "redis.call('SET', KEYS[1], tostring(target), 'EX', tonumber(ARGV[2])) "
                     + "return target - cur";
     private final DefaultRedisScript<Long> confirmScript;
+    private final DefaultRedisScript<Long> markTerminatedScript;
     private final BusinessMetrics businessMetrics;
     private final org.redisson.api.RedissonClient redissonClient;
 
@@ -100,6 +101,13 @@ public class InventoryService {
 
     @Value("${inventory.prededuct.expire-seconds:1800}")
     private int preDeductExpireSeconds;
+
+    /**
+     * 04B 终结墓碑 TTL（秒）：订单终结后写入，拦截迟到/重投的预扣消息。
+     * 须 ≥ 预扣消息可能迟到的最晚时间（MQ 重试 5 次退避 + DLQ 重投 + 本地消息补发窗口）。
+     */
+    @Value("${inventory.terminated.tombstone-ttl-seconds:86400}")
+    private long terminatedTombstoneTtlSeconds;
 
     private final com.myxhs.inventory.hot.HotSkuDetector hotSkuDetector;
     private final com.myxhs.inventory.feign.ProductFeignClient productFeignClient;
@@ -145,11 +153,14 @@ public class InventoryService {
     private static final String BUCKET_COUNT_KEY_PREFIX = "inventory:bucket:count:{%d}";
     /** 预扣索引 ZSet key（member=orderId, score=过期时间戳ms，供超时 Job ZRANGEBYSCORE 查询） */
     private static final String PREDEDUCT_INDEX_KEY = "inventory:prededuct:index";
+    /** 04B 终结墓碑 key（orderId）：订单终结后写入，prededuct.lua 前置检查拦截迟到预扣 */
+    private static final String TERMINATED_TOMBSTONE_KEY_PREFIX = "inventory:terminated:";
 
     private static String totalKey(Long skuId) { return String.format(TOTAL_KEY_PREFIX, skuId); }
     private static String bucketCountKey(Long skuId) { return String.format(BUCKET_COUNT_KEY_PREFIX, skuId); }
     private static String predeductKey(Long orderId) { return PREDEDUCT_KEY_PREFIX + orderId; }
     private static String bucketKey(Long skuId, int bucketNo) { return String.format(BUCKET_KEY_PREFIX, skuId) + bucketNo; }
+    private static String terminatedTombstoneKey(Long orderId) { return TERMINATED_TOMBSTONE_KEY_PREFIX + orderId; }
 
     /** MQ Topic */
     private static final String INVENTORY_TOPIC = "INVENTORY_TOPIC";
@@ -325,8 +336,10 @@ public class InventoryService {
         String totalKeyStr = totalKey(skuId);
         String predeductKeyStr = predeductKey(orderId);
 
-        // 构建完整 KEYS 列表：[totalKey, predeductKey, bucket:0, bucket:1, ..., bucket:N-1, indexKey]
-        List<String> keys = new ArrayList<>(3 + bucketCount);
+        // 构建完整 KEYS 列表：[terminatedTombstone, totalKey, predeductKey, bucket:0..N-1, indexKey]
+        // 04B：KEYS[1]=终结墓碑（脚本前置检查，命中返回 -3）；其余顺延一位，indexKey 仍为最后一个
+        List<String> keys = new ArrayList<>(4 + bucketCount);
+        keys.add(terminatedTombstoneKey(orderId));
         keys.add(totalKeyStr);
         keys.add(predeductKeyStr);
         for (int i = 0; i < bucketCount; i++) {
@@ -378,6 +391,13 @@ public class InventoryService {
                 return true;
             }
             case -2 -> throw new BizException(ResultCode.SKU_STOCK_NOT_INITIALIZED, "库存未初始化");
+            case -3 -> {
+                // 04B：订单已终结（终结墓碑命中）——迟到/重投的预扣消息，直接跳过视为处理完成。
+                // MySQL 幂等占位保留（idemOk=true）：后续重投在 insertPredeductIdem 处即被拦截。
+                businessMetrics.recordPreDeduct("terminated");
+                log.warn("[库存] 预扣减-订单已终结(墓碑命中), 跳过: orderId={}, skuId={}", orderId, skuId);
+                return true;
+            }
             default -> throw new BizException(ResultCode.INTERNAL_ERROR, "库存操作异常: result=" + result);
         }
     }
@@ -462,11 +482,24 @@ public class InventoryService {
     public void releaseStock(ReleaseStockRequest request) {
         Long orderId = request.getOrderId();
         String predeductKey = predeductKey(orderId);
+        // 04B 终结墓碑：原子「检查预扣记录 + 总是写墓碑」（二次 Review S1：仅在记录存在时写墓碑
+        // 会遗留"先释放完 → 迟到预扣到达 → 预扣成功"的泄漏窗口，故无条件写）。
+        // - 记录存在：继续释放（正常路径）；墓碑拦截随后到达的预扣重投/迟到消息
+        // - 记录不存在：写墓碑后返回（已释放/已确认/从未预扣，重复投递安全）
+        Long recordExists = stringRedisTemplate.execute(
+                markTerminatedScript,
+                List.of(predeductKey, terminatedTombstoneKey(orderId)),
+                String.valueOf(terminatedTombstoneTtlSeconds));
+        if (recordExists == null || recordExists == 0) {
+            log.warn("[库存] 释放库存-预扣记录不存在(已释放/已确认/从未预扣), 已写终结墓碑: orderId={}", orderId);
+            return; // 幂等：已释放或已确认，不报错
+        }
+
         // 获取预扣记录中的所有 SKU
         var entries = stringRedisTemplate.opsForHash().entries(predeductKey);
         if (entries.isEmpty()) {
-            log.warn("[库存] 释放库存-预扣记录不存在(可能已释放或已确认): orderId={}", orderId);
-            return; // 幂等：已释放或已确认，不报错
+            log.warn("[库存] 释放库存-预扣记录不存在(并发释放/已确认): orderId={}", orderId);
+            return; // 防御：脚本检查后被并发释放/确认
         }
 
         // 逐个 SKU 释放

@@ -70,8 +70,11 @@ public class OrderTransactionService {
         order.setAddressSnapshot(addressSnapshot != null ? addressSnapshot : "{\"name\":\"\",\"phone\":\"\",\"address\":\"\"}");
         orderMapper.insert(order);
 
-        // 2. 记录 Event Sourcing 事件（与订单创建同事务）
-        orderEventService.appendEvent(order, OrderEventService.EVENT_CREATED, null);
+        // 2. 记录 Event Sourcing 事件（与订单创建同事务；载荷含 orderNo/source——
+        //    收尾修复：原先此处 payload=null，而 createOrder 步骤 7 的"补记"因重复事件恒被幂等跳过，
+        //    导致 EVENT_CREATED 载荷永不落库）
+        orderEventService.appendEvent(order, OrderEventService.EVENT_CREATED,
+                java.util.Map.of("orderNo", orderNo, "source", "APP"));
 
         // 3. 创建订单明细（使用真实 SKU 数据，不再 Mock）
         for (OrderCreateRequest.SkuItem skuItem : request.getSkuItems()) {

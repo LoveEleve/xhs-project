@@ -16,6 +16,7 @@ import com.myxhs.order.feign.CouponFeignClient;
 import com.myxhs.order.feign.InventoryFeignClient;
 import com.myxhs.order.feign.ProductFeignClient;
 import com.myxhs.order.feign.UserFeignClient;
+import com.myxhs.order.listener.OrderTerminationListener;
 import com.myxhs.order.mapper.*;
 import com.myxhs.order.repository.OrderNoMappingRepository;
 import com.myxhs.order.repository.PaymentRepository;
@@ -77,6 +78,8 @@ class OrderServiceTest {
     @Mock
     private RocketMQTemplate rocketMQTemplate;
     @Mock
+    private RocketMQTemplate orderTerminationRocketMQTemplate;
+    @Mock
     private StringRedisTemplate stringRedisTemplate;
     @Mock
     private ValueOperations<String, String> valueOperations;
@@ -107,6 +110,7 @@ class OrderServiceTest {
         orderService = new OrderService(
                 orderMapper, orderItemMapper, snapshotMapper, localMessageMapper,
                 orderNoMappingRepository, transactionService,
+                orderTerminationRocketMQTemplate,
                 orderEventService,
                 rocketMQTemplate, stringRedisTemplate, objectMapper,
                 inventoryFeignClient, couponFeignClient, productFeignClient, userFeignClient,
@@ -319,35 +323,95 @@ class OrderServiceTest {
         when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(order);
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenReturn(Collections.emptyList());
-        // Event Sourcing: appendEvent 会被调用
-        doNothing().when(orderEventService).appendEvent(eq(order), eq(OrderEventService.EVENT_CANCELLED), anyMap());
-        // Feign 调用返回成功
-        when(inventoryFeignClient.releaseStock(anyMap()))
-                .thenReturn(R.ok());
+        // 04B：终结事务消息发送 → 模拟监听器执行本地事务（回写 outcome=TERMINATED）并返回 SEND_OK
+        when(orderTerminationRocketMQTemplate.sendMessageInTransaction(
+                eq(OrderService.ORDER_TERMINATION_TOPIC), any(), any()))
+                .thenAnswer(invocation -> {
+                    OrderTerminationListener.OrderTerminationContext context = invocation.getArgument(2);
+                    context.setOutcome(OrderTerminationService.Outcome.TERMINATED);
+                    TransactionSendResult result = new TransactionSendResult();
+                    result.setSendStatus(SendStatus.SEND_OK);
+                    return result;
+                });
         // 快照写入成功
         when(snapshotMapper.insert((OrderSnapshot) any())).thenReturn(1);
         // 删除缓存
         when(stringRedisTemplate.delete(startsWith("myxhs:order:info:"))).thenReturn(true);
+        // 本地消息标记成功（防补发 Job 双投）
+        when(localMessageMapper.markSuccessByTransactionIdAndType(anyString(), anyLong(), anyString()))
+                .thenReturn(1);
 
         assertThatCode(() -> orderService.cancelOrder(USER_ID, ORDER_ID))
                 .doesNotThrowAnyException();
 
-        verify(orderEventService).appendEvent(eq(order), eq(OrderEventService.EVENT_CANCELLED), anyMap());
+        verify(orderTerminationRocketMQTemplate).sendMessageInTransaction(
+                eq(OrderService.ORDER_TERMINATION_TOPIC), any(), any());
     }
 
     @Test
-    @DisplayName("取消订单 - appendEvent 抛出异常（乐观锁冲突）")
-    void cancelOrder_appendEventFailed() {
+    @DisplayName("取消订单 - 本地事务回滚且未收敛（状态已变化）")
+    void cancelOrder_localTransactionRollback() {
         Order order = buildOrder();
         order.setStatus(0);
         when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(order);
-        // Event Sourcing: appendEvent 抛出异常模拟乐观锁冲突
-        doThrow(new RuntimeException("乐观锁冲突")).when(orderEventService)
-                .appendEvent(eq(order), eq(OrderEventService.EVENT_CANCELLED), anyMap());
+        // 04B：事务消息发送成功但监听器本地事务回滚（outcome 不回写=保持 null）→ 回读仍为待付款 → 状态已变化
+        when(orderTerminationRocketMQTemplate.sendMessageInTransaction(
+                eq(OrderService.ORDER_TERMINATION_TOPIC), any(), any()))
+                .thenAnswer(invocation -> {
+                    TransactionSendResult result = new TransactionSendResult();
+                    result.setSendStatus(SendStatus.SEND_OK);
+                    return result;
+                });
 
         assertThatThrownBy(() -> orderService.cancelOrder(USER_ID, ORDER_ID))
-                .isInstanceOf(RuntimeException.class)
-                .hasMessageContaining("乐观锁冲突");
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("订单状态已变化");
+    }
+
+    // ==================== 支付失败回调（第五条终结路径）====================
+
+    @Test
+    @DisplayName("支付失败回调 - 正常终结（04B 统一入口：状态 0→4 + 终结事件）")
+    void onPaymentFailed_success() {
+        OrderNoMapping mapping = new OrderNoMapping();
+        mapping.setOrderId(ORDER_ID);
+        mapping.setUserId(USER_ID);
+        when(orderNoMappingRepository.selectByOrderId(ORDER_ID)).thenReturn(mapping);
+        Order order = buildOrder();
+        order.setStatus(0);
+        when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(order);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(Collections.emptyList());
+        when(orderTerminationRocketMQTemplate.sendMessageInTransaction(
+                eq(OrderService.ORDER_TERMINATION_TOPIC), any(), any()))
+                .thenAnswer(invocation -> {
+                    OrderTerminationListener.OrderTerminationContext context = invocation.getArgument(2);
+                    context.setOutcome(OrderTerminationService.Outcome.TERMINATED);
+                    TransactionSendResult result = new TransactionSendResult();
+                    result.setSendStatus(SendStatus.SEND_OK);
+                    return result;
+                });
+        when(snapshotMapper.insert((OrderSnapshot) any())).thenReturn(1);
+        when(stringRedisTemplate.delete(startsWith("myxhs:order:info:"))).thenReturn(true);
+        when(localMessageMapper.markSuccessByTransactionIdAndType(anyString(), anyLong(), anyString()))
+                .thenReturn(1);
+
+        assertThatCode(() -> orderService.onPaymentFailed(ORDER_ID))
+                .doesNotThrowAnyException();
+
+        verify(orderTerminationRocketMQTemplate).sendMessageInTransaction(
+                eq(OrderService.ORDER_TERMINATION_TOPIC), any(), any());
+    }
+
+    @Test
+    @DisplayName("支付失败回调 - 映射缺失：幂等跳过")
+    void onPaymentFailed_mappingMissing() {
+        when(orderNoMappingRepository.selectByOrderId(ORDER_ID)).thenReturn(null);
+
+        assertThatCode(() -> orderService.onPaymentFailed(ORDER_ID))
+                .doesNotThrowAnyException();
+
+        verify(orderTerminationRocketMQTemplate, never()).sendMessageInTransaction(anyString(), any(), any());
     }
 
     // ==================== 确认收货 ====================
@@ -449,22 +513,32 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("超时关单 - 正常关单")
+    @DisplayName("超时关单 - 正常关单（04B：终结事务消息 + 本地事务）")
     void closeTimeoutOrder_success() {
         Order order = buildOrder();
         order.setStatus(0);
         when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(order);
         when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
                 .thenReturn(Collections.emptyList());
-        doNothing().when(orderEventService).appendEvent(eq(order), eq(OrderEventService.EVENT_TIMEOUT_CANCELLED), anyMap());
-        when(inventoryFeignClient.releaseStock(anyMap())).thenReturn(R.ok());
+        // 04B：终结事务消息发送 → 模拟监听器回写 outcome=TERMINATED 并返回 SEND_OK
+        when(orderTerminationRocketMQTemplate.sendMessageInTransaction(
+                eq(OrderService.ORDER_TERMINATION_TOPIC), any(), any()))
+                .thenAnswer(invocation -> {
+                    OrderTerminationListener.OrderTerminationContext context = invocation.getArgument(2);
+                    context.setOutcome(OrderTerminationService.Outcome.TERMINATED);
+                    TransactionSendResult result = new TransactionSendResult();
+                    result.setSendStatus(SendStatus.SEND_OK);
+                    return result;
+                });
         when(snapshotMapper.insert((OrderSnapshot) any())).thenReturn(1);
         when(stringRedisTemplate.delete(startsWith("myxhs:order:info:"))).thenReturn(true);
+        when(localMessageMapper.markSuccessByTransactionIdAndType(anyString(), anyLong(), anyString()))
+                .thenReturn(1);
 
         orderService.closeTimeoutOrder(ORDER_ID, USER_ID);
 
-        verify(orderEventService).appendEvent(eq(order), eq(OrderEventService.EVENT_TIMEOUT_CANCELLED), anyMap());
-        verify(inventoryFeignClient).releaseStock(anyMap());
+        verify(orderTerminationRocketMQTemplate).sendMessageInTransaction(
+                eq(OrderService.ORDER_TERMINATION_TOPIC), any(), any());
     }
 
     // ==================== 退款成功 ====================

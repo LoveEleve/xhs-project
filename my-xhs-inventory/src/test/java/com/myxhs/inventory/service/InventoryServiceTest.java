@@ -21,6 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -34,6 +35,7 @@ import org.springframework.messaging.Message;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.*;
@@ -65,6 +67,8 @@ class InventoryServiceTest {
     @Mock
     private DefaultRedisScript<Long> confirmScript;
     @Mock
+    private DefaultRedisScript<Long> markTerminatedScript;
+    @Mock
     private BusinessMetrics businessMetrics;
     @Mock
     private HotSkuDetector hotSkuDetector;
@@ -88,13 +92,14 @@ class InventoryServiceTest {
         objectMapper.registerModule(new JavaTimeModule());
         inventoryService = new InventoryService(
                 stringRedisTemplate, rocketMQTemplate, inventoryMapper, objectMapper,
-                preDeductScript, releaseScript, confirmScript, businessMetrics, redissonClient, hotSkuDetector,
+                preDeductScript, releaseScript, confirmScript, markTerminatedScript, businessMetrics, redissonClient, hotSkuDetector,
                 mock(com.myxhs.inventory.feign.ProductFeignClient.class)
         );
         // 注入 @Value 字段（非 final，不在 Lombok 构造函数中）
         ReflectionTestUtils.setField(inventoryService, "defaultBucketCount", 2);
         ReflectionTestUtils.setField(inventoryService, "hotBucketCount", 8);
         ReflectionTestUtils.setField(inventoryService, "preDeductExpireSeconds", 1800);
+        ReflectionTestUtils.setField(inventoryService, "terminatedTombstoneTtlSeconds", 86400L);
 
         // 默认 mock stringRedisTemplate 返回操作接口
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
@@ -194,6 +199,32 @@ class InventoryServiceTest {
     }
 
     @Test
+    @DisplayName("预扣减 - 订单已终结（墓碑命中）: 跳过视为处理完成")
+    void preDeduct_terminatedTombstone_skip() {
+        when(inventoryMapper.insertPredeductIdem(ORDER_ID, SKU_ID)).thenReturn(1);
+        when(stringRedisTemplate.hasKey(eq("inventory:paused:10001"))).thenReturn(false);
+        when(valueOperations.get(eq("inventory:bucket:count:{10001}"))).thenReturn("2");
+        when(hotSkuDetector.recordAndCheck(SKU_ID)).thenReturn(false);
+        // 04B：Lua 返回 -3（终结墓碑命中）→ 跳过预扣，视为处理完成（不抛异常、不删幂等占位）
+        when(stringRedisTemplate.execute(
+                eq(preDeductScript), anyList(),
+                anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(-3L);
+
+        PreDeductRequest request = new PreDeductRequest();
+        request.setSkuId(SKU_ID);
+        request.setOrderId(ORDER_ID);
+        request.setQuantity(2);
+        request.setUserId(USER_ID);
+
+        assertThatCode(() -> inventoryService.preDeduct(request))
+                .doesNotThrowAnyException();
+
+        // 幂等占位保留（后续重投在 MySQL 幂等检查处拦截），不发生占位删除
+        verify(inventoryMapper, never()).deletePredeductIdem(ORDER_ID, SKU_ID);
+    }
+
+    @Test
     @DisplayName("预扣减 - 库存不足时抛出业务异常")
     void preDeductInsufficientStock() {
         when(inventoryMapper.insertPredeductIdem(ORDER_ID, SKU_ID)).thenReturn(1);
@@ -281,6 +312,10 @@ class InventoryServiceTest {
                 .thenReturn(entries);
         when(hashOperations.get(eq("inventory:prededuct:123456"), eq("10001:bucket")))
                 .thenReturn("0");
+        // 04B：终结墓碑脚本（检查预扣记录 + 总是写墓碑）→ 记录存在（返回 1），继续释放
+        when(stringRedisTemplate.execute(
+                eq(markTerminatedScript), anyList(), anyString()))
+                .thenReturn(1L);
         when(stringRedisTemplate.execute(
                 eq(releaseScript), anyList(), anyString(), anyString()))
                 .thenReturn(1L);
@@ -303,17 +338,38 @@ class InventoryServiceTest {
     }
 
     @Test
-    @DisplayName("退款回补 - 多 SKU 使用独立幂等键")
+    @DisplayName("释放库存 - 无预扣记录（已释放/从未预扣）：写终结墓碑并幂等跳过")
+    void releaseStock_noRecord_writesTombstone() {
+        // 04B：终结墓碑脚本返回 0（无预扣记录）→ 仅写墓碑，不进入释放流程
+        when(stringRedisTemplate.execute(
+                eq(markTerminatedScript), anyList(), anyString()))
+                .thenReturn(0L);
+
+        ReleaseStockRequest request = new ReleaseStockRequest();
+        request.setOrderId(ORDER_ID);
+
+        assertThatCode(() -> inventoryService.releaseStock(request))
+                .doesNotThrowAnyException();
+
+        verify(stringRedisTemplate).execute(eq(markTerminatedScript), anyList(), anyString());
+        verify(stringRedisTemplate, never()).execute(
+                eq(releaseScript), anyList(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("退款回补 - 多 SKU 使用独立幂等键（累计 delta 脚本）")
+    @SuppressWarnings({"unchecked", "rawtypes"})
     void refundRestore_multiSkuUsesIndependentIdempotentKeys() {
-        when(valueOperations.setIfAbsent(eq("inventory:refund:123456:10001"), eq("1"), any(java.time.Duration.class)))
-                .thenReturn(true);
-        when(valueOperations.setIfAbsent(eq("inventory:refund:123456:10002"), eq("1"), any(java.time.Duration.class)))
-                .thenReturn(true);
+        // 累计幂等脚本（KEYS[1]=inventory:refund:{orderId}:{skuId}，2 个 ARGV：目标数量+TTL）→ 返回正增量
+        when(stringRedisTemplate.execute(any(DefaultRedisScript.class), anyList(), anyString(), anyString()))
+                .thenReturn(2L);
+        // Redis 回补脚本（total+桶，1 个 ARGV）
+        when(stringRedisTemplate.execute(any(DefaultRedisScript.class), anyList(), anyString()))
+                .thenReturn(2L);
         when(stringRedisTemplate.hasKey(eq("inventory:{10001}:total"))).thenReturn(true);
         when(stringRedisTemplate.hasKey(eq("inventory:{10002}:total"))).thenReturn(true);
         when(valueOperations.get(eq("inventory:bucket:count:{10001}"))).thenReturn("2");
         when(valueOperations.get(eq("inventory:bucket:count:{10002}"))).thenReturn("2");
-        when(stringRedisTemplate.execute(any(DefaultRedisScript.class), anyList(), anyString())).thenReturn(2L);
         SendResult sendResult = new SendResult();
         sendResult.setSendStatus(SendStatus.SEND_OK);
         when(rocketMQTemplate.syncSend(eq("INVENTORY_TOPIC:REFUND_RESTORE"), any(Message.class), eq(3000L)))
@@ -333,9 +389,16 @@ class InventoryServiceTest {
         inventoryService.refundRestore(sku1);
         inventoryService.refundRestore(sku2);
 
-        verify(valueOperations).setIfAbsent(eq("inventory:refund:123456:10001"), eq("1"), any(java.time.Duration.class));
-        verify(valueOperations).setIfAbsent(eq("inventory:refund:123456:10002"), eq("1"), any(java.time.Duration.class));
-        verify(rocketMQTemplate, times(2)).syncSend(eq("INVENTORY_TOPIC:REFUND_RESTORE"), any(Message.class), eq(3000L));
+        // 幂等键按 SKU 独立：累计脚本每个 SKU 各执行一次（KEYS[1] 分别为各自 refund:{orderId}:{skuId}）
+        ArgumentCaptor<List<String>> keysCaptor = ArgumentCaptor.forClass((Class) List.class);
+        verify(stringRedisTemplate, times(2)).execute(
+                any(DefaultRedisScript.class), keysCaptor.capture(), anyString(), anyString());
+        assertThat(keysCaptor.getAllValues().stream().map(List::toString))
+                .containsExactlyInAnyOrder(
+                        "[inventory:refund:123456:10001]",
+                        "[inventory:refund:123456:10002]");
+        verify(rocketMQTemplate, times(2)).syncSend(
+                eq("INVENTORY_TOPIC:REFUND_RESTORE"), any(Message.class), eq(3000L));
     }
 }
 

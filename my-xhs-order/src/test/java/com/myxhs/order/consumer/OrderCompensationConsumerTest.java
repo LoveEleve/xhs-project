@@ -74,6 +74,8 @@ class OrderCompensationConsumerTest {
         mapping.setOrderId(123456L);
         mapping.setUserId(1001L);
         when(orderNoMappingRepository.selectByOrderId(123456L)).thenReturn(mapping);
+        // 补偿自循环修复（94c954a8）：执行体返回 false 会抛异常触发 MQ 重试——成功路径须返回 true
+        when(orderService.compensateReleaseStock(123456L, 1001L)).thenReturn(true);
 
         consumer.onMessage(message);
 

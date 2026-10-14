@@ -39,6 +39,10 @@ public class OrderEventService {
     public static final String EVENT_TIMEOUT_CANCELLED = "ORDER_TIMEOUT_CANCELLED";
     /** 库存预扣失败自动取消（订单侧收口；与用户取消/超时取消区分，便于审计归因） */
     public static final String EVENT_INVENTORY_FAILED_CANCELLED = "ORDER_INVENTORY_FAILED_CANCELLED";
+    /** 优惠券核销失败自动取消（下单链路同步终结；04B 新增，与库存失败取消区分归因） */
+    public static final String EVENT_COUPON_FAILED_CANCELLED = "ORDER_COUPON_FAILED_CANCELLED";
+    /** 支付失败自动取消（支付失败回调；收尾补录的第五条终结路径，与用户取消/超时/库存/券失败区分归因） */
+    public static final String EVENT_PAY_FAILED_CANCELLED = "ORDER_PAY_FAILED_CANCELLED";
 
     /**
      * 事件类型 → 目标状态（Integer）的映射
@@ -57,6 +61,8 @@ public class OrderEventService {
         EVENT_CANCELLED, 4,
         EVENT_TIMEOUT_CANCELLED, 4,
         EVENT_INVENTORY_FAILED_CANCELLED, 4,
+        EVENT_COUPON_FAILED_CANCELLED, 4,
+        EVENT_PAY_FAILED_CANCELLED, 4,
         EVENT_REFUNDED, 5
     );
 
@@ -76,7 +82,9 @@ public class OrderEventService {
         EVENT_CANCELLED, java.util.Set.of(0, 1, 2),
         EVENT_TIMEOUT_CANCELLED, java.util.Set.of(0),
         EVENT_REFUNDED, java.util.Set.of(1, 2, 3, 4),
-        EVENT_INVENTORY_FAILED_CANCELLED, java.util.Set.of(0)
+        EVENT_INVENTORY_FAILED_CANCELLED, java.util.Set.of(0),
+        EVENT_COUPON_FAILED_CANCELLED, java.util.Set.of(0),
+        EVENT_PAY_FAILED_CANCELLED, java.util.Set.of(0)
         // EVENT_CREATED 目标为 -1（非状态流转），不做转移校验
     );
 

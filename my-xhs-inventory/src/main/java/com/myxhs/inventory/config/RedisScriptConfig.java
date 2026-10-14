@@ -13,10 +13,12 @@ import org.springframework.scripting.support.ResourceScriptSource;
  * Redis 会缓存脚本的 SHA1，后续执行走 EVALSHA 而非 EVAL，性能更优。
  * </p>
  * <p>
- * 库存模块 3 个 Lua 脚本：
- * 1. prededuct.lua：分桶预扣减（检查库存 + 路由桶 + 桶间均衡 + 写预扣记录）
+ * 库存模块 Lua 脚本：
+ * 1. prededuct.lua：分桶预扣减（终结墓碑检查 + 路由桶 + 桶间均衡 + 写预扣记录）
  * 2. release.lua：释放库存（预扣回退 + 删除预扣记录）
  * 3. confirm.lua：确认扣减（删除预扣记录）
+ * 4. reconcile_buckets.lua：分桶完整性对账（原子求和+对比设置）
+ * 5. mark_terminated.lua：订单终结墓碑（04B：原子「检查预扣记录 + 总是写墓碑」）
  * </p>
  */
 @Configuration
@@ -62,6 +64,17 @@ public class RedisScriptConfig {
     public DefaultRedisScript<Long> reconcileBucketsScript() {
         DefaultRedisScript<Long> script = new DefaultRedisScript<>();
         script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/reconcile_buckets.lua")));
+        script.setResultType(Long.class);
+        return script;
+    }
+
+    /**
+     * 订单终结墓碑标记 Lua 脚本（04B：原子「检查预扣记录 + 总是写墓碑」，释放入口调用）
+     */
+    @Bean
+    public DefaultRedisScript<Long> markTerminatedScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/mark_terminated.lua")));
         script.setResultType(Long.class);
         return script;
     }
