@@ -13,10 +13,10 @@ updated: 2026-10-17
 
 ## 执行摘要
 
-- 执行时间: 2026-10-17 19:21（五阶段全部落地后的最终回归）
+- 执行时间: 2026-10-17 19:35（五阶段 + 深 Review 修复后的最终回归）
 - 环境 profile: JDK 17（`/env/javaEnv/jdk17`）+ Maven 3.9 离线（`-o`）；**无运行时环境**（项目规则：单测口径；删 `target/test-classes` 强制全量重编防增量假绿）
 - 命令: `mvn -o -pl my-xhs-payment,my-xhs-order,my-xhs-inventory,my-xhs-product -am test` + 全仓 `mvn -o -q compile`
-- 结果: ✅ 通过（BUILD SUCCESS；**259 全绿**：common 93 / product 14 / coupon 11 / order 113 / inventory 20 / **payment 9**）
+- 结果: ✅ 通过（BUILD SUCCESS；**261 全绿**：common 93 / product 14 / coupon 11 / order 113 / inventory 20 / **payment 10**）
 
 ## 用例执行结果
 
@@ -37,8 +37,16 @@ updated: 2026-10-17
 | TC-14 | AC-6 | 🟢 | `#closePendingOnTermination_closesPending`（close + status=4） | 消费者为薄胶水（同 inventory 模式） |
 | TC-15 | AC-7 | 🟢 | 配置化落地（payTimeoutMs/refundTimeoutDays/simulator 三项 @Value）；行为断言并入超时矩阵 | |
 | TC-16 | AC-7 | 🟡 | 模拟器参数注入：@Value 就绪（默认值兜底）；无独立注入用例 | 记补测 |
-| TC-17 | AC-8 | 🟢 | 六模块全量 259 全绿 + 全仓编译 | 强制全量重编 |
+| TC-17 | AC-8 | 🟢 | 六模块全量 261 全绿 + 全仓编译 | 强制全量重编 |
 | TC-18 | AC-9 | 🟢 | `#reconcile_unverifiedFailedRecheck`（未核实失败单渠道已付 → 收敛 + 通知） | |
+| TC-19 | AC-2 | 🟢 | `#handlePayCallback_lateSuccessOnClosed`（已关闭交易迟到成功 → 翻转 4→1 受理 + 通知；深 Review 补充） | |
+
+## 深 Review 修复记录（2026-10-17 审查轮）
+
+| 发现 | 严重度 | 修复 |
+|------|--------|------|
+| 关闭交易后 mock 回调仍可能触发（待回调标记残留）→ 命中"已关闭交易收到成功"的**静默丢弃**路径（真渠道 close 竞态下 = 用户钱丢了、系统无记录） | 中 | ① mock 策略 `close()` 取消待回调注册（`PayCallbackSimulator.cancel`，mock 世界语义自洽）；② `handlePayCallback` 迟到成功扩展覆盖**已关闭(4)**：条件翻转 4→1 + 走成功链路（订单不允许支付 → 自动退款）——真渠道 close 竞态边界修复 |
+| mock 策略 `queryPayStatus` 硬编码桩（Alipay/Wechat 恒返回成功） | 中 | 重设计为"待回调标记"渠道真值模拟（执行中发现，见下） |
 
 ## 失败 / 未覆盖项
 

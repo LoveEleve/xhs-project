@@ -17,8 +17,8 @@ relations:
 
 # C-002 支付模块生产化改造
 
-> **完成记录（2026-10-17）**：五阶段全部落地（支付单复用 → 换渠道 → 退款出金幂等 → 超时处置生产化 → 咬合与清理）。
-> 证据：六模块全量测试 **259 全绿**（common 93 / product 14 / coupon 11 / order 113 / inventory 20 / payment 9）+ 全仓编译通过；
+> **完成记录（2026-10-17）**：五阶段全部落地（支付单复用 → 换渠道 → 退款出金幂等 → 超时处置生产化 → 咬合与清理）+ 深 Review 修复（关闭交易取消回调注册、已关闭交易迟到成功受理）。
+> 证据：六模块全量测试 **261 全绿**（common 93 / product 14 / coupon 11 / order 113 / inventory 20 / payment 10）+ 全仓编译通过；
 > 详见 `.harness/iterations/ITER-002-支付模块生产化改造/test/report.md`。
 > 执行中修正：mock 渠道真值重设计（原 queryPayStatus 硬编码桩会误判）；收敛 tradeNo 位口径统一。
 > 运行时验证（真实 Redis/MySQL/MQ/渠道）按项目规则后置。

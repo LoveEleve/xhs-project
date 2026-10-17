@@ -99,6 +99,32 @@ public class PayCallbackSimulator {
         return null; // 无法判定
     }
 
+    /**
+     * 取消待回调注册（ITER-002 深 Review：渠道交易关闭后不再发送模拟回调）
+     * <p>
+     * 由 mock 策略的 close() 调用——"关闭交易 = 不再有回调"，保持 mock 世界语义自洽
+     * （否则关闭后仍可能触发迟到回调，命中"已关闭交易收到成功"的边界路径）。
+     * </p>
+     */
+    public void cancel(String paymentNo) {
+        try (var cursor = redisTemplate.scan(
+                org.springframework.data.redis.core.ScanOptions.scanOptions()
+                        .match(CALLBACK_PENDING_PREFIX + "*")
+                        .count(100)
+                        .build())) {
+            String suffix = ":" + paymentNo;
+            while (cursor.hasNext()) {
+                String key = cursor.next();
+                if (key.endsWith(suffix)) {
+                    redisTemplate.delete(key);
+                    log.info("[回调模拟] 已取消待回调(渠道交易关闭): paymentNo={}, key={}", paymentNo, key);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[回调模拟] 取消待回调失败(不影响关闭): paymentNo={}", paymentNo, e);
+        }
+    }
+
     /** T-075（2026-08-14）：异步渠道退款回调模拟注册（原仅支付有模拟器，退款永不回调 → 退款单卡"退款中"） */
     private static final String REFUND_CALLBACK_PENDING_PREFIX = "myxhs:payment:refund-callback:pending:";
 

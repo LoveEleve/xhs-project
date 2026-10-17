@@ -78,7 +78,8 @@ public class AlipayPayStrategy implements PayChannelStrategy {
 
     @Override
     public void close(String paymentNo) {
-        // Mock：无真实渠道交易；关闭 = 仅记录（真实渠道：alipay.trade.close）
+        // Mock：关闭 = 取消待回调注册（不再发送模拟回调）+ 记录（真实渠道：alipay.trade.close）
+        callbackSimulator.cancel(paymentNo);
         log.info("[支付宝Mock] 关闭渠道交易(模拟): paymentNo={}", paymentNo);
     }
 }

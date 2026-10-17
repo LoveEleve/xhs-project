@@ -459,6 +459,33 @@ class PaymentServiceTest {
                 any(), any(), any(), any());
     }
 
+    @Test
+    @DisplayName("迟到成功 - 已关闭交易(4)收到成功回调：翻转受理 + 走成功链路（深 Review 补充）")
+    void handlePayCallback_lateSuccessOnClosed() {
+        com.myxhs.payment.entity.Payment closed = new com.myxhs.payment.entity.Payment();
+        closed.setId(PAYMENT_ID);
+        closed.setOrderId(ORDER_ID);
+        closed.setUserId(USER_ID);
+        closed.setPaymentNo(PAYMENT_NO);
+        closed.setStatus(4); // 已关闭（换渠道/终结 close 竞态）
+        closed.setPayType(99);
+        closed.setAmount(AMOUNT);
+        when(paymentJdbcTemplate.query(
+                org.mockito.ArgumentMatchers.contains("FROM t_payment WHERE payment_no"),
+                any(org.springframework.jdbc.core.ResultSetExtractor.class),
+                any()
+        )).thenReturn(closed);
+        // 翻转 4→1（CAS）
+        when(paymentJdbcTemplate.update(
+                startsWith("UPDATE t_payment SET status = ?, paid_at = ?"),
+                any(), any(), any(), any(), any())).thenReturn(1);
+
+        paymentService.handlePayCallback(PAYMENT_NO, "TRADE-LATE", true);
+
+        // 受理并走成功链路（通知订单）
+        verify(orderFeignClient).notifyPaySuccess(eq(ORDER_ID), anyString());
+    }
+
     // ==================== 辅助方法 ====================
 
     private java.util.Map<String, Object> timeoutRow(long id, long orderId, long uid, String paymentNo, int payType) {

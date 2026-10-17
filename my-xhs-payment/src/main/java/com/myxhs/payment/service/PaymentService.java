@@ -412,17 +412,20 @@ public class PaymentService {
 
         // 2. 幂等校验：只有"待支付"状态才能处理回调
         if (payment.getStatus() != STATUS_PENDING) {
-            // 迟到成功：支付超时 Job 已把支付单置为失败(2)，但渠道实际成功（用户已付）。
-            // 原实现静默 return → "用户已付、系统记失败、无退款通道"（reconcile 只扫 status=1）。
-            // 修复：条件翻转 2→1 后复用成功链路——订单若已取消会被业务拒绝 → 既有逻辑自动全额退款；
-            // 订单若仍在待付款（超时关单未到）则正常支付成功。
-            if (success && payment.getStatus() == STATUS_FAIL) {
+            // 迟到成功：支付单已离开"待支付"但渠道实际成功（用户已付）。两种场景：
+            // ① 支付超时 Job 已置失败(2)（原修复：原实现静默 return → "用户已付、系统记失败、无退款通道"）；
+            // ② 换渠道/订单终结已关闭(4)（深 Review 补充：渠道 close 与用户支付的竞态——真渠道边界）。
+            // 统一：条件翻转 2|4→1 后复用成功链路——订单若已取消/不允许支付会被业务拒绝 → 自动全额退款；
+            // 订单仍在待付款则正常支付成功（换渠道场景遗留的另一条 pending 由超时处置自清理）。
+            if (success && (payment.getStatus() == STATUS_FAIL || payment.getStatus() == STATUS_CLOSED)) {
+                int previousStatus = payment.getStatus();
                 int flipped = paymentJdbcTemplate.update(
                         "UPDATE t_payment SET status = ?, paid_at = ?, updated_at = ? "
                                 + "WHERE id = ? AND status = ? AND deleted = 0",
-                        STATUS_SUCCESS, LocalDateTime.now(), LocalDateTime.now(), payment.getId(), STATUS_FAIL);
+                        STATUS_SUCCESS, LocalDateTime.now(), LocalDateTime.now(), payment.getId(), previousStatus);
                 if (flipped > 0) {
-                    log.warn("[支付回调] 迟到成功(支付单已置失败)，受理并走成功链路: paymentNo={}", paymentNo);
+                    log.warn("[支付回调] 迟到成功(支付单已{}), 受理并走成功链路: paymentNo={}",
+                            previousStatus == STATUS_FAIL ? "置失败" : "关闭", paymentNo);
                     // 注意：必须直接调 afterPaySuccess——此时状态已是 1，handlePaySuccessInternal 的
                     // "WHERE status=0" 守卫会失败并提前 return（通知/自动退款都不会执行）
                     afterPaySuccess(payment.getOrderId(), payment.getUserId(), paymentNo, tradeNo);
