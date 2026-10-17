@@ -32,7 +32,8 @@ import java.util.Map;
  * <p>
  * 核心设计：
  * 1. 应退金额按"订单优惠分摊"计算——退款 = 明细金额 - 分摊优惠，
- *    分摊用 {@link DiscountAllocator} 按订单快照确定性重算，不落库、不会因算法漂移而不一致；
+ *    分摊以**落库的 discount_share 为准**（下单时最大余数法落库，ITER-001）；
+ *    存量数据（无落库值）回退到 {@link DiscountAllocator} 按订单快照确定性重算；
  * 2. 状态机：待审核(0) → 已同意(1)/已拒绝(2) → 退款中(3) → 已完成(4)；另有已取消(5)、退款失败(6)；
  *    所有流转都是条件更新（WHERE status=期望值），并发冲突时返回 0 并报错，不做补偿；
  * 3. 退款受理走支付域"按订单退款"接口（上游不感知 paymentId）；库存回补按 SKU 调库存域
@@ -114,8 +115,6 @@ public class AftersaleService {
         if (entitlement.occupiedAmount().add(refundable).compareTo(entitlement.refundableTotal()) > 0) {
             throw new BizException(ResultCode.PARAM_INVALID, "该商品累计退款金额超过可退上限");
         }
-        BigDecimal share = entitlement.discountShare();
-
         // 累计退款额度保护：已占用（退款中/已完成） + 本次 ≤ 订单实付
         BigDecimal occupied = aftersaleRepository.sumRefundedAmount(order.getId());
         BigDecimal payAmount = order.getPayAmount() != null ? order.getPayAmount() : BigDecimal.ZERO;
@@ -123,9 +122,15 @@ public class AftersaleService {
             throw new BizException(ResultCode.PARAM_INVALID, "累计退款金额将超过订单实付金额");
         }
 
-        Aftersale entity = buildEntity(order, target, type, quantity, share, refundable, request);
+        // 落库分摊 = **本次申请对应份额**（与应退金额自洽：应退 = 本次申请金额 − 本次分摊）——
+        // 部分数量申请时不是整件分摊（否则 item_amount/discount_share/refund_amount 三列对不上）。
+        BigDecimal appliedItemAmount = (target.getPrice() != null ? target.getPrice() : BigDecimal.ZERO)
+                .multiply(BigDecimal.valueOf(quantity)).setScale(2, RoundingMode.DOWN);
+        BigDecimal appliedShare = appliedItemAmount.subtract(refundable);
 
-        Aftersale existing = aftersaleRepository.findByOrderSkuType(order.getId(), request.getSkuId(), type);
+        Aftersale entity = buildEntity(order, target, type, quantity, appliedShare, refundable, request);
+
+        Aftersale existing = aftersaleRepository.findByItemType(target.getId(), type);
         if (existing == null) {
             entity.setAftersaleNo(NO_PREFIX + idGeneratorUtil.nextId());
             entity.setStatus(Aftersale.STATUS_APPLIED);
@@ -560,8 +565,15 @@ public class AftersaleService {
     }
 
     private SkuEntitlement entitlement(Order order, List<OrderItem> items, OrderItem item) {
-        Map<Long, BigDecimal> allocation = DiscountAllocator.allocateByItems(items, order.getDiscountAmount());
-        BigDecimal share = allocation.getOrDefault(item.getId(), BigDecimal.ZERO).setScale(2, RoundingMode.DOWN);
+        // 分摊口径（ITER-001 T1.4）：以落库 discount_share 为准（下单时最大余数法落库）；
+        // 仅存量数据（null）回退到按订单快照重算——重算不再是主口径，只作兜底。
+        BigDecimal share = item.getDiscountShare();
+        if (share == null) {
+            Map<Long, BigDecimal> allocation = DiscountAllocator.allocateByItems(items, order.getDiscountAmount());
+            share = allocation.getOrDefault(item.getId(), BigDecimal.ZERO);
+            log.warn("[售后] 行无落库分摊，回退重算（存量数据）: orderId={}, itemId={}", order.getId(), item.getId());
+        }
+        share = share.setScale(2, RoundingMode.DOWN);
         BigDecimal refundableTotal = DiscountAllocator.refundableAmount(item, share, item.getQuantity());
         BigDecimal occupied = aftersaleRepository.sumRefundedAmountBySku(order.getId(), item.getSkuId());
         int refundedQuantity = aftersaleRepository.sumRefundedQuantityBySku(order.getId(), item.getSkuId());
@@ -616,6 +628,8 @@ public class AftersaleService {
         entity.setOrderNo(order.getOrderNo());
         entity.setUserId(order.getUserId());
         entity.setSkuId(item.getSkuId());
+        // 行级锚点（ITER-001）：售后单挂订单行，幂等键 = (item_id, type)
+        entity.setItemId(item.getId());
         entity.setSkuName(item.getSkuName());
         entity.setType(type);
         entity.setApplyQuantity(quantity);

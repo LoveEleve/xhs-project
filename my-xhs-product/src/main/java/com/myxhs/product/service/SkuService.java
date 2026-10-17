@@ -77,6 +77,8 @@ public class SkuService {
         Sku sku = new Sku();
         sku.setId(idGeneratorUtil.nextId());
         sku.setSpuId(request.getSpuId());
+        // ITER-001 商家维度：创建时可指定卖家，缺省按平台自营（0）
+        sku.setSellerId(request.getSellerId() != null ? request.getSellerId() : 0L);
         sku.setName(request.getName());
         sku.setPrice(request.getPrice());
         sku.setOriginalPrice(request.getOriginalPrice());
@@ -243,6 +245,8 @@ public class SkuService {
         SkuVO vo = new SkuVO();
         vo.setId(sku.getId());
         vo.setSpuId(sku.getSpuId());
+        // ITER-001：卖家ID下发（下单按商家拆单；null → 平台自营 0）
+        vo.setSellerId(sku.getSellerId() != null ? sku.getSellerId() : 0L);
         vo.setName(sku.getName());
         vo.setPrice(sku.getPrice());
         vo.setOriginalPrice(sku.getOriginalPrice());

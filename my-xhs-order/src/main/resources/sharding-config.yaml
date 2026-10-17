@@ -99,6 +99,20 @@ rules:
         keyGenerateStrategy:
           column: id
           keyGeneratorName: snowflake
+      # 子订单表（ITER-001 拆单：与父单同分片键 user_id，绑定表避免笛卡尔积）
+      t_sub_order:
+        actualDataNodes: ds${0..3}.t_sub_order_${0..3}
+        databaseStrategy:
+          standard:
+            shardingColumn: user_id
+            shardingAlgorithmName: db-inline
+        tableStrategy:
+          standard:
+            shardingColumn: user_id
+            shardingAlgorithmName: t-sub-order-inline
+        keyGenerateStrategy:
+          column: id
+          keyGeneratorName: snowflake
       # 本地消息表
       t_local_message:
         actualDataNodes: ds${0..3}.t_local_message_${0..3}
@@ -144,7 +158,7 @@ rules:
 
     # 绑定表组：保证关联查询不产生笛卡尔积
     bindingTables:
-      - t_order,t_order_item,t_local_message,t_order_snapshot,t_order_event
+      - t_order,t_order_item,t_sub_order,t_local_message,t_order_snapshot,t_order_event
 
     # 分片算法（使用 INLINE 表达式，兼容 standard 策略）
     shardingAlgorithms:
@@ -162,6 +176,10 @@ rules:
         type: INLINE
         props:
           algorithm-expression: t_order_item_${((user_id.hashCode() & 0x7fffffff).intdiv(4)) % 4}
+      t-sub-order-inline:
+        type: INLINE
+        props:
+          algorithm-expression: t_sub_order_${((user_id.hashCode() & 0x7fffffff).intdiv(4)) % 4}
       t-local-message-inline:
         type: INLINE
         props:

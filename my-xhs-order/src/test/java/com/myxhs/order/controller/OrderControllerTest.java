@@ -262,13 +262,13 @@ class OrderControllerTest {
     // ==================== 确认收货 ====================
 
     @Test
-    @DisplayName("POST /api/order/confirm - 确认成功")
+    @DisplayName("POST /api/order/confirm - 确认成功（子单维度）")
     void confirmReceive_success() throws Exception {
-        doNothing().when(orderService).confirmReceive(USER_ID, ORDER_ID);
+        doNothing().when(orderService).confirmReceive(USER_ID, "ORD-X-1");
 
         mockMvc.perform(post("/api/order/confirm")
                         .header(USER_ID_HEADER, USER_ID)
-                        .param("orderId", ORDER_ID.toString())
+                        .param("subOrderNo", "ORD-X-1")
                         .header("X-Internal-Call", "test-token"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200));

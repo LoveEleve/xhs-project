@@ -23,6 +23,9 @@ public class Sku extends BaseEntity {
     /** SPU ID */
     private Long spuId;
 
+    /** 卖家ID（0=平台自营；ITER-001 商家维度，下单按商家拆单） */
+    private Long sellerId;
+
     /** SKU名称 */
     private String name;
 

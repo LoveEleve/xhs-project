@@ -6,6 +6,7 @@ import com.myxhs.order.entity.Order;
 import com.myxhs.order.enums.TerminationReason;
 import com.myxhs.order.mapper.LocalMessageMapper;
 import com.myxhs.order.mapper.OrderMapper;
+import com.myxhs.order.mapper.SubOrderMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -26,7 +27,8 @@ import java.util.Map;
  * 1. 加载订单（分片键 userId 精确路由）
  * 2. 状态校验：仅 status=0 可终结；4/5 幂等返回；其余拒绝
  * 3. Event Sourcing 状态迁移（0→4，appendEvent 白名单 + 乐观锁；冲突抛异常整体回滚）
- * 4. 终结事件写本地消息表（与状态迁移同库同事务，保证"状态已终结"与"事件已持久化"原子）
+ * 4. **全部子单同事务取消**（0→4，ITER-001 拆单：父单+子单原子收敛）
+ * 5. 终结事件写本地消息表（与状态迁移同库同事务，保证"状态已终结"与"事件已持久化"原子）
  * </p>
  * <p>
  * 事件载荷由调用方（terminateOrder）在发送半消息前构造并传入——半消息 COMMIT 后可见的消息体
@@ -45,6 +47,7 @@ public class OrderTerminationService {
     private final OrderMapper orderMapper;
     private final LocalMessageMapper localMessageMapper;
     private final OrderEventService orderEventService;
+    private final SubOrderMapper subOrderMapper;
 
     /** 终结执行结果 */
     public enum Outcome {
@@ -97,7 +100,11 @@ public class OrderTerminationService {
                         "terminateTime", LocalDateTime.now().toString()));
         orderMapper.setCancelledAt(orderId, userId);
 
-        // 2. 终结事件写本地消息表：与状态迁移同本地事务，任一失败整体回滚
+        // 2. 全部子单同事务取消（ITER-001 拆单：父单+子单原子收敛；仅未支付子单 0→4）
+        int cancelledSubs = subOrderMapper.cancelAll(orderId, userId);
+        log.info("[订单终结] 子单取消: orderId={}, cancelledSubs={}", orderId, cancelledSubs);
+
+        // 3. 终结事件写本地消息表：与状态迁移同本地事务，任一失败整体回滚
         LocalMessage message = new LocalMessage();
         message.setUserId(userId); // 分片键冗余存储
         message.setTransactionId(order.getOrderNo());

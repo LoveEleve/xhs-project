@@ -142,16 +142,18 @@ def run():
     code, body = call("GET", f"/api/order/pay/status/{order_id_a}", token, secret)
     results.append((6, "GET 支付状态", (code, body)))
 
-    # ===== 7. 发货（状态 1→2） =====
+    # ===== 7. 发货（状态 1→2；ITER-001 拆单：按子订单号发货） =====
+    _, odetail = call("GET", f"/api/order/{order_id_a}", token, secret, user_id=user_id)
+    sub_no_a = ((((odetail or {}).get("data") or {}).get("subOrders") or [{}])[0]).get("subOrderNo")
     code, body = call("POST", "/api/order/deliver", token, secret,
-                      json_body={"orderId": order_id_a,
+                      json_body={"subOrderNo": sub_no_a,
                                  "logisticsCompany": "SF", "trackingNo": "SF00000001"},
                       user_id=user_id)
     results.append((7, "POST 发货", (code, body)))
 
-    # ===== 8. 确认收货（状态 2→3） =====
+    # ===== 8. 确认收货（状态 2→3；按子订单号） =====
     code, body = call("POST", "/api/order/confirm", token, secret,
-                      params={"orderId": order_id_a}, user_id=user_id)
+                      params={"subOrderNo": sub_no_a}, user_id=user_id)
     results.append((8, "POST 确认收货", (code, body)))
 
     # ===== 9. 取消订单（新建订单 B，再取消） =====

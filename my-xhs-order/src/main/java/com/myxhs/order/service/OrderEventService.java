@@ -44,26 +44,35 @@ public class OrderEventService {
     /** 支付失败自动取消（支付失败回调；收尾补录的第五条终结路径，与用户取消/超时/库存/券失败区分归因） */
     public static final String EVENT_PAY_FAILED_CANCELLED = "ORDER_PAY_FAILED_CANCELLED";
 
+    /** 全部子单发货 → 父单聚合为已发货（拆单聚合，ITER-001） */
+    public static final String EVENT_ALL_SUBS_SHIPPED = "ORDER_ALL_SUBS_SHIPPED";
+
+    /** 全部子单终态且成功 → 父单聚合为已完成（拆单聚合，ITER-001；含混合终态：部分取消/退款 + 部分完成） */
+    public static final String EVENT_ALL_SUBS_COMPLETED = "ORDER_ALL_SUBS_COMPLETED";
+
     /**
      * 事件类型 → 目标状态（Integer）的映射
      * <p>
      * 状态值：0-待付款 1-已付款 2-已发货 3-已完成 4-已取消 5-已退款
      * </p>
      */
-    private static final Map<String, Integer> EVENT_STATUS_MAP = Map.of(
+    private static final Map<String, Integer> EVENT_STATUS_MAP = Map.ofEntries(
         // T-110（2026-08-15）：EVENT_CREATED 目标状态改 -1——原值 0 与创建时订单 status=0 相同，
         // 导致 appendEvent 快速幂等检查 currentStatus.equals(targetStatus) 恒真 → 创建事件从不落库（事件链断）。
         // -1 表示"创建"非状态流转，to_status=-1 仅作事件记录（getLatestStatus 对 ORDER_CREATED 特殊处理见下）
-        EVENT_CREATED, -1,
-        EVENT_PAID, 1,
-        EVENT_DELIVERED, 2,
-        EVENT_COMPLETED, 3,
-        EVENT_CANCELLED, 4,
-        EVENT_TIMEOUT_CANCELLED, 4,
-        EVENT_INVENTORY_FAILED_CANCELLED, 4,
-        EVENT_COUPON_FAILED_CANCELLED, 4,
-        EVENT_PAY_FAILED_CANCELLED, 4,
-        EVENT_REFUNDED, 5
+        Map.entry(EVENT_CREATED, -1),
+        Map.entry(EVENT_PAID, 1),
+        Map.entry(EVENT_DELIVERED, 2),
+        Map.entry(EVENT_COMPLETED, 3),
+        Map.entry(EVENT_CANCELLED, 4),
+        Map.entry(EVENT_TIMEOUT_CANCELLED, 4),
+        Map.entry(EVENT_INVENTORY_FAILED_CANCELLED, 4),
+        Map.entry(EVENT_COUPON_FAILED_CANCELLED, 4),
+        Map.entry(EVENT_PAY_FAILED_CANCELLED, 4),
+        Map.entry(EVENT_REFUNDED, 5),
+        // ITER-001 拆单聚合：父单状态 = 子单状态聚合（1→2 / 1|2→3）
+        Map.entry(EVENT_ALL_SUBS_SHIPPED, 2),
+        Map.entry(EVENT_ALL_SUBS_COMPLETED, 3)
     );
 
     /**
@@ -75,16 +84,19 @@ public class OrderEventService {
      * 只拦明确非法的组合（如 0→2 未支付发货、0→3 未支付完成）。
      * </p>
      */
-    private static final Map<String, java.util.Set<Integer>> ALLOWED_FROM = Map.of(
-        EVENT_PAID, java.util.Set.of(0),
-        EVENT_DELIVERED, java.util.Set.of(1),
-        EVENT_COMPLETED, java.util.Set.of(2),
-        EVENT_CANCELLED, java.util.Set.of(0, 1, 2),
-        EVENT_TIMEOUT_CANCELLED, java.util.Set.of(0),
-        EVENT_REFUNDED, java.util.Set.of(1, 2, 3, 4),
-        EVENT_INVENTORY_FAILED_CANCELLED, java.util.Set.of(0),
-        EVENT_COUPON_FAILED_CANCELLED, java.util.Set.of(0),
-        EVENT_PAY_FAILED_CANCELLED, java.util.Set.of(0)
+    private static final Map<String, java.util.Set<Integer>> ALLOWED_FROM = Map.ofEntries(
+        Map.entry(EVENT_PAID, java.util.Set.of(0)),
+        Map.entry(EVENT_DELIVERED, java.util.Set.of(1)),
+        Map.entry(EVENT_COMPLETED, java.util.Set.of(2)),
+        Map.entry(EVENT_CANCELLED, java.util.Set.of(0, 1, 2)),
+        Map.entry(EVENT_TIMEOUT_CANCELLED, java.util.Set.of(0)),
+        Map.entry(EVENT_REFUNDED, java.util.Set.of(1, 2, 3, 4)),
+        Map.entry(EVENT_INVENTORY_FAILED_CANCELLED, java.util.Set.of(0)),
+        Map.entry(EVENT_COUPON_FAILED_CANCELLED, java.util.Set.of(0)),
+        Map.entry(EVENT_PAY_FAILED_CANCELLED, java.util.Set.of(0)),
+        // 拆单聚合：全部子单发货（1→2）；全部子单终态（1|2→3，1→3 为混合终态场景：部分取消/退款 + 部分完成）
+        Map.entry(EVENT_ALL_SUBS_SHIPPED, java.util.Set.of(1)),
+        Map.entry(EVENT_ALL_SUBS_COMPLETED, java.util.Set.of(1, 2))
         // EVENT_CREATED 目标为 -1（非状态流转），不做转移校验
     );
 

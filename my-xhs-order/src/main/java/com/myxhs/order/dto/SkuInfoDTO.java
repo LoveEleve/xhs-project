@@ -16,6 +16,9 @@ public class SkuInfoDTO {
     private String name;
     private BigDecimal price;
 
+    /** 卖家ID（0=平台自营；ITER-001 商家维度，下单按商家拆单；缺省按平台自营兜底） */
+    private Long sellerId;
+
     /** SKU 主图（继承自所属 SPU 第一张图，来自 product 服务） */
     private String image;
 

@@ -199,13 +199,15 @@ def main():
     payment_id = payment_id or ((body.get("data") or {}).get("id") if isinstance(body.get("data"), dict) else None)
     step(16, f"支付单状态: {pay_status} paymentId={payment_id}", code, body, code == 200)
 
-    # 9. 履约：发货→确认收货
+    # 9. 履约：发货→确认收货（ITER-001 拆单：按子订单号）
+    _, odetail = call("GET", f"/api/order/{order_id}", token, secret, user_id=uid)
+    sub_no = ((((odetail or {}).get("data") or {}).get("subOrders") or [{}])[0]).get("subOrderNo")
     code, body = call("POST", "/api/order/deliver", token, secret,
-                      json_body={"orderId": order_id, "logisticsCompany": "SF",
+                      json_body={"subOrderNo": sub_no, "logisticsCompany": "SF",
                                  "trackingNo": f"SF{TS}"})
     step(17, "订单发货", code, body, code == 200)
     code, body = call("POST", "/api/order/confirm", token, secret,
-                      params={"orderId": order_id}, user_id=uid)
+                      params={"subOrderNo": sub_no}, user_id=uid)
     step(18, "确认收货", code, body, code == 200)
     code, body = call("GET", f"/api/order/{order_id}", token, secret, user_id=uid)
     status_done = (body.get("data") or {}).get("status")

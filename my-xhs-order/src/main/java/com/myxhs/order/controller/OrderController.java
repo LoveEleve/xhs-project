@@ -99,17 +99,17 @@ public class OrderController {
     }
 
     /**
-     * 确认收货
+     * 确认收货（子单维度：ITER-001 拆单后按子订单号确认）
      */
     @PostMapping("/confirm")
     public R<Void> confirmReceive(@RequestHeader("X-User-Id") Long userId,
-                                  @RequestParam Long orderId) {
-        orderService.confirmReceive(userId, orderId);
+                                  @RequestParam("subOrderNo") String subOrderNo) {
+        orderService.confirmReceive(userId, subOrderNo);
         return R.ok();
     }
 
     /**
-     * 发货（状态流转：1-已付款 → 2-已发货）
+     * 发货（子单维度：待发货 1-已付款 → 2-已发货；ITER-001 拆单后按子订单号发货）
      */
     @PostMapping("/deliver")
     @RateLimit(prefix = "myxhs:order:deliver", maxRequests = 10, windowSeconds = 60, perUser = true)
@@ -120,7 +120,7 @@ public class OrderController {
         if (!accessTokenGuard.isAdminCall(adminCall)) {
             return R.fail(403, "发货为商家/运营操作，请通过管理端发起");
         }
-        orderService.deliverOrder(userId, request.getOrderId(),
+        orderService.deliverOrder(userId, request.getSubOrderNo(),
                 request.getLogisticsCompany(), request.getTrackingNo());
         return R.ok();
     }

@@ -405,6 +405,7 @@ CREATE TABLE IF NOT EXISTS t_spu (
 CREATE TABLE IF NOT EXISTS t_sku (
     id              BIGINT        NOT NULL COMMENT 'SKU ID',
     spu_id          BIGINT        NOT NULL COMMENT 'SPU ID',
+    seller_id       BIGINT        NOT NULL DEFAULT 0 COMMENT '卖家ID（0=平台自营；ITER-001 商家维度）',
     name            VARCHAR(256)  NOT NULL COMMENT 'SKU名称',
     price           DECIMAL(10,2) NOT NULL COMMENT '价格',
     original_price  DECIMAL(10,2) DEFAULT NULL COMMENT '原价',
@@ -582,6 +583,7 @@ CREATE TABLE IF NOT EXISTS t_aftersale (
     order_no          VARCHAR(64)   NOT NULL COMMENT '订单号',
     user_id           BIGINT        NOT NULL COMMENT '用户ID',
     sku_id            BIGINT        NOT NULL COMMENT 'SKU ID',
+    item_id           BIGINT        NOT NULL COMMENT '订单行ID（售后锚点，t_order_item.id）',
     sku_name          VARCHAR(256)  DEFAULT NULL COMMENT 'SKU名称快照',
     type              TINYINT       NOT NULL COMMENT '类型：1-仅退款 2-退货退款',
     status            TINYINT       NOT NULL DEFAULT 0 COMMENT '状态：0-待审核 1-已同意 2-已拒绝 3-退款中 4-已完成 5-已取消 6-退款失败',
@@ -601,7 +603,7 @@ CREATE TABLE IF NOT EXISTS t_aftersale (
     updated_at        DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (id),
     UNIQUE INDEX uk_aftersale_no (aftersale_no),
-    UNIQUE INDEX uk_order_sku_type (order_id, sku_id, type),
+    UNIQUE INDEX uk_item_type (item_id, type),
     INDEX idx_user_applied (user_id, applied_at),
     INDEX idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='售后单（仅退款/退货退款）';
@@ -768,22 +770,54 @@ CREATE TABLE IF NOT EXISTS t_order_3 LIKE t_order_0;
 CREATE TABLE IF NOT EXISTS t_order_item_0 (
     id              BIGINT        NOT NULL COMMENT 'ID',
     order_id        BIGINT        NOT NULL COMMENT '订单ID',
+    sub_order_id    BIGINT        NOT NULL DEFAULT 0 COMMENT '子订单ID（ITER-001 拆单）',
     user_id         BIGINT        NOT NULL COMMENT '用户ID（分片键）',
     sku_id          BIGINT        NOT NULL COMMENT 'SKU ID',
+    seller_id       BIGINT        NOT NULL DEFAULT 0 COMMENT '卖家ID（0=平台自营）',
     spu_id          BIGINT        NOT NULL COMMENT 'SPU ID',
     sku_name        VARCHAR(256)  NOT NULL COMMENT 'SKU名称快照',
     sku_image       VARCHAR(512)  DEFAULT NULL COMMENT 'SKU图片快照',
     price           DECIMAL(10,2) NOT NULL COMMENT '单价快照',
     quantity        INT           NOT NULL COMMENT '数量',
     total_amount    DECIMAL(10,2) NOT NULL COMMENT '小计金额',
+    discount_share  DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT '分摊优惠（下单时最大余数法落库；行实付=小计-分摊）',
     created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (id),
     INDEX idx_order_id (order_id),
+    INDEX idx_sub_order_id (sub_order_id),
     INDEX idx_user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单明细表_0';
 CREATE TABLE IF NOT EXISTS t_order_item_1 LIKE t_order_item_0;
 CREATE TABLE IF NOT EXISTS t_order_item_2 LIKE t_order_item_0;
 CREATE TABLE IF NOT EXISTS t_order_item_3 LIKE t_order_item_0;
+
+-- 子订单（拆单产物：父单按商家拆分；分片键 user_id 与父单一致）
+CREATE TABLE IF NOT EXISTS t_sub_order_0 (
+    id              BIGINT        NOT NULL COMMENT '子订单ID',
+    order_id        BIGINT        NOT NULL COMMENT '父订单ID',
+    order_no        VARCHAR(64)   NOT NULL COMMENT '父订单号',
+    sub_order_no    VARCHAR(64)   NOT NULL COMMENT '子订单号',
+    user_id         BIGINT        NOT NULL COMMENT '用户ID（分片键）',
+    seller_id       BIGINT        NOT NULL DEFAULT 0 COMMENT '卖家ID（0=平台自营）',
+    status          TINYINT       NOT NULL DEFAULT 0 COMMENT '状态：0待付款/1待发货/2已发货/3已完成/4已取消/5已退款',
+    total_amount    DECIMAL(10,2) NOT NULL COMMENT '商品金额（Σ行小计）',
+    discount_amount DECIMAL(10,2) NOT NULL DEFAULT 0 COMMENT '优惠金额（Σ行分摊）',
+    pay_amount      DECIMAL(10,2) NOT NULL COMMENT '实付金额（Σ行实付）',
+    delivered_at    DATETIME      DEFAULT NULL COMMENT '发货时间',
+    completed_at    DATETIME      DEFAULT NULL COMMENT '完成时间',
+    cancelled_at    DATETIME      DEFAULT NULL COMMENT '取消时间',
+    refunded_at     DATETIME      DEFAULT NULL COMMENT '退款时间',
+    deleted         TINYINT       NOT NULL DEFAULT 0 COMMENT '逻辑删除',
+    created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (id),
+    UNIQUE INDEX uk_sub_order_no (sub_order_no),
+    INDEX idx_order_id (order_id),
+    INDEX idx_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='子订单表_0';
+CREATE TABLE IF NOT EXISTS t_sub_order_1 LIKE t_sub_order_0;
+CREATE TABLE IF NOT EXISTS t_sub_order_2 LIKE t_sub_order_0;
+CREATE TABLE IF NOT EXISTS t_sub_order_3 LIKE t_sub_order_0;
 
 CREATE TABLE IF NOT EXISTS t_local_message_0 (
     id              BIGINT        NOT NULL COMMENT '消息ID',
@@ -855,6 +889,10 @@ CREATE TABLE IF NOT EXISTS t_order_item_0 LIKE my_xhs_order_0.t_order_item_0;
 CREATE TABLE IF NOT EXISTS t_order_item_1 LIKE my_xhs_order_0.t_order_item_0;
 CREATE TABLE IF NOT EXISTS t_order_item_2 LIKE my_xhs_order_0.t_order_item_0;
 CREATE TABLE IF NOT EXISTS t_order_item_3 LIKE my_xhs_order_0.t_order_item_0;
+CREATE TABLE IF NOT EXISTS t_sub_order_0 LIKE my_xhs_order_0.t_sub_order_0;
+CREATE TABLE IF NOT EXISTS t_sub_order_1 LIKE my_xhs_order_0.t_sub_order_0;
+CREATE TABLE IF NOT EXISTS t_sub_order_2 LIKE my_xhs_order_0.t_sub_order_0;
+CREATE TABLE IF NOT EXISTS t_sub_order_3 LIKE my_xhs_order_0.t_sub_order_0;
 CREATE TABLE IF NOT EXISTS t_local_message_0 LIKE my_xhs_order_0.t_local_message_0;
 CREATE TABLE IF NOT EXISTS t_local_message_1 LIKE my_xhs_order_0.t_local_message_0;
 CREATE TABLE IF NOT EXISTS t_local_message_2 LIKE my_xhs_order_0.t_local_message_0;
@@ -880,6 +918,10 @@ CREATE TABLE IF NOT EXISTS t_order_item_0 LIKE my_xhs_order_0.t_order_item_0;
 CREATE TABLE IF NOT EXISTS t_order_item_1 LIKE my_xhs_order_0.t_order_item_0;
 CREATE TABLE IF NOT EXISTS t_order_item_2 LIKE my_xhs_order_0.t_order_item_0;
 CREATE TABLE IF NOT EXISTS t_order_item_3 LIKE my_xhs_order_0.t_order_item_0;
+CREATE TABLE IF NOT EXISTS t_sub_order_0 LIKE my_xhs_order_0.t_sub_order_0;
+CREATE TABLE IF NOT EXISTS t_sub_order_1 LIKE my_xhs_order_0.t_sub_order_0;
+CREATE TABLE IF NOT EXISTS t_sub_order_2 LIKE my_xhs_order_0.t_sub_order_0;
+CREATE TABLE IF NOT EXISTS t_sub_order_3 LIKE my_xhs_order_0.t_sub_order_0;
 CREATE TABLE IF NOT EXISTS t_local_message_0 LIKE my_xhs_order_0.t_local_message_0;
 CREATE TABLE IF NOT EXISTS t_local_message_1 LIKE my_xhs_order_0.t_local_message_0;
 CREATE TABLE IF NOT EXISTS t_local_message_2 LIKE my_xhs_order_0.t_local_message_0;
@@ -905,6 +947,10 @@ CREATE TABLE IF NOT EXISTS t_order_item_0 LIKE my_xhs_order_0.t_order_item_0;
 CREATE TABLE IF NOT EXISTS t_order_item_1 LIKE my_xhs_order_0.t_order_item_0;
 CREATE TABLE IF NOT EXISTS t_order_item_2 LIKE my_xhs_order_0.t_order_item_0;
 CREATE TABLE IF NOT EXISTS t_order_item_3 LIKE my_xhs_order_0.t_order_item_0;
+CREATE TABLE IF NOT EXISTS t_sub_order_0 LIKE my_xhs_order_0.t_sub_order_0;
+CREATE TABLE IF NOT EXISTS t_sub_order_1 LIKE my_xhs_order_0.t_sub_order_0;
+CREATE TABLE IF NOT EXISTS t_sub_order_2 LIKE my_xhs_order_0.t_sub_order_0;
+CREATE TABLE IF NOT EXISTS t_sub_order_3 LIKE my_xhs_order_0.t_sub_order_0;
 CREATE TABLE IF NOT EXISTS t_local_message_0 LIKE my_xhs_order_0.t_local_message_0;
 CREATE TABLE IF NOT EXISTS t_local_message_1 LIKE my_xhs_order_0.t_local_message_0;
 CREATE TABLE IF NOT EXISTS t_local_message_2 LIKE my_xhs_order_0.t_local_message_0;

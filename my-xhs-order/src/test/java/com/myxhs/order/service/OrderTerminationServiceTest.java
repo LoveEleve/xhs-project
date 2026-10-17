@@ -38,6 +38,8 @@ class OrderTerminationServiceTest {
     private LocalMessageMapper localMessageMapper;
     @Mock
     private OrderEventService orderEventService;
+    @Mock
+    private com.myxhs.order.mapper.SubOrderMapper subOrderMapper;
 
     private OrderTerminationService terminationService;
 
@@ -48,7 +50,7 @@ class OrderTerminationServiceTest {
 
     @BeforeEach
     void setUp() {
-        terminationService = new OrderTerminationService(orderMapper, localMessageMapper, orderEventService);
+        terminationService = new OrderTerminationService(orderMapper, localMessageMapper, orderEventService, subOrderMapper);
     }
 
     private Order buildOrder(int status) {
@@ -72,6 +74,8 @@ class OrderTerminationServiceTest {
         assertThat(outcome).isEqualTo(OrderTerminationService.Outcome.TERMINATED);
         verify(orderEventService).appendEvent(eq(order), eq(OrderEventService.EVENT_CANCELLED), anyMap());
         verify(orderMapper).setCancelledAt(ORDER_ID, USER_ID);
+        // ITER-001 拆单：全部子单同事务取消（0→4）
+        verify(subOrderMapper).cancelAll(ORDER_ID, USER_ID);
         ArgumentCaptor<LocalMessage> captor = ArgumentCaptor.forClass(LocalMessage.class);
         verify(localMessageMapper).insert(captor.capture());
         LocalMessage message = captor.getValue();

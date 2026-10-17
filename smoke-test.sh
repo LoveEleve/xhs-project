@@ -122,7 +122,7 @@ assert "下单"       $(do_post $API:19011/api/order/create       -d '{"skuItems
 assert "订单列表"   $(do_get  "$API:19011/api/order/list?pageSize=2")
 assert "订单详情"   $(do_get  $API:19011/api/order/1)
 assert "取消订单"   $(do_post $API:19011/api/order/cancel       -d '{"orderId":1}')
-assert "确认收货"   $(do_post $API:19011/api/order/confirm      -d '{"orderId":1}')
+assert "确认收货"   $(do_post "$API:19011/api/order/confirm?subOrderNo=SMOKE-1" -d '{}')
 
 # ===== 9. my-xhs-payment :19012 =====
 echo ""

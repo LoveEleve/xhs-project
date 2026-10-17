@@ -253,8 +253,10 @@ def main():
     _, oid, _, pay_amt = create_order(tok, sec, uid)
     pay(tok, sec, uid, oid, "S4")
     time.sleep(1)
+    _, odetail = call("GET", f"/api/order/{oid}", tok, sec, uid)
+    sub_no = ((((odetail or {}).get("data") or {}).get("subOrders") or [{}])[0]).get("subOrderNo")
     call("POST", "/api/order/deliver", tok, sec,
-         json_body={"orderId": oid, "logisticsCompany": "SF", "trackingNo": f"S4{TS}"})
+         json_body={"subOrderNo": sub_no, "logisticsCompany": "SF", "trackingNo": f"S4{TS}"})
     time.sleep(1)
     pinfo = payment_info(tok, sec, uid, oid)
     pid, pamount = pinfo.get("id"), pinfo.get("amount") or pay_amt
@@ -263,7 +265,7 @@ def main():
     rno = wait_refund_no(oid)
 
     def do_confirm():
-        return ("confirm",) + call("POST", "/api/order/confirm", tok, sec, uid, params={"orderId": oid})
+        return ("confirm",) + call("POST", "/api/order/confirm", tok, sec, uid, params={"subOrderNo": sub_no})
     def do_refund_cb():
         return ("refund",) + call("POST", "/api/payment/refund-callback/99", tok, sec,
                                   raw_body=json.dumps({"refund_no": rno, "refund_status": "REFUND_SUCCESS", "status": "SUCCESS"}))

@@ -66,6 +66,8 @@ class SpuServiceTest {
     @Mock
     private RedissonClient redissonClient;
     @Mock
+    private org.apache.rocketmq.spring.core.RocketMQTemplate rocketMQTemplate;
+    @Mock
     private IdGeneratorUtil idGeneratorUtil;
     @Mock
     private ProductBehaviorMapper productBehaviorMapper;
@@ -90,7 +92,8 @@ class SpuServiceTest {
     @BeforeEach
     void setUp() {
         spuService = new SpuService(
-                spuMapper, skuMapper, categoryMapper, redisOperator, redissonClient, idGeneratorUtil, productBehaviorMapper);
+                spuMapper, skuMapper, categoryMapper, redisOperator, redissonClient,
+                rocketMQTemplate, idGeneratorUtil, productBehaviorMapper);
 
         // 通过反射注入布隆过滤器（避免调用 @PostConstruct 初始化逻辑）
         ReflectionTestUtils.setField(spuService, "spuBloomFilter", spuBloomFilter);

@@ -52,6 +52,9 @@ public class Aftersale implements Serializable {
 
     private Long skuId;
 
+    /** 订单行ID（售后锚点，t_order_item.id；ITER-001 行级售后） */
+    private Long itemId;
+
     private String skuName;
 
     /** 1-仅退款 2-退货退款 */

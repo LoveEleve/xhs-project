@@ -14,6 +14,9 @@ import java.math.BigDecimal;
 @Data
 public class SkuCreateRequest {
 
+    /** 卖家ID（0=平台自营；ITER-001 商家维度，缺省按平台自营） */
+    private Long sellerId;
+
     @NotNull(message = "SPU ID不能为空")
     private Long spuId;
 

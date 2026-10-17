@@ -37,6 +37,7 @@ public class AftersaleRepository {
         a.setOrderNo(rs.getString("order_no"));
         a.setUserId(rs.getLong("user_id"));
         a.setSkuId(rs.getLong("sku_id"));
+        a.setItemId(rs.getLong("item_id"));
         a.setSkuName(rs.getString("sku_name"));
         a.setType(rs.getInt("type"));
         a.setStatus(rs.getInt("status"));
@@ -57,27 +58,28 @@ public class AftersaleRepository {
         return a;
     };
 
-    private static final String COLUMNS = "id, aftersale_no, order_id, order_no, user_id, sku_id, sku_name, type, status,"
+    private static final String COLUMNS = "id, aftersale_no, order_id, order_no, user_id, sku_id, item_id, sku_name, type, status,"
             + " apply_quantity, item_amount, discount_share, refund_amount, reason, reject_reason, return_waybill,"
             + " refund_no, restock_status, retry_count, applied_at, audited_at, finished_at, updated_at";
 
     public int insert(Aftersale a) {
         return jdbcTemplate.update(
-                "INSERT INTO t_aftersale (aftersale_no, order_id, order_no, user_id, sku_id, sku_name, type, status,"
+                "INSERT INTO t_aftersale (aftersale_no, order_id, order_no, user_id, sku_id, item_id, sku_name, type, status,"
                         + " apply_quantity, item_amount, discount_share, refund_amount, reason, return_waybill)"
-                        + " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                a.getAftersaleNo(), a.getOrderId(), a.getOrderNo(), a.getUserId(), a.getSkuId(), a.getSkuName(),
-                a.getType(), a.getStatus(), a.getApplyQuantity(), a.getItemAmount(), a.getDiscountShare(),
-                a.getRefundAmount(), a.getReason(), a.getReturnWaybill());
+                        + " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                a.getAftersaleNo(), a.getOrderId(), a.getOrderNo(), a.getUserId(), a.getSkuId(), a.getItemId(),
+                a.getSkuName(), a.getType(), a.getStatus(), a.getApplyQuantity(), a.getItemAmount(),
+                a.getDiscountShare(), a.getRefundAmount(), a.getReason(), a.getReturnWaybill());
     }
 
     public Aftersale findByNo(String aftersaleNo) {
         return queryOne("SELECT " + COLUMNS + " FROM t_aftersale WHERE aftersale_no = ? LIMIT 1", aftersaleNo);
     }
 
-    public Aftersale findByOrderSkuType(Long orderId, Long skuId, Integer type) {
-        return queryOne("SELECT " + COLUMNS + " FROM t_aftersale WHERE order_id = ? AND sku_id = ? AND type = ? LIMIT 1",
-                orderId, skuId, type);
+    /** 行级幂等键（ITER-001）：同订单行 + 同类型唯一 */
+    public Aftersale findByItemType(Long itemId, Integer type) {
+        return queryOne("SELECT " + COLUMNS + " FROM t_aftersale WHERE item_id = ? AND type = ? LIMIT 1",
+                itemId, type);
     }
 
     public List<Aftersale> listByUser(Long userId, int limit) {

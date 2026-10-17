@@ -74,6 +74,12 @@ class OrderServiceTest {
     @Mock
     private OrderTransactionService transactionService;
     @Mock
+    private com.myxhs.order.mapper.SubOrderMapper subOrderMapper;
+    @Mock
+    private com.myxhs.order.service.SubOrderService subOrderService;
+    @Mock
+    private com.myxhs.order.repository.AftersaleRepository aftersaleRepository;
+    @Mock
     private OrderEventService orderEventService;
     @Mock
     private RocketMQTemplate rocketMQTemplate;
@@ -110,6 +116,7 @@ class OrderServiceTest {
         orderService = new OrderService(
                 orderMapper, orderItemMapper, snapshotMapper, localMessageMapper,
                 orderNoMappingRepository, transactionService,
+                subOrderMapper, subOrderService, aftersaleRepository,
                 orderTerminationRocketMQTemplate,
                 orderEventService,
                 rocketMQTemplate, stringRedisTemplate, objectMapper,
@@ -414,34 +421,111 @@ class OrderServiceTest {
         verify(orderTerminationRocketMQTemplate, never()).sendMessageInTransaction(anyString(), any(), any());
     }
 
-    // ==================== 确认收货 ====================
+    // ==================== 确认收货（ITER-001：子单维度） ====================
 
     @Test
-    @DisplayName("确认收货 - 正常确认")
+    @DisplayName("确认收货 - 正常确认（子单 2→3 + 父单聚合）")
     void confirmReceive_success() {
-        Order order = buildOrder();
-        order.setStatus(2); // 已发货
-        when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(order);
-        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
-                .thenReturn(Collections.emptyList());
-        doNothing().when(orderEventService).appendEvent(eq(order), eq(OrderEventService.EVENT_COMPLETED), anyMap());
+        com.myxhs.order.entity.SubOrder sub = new com.myxhs.order.entity.SubOrder();
+        sub.setId(9001L);
+        sub.setOrderId(ORDER_ID);
+        sub.setSubOrderNo("ORD-X-1");
+        sub.setUserId(USER_ID);
+        sub.setStatus(2); // 已发货
+        when(subOrderMapper.selectBySubOrderNo("ORD-X-1", USER_ID)).thenReturn(sub);
+        when(subOrderMapper.markCompleted(9001L, USER_ID)).thenReturn(1);
+        when(subOrderService.recomputeParentStatus(USER_ID, ORDER_ID)).thenReturn(true);
         when(snapshotMapper.insert((OrderSnapshot) any())).thenReturn(1);
         when(stringRedisTemplate.delete(startsWith("myxhs:order:info:"))).thenReturn(true);
 
-        assertThatCode(() -> orderService.confirmReceive(USER_ID, ORDER_ID))
+        assertThatCode(() -> orderService.confirmReceive(USER_ID, "ORD-X-1"))
                 .doesNotThrowAnyException();
     }
 
     @Test
-    @DisplayName("确认收货 - 状态不允许（非已发货）")
+    @DisplayName("确认收货 - 状态不允许（非已发货子单）")
     void confirmReceive_wrongStatus() {
-        Order order = buildOrder();
-        order.setStatus(0); // 待付款
-        when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(order);
+        com.myxhs.order.entity.SubOrder sub = new com.myxhs.order.entity.SubOrder();
+        sub.setId(9002L);
+        sub.setOrderId(ORDER_ID);
+        sub.setSubOrderNo("ORD-X-2");
+        sub.setUserId(USER_ID);
+        sub.setStatus(1); // 待发货
+        when(subOrderMapper.selectBySubOrderNo("ORD-X-2", USER_ID)).thenReturn(sub);
 
-        assertThatThrownBy(() -> orderService.confirmReceive(USER_ID, ORDER_ID))
+        assertThatThrownBy(() -> orderService.confirmReceive(USER_ID, "ORD-X-2"))
                 .isInstanceOf(BizException.class)
-                .hasMessageContaining("只能确认已发货的订单");
+                .hasMessageContaining("只能确认已发货的子订单");
+    }
+
+    // ==================== 发货（ITER-001：子单维度） ====================
+
+    @Test
+    @DisplayName("发货 - 正常发货（子单 1→2 + 父单聚合 + 子单通知）")
+    void deliverOrder_success() {
+        com.myxhs.order.entity.SubOrder sub = new com.myxhs.order.entity.SubOrder();
+        sub.setId(9001L);
+        sub.setOrderId(ORDER_ID);
+        sub.setSubOrderNo("ORD-X-1");
+        sub.setUserId(USER_ID);
+        sub.setStatus(1); // 待发货
+        when(subOrderMapper.selectBySubOrderNo("ORD-X-1", USER_ID)).thenReturn(sub);
+        when(orderItemMapper.selectBySubOrderId(9001L, USER_ID)).thenReturn(Collections.emptyList());
+        when(subOrderMapper.markDelivered(9001L, USER_ID)).thenReturn(1);
+        when(subOrderService.recomputeParentStatus(USER_ID, ORDER_ID)).thenReturn(true);
+        when(snapshotMapper.insert((OrderSnapshot) any())).thenReturn(1);
+        when(stringRedisTemplate.delete(startsWith("myxhs:order:info:"))).thenReturn(true);
+
+        assertThatCode(() -> orderService.deliverOrder(USER_ID, "ORD-X-1", "顺丰", "SF123"))
+                .doesNotThrowAnyException();
+        verify(orderNotificationPublisher).publishStatusChanged(
+                eq(USER_ID), eq(ORDER_ID), any(), eq("子订单已发货，请注意查收"), eq("顺丰 SF123"));
+    }
+
+    @Test
+    @DisplayName("发货 - 拦截（决策 2）：子单商品存在进行中的仅退款售后 → 拒绝")
+    void deliverOrder_blockedByActiveRefundAftersale() {
+        com.myxhs.order.entity.SubOrder sub = new com.myxhs.order.entity.SubOrder();
+        sub.setId(9001L);
+        sub.setOrderId(ORDER_ID);
+        sub.setSubOrderNo("ORD-X-1");
+        sub.setUserId(USER_ID);
+        sub.setStatus(1);
+        when(subOrderMapper.selectBySubOrderNo("ORD-X-1", USER_ID)).thenReturn(sub);
+
+        OrderItem item = new OrderItem();
+        item.setId(7001L);
+        item.setSubOrderId(9001L);
+        item.setUserId(USER_ID);
+        when(orderItemMapper.selectBySubOrderId(9001L, USER_ID)).thenReturn(java.util.List.of(item));
+
+        com.myxhs.order.entity.Aftersale aftersale = new com.myxhs.order.entity.Aftersale();
+        aftersale.setOrderId(ORDER_ID);
+        aftersale.setItemId(7001L);
+        aftersale.setType(com.myxhs.order.entity.Aftersale.TYPE_REFUND_ONLY);
+        aftersale.setStatus(com.myxhs.order.entity.Aftersale.STATUS_APPLIED);
+        when(aftersaleRepository.listByOrder(ORDER_ID)).thenReturn(java.util.List.of(aftersale));
+
+        assertThatThrownBy(() -> orderService.deliverOrder(USER_ID, "ORD-X-1", null, null))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("退款申请");
+        verify(subOrderMapper, never()).markDelivered(anyLong(), anyLong());
+    }
+
+    @Test
+    @DisplayName("发货 - 状态不允许（非待发货子单）")
+    void deliverOrder_wrongStatus() {
+        com.myxhs.order.entity.SubOrder sub = new com.myxhs.order.entity.SubOrder();
+        sub.setId(9002L);
+        sub.setOrderId(ORDER_ID);
+        sub.setSubOrderNo("ORD-X-2");
+        sub.setUserId(USER_ID);
+        sub.setStatus(0); // 待付款
+        when(subOrderMapper.selectBySubOrderNo("ORD-X-2", USER_ID)).thenReturn(sub);
+
+        assertThatThrownBy(() -> orderService.deliverOrder(USER_ID, "ORD-X-2", null, null))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("只能对已付款（待发货）的子订单执行发货");
     }
 
     // ==================== 支付成功回调 ====================
@@ -586,6 +670,29 @@ class OrderServiceTest {
 
         assertThat(orderService.onRefundSuccess(ORDER_ID)).isFalse();
         verify(orderEventService, never()).appendEvent(any(), anyString(), anyMap());
+    }
+
+    @Test
+    @DisplayName("退款成功 - 已发货(2)状态退款收敛（决策 1：守卫放宽 {1,2,3}，修复 08 §5.2 缺口）")
+    void onRefundSuccess_shipped() {
+        OrderNoMapping mapping = new OrderNoMapping();
+        mapping.setOrderId(ORDER_ID);
+        mapping.setUserId(USER_ID);
+        when(orderNoMappingRepository.selectByOrderId(ORDER_ID)).thenReturn(mapping);
+        Order order = buildOrder();
+        order.setStatus(2); // 已发货
+        when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(order);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(Collections.emptyList());
+        doNothing().when(orderEventService).appendEvent(eq(order), eq(OrderEventService.EVENT_REFUNDED), anyMap());
+        when(inventoryFeignClient.releaseStock(anyMap())).thenReturn(R.ok());
+        when(snapshotMapper.insert((OrderSnapshot) any())).thenReturn(1);
+        when(stringRedisTemplate.delete(startsWith("myxhs:order:info:"))).thenReturn(true);
+
+        assertThat(orderService.onRefundSuccess(ORDER_ID)).isTrue();
+        verify(orderEventService).appendEvent(eq(order), eq(OrderEventService.EVENT_REFUNDED), anyMap());
+        // 拆单（ITER-001）：全退收敛——全部子单置退款
+        verify(subOrderService).refundAll(USER_ID, ORDER_ID);
     }
 
     @Test

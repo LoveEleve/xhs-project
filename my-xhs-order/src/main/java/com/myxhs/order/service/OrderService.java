@@ -23,6 +23,7 @@ import com.myxhs.order.enums.TerminationReason;
 import com.myxhs.order.listener.OrderTerminationListener;
 import com.myxhs.order.listener.OrderTransactionListener;
 import com.myxhs.order.mapper.*;
+import com.myxhs.order.repository.AftersaleRepository;
 import com.myxhs.order.repository.OrderNoMappingRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -67,6 +68,9 @@ public class OrderService {
     private final LocalMessageMapper localMessageMapper;
     private final OrderNoMappingRepository orderNoMappingRepository;
     private final OrderTransactionService transactionService; // 独立事务服务
+    private final SubOrderMapper subOrderMapper; // 子订单（ITER-001 拆单）
+    private final SubOrderService subOrderService; // 子单聚合/批量推进
+    private final AftersaleRepository aftersaleRepository; // 发货拦截校验（决策 2）
     /** 终结事务消息模板（独立生产者组，见 OrderTerminationRocketMQConfig；与下单默认模板隔离事务监听器） */
     @Qualifier(OrderTerminationRocketMQConfig.TERMINATION_TEMPLATE_BEAN_NAME)
     private final RocketMQTemplate orderTerminationRocketMQTemplate;
@@ -456,6 +460,12 @@ public class OrderService {
                         .eq(OrderItem::getUserId, userId)
                         .eq(OrderItem::getOrderId, orderId));
 
+        // 拆单（ITER-001）：子单一次批量查询 + 行按 subOrderId 分组（无 N+1）
+        List<SubOrder> subs = subOrderMapper.selectByOrderId(orderId, userId);
+        Map<Long, List<OrderItem>> itemsBySub = items.stream()
+                .filter(i -> i.getSubOrderId() != null)
+                .collect(Collectors.groupingBy(OrderItem::getSubOrderId));
+
         return OrderVO.builder()
                 .orderId(order.getId())
                 .orderNo(order.getOrderNo())
@@ -468,14 +478,10 @@ public class OrderService {
                 .addressSnapshot(order.getAddressSnapshot())
                 .createdAt(order.getCreatedAt())
                 .paidAt(order.getPaidAt())
-                .items(items.stream().map(item -> OrderVO.OrderItemVO.builder()
-                        .skuId(item.getSkuId())
-                        .skuName(item.getSkuName())
-                        .skuImage(item.getSkuImage())
-                        .price(item.getPrice())
-                        .quantity(item.getQuantity())
-                        .totalAmount(item.getTotalAmount())
-                        .build()).collect(Collectors.toList()))
+                .items(items.stream().map(this::toItemVO).collect(Collectors.toList()))
+                .subOrders(subs.stream()
+                        .map(sub -> toSubOrderVO(sub, itemsBySub.getOrDefault(sub.getId(), List.of())))
+                        .collect(Collectors.toList()))
                 .build();
     }
 
@@ -500,7 +506,23 @@ public class OrderService {
         }
 
         List<Order> orders = orderMapper.selectList(wrapper);
-        return orders.stream().map(this::buildOrderVO).collect(Collectors.toList());
+        if (orders.isEmpty()) {
+            return List.of();
+        }
+        // 拆单（ITER-001）：子单批量查询（user_id 固定 + order_id IN → 单分片一次查询，无 N+1）
+        List<Long> orderIds = orders.stream().map(Order::getId).toList();
+        List<SubOrder> allSubs = subOrderMapper.selectList(new LambdaQueryWrapper<SubOrder>()
+                .eq(SubOrder::getUserId, userId)
+                .in(SubOrder::getOrderId, orderIds));
+        Map<Long, List<SubOrder>> subsByOrder = allSubs.stream()
+                .collect(Collectors.groupingBy(SubOrder::getOrderId));
+        return orders.stream().map(order -> {
+            OrderVO vo = buildOrderVO(order);
+            vo.setSubOrders(subsByOrder.getOrDefault(order.getId(), List.of()).stream()
+                    .map(sub -> toSubOrderVO(sub, List.of()))
+                    .collect(Collectors.toList()));
+            return vo;
+        }).collect(Collectors.toList());
     }
 
     // ==================== 取消订单 ====================
@@ -809,67 +831,101 @@ public class OrderService {
     // ==================== 确认收货 ====================
 
     /**
-     * 确认收货（状态流转：2 → 3）
+     * 确认收货（子单维度：已发货 2 → 已完成 3；父单由聚合收敛）
+     * <p>
+     * 履约下沉（ITER-001）：确认作用在子单（CAS 2→3）；全部子单终态且成功 → 父单聚合为"已完成"。
+     * 不发通知——动作发起人就是用户自己（与既有口径一致）。
+     * </p>
      */
-    public void confirmReceive(Long userId, Long orderId) {
-        Order order = orderMapper.selectOne(
-                new LambdaQueryWrapper<Order>()
-                        .eq(Order::getUserId, userId)
-                        .eq(Order::getId, orderId));
-        if (order == null) {
-            throw new BizException(ResultCode.ORDER_NOT_FOUND);
+    public void confirmReceive(Long userId, String subOrderNo) {
+        SubOrder sub = subOrderMapper.selectBySubOrderNo(subOrderNo, userId);
+        if (sub == null) {
+            throw new BizException(ResultCode.ORDER_NOT_FOUND, "子订单不存在");
         }
-        if (order.getStatus() != 2) {
-            throw new BizException(ResultCode.ORDER_STATUS_ERROR, "只能确认已发货的订单");
+        if (sub.getStatus() == null || sub.getStatus() != SubOrder.STATUS_SHIPPED) {
+            throw new BizException(ResultCode.ORDER_STATUS_ERROR, "只能确认已发货的子订单");
+        }
+        int affected = subOrderMapper.markCompleted(sub.getId(), userId);
+        if (affected == 0) {
+            throw new BizException(ResultCode.ORDER_STATUS_ERROR, "子订单状态已变化，请刷新后重试");
         }
 
-        // Event Sourcing: 追加完成事件并更新状态
-        orderEventService.appendEvent(order, OrderEventService.EVENT_COMPLETED,
-                Map.of("completeTime", LocalDateTime.now().toString()));
-        orderMapper.setCompletedAt(orderId, userId);
-
-        takeSnapshot(orderId, userId, "COMPLETED");
-        stringRedisTemplate.delete("myxhs:order:info:" + orderId);
-        log.info("[订单] 确认收货: userId={}, orderId={}", userId, orderId);
+        // 父单聚合（全部子单终态且成功 → 父单 →3；事件/快照随聚合流转）
+        boolean parentMoved = subOrderService.recomputeParentStatus(userId, sub.getOrderId());
+        if (parentMoved) {
+            orderMapper.setCompletedAt(sub.getOrderId(), userId); // 条件更新（WHERE status=3），幂等
+            takeSnapshot(sub.getOrderId(), userId, "COMPLETED", Map.of("subOrderNo", subOrderNo));
+        }
+        stringRedisTemplate.delete("myxhs:order:info:" + sub.getOrderId());
+        log.info("[订单] 子单确认收货: userId={}, subOrderNo={}, orderId={}, parentMoved={}",
+                userId, subOrderNo, sub.getOrderId(), parentMoved);
     }
 
     // ==================== 发货 ====================
 
     /**
-     * 发货（状态流转：1 → 2）
+     * 发货（子单维度：待发货 1 → 已发货 2；父单由聚合收敛）
      * <p>
-     * 只能对已付款(1)的订单执行发货操作。
-     * 乐观锁：WHERE status = 1
+     * ITER-001 拆单：
+     * - 履约下沉：发货作用在子单（CAS 1→2），全部子单发货后父单聚合为"已发货"；
+     * - 发货拦截（决策 2）：子单商品存在进行中的"仅退款"售后 → 拒绝发货（防钱货两空）；
+     * - 通知/缓存：按子单通知（附物流信息）；父单快照仅在聚合流转时记录。
      * </p>
      */
-    public void deliverOrder(Long userId, Long orderId, String logisticsCompany, String trackingNo) {
-        Order order = orderMapper.selectOne(
-                new LambdaQueryWrapper<Order>()
-                        .eq(Order::getUserId, userId)
-                        .eq(Order::getId, orderId));
-        if (order == null) {
-            throw new BizException(ResultCode.ORDER_NOT_FOUND);
+    public void deliverOrder(Long userId, String subOrderNo, String logisticsCompany, String trackingNo) {
+        SubOrder sub = subOrderMapper.selectBySubOrderNo(subOrderNo, userId);
+        if (sub == null) {
+            throw new BizException(ResultCode.ORDER_NOT_FOUND, "子订单不存在");
         }
-        if (order.getStatus() != 1) {
-            throw new BizException(ResultCode.ORDER_STATUS_ERROR, "只能对已付款的订单执行发货");
+        if (sub.getStatus() == null || sub.getStatus() != SubOrder.STATUS_TO_SHIP) {
+            throw new BizException(ResultCode.ORDER_STATUS_ERROR, "只能对已付款（待发货）的子订单执行发货");
+        }
+        // 决策 2：进行中的仅退款售后 → 拒绝发货（商家先处理售后，防钱货两空）
+        if (hasActiveRefundOnlyAftersale(userId, sub)) {
+            throw new BizException(ResultCode.ORDER_STATUS_ERROR, "该子订单商品存在进行中的退款申请，请先处理售后");
+        }
+        int affected = subOrderMapper.markDelivered(sub.getId(), userId);
+        if (affected == 0) {
+            throw new BizException(ResultCode.ORDER_STATUS_ERROR, "子订单状态已变化，请刷新后重试");
         }
 
-        // Event Sourcing: 追加发货事件并更新状态
-        orderEventService.appendEvent(order, OrderEventService.EVENT_DELIVERED,
-                Map.of("deliveredTime", LocalDateTime.now().toString(),
-                       "logisticsCompany", logisticsCompany != null ? logisticsCompany : "",
-                       "trackingNo", trackingNo != null ? trackingNo : ""));
-        orderMapper.setDeliveredAt(orderId, userId);
+        // 父单聚合（全部子单发货 → 父单 1→2；事件/快照随聚合流转）
+        boolean parentMoved = subOrderService.recomputeParentStatus(userId, sub.getOrderId());
+        if (parentMoved) {
+            orderMapper.setDeliveredAt(sub.getOrderId(), userId); // 条件更新（WHERE status=2），幂等
+            takeSnapshot(sub.getOrderId(), userId, "DELIVERED", Map.of("subOrderNo", subOrderNo));
+        }
 
-        takeSnapshot(orderId, userId, "DELIVERED");
-        stringRedisTemplate.delete("myxhs:order:info:" + orderId);
-        // 订单通知（type=5）：已发货（附物流信息）
+        stringRedisTemplate.delete("myxhs:order:info:" + sub.getOrderId());
+        // 子单发货通知（type=5；附物流信息）
         String shipInfo = ((logisticsCompany == null || logisticsCompany.isEmpty()) ? "" : logisticsCompany + " ")
                 + (trackingNo == null || trackingNo.isEmpty() ? "" : trackingNo);
-        orderNotificationPublisher.publishStatusChanged(order.getUserId(), orderId, order.getOrderNo(),
-                "已发货，请注意查收", shipInfo.trim());
-        log.info("[订单] 发货成功: userId={}, orderId={}, logisticsCompany={}, trackingNo={}",
-                userId, orderId, logisticsCompany, trackingNo);
+        orderNotificationPublisher.publishStatusChanged(userId, sub.getOrderId(), sub.getOrderNo(),
+                "子订单已发货，请注意查收", shipInfo.trim());
+        log.info("[订单] 子单发货成功: userId={}, subOrderNo={}, orderId={}, parentMoved={}",
+                userId, subOrderNo, sub.getOrderId(), parentMoved);
+    }
+
+    /**
+     * 发货拦截校验（决策 2）：子单商品存在**进行中的仅退款售后**（待审核/已同意/退款中）
+     * <p>
+     * 语义：退货退款（type=2）在未发货时不可申请（申请资格已约束），因此发货时只需拦"仅退款"。
+     * 竞态：售后审核与发货并发时谁先赢谁生效，商家审核是最终决策点。
+     * </p>
+     */
+    private boolean hasActiveRefundOnlyAftersale(Long userId, SubOrder sub) {
+        List<OrderItem> items = orderItemMapper.selectBySubOrderId(sub.getId(), userId);
+        if (items.isEmpty()) {
+            return false;
+        }
+        Set<Long> itemIds = items.stream().map(OrderItem::getId).collect(Collectors.toSet());
+        return aftersaleRepository.listByOrder(sub.getOrderId()).stream()
+                .anyMatch(a -> a.getItemId() != null && itemIds.contains(a.getItemId())
+                        && a.getType() != null && a.getType() == Aftersale.TYPE_REFUND_ONLY
+                        && a.getStatus() != null
+                        && (a.getStatus() == Aftersale.STATUS_APPLIED
+                            || a.getStatus() == Aftersale.STATUS_APPROVED
+                            || a.getStatus() == Aftersale.STATUS_REFUNDING));
     }
 
     // ==================== 支付成功回调 ====================
@@ -912,6 +968,11 @@ public class OrderService {
         if (order.getStatus() != 0) {
             log.warn("[订单] 支付回调但订单状态不是待付款: orderId={}", orderId);
             businessMetrics.recordOrderPayResult("race"); // 已支付/已取消/已关闭：正常竞态终态
+            // 拆单（ITER-001）：机会式自愈——父单已支付但子单可能未推进（进程崩溃窗口），
+            // 借重复通知（双通道/渠道重试天然存在）重放推进（幂等；子单已 1 时 0 行）
+            if (order.getStatus() == 1) {
+                subOrderService.advanceAllToPaid(userId, orderId);
+            }
             return false;
         }
 
@@ -922,6 +983,8 @@ public class OrderService {
                     Map.of("paidTime", LocalDateTime.now().toString()));
             statusUpdated = true;
             orderMapper.setPaidAt(orderId, userId);
+            // 拆单（ITER-001）：全子单 0→1（批量推进；与父单支付事件同流程）
+            subOrderService.advanceAllToPaid(userId, orderId);
         } catch (IllegalStateException | IllegalArgumentException e) {
             // 并发: 关单/取消先赢→支付已成功(钱已扣)但订单状态已变
             // 不抛异常: 抛异常→payment侧误判通知失败→P0-6无限重试
@@ -935,6 +998,7 @@ public class OrderService {
             if (statusUpdated) {
                 log.error("[订单] 支付已成功但 paid_at/事件 SQL 失败(对账兜底): orderId={}", orderId, e);
                 businessMetrics.recordOrderPayResult("transient_event_failed");
+                subOrderService.advanceAllToPaid(userId, orderId); // 拆单：全子单 0→1（尽力推进，幂等）
                 confirmInventoryDeduct(orderId, order.getOrderNo(), userId);
                 takeSnapshot(orderId, userId, "PAID");
                 stringRedisTemplate.delete("myxhs:order:info:" + orderId);
@@ -1361,6 +1425,52 @@ public class OrderService {
                 .build();
     }
 
+    /** 行 → VO（ITER-001：含分摊/行实付/子单归属） */
+    private OrderVO.OrderItemVO toItemVO(OrderItem item) {
+        BigDecimal share = item.getDiscountShare() != null ? item.getDiscountShare() : BigDecimal.ZERO;
+        BigDecimal total = item.getTotalAmount() != null ? item.getTotalAmount() : BigDecimal.ZERO;
+        return OrderVO.OrderItemVO.builder()
+                .skuId(item.getSkuId())
+                .skuName(item.getSkuName())
+                .skuImage(item.getSkuImage())
+                .price(item.getPrice())
+                .quantity(item.getQuantity())
+                .totalAmount(item.getTotalAmount())
+                .discountShare(share)
+                .payAmount(total.subtract(share))
+                .subOrderId(item.getSubOrderId())
+                .build();
+    }
+
+    /** 子单 → VO（履约/售后展示锚点） */
+    private OrderVO.SubOrderVO toSubOrderVO(SubOrder sub, List<OrderItem> subItems) {
+        return OrderVO.SubOrderVO.builder()
+                .subOrderId(sub.getId())
+                .subOrderNo(sub.getSubOrderNo())
+                .sellerId(sub.getSellerId())
+                .status(sub.getStatus())
+                .statusDesc(getSubOrderStatusDesc(sub.getStatus()))
+                .totalAmount(sub.getTotalAmount())
+                .discountAmount(sub.getDiscountAmount())
+                .payAmount(sub.getPayAmount())
+                .deliveredAt(sub.getDeliveredAt())
+                .completedAt(sub.getCompletedAt())
+                .items(subItems.stream().map(this::toItemVO).collect(Collectors.toList()))
+                .build();
+    }
+
+    private String getSubOrderStatusDesc(Integer status) {
+        return switch (status) {
+            case 0 -> "待付款";
+            case 1 -> "待发货";
+            case 2 -> "已发货";
+            case 3 -> "已完成";
+            case 4 -> "已取消";
+            case 5 -> "已退款";
+            default -> "未知";
+        };
+    }
+
     private String getStatusDesc(Integer status) {
         return switch (status) {
             case 0 -> "待付款";
@@ -1458,10 +1568,15 @@ public class OrderService {
             log.warn("[订单] 退款回调但订单不存在: orderId={}, userId={}", orderId, userId);
             return false;
         }
-        if (order.getStatus() != 1 && order.getStatus() != 3) {
-            // 仅 1(已支付)/3(已完成) 可退款收敛到 5；已完成订单确认收货后发起退款同样需释放库存/退券。
-            // 5(已退款) 幂等返回 true；0(待付款)/2(已发货)/4(已取消) 不允许退款。
+        if (order.getStatus() != 1 && order.getStatus() != 2 && order.getStatus() != 3) {
+            // 决策 1（ITER-001）：放宽到 {1,2,3}——已发货(2)的全退同样收敛（修复 08 §5.2 缺口）；
+            // "货先退回来"的约束由售后流程承担（申请资格 + 商家审核），支付域通知到达时业务决策已完成。
+            // 5(已退款) 幂等返回 true；0(待付款)/4(已取消) 拒绝。
             log.warn("[订单] 退款回调但订单状态不允许退款: orderId={}, status={}", orderId, order.getStatus());
+            // 拆单（ITER-001）：机会式自愈——父单已退款但子单可能未收敛（崩溃窗口），重放收敛（幂等）
+            if (order.getStatus() == 5) {
+                subOrderService.refundAll(userId, orderId);
+            }
             return order.getStatus() == 5;
         }
 
@@ -1480,17 +1595,24 @@ public class OrderService {
             boolean alreadyRefunded = latest != null && latest.getStatus() == 5;
             log.warn("[订单] 退款回调并发竞态(Feign/MQ 双通道): orderId={}, alreadyRefunded={}, cause={}",
                     orderId, alreadyRefunded, e.getMessage());
+            if (alreadyRefunded) {
+                // 拆单（ITER-001）：机会式自愈——先赢方若在"父单已 5、子单未收敛"窗口崩溃，此处重放（幂等）
+                subOrderService.refundAll(userId, orderId);
+            }
             return alreadyRefunded;
         }
 
-        // 4. 退款前先同步确认库存扣减：确保预扣记录被清理，
+        // 4. 拆单（ITER-001）：全退收敛——全部子单（1/2/3）→5（幂等；与父单退款事件同流程）
+        subOrderService.refundAll(userId, orderId);
+
+        // 5. 退款前先同步确认库存扣减：确保预扣记录被清理，
         //    避免「releaseInventory 回补 + refundRestore 回补」双通道叠加造成库存虚增，
         //    也避免预扣记录残留被 PreDeductTimeoutJob/对账二次回补。
         confirmInventoryDeductSync(orderId, order.getOrderNo(), userId);
         // T-071 退款回补库存（confirm 清理预扣记录后，仅此一条回补通道，refund-restore 幂等）
         restoreStockOnRefund(orderId, userId);
 
-        // 5. 退还优惠券
+        // 6. 退还优惠券
         returnCouponIfUsed(order);
 
         takeSnapshot(orderId, userId, "REFUNDED");

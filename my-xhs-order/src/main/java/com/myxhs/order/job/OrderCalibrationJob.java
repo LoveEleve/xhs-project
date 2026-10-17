@@ -3,6 +3,7 @@ package com.myxhs.order.job;
 import com.myxhs.order.entity.Order;
 import com.myxhs.order.mapper.OrderMapper;
 import com.myxhs.order.service.OrderEventService;
+import com.myxhs.order.service.SubOrderService;
 import com.myxhs.common.metrics.BusinessMetrics;
 import com.xxl.job.core.context.XxlJobHelper;
 import com.xxl.job.core.handler.annotation.XxlJob;
@@ -36,6 +37,7 @@ public class OrderCalibrationJob {
     private final OrderMapper orderMapper;
     private final OrderEventService orderEventService;
     private final BusinessMetrics businessMetrics;
+    private final SubOrderService subOrderService;
 
     @XxlJob("orderEventCalibrationJob")
     public void calibrate() {
@@ -50,6 +52,11 @@ public class OrderCalibrationJob {
             for (Order order : orders) {
                 checked++;
                 try {
+                    // 拆单（ITER-001）：子单聚合兜底——父单可能因崩溃窗口落后于子单
+                    // （如全子单已发货但父单未流转，且后续无子单流转触发重算）→ 日终重算收敛
+                    // （幂等前向操作：CAS + 事件白名单，只按聚合规则推进）
+                    subOrderService.recomputeParentStatus(order.getUserId(), order.getId());
+
                     Map<String, Object> report =
                             orderEventService.reconcileStatus(order.getId(), order.getUserId(), false);
                     Object action = report.get("action");

@@ -39,6 +39,8 @@ class OrderTransactionServiceTest {
     @Mock
     private OrderItemMapper orderItemMapper;
     @Mock
+    private com.myxhs.order.mapper.SubOrderMapper subOrderMapper;
+    @Mock
     private LocalMessageMapper localMessageMapper;
     @Mock
     private OrderEventService orderEventService;
@@ -52,7 +54,7 @@ class OrderTransactionServiceTest {
     void setUp() {
         objectMapper = new ObjectMapper();
         transactionService = new OrderTransactionService(
-                orderMapper, orderItemMapper, localMessageMapper,
+                orderMapper, orderItemMapper, subOrderMapper, localMessageMapper,
                 orderEventService, objectMapper
         );
     }
@@ -182,6 +184,189 @@ class OrderTransactionServiceTest {
         assertThat(order.getPayAmount()).isEqualByComparingTo("89.00");
     }
 
+    @Test
+    @DisplayName("executeLocalTransaction - 分摊落库：优惠按金额比例摊到行（Σ=优惠额）")
+    void executeLocalTransaction_allocationPersisted() {
+        // 2 SKU：200 / 100（总 300），优惠 30 → 按金额比例分摊 20 / 10（最大余数法）
+        OrderCreateRequest request = new OrderCreateRequest();
+        request.setSkuItems(java.util.Arrays.asList(
+                createSkuItem(10001L, 2),
+                createSkuItem(10002L, 1)
+        ));
+        request.setCouponId(5001L);
+        request.setAddressId(1L);
+        request.setBizIdentifier("biz-tx-005");
+
+        java.util.Map<Long, com.myxhs.order.dto.SkuInfoDTO> skuMap = java.util.Map.of(
+                10001L, buildSku(10001L, "100.00"),
+                10002L, buildSku(10002L, "100.00"));
+
+        String orderNo = "ORD20250101000000005";
+        String payload = "{\"orderNo\":\"ORD20250101000000005\"}";
+
+        doAnswer(invocation -> {
+            Order order = invocation.getArgument(0);
+            order.setId(1005L);
+            return 1;
+        }).when(orderMapper).insert((Order) any());
+        doNothing().when(orderEventService).appendEvent(any(Order.class), anyString(), any());
+        when(orderItemMapper.insert((OrderItem) any())).thenReturn(1);
+        when(localMessageMapper.insert((LocalMessage) any())).thenReturn(1);
+
+        transactionService.executeLocalTransaction(
+                USER_ID, request, orderNo, new BigDecimal("300.00"),
+                new BigDecimal("30.00"), new BigDecimal("270.00"), payload, "{}", skuMap);
+
+        ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper, times(2)).insert(captor.capture());
+        java.util.List<OrderItem> items = captor.getAllValues();
+
+        // 按金额比例：200 摊 20、100 摊 10；Σ分摊 = 优惠额（守恒）
+        assertThat(items).extracting(OrderItem::getDiscountShare)
+                .containsExactlyInAnyOrder(new BigDecimal("20.00"), new BigDecimal("10.00"));
+        BigDecimal sum = items.stream().map(OrderItem::getDiscountShare)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(sum).isEqualByComparingTo("30.00");
+    }
+
+    @Test
+    @DisplayName("executeLocalTransaction - 分摊取整：最大余数法（平局按行 ID 升序补分）")
+    void executeLocalTransaction_allocationRounding() {
+        // 3 SKU 各 100（总 300），优惠 10 → 各 3.33 分，余 1 分 → 平局按最小行 ID 补为 3.34
+        OrderCreateRequest request = new OrderCreateRequest();
+        request.setSkuItems(java.util.Arrays.asList(
+                createSkuItem(10001L, 1),
+                createSkuItem(10002L, 1),
+                createSkuItem(10003L, 1)
+        ));
+        request.setCouponId(null);
+        request.setAddressId(1L);
+        request.setBizIdentifier("biz-tx-006");
+
+        java.util.Map<Long, com.myxhs.order.dto.SkuInfoDTO> skuMap = java.util.Map.of(
+                10001L, buildSku(10001L, "100.00"),
+                10002L, buildSku(10002L, "100.00"),
+                10003L, buildSku(10003L, "100.00"));
+
+        String orderNo = "ORD20250101000000006";
+        String payload = "{\"orderNo\":\"ORD20250101000000006\"}";
+
+        doAnswer(invocation -> {
+            Order order = invocation.getArgument(0);
+            order.setId(1006L);
+            return 1;
+        }).when(orderMapper).insert((Order) any());
+        doNothing().when(orderEventService).appendEvent(any(Order.class), anyString(), any());
+        when(orderItemMapper.insert((OrderItem) any())).thenReturn(1);
+        when(localMessageMapper.insert((LocalMessage) any())).thenReturn(1);
+
+        transactionService.executeLocalTransaction(
+                USER_ID, request, orderNo, new BigDecimal("300.00"),
+                new BigDecimal("10.00"), new BigDecimal("290.00"), payload, "{}", skuMap);
+
+        ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper, times(3)).insert(captor.capture());
+        java.util.List<OrderItem> items = new java.util.ArrayList<>(captor.getAllValues());
+
+        BigDecimal sum = items.stream().map(OrderItem::getDiscountShare)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(sum).isEqualByComparingTo("10.00"); // 守恒：取整差额不丢
+        items.sort(java.util.Comparator.comparing(OrderItem::getId));
+        assertThat(items.get(0).getDiscountShare()).isEqualByComparingTo("3.34"); // 余分给最小 ID
+        assertThat(items.get(1).getDiscountShare()).isEqualByComparingTo("3.33");
+        assertThat(items.get(2).getDiscountShare()).isEqualByComparingTo("3.33");
+    }
+
+    @Test
+    @DisplayName("executeLocalTransaction - 无优惠：全行分摊为 0")
+    void executeLocalTransaction_noDiscount() {
+        OrderCreateRequest request = buildCreateRequest("biz-tx-007");
+        String orderNo = "ORD20250101000000007";
+        String payload = "{\"orderNo\":\"ORD20250101000000007\"}";
+
+        doAnswer(invocation -> {
+            Order order = invocation.getArgument(0);
+            order.setId(1007L);
+            return 1;
+        }).when(orderMapper).insert((Order) any());
+        doNothing().when(orderEventService).appendEvent(any(Order.class), anyString(), any());
+        when(orderItemMapper.insert((OrderItem) any())).thenReturn(1);
+        when(localMessageMapper.insert((LocalMessage) any())).thenReturn(1);
+
+        transactionService.executeLocalTransaction(
+                USER_ID, request, orderNo, new BigDecimal("99.00"),
+                BigDecimal.ZERO, new BigDecimal("99.00"), payload, "{}",
+                java.util.Map.of(10001L, buildSku(10001L, "99.00")));
+
+        ArgumentCaptor<OrderItem> captor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper).insert(captor.capture());
+        assertThat(captor.getValue().getDiscountShare()).isEqualByComparingTo("0.00");
+    }
+
+    @Test
+    @DisplayName("executeLocalTransaction - 拆单：按卖家分组生成子单（金额守恒、行挂子单）")
+    void executeLocalTransaction_splitBySeller() {
+        // 2 卖家：10001/10002（卖家 2001，300 元）；10003（卖家 2002，100 元）；总优惠 40
+        OrderCreateRequest request = new OrderCreateRequest();
+        request.setSkuItems(java.util.Arrays.asList(
+                createSkuItem(10001L, 2),
+                createSkuItem(10002L, 1),
+                createSkuItem(10003L, 1)
+        ));
+        request.setCouponId(5001L);
+        request.setAddressId(1L);
+        request.setBizIdentifier("biz-tx-008");
+
+        java.util.Map<Long, com.myxhs.order.dto.SkuInfoDTO> skuMap = java.util.Map.of(
+                10001L, buildSku(10001L, "100.00", 2001L),
+                10002L, buildSku(10002L, "100.00", 2001L),
+                10003L, buildSku(10003L, "100.00", 2002L));
+
+        String orderNo = "ORD20250101000000008";
+        String payload = "{\"orderNo\":\"ORD20250101000000008\"}";
+
+        doAnswer(invocation -> {
+            Order order = invocation.getArgument(0);
+            order.setId(1008L);
+            return 1;
+        }).when(orderMapper).insert((Order) any());
+        doNothing().when(orderEventService).appendEvent(any(Order.class), anyString(), any());
+        when(orderItemMapper.insert((OrderItem) any())).thenReturn(1);
+        when(subOrderMapper.insert((com.myxhs.order.entity.SubOrder) any())).thenReturn(1);
+        when(localMessageMapper.insert((LocalMessage) any())).thenReturn(1);
+
+        transactionService.executeLocalTransaction(
+                USER_ID, request, orderNo, new BigDecimal("400.00"),
+                new BigDecimal("40.00"), new BigDecimal("360.00"), payload, "{}", skuMap);
+
+        // 子单：2 个（按卖家分组），金额守恒 Σ子单实付 = 父单实付
+        ArgumentCaptor<com.myxhs.order.entity.SubOrder> subCaptor =
+                ArgumentCaptor.forClass(com.myxhs.order.entity.SubOrder.class);
+        verify(subOrderMapper, times(2)).insert(subCaptor.capture());
+        java.util.List<com.myxhs.order.entity.SubOrder> subs = subCaptor.getAllValues();
+        assertThat(subs).extracting(com.myxhs.order.entity.SubOrder::getSellerId)
+                .containsExactlyInAnyOrder(2001L, 2002L);
+        BigDecimal subPaySum = subs.stream().map(com.myxhs.order.entity.SubOrder::getPayAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(subPaySum).isEqualByComparingTo("360.00");
+        assertThat(subs).filteredOn(s -> s.getSellerId() == 2001L)
+                .singleElement()
+                .satisfies(s -> {
+                    assertThat(s.getTotalAmount()).isEqualByComparingTo("300.00");
+                    assertThat(s.getDiscountAmount()).isEqualByComparingTo("30.00");
+                    assertThat(s.getPayAmount()).isEqualByComparingTo("270.00");
+                });
+
+        // 行挂子单：3 行都绑定到子单，且卖家 2001 的行指向 2001 的子单
+        ArgumentCaptor<OrderItem> itemCaptor = ArgumentCaptor.forClass(OrderItem.class);
+        verify(orderItemMapper, times(3)).insert(itemCaptor.capture());
+        java.util.List<OrderItem> items = itemCaptor.getAllValues();
+        assertThat(items).allSatisfy(i -> assertThat(i.getSubOrderId()).isNotNull());
+        Long sub2001Id = subs.stream().filter(s -> s.getSellerId() == 2001L).findFirst().orElseThrow().getId();
+        assertThat(items).filteredOn(i -> i.getSellerId() == 2001L)
+                .allSatisfy(i -> assertThat(i.getSubOrderId()).isEqualTo(sub2001Id));
+    }
+
     // ==================== 辅助方法 ====================
 
     private OrderCreateRequest buildCreateRequest(String bizIdentifier) {
@@ -198,5 +383,19 @@ class OrderTransactionServiceTest {
         item.setSkuId(skuId);
         item.setQuantity(quantity);
         return item;
+    }
+
+    private com.myxhs.order.dto.SkuInfoDTO buildSku(Long skuId, String price) {
+        return buildSku(skuId, price, null);
+    }
+
+    private com.myxhs.order.dto.SkuInfoDTO buildSku(Long skuId, String price, Long sellerId) {
+        com.myxhs.order.dto.SkuInfoDTO sku = new com.myxhs.order.dto.SkuInfoDTO();
+        sku.setId(skuId);
+        sku.setSpuId(skuId);
+        sku.setName("SKU-" + skuId);
+        sku.setPrice(new BigDecimal(price));
+        sku.setSellerId(sellerId);
+        return sku;
     }
 }
