@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "项目 Harness 的公共能力依赖声明。声明而非复制：公共 Skill 由来源仓库统一维护，本项目只声明引用与兼容版本。",
+  "dependencies": [
+    {
+      "name": "<skill-name>",
+      "source": "<git url / 能力包名>",
+      "version": "<semver>",
+      "compatible": ">=x.y.z <a.b.c",
+      "reason": "<为何引入：解决什么问题>"
+    }
+  ]
+}
