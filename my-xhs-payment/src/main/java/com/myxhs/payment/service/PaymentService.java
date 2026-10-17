@@ -98,11 +98,6 @@ public class PaymentService {
 
     // ==================== 常量 ====================
 
-    /** 支付中状态 Redis Key 前缀（防重复支付） */
-    private static final String PAYING_KEY_PREFIX = "myxhs:payment:paying:";
-    /** 支付中状态 TTL（与订单超时时间一致：30 分钟） */
-    private static final Duration PAYING_KEY_TTL = Duration.ofMinutes(30);
-
     /** 退款中状态 Redis Key 前缀（防重复退款） */
     private static final java.time.format.DateTimeFormatter TIME_FORMATTER =
             java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -119,6 +114,21 @@ public class PaymentService {
     private static final int STATUS_FAIL = 2;
     /** 支付状态：已退款 */
     private static final int STATUS_REFUNDED = 3;
+    /** 支付状态：已关闭（ITER-002 A1：换渠道关旧 / 订单终结关闭 pending；未支付≠失败） */
+    private static final int STATUS_CLOSED = 4;
+
+    /** 置失败核实方式：渠道已确认未支付（ITER-002 阶段④，GAP-2） */
+    private static final int VERIFY_METHOD_CHANNEL_UNPAID = 1;
+    /** 置失败核实方式：超时未核实（存量数据标记；由对账核查分支重查渠道） */
+    private static final int VERIFY_METHOD_UNVERIFIED = 2;
+
+    /** 支付超时阈值（毫秒；ITER-002 阶段④配置化——原硬编码常量） */
+    @org.springframework.beans.factory.annotation.Value("${pay.timeout.ms:1800000}")
+    private long payTimeoutMs = 30 * 60 * 1000L;
+
+    /** 退款中超时天数（ITER-002 阶段④配置化——原硬编码 15） */
+    @org.springframework.beans.factory.annotation.Value("${refund.timeout.days:15}")
+    private int refundTimeoutDays = 15;
 
     /** 退款状态：退款中 */
     private static final int REFUND_STATUS_PROCESSING = 0;
@@ -128,22 +138,18 @@ public class PaymentService {
     private static final int REFUND_STATUS_FAIL = 2;
     /** 退款状态：退款关闭 */
     private static final int REFUND_STATUS_CLOSED = 3;
-
-    /** 支付超时时间（毫秒）— 与订单超时关单保持一致 */
-    private static final long PAY_TIMEOUT_MS = 30 * 60 * 1000L;
+    // ITER-002 阶段④：PAY_TIMEOUT_MS 常量已由配置化字段 payTimeoutMs 取代（@Value pay.timeout.ms）
 
     // ==================== 1. 创建支付单 ====================
 
     /**
-     * 创建支付单
+     * 创建支付单（ITER-002 A1：一订单最多一条"活着的"支付单）
      * <p>
      * 流程：
-     * 1. 幂等校验：Redis SETNX 防止重复支付
-     * 2. 插入支付记录（status=0 待支付）
-     * 3. 设置 Redis 支付状态缓存（用于超时检测）
-     * 4. 调用策略模式发起支付
-     * 5. Mock 模式：pay() 同步返回 → 直接标记成功
-     *    支付宝/微信：pay() 异步返回 → 等待回调
+     * 1. 幂等：Redisson 分布式锁（同订单串行）+ DB 唯一索引 uk_order_pending 兜底（纵深防御）
+     * 2. P1-1 回查订单（仅待付款可支付）+ 金额校验（订单实付为准）
+     * 3. 查 pending：同渠道 → 复用（返回同一 paymentNo）；换渠道 → 关旧渠道交易 + 旧单置已关闭(4) → 新建
+     * 4. 插入支付记录（status=0）+ 调渠道（Mock 同步成功 / 支付宝微信异步等待回调）
      * </p>
      *
      * @param request 支付创建请求
@@ -154,8 +160,6 @@ public class PaymentService {
         Long userId = request.getUserId();
         BigDecimal amount = request.getAmount();
         Integer payType = request.getPayType();
-        String payingKey = PAYING_KEY_PREFIX + orderId;
-        String statusKey = "myxhs:payment:status:" + orderId;
         Long paymentRecordId = null;
 
         // 记录支付尝试
@@ -171,13 +175,6 @@ public class PaymentService {
             if (!locked) {
                 log.warn("[支付] 获取分布式锁超时: orderId={}, userId={}", orderId, userId);
                 throw new BizException(ResultCode.INTERNAL_ERROR, "系统繁忙，请稍后再试");
-            }
-
-            // 双重检查：获取锁后再次确认是否已支付
-            String existingStatus = stringRedisTemplate.opsForValue().get(statusKey);
-            if (existingStatus != null) {
-                log.warn("[支付] 重复支付请求（锁后检查）: orderId={}, status={}", orderId, existingStatus);
-                throw new BizException(ResultCode.IDEMPOTENT_REJECT, "请勿重复支付");
             }
 
             // 【P1-1】支付前回查订单状态：仅待付款(0)订单可支付，防止对已取消/已支付的订单发起支付（钱货两空）
@@ -208,13 +205,26 @@ public class PaymentService {
                 throw new BizException(ResultCode.PARAM_INVALID, "支付金额与订单金额不一致");
             }
 
-            // 设置 Redis 支付状态缓存（防重标记，TTL 与订单超时一致）
-            stringRedisTemplate.opsForValue().set(payingKey, String.valueOf(userId), PAYING_KEY_TTL);
+            // 2. 一订单最多一条"活着的"支付单（ITER-002 A1）：
+            //    - 同渠道 → 复用（返回同一 paymentNo，补记 REUSE 事件；刷新待回调标记）
+            //    - 换渠道 → 关旧渠道交易 + 旧单置已关闭(4) → 继续新建
+            Payment pending = findPendingByOrderId(orderId);
+            if (pending != null && pending.getPayType() != null && pending.getPayType().equals(payType)) {
+                recordPaymentEvent(pending.getPaymentNo(), orderId, userId, "REUSE", null, null);
+                if (!isMockMode(payType)) {
+                    // 刷新待回调标记（幂等覆盖；保证复用后模拟回调链路仍在）
+                    callbackSimulator.registerCallback(pending.getPaymentNo(), payType);
+                }
+                log.info("[支付] 复用既有支付单: orderId={}, paymentNo={}, payType={}",
+                        orderId, pending.getPaymentNo(), payType);
+                return R.ok(buildPaymentVO(pending));
+            }
+            if (pending != null) {
+                closePaymentForSwitch(pending);
+            }
 
-            // 2. 生成支付流水号
+            // 3. 生成支付流水号 + 插入支付记录（status=0 待支付）
             String paymentNo = generatePaymentNo();
-
-            // 3. 插入支付记录（status=0 待支付）
             Payment payment = new Payment();
             payment.setId(generatePaymentId());
             payment.setOrderId(orderId);
@@ -226,24 +236,34 @@ public class PaymentService {
             payment.setDeleted(0);
             payment.setCreatedAt(LocalDateTime.now());
             payment.setUpdatedAt(LocalDateTime.now());
-            paymentJdbcTemplate.update(
-                    "INSERT INTO t_payment (id, order_id, user_id, payment_no, amount, pay_type, status, deleted, created_at, updated_at) " +
-                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    payment.getId(), payment.getOrderId(), payment.getUserId(),
-                    payment.getPaymentNo(), payment.getAmount(), payment.getPayType(),
-                    payment.getStatus(), payment.getDeleted(),
-                    payment.getCreatedAt(), payment.getUpdatedAt()
-            );
+            try {
+                paymentJdbcTemplate.update(
+                        "INSERT INTO t_payment (id, order_id, user_id, payment_no, amount, pay_type, status, deleted, created_at, updated_at) " +
+                                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        payment.getId(), payment.getOrderId(), payment.getUserId(),
+                        payment.getPaymentNo(), payment.getAmount(), payment.getPayType(),
+                        payment.getStatus(), payment.getDeleted(),
+                        payment.getCreatedAt(), payment.getUpdatedAt()
+                );
+            } catch (org.springframework.dao.DuplicateKeyException dup) {
+                // uk_order_pending 兜底（并发纵深防御：锁失效/多实例时钟漂移等）：重查复用既有 pending
+                Payment existing = findPendingByOrderId(orderId);
+                if (existing != null) {
+                    if (!isMockMode(existing.getPayType())) {
+                        callbackSimulator.registerCallback(existing.getPaymentNo(), existing.getPayType());
+                    }
+                    log.warn("[支付] 并发建单冲突，复用既有支付单: orderId={}, paymentNo={}", orderId, existing.getPaymentNo());
+                    return R.ok(buildPaymentVO(existing));
+                }
+                throw dup; // 非 pending 唯一键冲突（如 uk_payment_no）→ 向上抛
+            }
             paymentRecordId = payment.getId();
             log.info("[支付] 支付记录已创建: paymentNo={}, orderId={}, amount={}", paymentNo, orderId, amount);
 
             // 可观测性：支付单创建事件（异步落库，失败不影响资金主流程）
             recordPaymentEvent(paymentNo, orderId, userId, "CREATE", null, null);
 
-            // 4. 设置 Redis 支付状态缓存（用于超时检测定时任务）
-            stringRedisTemplate.opsForValue().set(statusKey, "0", PAYING_KEY_TTL);
-
-            // 5. 通过策略模式调用对应支付渠道
+            // 4. 通过策略模式调用对应支付渠道
             PayChannelStrategy strategy = payChannelStrategyMap.get(payType);
             if (strategy == null) {
                 log.error("[支付] 未找到支付渠道策略: payType={}", payType);
@@ -277,32 +297,15 @@ public class PaymentService {
             return R.ok(buildPaymentVO(payment));
 
         } catch (BizException e) {
-            // 业务异常：清理 Redis 支付状态缓存，DB 记录由独立补偿逻辑处理
+            // 业务异常：清理本次新建的支付记录（复用/冲突分支未产生新记录，paymentRecordId 为 null，天然不误删既有 pending）
             businessMetrics.recordPaymentCallback("fail");
-            stringRedisTemplate.delete(payingKey);
-            stringRedisTemplate.delete(statusKey);
-            // 删除已插入的支付记录（避免脏数据残留）
-            if (paymentRecordId != null) {
-                try {
-                    paymentJdbcTemplate.update("DELETE FROM t_payment WHERE id = ? AND status = 0 AND deleted = 0", paymentRecordId);
-                } catch (Exception deleteEx) {
-                    log.error("[支付] 清理支付记录失败: paymentId={}", paymentRecordId, deleteEx);
-                }
-            }
+            cleanupFailedPaymentRecord(paymentRecordId);
             throw e;
         } catch (Exception e) {
-            // 非预期异常：同样清理 Redis 和 DB 记录
+            // 非预期异常：同样清理本次新建记录
             businessMetrics.recordPaymentCallback("fail");
             log.error("[支付] 创建支付单异常: orderId={}, userId={}", orderId, userId, e);
-            stringRedisTemplate.delete(payingKey);
-            stringRedisTemplate.delete(statusKey);
-            if (paymentRecordId != null) {
-                try {
-                    paymentJdbcTemplate.update("DELETE FROM t_payment WHERE id = ? AND status = 0 AND deleted = 0", paymentRecordId);
-                } catch (Exception deleteEx) {
-                    log.error("[支付] 清理支付记录失败: paymentId={}", paymentRecordId, deleteEx);
-                }
-            }
+            cleanupFailedPaymentRecord(paymentRecordId);
             throw new BizException(ResultCode.INTERNAL_ERROR, "支付失败: " + e.getMessage());
         } finally {
             // 安全释放 Redisson 分布式锁
@@ -312,12 +315,85 @@ public class PaymentService {
         }
     }
 
+    /** 清理本次新建但未完成的支付记录（仅针对本次插入；复用/冲突分支 paymentRecordId 为 null） */
+    private void cleanupFailedPaymentRecord(Long paymentRecordId) {
+        if (paymentRecordId == null) {
+            return;
+        }
+        try {
+            paymentJdbcTemplate.update("DELETE FROM t_payment WHERE id = ? AND status = 0 AND deleted = 0", paymentRecordId);
+        } catch (Exception deleteEx) {
+            log.error("[支付] 清理支付记录失败: paymentId={}", paymentRecordId, deleteEx);
+        }
+    }
+
+    /**
+     * 换渠道：关闭旧渠道交易 + 旧单置已关闭(4)（ITER-002 A1 阶段 2）
+     * <p>
+     * 顺序与语义：
+     * 1. 先关渠道交易——关失败即中止切换（避免"渠道旧交易仍可支付 + 本地已关闭"的错位）；
+     * 2. 旧单置已关闭（乐观锁；0 行 = 竞态已变 → 抛出让重试）；
+     * 3. 补记 CLOSE 事件（归因：CHANNEL_SWITCH）。
+     * </p>
+     */
+    private void closePaymentForSwitch(Payment old) {
+        PayChannelStrategy oldStrategy = payChannelStrategyMap.get(old.getPayType());
+        if (oldStrategy == null) {
+            throw new BizException(ResultCode.PAYMENT_FAIL, "旧支付渠道不可用，无法切换");
+        }
+        try {
+            oldStrategy.close(old.getPaymentNo());
+        } catch (Exception e) {
+            log.error("[支付] 关闭旧渠道交易失败，中止换渠道: orderId={}, paymentNo={}", old.getOrderId(), old.getPaymentNo(), e);
+            throw new BizException(ResultCode.PAYMENT_FAIL, "渠道交易关闭失败，请稍后重试");
+        }
+        int closed = paymentJdbcTemplate.update(
+                "UPDATE t_payment SET status = ?, updated_at = ? WHERE id = ? AND status = ? AND deleted = 0",
+                STATUS_CLOSED, LocalDateTime.now(), old.getId(), STATUS_PENDING);
+        if (closed == 0) {
+            throw new BizException(ResultCode.PAYMENT_FAIL, "支付单状态已变化，请刷新后重试");
+        }
+        recordPaymentEvent(old.getPaymentNo(), old.getOrderId(), old.getUserId(), "CLOSE", "CHANNEL_SWITCH", "换渠道关闭旧支付单");
+        log.info("[支付] 旧支付单已关闭(换渠道): orderId={}, paymentNo={}", old.getOrderId(), old.getPaymentNo());
+    }
+
+    /**
+     * 订单终结：关闭该订单"活着的"（pending）支付单（ITER-002 阶段⑤ / 06 §七 阶段 3）
+     * <p>
+     * 由 {@link com.myxhs.payment.consumer.OrderTerminationConsumer} 订阅订单终结事件调用。
+     * 幂等：无 pending → no-op；乐观锁条件更新（并发下只有一个赢家）；
+     * 渠道 close 失败不阻断本地推进（记日志，对账兜底）。
+     * </p>
+     */
+    public void closePendingOnTermination(Long orderId) {
+        Payment pending = findPendingByOrderId(orderId);
+        if (pending == null) {
+            return; // 幂等：无可关闭的 pending（已支付/已关闭/无支付单）
+        }
+        try {
+            PayChannelStrategy strategy = pending.getPayType() != null ? payChannelStrategyMap.get(pending.getPayType()) : null;
+            if (strategy != null) {
+                strategy.close(pending.getPaymentNo());
+            }
+        } catch (Exception e) {
+            log.error("[支付-订单终结] 关闭渠道交易失败(对账兜底): orderId={}, paymentNo={}",
+                    orderId, pending.getPaymentNo(), e);
+        }
+        int closed = paymentJdbcTemplate.update(
+                "UPDATE t_payment SET status = ?, updated_at = ? WHERE id = ? AND status = ? AND deleted = 0",
+                STATUS_CLOSED, LocalDateTime.now(), pending.getId(), STATUS_PENDING);
+        if (closed > 0) {
+            recordPaymentEvent(pending.getPaymentNo(), orderId, pending.getUserId(), "CLOSE", "ORDER_TERMINATED", "订单终结关闭 pending 支付单");
+            log.info("[支付-订单终结] pending 支付单已关闭: orderId={}, paymentNo={}", orderId, pending.getPaymentNo());
+        }
+    }
+
     // ==================== 2. 处理支付回调 ====================
 
     /**
      * 处理支付回调（异步通知）
      * <p>
-     * 由 PayCallbackController 接收第三方回调后调用此方法。
+     * 由 PayCallbackSimulator 模拟回调（真实渠道接入时由回调端点调用，需补验签）后调用此方法。
      * 乐观锁保证幂等：只有"待支付"状态的支付单才能更新为"支付成功"。
      * </p>
      *
@@ -395,12 +471,7 @@ public class PaymentService {
      * </p>
      */
     private void afterPaySuccess(Long orderId, Long userId, String paymentNo, String tradeNo) {
-        // 更新 Redis 支付状态缓存（P2-4: 永久 key 无界 → 7 天 TTL，防重窗口内足够，订单状态由 DB 兜底）
-        stringRedisTemplate.opsForValue().set("myxhs:payment:status:" + orderId, "1", java.time.Duration.ofDays(7));
-
-        // 删除"支付中"幂等键。注意：退款后订单状态为 3（已退款），P1-1 支付前回查会拒绝非待付款订单，
-        // 因此本订单不会再次支付（重新支付需用户重新下单），此删除仅为清理 Redis 残留标记。
-        stringRedisTemplate.delete(PAYING_KEY_PREFIX + orderId);
+        // ITER-002 A1：原"支付中/状态"Redis 死键（只写不读）已随复用改造清理——防重由 uk_order_pending + 状态机承担
 
         log.info("[支付成功] orderId={}, paymentNo={}, tradeNo={}", orderId, paymentNo, tradeNo);
 
@@ -450,15 +521,13 @@ public class PaymentService {
      */
     private void handlePayFailInternal(Long orderId, Long userId, String paymentNo) {
         int updated = paymentJdbcTemplate.update(
-                "UPDATE t_payment SET status = ?, updated_at = ? " +
+                "UPDATE t_payment SET status = ?, verify_method = ?, updated_at = ? " +
                         "WHERE order_id = ? AND status = ? AND deleted = 0",
-                STATUS_FAIL, LocalDateTime.now(),
+                STATUS_FAIL, VERIFY_METHOD_CHANNEL_UNPAID, LocalDateTime.now(),
                 orderId, STATUS_PENDING
         );
 
         if (updated > 0) {
-            stringRedisTemplate.opsForValue().set("myxhs:payment:status:" + orderId, "2", PAYING_KEY_TTL);
-            stringRedisTemplate.delete(PAYING_KEY_PREFIX + orderId);
             log.info("[支付失败] orderId={}, paymentNo={}", orderId, paymentNo);
             // 可观测性：支付失败事件（Mock 渠道失败原因：渠道返回失败）
             recordPaymentEvent(paymentNo, orderId, userId, "PAY_FAIL", "CHANNEL_REJECT", "支付渠道返回失败");
@@ -544,6 +613,7 @@ public class PaymentService {
         refundRequest.setRefundAmount(request.getRefundAmount());
         refundRequest.setReason(request.getReason());
         refundRequest.setRefundType(request.getRefundType());
+        refundRequest.setOutRefundNo(request.getOutRefundNo()); // ITER-002 阶段③：出金幂等键透传
         return doRefund(refundRequest);
     }
 
@@ -571,6 +641,17 @@ public class PaymentService {
             if (!locked) {
                 log.warn("[退款] 获取分布式锁超时: paymentId={}, userId={}", paymentId, userId);
                 throw new BizException(ResultCode.INTERNAL_ERROR, "系统繁忙，请稍后再试");
+            }
+
+            // 出金幂等（ITER-002 阶段③）：同 out_refund_no → 返回既有退款单（幂等语义：同键同单；
+            // 含"处理中"——重试/补偿重放拿到的始终是同一 refundNo，绝不重复出金）
+            String outRefundNo = request.getOutRefundNo();
+            if (outRefundNo != null && !outRefundNo.isBlank()) {
+                Refund existingRefund = findRefundByOutRefundNo(outRefundNo);
+                if (existingRefund != null) {
+                    log.info("[退款] 幂等复用既有退款单: outRefundNo={}, refundNo={}", outRefundNo, existingRefund.getRefundNo());
+                    return R.ok(existingRefund.getRefundNo());
+                }
             }
 
             // 双重检查：获取锁后再次确认是否已在退款中
@@ -611,6 +692,7 @@ public class PaymentService {
             refund.setOrderId(payment.getOrderId());
             refund.setUserId(userId);
             refund.setRefundNo(refundNo);
+            refund.setOutRefundNo(outRefundNo); // ITER-002 阶段③：业务幂等键（可空）
             refund.setRefundAmount(refundAmount);
             refund.setReason(request.getReason());
             refund.setStatus(REFUND_STATUS_PROCESSING);
@@ -619,15 +701,28 @@ public class PaymentService {
             refund.setDeleted(0);
             refund.setCreatedAt(LocalDateTime.now());
             refund.setUpdatedAt(LocalDateTime.now());
-            paymentJdbcTemplate.update(
-                    "INSERT INTO t_refund (id, payment_id, order_id, user_id, refund_no, refund_amount, reason, status, refund_type, refund_channel, deleted, created_at, updated_at) " +
-                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    refund.getId(), refund.getPaymentId(), refund.getOrderId(),
-                    refund.getUserId(), refund.getRefundNo(), refund.getRefundAmount(),
-                    refund.getReason(), refund.getStatus(), refund.getRefundType(),
-                    refund.getRefundChannel(), refund.getDeleted(),
-                    refund.getCreatedAt(), refund.getUpdatedAt()
-            );
+            try {
+                paymentJdbcTemplate.update(
+                        "INSERT INTO t_refund (id, payment_id, order_id, user_id, refund_no, out_refund_no, refund_amount, reason, status, refund_type, refund_channel, deleted, created_at, updated_at) " +
+                                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        refund.getId(), refund.getPaymentId(), refund.getOrderId(),
+                        refund.getUserId(), refund.getRefundNo(), refund.getOutRefundNo(), refund.getRefundAmount(),
+                        refund.getReason(), refund.getStatus(), refund.getRefundType(),
+                        refund.getRefundChannel(), refund.getDeleted(),
+                        refund.getCreatedAt(), refund.getUpdatedAt()
+                );
+            } catch (org.springframework.dao.DuplicateKeyException dup) {
+                // uk_out_refund_no 兜底（并发同键）：重查返回既有退款单（不重复出金）
+                if (outRefundNo != null && !outRefundNo.isBlank()) {
+                    Refund existingRefund = findRefundByOutRefundNo(outRefundNo);
+                    if (existingRefund != null) {
+                        log.warn("[退款] 并发同键退款，复用既有退款单: outRefundNo={}, refundNo={}",
+                                outRefundNo, existingRefund.getRefundNo());
+                        return R.ok(existingRefund.getRefundNo());
+                    }
+                }
+                throw dup;
+            }
             refundRecordId = refund.getId();
             log.info("[退款] 退款单已创建: refundNo={}, paymentId={}, refundAmount={}", refundNo, paymentId, refundAmount);
 
@@ -737,18 +832,13 @@ public class PaymentService {
                     refundedTotal, paymentAmount, refund.getPaymentId());
         }
 
-        // 4. 清理 Redis
+        // 4. 清理 Redis（退款中标记）
         stringRedisTemplate.delete(REFUNDING_KEY_PREFIX + refund.getPaymentId());
-        if (paymentAmount != null && refundedTotal.compareTo(paymentAmount) >= 0) {
-            stringRedisTemplate.opsForValue().set("myxhs:payment:status:" + refund.getOrderId(), "3", PAYING_KEY_TTL);
-        } else {
-            stringRedisTemplate.opsForValue().set("myxhs:payment:status:" + refund.getOrderId(), "1", PAYING_KEY_TTL);
-        }
 
         log.info("[退款成功] refundNo={}, paymentId={}, orderId={}", refundNo, refund.getPaymentId(), refund.getOrderId());
 
         // 5. T-076/T-077：仅全额退款才通知订单（REFUND_SUCCESS → 订单 5 + 释放库存）；
-        //    T-077：order 无 REFUND_RESULT_TOPIC 消费者（支付成功走 Feign 同步、退款原仅 MQ）→
+        //    T-077（注释已修正）：退款原仅 MQ（order 侧后已补 RefundResultConsumer 兜底消费）→
         //    全额退款补 Feign 直调 notifyRefundSuccess（与支付成功对称）；部分退款不通知订单
         if (paymentAmount != null && refundedTotal.compareTo(paymentAmount) >= 0) {
             sendRefundResultMq(refund.getOrderId(), refund.getUserId(), true, refundNo);
@@ -797,11 +887,12 @@ public class PaymentService {
      * </p>
      */
     public void checkPaymentTimeout() {
-        // 分布式锁：防止多实例重复执行
+        // 分布式锁：防止多实例重复执行（防御性——XXL-Job 已保证单实例执行；
+        // ITER-002 阶段④：TTL 与任务周期（30s）对齐为 2 分钟，异常退出后更快自愈）
         String lockKey = "myxhs:payment:lock:timeout-check";
         String lockValue = java.util.UUID.randomUUID().toString();
         Boolean locked = stringRedisTemplate.opsForValue()
-                .setIfAbsent(lockKey, lockValue, Duration.ofMinutes(5));
+                .setIfAbsent(lockKey, lockValue, Duration.ofMinutes(2));
         if (Boolean.FALSE.equals(locked)) {
             log.debug("[支付超时检查] 未获取到分布式锁，跳过本次检查");
             return;
@@ -812,14 +903,16 @@ public class PaymentService {
             // ① status key TTL=30min 到点即消失，真正超时单扫不到；
             // ② 未超时的 status=0 单（刚创建）会被提前误标 '2'；
             // ③ 只改 Redis，DB t_payment 永远 0（状态不一致）。
-            // 改为 DB 扫描（与 checkRefundTimeout/orderCloseJob 同模式）：
-            //   扫 status=0 AND created_at < now-30min → 乐观锁置 2 + Redis 同步 + TIMEOUT 事件
+            // 改为 DB 扫描（与 checkRefundTimeout/orderCloseJob 同模式）。
+            // ITER-002 阶段④（GAP-1/2/3）：置失败前**按渠道真相处置**（查渠道 → 矩阵），不再"到点直接置失败"。
             java.time.LocalDateTime deadline = LocalDateTime.now()
-                    .minus(PAY_TIMEOUT_MS, java.time.temporal.ChronoUnit.MILLIS);
+                    .minus(payTimeoutMs, java.time.temporal.ChronoUnit.MILLIS);
             int totalMarked = 0;
+            int totalConverged = 0;
+            int totalLeft = 0;
             while (true) {
                 java.util.List<java.util.Map<String, Object>> rows = paymentJdbcTemplate.queryForList(
-                        "SELECT id, order_id, user_id, payment_no FROM t_payment " +
+                        "SELECT id, order_id, user_id, payment_no, pay_type FROM t_payment " +
                                 "WHERE status = ? AND created_at < ? AND deleted = 0 LIMIT 100",
                         STATUS_PENDING, deadline);
                 if (rows.isEmpty()) {
@@ -830,27 +923,75 @@ public class PaymentService {
                     Long orderId = ((Number) row.get("order_id")).longValue();
                     Long uid = ((Number) row.get("user_id")).longValue();
                     String paymentNo = (String) row.get("payment_no");
-                    int updated = paymentJdbcTemplate.update(
-                            "UPDATE t_payment SET status = ?, updated_at = ? WHERE id = ? AND status = ? AND deleted = 0",
-                            STATUS_FAIL, LocalDateTime.now(), pid, STATUS_PENDING);
-                    if (updated > 0) {
-                        stringRedisTemplate.opsForValue()
-                                .set("myxhs:payment:status:" + orderId, "2", PAYING_KEY_TTL);
-                        recordPaymentEvent(paymentNo, orderId, uid, "TIMEOUT",
-                                "PAY_TIMEOUT", "支付超时未完成");
-                        totalMarked++;
-                        log.info("[支付超时检查] 标记超时: paymentId={}, orderId={}", pid, orderId);
+                    Integer payType = row.get("pay_type") != null ? ((Number) row.get("pay_type")).intValue() : null;
+                    switch (disposeTimeoutPayment(pid, orderId, uid, paymentNo, payType)) {
+                        case MARKED_FAIL -> totalMarked++;
+                        case CONVERGED_SUCCESS -> totalConverged++;
+                        case LEFT -> totalLeft++;
                     }
                 }
                 if (rows.size() < 100) {
                     break;
                 }
             }
-            log.info("[支付超时检查] 完成: 标记超时 {} 单", totalMarked);
+            log.info("[支付超时检查] 完成: 置失败 {} 单, 收敛成功 {} 单, 不处置 {} 单",
+                    totalMarked, totalConverged, totalLeft);
         } finally {
             // Lua 安全释放锁（只释放自己持有的锁，防止误删其他实例的锁）
             safeUnlock(lockKey, lockValue);
         }
+    }
+
+    /** 超时处置结果（ITER-002 阶段④） */
+    private enum TimeoutDisposition { MARKED_FAIL, CONVERGED_SUCCESS, LEFT }
+
+    /**
+     * 单笔超时处置（ITER-002 阶段④：按渠道真相处置，GAP-1/2/3）
+     * <p>
+     * 矩阵：渠道=成功 → 本地收敛成功（复用成功收敛体：乐观锁 + 通知订单 + 自动退款语义）；
+     * 渠道=明确未支付 → close 渠道交易 + 置失败 + 记录核实证据（verify_method=1）；
+     * 渠道不可达/无法判定（null）→ **不处置**（"不知道"≠"没付"，留下一轮重扫）。
+     * </p>
+     */
+    private TimeoutDisposition disposeTimeoutPayment(Long pid, Long orderId, Long uid, String paymentNo, Integer payType) {
+        // ① 查渠道事实（未知结果绝不当作"没付"）
+        PayChannelStrategy strategy = payType != null ? payChannelStrategyMap.get(payType) : null;
+        Integer channelStatus;
+        try {
+            channelStatus = strategy != null ? strategy.queryPayStatus(paymentNo) : null;
+        } catch (Exception e) {
+            log.warn("[支付超时检查] 渠道查询异常, 不处置留下一轮: paymentId={}", pid, e);
+            channelStatus = null;
+        }
+        if (channelStatus == null) {
+            log.warn("[支付超时检查] 渠道不可达/无法判定, 不处置留下一轮: paymentId={}, paymentNo={}", pid, paymentNo);
+            return TimeoutDisposition.LEFT;
+        }
+        if (channelStatus == 1) {
+            // ② 渠道已支付（回调丢失场景）→ 本地收敛为成功（tradeNo 位传 paymentNo，与对账路径同口径）
+            log.warn("[支付超时检查] 渠道查得已支付, 本地收敛: paymentId={}, orderId={}", pid, orderId);
+            handlePaySuccessInternal(orderId, uid, paymentNo, paymentNo);
+            recordPaymentEvent(paymentNo, orderId, uid, "TIMEOUT_CHANNEL_PAID", null, "渠道查得已支付，本地收敛");
+            return TimeoutDisposition.CONVERGED_SUCCESS;
+        }
+        // ③ 渠道明确未支付 → 关闭渠道交易（失败不阻断：本地状态推进 + 对账兜底） + 置失败 + 核实证据
+        try {
+            if (strategy != null) {
+                strategy.close(paymentNo);
+            }
+        } catch (Exception e) {
+            log.error("[支付超时检查] 关闭渠道交易失败(对账兜底): paymentId={}", pid, e);
+        }
+        int updated = paymentJdbcTemplate.update(
+                "UPDATE t_payment SET status = ?, verify_method = ?, updated_at = ? WHERE id = ? AND status = ? AND deleted = 0",
+                STATUS_FAIL, VERIFY_METHOD_CHANNEL_UNPAID, LocalDateTime.now(), pid, STATUS_PENDING);
+        if (updated > 0) {
+            recordPaymentEvent(paymentNo, orderId, uid, "TIMEOUT",
+                    "PAY_TIMEOUT", "支付超时未完成（渠道已确认未支付）");
+            log.info("[支付超时检查] 标记超时: paymentId={}, orderId={}", pid, orderId);
+            return TimeoutDisposition.MARKED_FAIL;
+        }
+        return TimeoutDisposition.LEFT; // 乐观锁 0 行 = 并发已处置
     }
 
     // ==================== 6. 退款超时检查 ====================
@@ -875,8 +1016,8 @@ public class PaymentService {
         }
 
         try {
-            // 查询退款中超时（15天）的退款单
-            LocalDateTime timeoutThreshold = LocalDateTime.now().minusDays(15);
+            // 查询退款中超时（配置天数；ITER-002 阶段④配置化）的退款单
+            LocalDateTime timeoutThreshold = LocalDateTime.now().minusDays(refundTimeoutDays);
             List<RefundTimeoutRecord> timeoutRefunds = paymentJdbcTemplate.query(
                     "SELECT id, refund_no, payment_id, order_id, user_id FROM t_refund " +
                             "WHERE status = 0 AND created_at < ? AND deleted = 0",
@@ -1006,6 +1147,54 @@ public class PaymentService {
                 log.warn("[对账] 发现 {} 条不一致记录，已触发补偿通知", inconsistent);
             }
             log.info("[对账] 支付对账完成: totalRecords={}, inconsistent={}", totalRecords, inconsistent);
+
+            // ============ ITER-002 阶段④（GAP-4）：未核实失败单核查 ============
+            // 场景："误标失败 + 回调永久丢失" → 永久错位（用户付了钱、本地失败）。
+            // 修复：扫 status=2 且 verify_method=2（未核实，含存量数据）→ 重查渠道：
+            //   渠道已付 → 本地收敛成功（补通知订单）；渠道确认未付 → 补记"已核实(1)"；不可达 → 留下轮。
+            int rechecked = 0;
+            int converged = 0;
+            long lastFailId = 0;
+            while (true) {
+                List<java.util.Map<String, Object>> failRows = paymentJdbcTemplate.queryForList(
+                        "SELECT id, order_id, user_id, payment_no, pay_type FROM t_payment " +
+                                "WHERE status = ? AND verify_method = ? AND deleted = 0 AND id > ? ORDER BY id ASC LIMIT ?",
+                        STATUS_FAIL, VERIFY_METHOD_UNVERIFIED, lastFailId, batchSize);
+                if (failRows.isEmpty()) break;
+                for (java.util.Map<String, Object> row : failRows) {
+                    Long pid = ((Number) row.get("id")).longValue();
+                    Long orderId = ((Number) row.get("order_id")).longValue();
+                    Long uid = ((Number) row.get("user_id")).longValue();
+                    String paymentNo = (String) row.get("payment_no");
+                    Integer payType = row.get("pay_type") != null ? ((Number) row.get("pay_type")).intValue() : null;
+                    try {
+                        PayChannelStrategy strategy = payType != null ? payChannelStrategyMap.get(payType) : null;
+                        Integer channelStatus = strategy != null ? strategy.queryPayStatus(paymentNo) : null;
+                        if (channelStatus == null) {
+                            continue; // 不可达 → 留下轮
+                        }
+                        rechecked++;
+                        if (channelStatus == 1) {
+                            log.warn("[对账] 未核实失败单渠道查得已支付, 本地收敛: paymentId={}, orderId={}", pid, orderId);
+                            handlePaySuccessInternal(orderId, uid, paymentNo, paymentNo);
+                            recordPaymentEvent(paymentNo, orderId, uid, "RECONCILE_CHANNEL_PAID", null, "对账核查：渠道已支付，本地收敛");
+                            converged++;
+                        } else {
+                            paymentJdbcTemplate.update(
+                                    "UPDATE t_payment SET verify_method = ?, updated_at = ? WHERE id = ? AND status = ? AND deleted = 0",
+                                    VERIFY_METHOD_CHANNEL_UNPAID, LocalDateTime.now(), pid, STATUS_FAIL);
+                        }
+                    } catch (Exception e) {
+                        log.error("[对账] 核查异常: paymentId={}", pid, e);
+                    }
+                }
+                lastFailId = failRows.stream()
+                        .mapToLong(r -> ((Number) r.get("id")).longValue()).max().orElse(lastFailId);
+                if (failRows.size() < batchSize) break;
+            }
+            if (rechecked > 0 || converged > 0) {
+                log.info("[对账] 失败单核查完成: rechecked={}, converged={}", rechecked, converged);
+            }
         } finally {
             safeUnlock(lockKey, lockValue);
         }
@@ -1084,6 +1273,35 @@ public class PaymentService {
         );
     }
 
+    /**
+     * 查询订单"活着的"（待支付）支付单（ITER-002 A1：一订单最多一条，uk_order_pending 保障）
+     */
+    private Payment findPendingByOrderId(Long orderId) {
+        return paymentJdbcTemplate.query(
+                "SELECT id, order_id, user_id, payment_no, amount, pay_type, status, paid_at, deleted, created_at, updated_at " +
+                        "FROM t_payment WHERE order_id = ? AND status = 0 AND deleted = 0 ORDER BY created_at DESC LIMIT 1",
+                rs -> {
+                    if (rs.next()) {
+                        Payment p = new Payment();
+                        p.setId(rs.getLong("id"));
+                        p.setOrderId(rs.getLong("order_id"));
+                        p.setUserId(rs.getLong("user_id"));
+                        p.setPaymentNo(rs.getString("payment_no"));
+                        p.setAmount(rs.getBigDecimal("amount"));
+                        p.setPayType(rs.getInt("pay_type"));
+                        p.setStatus(rs.getInt("status"));
+                        p.setPaidAt(rs.getTimestamp("paid_at") != null ? rs.getTimestamp("paid_at").toLocalDateTime() : null);
+                        p.setDeleted(rs.getInt("deleted"));
+                        p.setCreatedAt(rs.getTimestamp("created_at").toLocalDateTime());
+                        p.setUpdatedAt(rs.getTimestamp("updated_at").toLocalDateTime());
+                        return p;
+                    }
+                    return null;
+                },
+                orderId
+        );
+    }
+
     private Payment findByPaymentNo(String paymentNo) {
         return paymentJdbcTemplate.query(
                 "SELECT id, order_id, user_id, payment_no, amount, pay_type, status, paid_at, deleted, created_at, updated_at " +
@@ -1136,6 +1354,39 @@ public class PaymentService {
                     return null;
                 },
                 refundNo
+        );
+    }
+
+    /**
+     * 按业务幂等键查退款单（ITER-002 阶段③：出金幂等）
+     */
+    private Refund findRefundByOutRefundNo(String outRefundNo) {
+        return paymentJdbcTemplate.query(
+                "SELECT id, payment_id, order_id, user_id, refund_no, out_refund_no, refund_amount, reason, status, refund_type, refund_channel, success_at, deleted, created_at, updated_at " +
+                        "FROM t_refund WHERE out_refund_no = ? AND deleted = 0 LIMIT 1",
+                rs -> {
+                    if (rs.next()) {
+                        Refund r = new Refund();
+                        r.setId(rs.getLong("id"));
+                        r.setPaymentId(rs.getLong("payment_id"));
+                        r.setOrderId(rs.getLong("order_id"));
+                        r.setUserId(rs.getLong("user_id"));
+                        r.setRefundNo(rs.getString("refund_no"));
+                        r.setOutRefundNo(rs.getString("out_refund_no"));
+                        r.setRefundAmount(rs.getBigDecimal("refund_amount"));
+                        r.setReason(rs.getString("reason"));
+                        r.setStatus(rs.getInt("status"));
+                        r.setRefundType(rs.getInt("refund_type"));
+                        r.setRefundChannel(rs.getInt("refund_channel"));
+                        r.setSuccessAt(rs.getTimestamp("success_at") != null ? rs.getTimestamp("success_at").toLocalDateTime() : null);
+                        r.setDeleted(rs.getInt("deleted"));
+                        r.setCreatedAt(rs.getTimestamp("created_at").toLocalDateTime());
+                        r.setUpdatedAt(rs.getTimestamp("updated_at").toLocalDateTime());
+                        return r;
+                    }
+                    return null;
+                },
+                outRefundNo
         );
     }
 
@@ -1204,6 +1455,7 @@ public class PaymentService {
             case 1: statusDesc = "支付成功"; break;
             case 2: statusDesc = "支付失败"; break;
             case 3: statusDesc = "已退款"; break;
+            case 4: statusDesc = "已关闭"; break;
             default: statusDesc = "未知"; break;
         }
         return PaymentVO.builder()

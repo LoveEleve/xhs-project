@@ -57,4 +57,10 @@ public class MockPayStrategy implements PayChannelStrategy {
         log.debug("[Mock支付] 查询支付状态: paymentNo={}", paymentNo);
         return null;
     }
+
+    @Override
+    public void close(String paymentNo) {
+        // Mock：无真实渠道交易；关闭 = 仅记录（真实渠道：closeorder / trade.close）
+        log.info("[Mock支付] 关闭渠道交易(模拟): paymentNo={}", paymentNo);
+    }
 }

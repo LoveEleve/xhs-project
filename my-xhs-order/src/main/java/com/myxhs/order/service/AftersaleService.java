@@ -467,7 +467,8 @@ public class AftersaleService {
         try {
             R<String> resp = paymentFeignClient.refundByOrder(
                     new PaymentFeignClient.RefundByOrderRequest(aftersale.getOrderId(), aftersale.getRefundAmount(),
-                            aftersale.getReason(), aftersale.getType()),
+                            aftersale.getReason(), aftersale.getType(),
+                            aftersale.getAftersaleNo()), // ITER-002 阶段③：出金幂等键 = 售后单号（重试/补偿同键）
                     aftersale.getUserId());
             if (resp == null || !resp.isSuccess()) {
                 markRefundFailed(aftersale, "支付域拒绝退款: " + (resp == null ? "无响应" : resp.getMessage()));

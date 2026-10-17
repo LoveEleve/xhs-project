@@ -41,8 +41,21 @@ public class PayCallbackSimulator {
     private static final String CALLBACK_PENDING_PREFIX = "myxhs:payment:callback:pending:";
     /** 回调分布式锁前缀 */
     private static final String CALLBACK_LOCK_PREFIX = "myxhs:payment:callback:simulate:";
-    /** 回调模拟成功率（0~1） */
-    private static final double SUCCESS_RATE = 0.9;
+    /** 回调模拟成功率（0~1；ITER-002 阶段⑤配置化） */
+    @org.springframework.beans.factory.annotation.Value("${payment.simulator.success-rate:0.9}")
+    private double successRate = 0.9;
+    /** 回调模拟延迟下限（毫秒；配置化） */
+    @org.springframework.beans.factory.annotation.Value("${payment.simulator.callback-delay-min-ms:1000}")
+    private long callbackDelayMinMs = 1000L;
+    /** 回调模拟延迟上限（毫秒；配置化） */
+    @org.springframework.beans.factory.annotation.Value("${payment.simulator.callback-delay-max-ms:3000}")
+    private long callbackDelayMaxMs = 3000L;
+
+    /** 随机延迟（毫秒）：[min, max) */
+    private int randomCallbackDelay() {
+        long span = Math.max(1, callbackDelayMaxMs - callbackDelayMinMs);
+        return (int) (callbackDelayMinMs + ThreadLocalRandom.current().nextLong(span));
+    }
 
     /**
      * 注册待回调支付单
@@ -57,6 +70,33 @@ public class PayCallbackSimulator {
         redisTemplate.opsForValue().set(key, String.valueOf(System.currentTimeMillis()),
                 java.time.Duration.ofHours(24));
         log.info("[回调模拟] 注册待回调: paymentNo={}, payType={}", paymentNo, payType);
+    }
+
+    /**
+     * Mock 渠道真值模拟（ITER-002 阶段④：超时处置/对账核查的"查渠道"）
+     * <p>
+     * 语义：待回调标记存在 = 渠道交易**未决**（回调未送达 → 视为未支付）→ 返回 0；
+     * 标记不存在 = **无法判定**（如 Redis 丢失）→ 返回 null（调用方"不处置"——"不知道"≠"没付"）。
+     * 真实渠道接入时替换为渠道查询接口（alipay.trade.query / orderquery）。
+     * </p>
+     */
+    public Integer querySimulatedChannelStatus(String paymentNo) {
+        try (var cursor = redisTemplate.scan(
+                org.springframework.data.redis.core.ScanOptions.scanOptions()
+                        .match(CALLBACK_PENDING_PREFIX + "*")
+                        .count(100)
+                        .build())) {
+            String suffix = ":" + paymentNo;
+            while (cursor.hasNext()) {
+                if (cursor.next().endsWith(suffix)) {
+                    return 0; // 交易未决（未支付）
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[回调模拟] 渠道真值查询失败(按不可达处理): paymentNo={}", paymentNo, e);
+            return null;
+        }
+        return null; // 无法判定
     }
 
     /** T-075（2026-08-14）：异步渠道退款回调模拟注册（原仅支付有模拟器，退款永不回调 → 退款单卡"退款中"） */
@@ -119,12 +159,12 @@ public class PayCallbackSimulator {
                 Integer payType = Integer.parseInt(parts[0]);
                 String paymentNo = parts[1];
 
-                // 随机延迟 1~3 秒
-                int delay = 1000 + ThreadLocalRandom.current().nextInt(2000);
+                // 随机延迟（配置化：默认 1~3 秒）
+                int delay = randomCallbackDelay();
                 Thread.sleep(delay);
 
-                // 模拟回调：90% 成功率
-                boolean success = ThreadLocalRandom.current().nextDouble() < SUCCESS_RATE;
+                // 模拟回调（配置化成功率：默认 90%）
+                boolean success = ThreadLocalRandom.current().nextDouble() < successRate;
                 String tradeNo = success ? "MOCK_TRADE_" + System.currentTimeMillis() : null;
 
                 log.info("[回调模拟] 发送回调: paymentNo={}, payType={}, success={}, delay={}ms",
@@ -169,9 +209,9 @@ public class PayCallbackSimulator {
                     if (!Boolean.TRUE.equals(locked)) {
                         continue;
                     }
-                    int delay = 1000 + ThreadLocalRandom.current().nextInt(2000);
+                    int delay = randomCallbackDelay();
                     Thread.sleep(delay);
-                    boolean success = ThreadLocalRandom.current().nextDouble() < SUCCESS_RATE;
+                    boolean success = ThreadLocalRandom.current().nextDouble() < successRate;
                     log.info("[回调模拟] 发送退款回调: refundNo={}, success={}, delay={}ms", refundNo, success, delay);
                     paymentServiceProvider.getObject().handleRefundCallback(refundNo, success);
                     redisTemplate.delete(key);

@@ -215,31 +215,89 @@ class PaymentServiceTest {
     }
 
     @Test
-    @DisplayName("支付防重 - 同一订单重复支付应被幂等机制拦截")
-    void paymentDuplicatePrevention() {
+    @DisplayName("支付复用 - 同一订单同渠道重复发起复用同一支付单（ITER-002 A1）")
+    void paymentReuseSameChannel() {
+        // 已存在 pending 支付单（同渠道）
+        com.myxhs.payment.entity.Payment existing = new com.myxhs.payment.entity.Payment();
+        existing.setId(PAYMENT_ID);
+        existing.setOrderId(ORDER_ID);
+        existing.setUserId(USER_ID);
+        existing.setPaymentNo(PAYMENT_NO);
+        existing.setAmount(AMOUNT);
+        existing.setPayType(99);
+        existing.setStatus(0);
+        existing.setCreatedAt(java.time.LocalDateTime.now());
+        existing.setUpdatedAt(java.time.LocalDateTime.now());
+
+        when(paymentJdbcTemplate.query(
+                org.mockito.ArgumentMatchers.contains("AND status = 0"),
+                any(org.springframework.jdbc.core.ResultSetExtractor.class),
+                any()
+        )).thenReturn(existing);
+
+        R<PaymentVO> result = paymentService.pay(buildPayRequest());
+
+        assertThat(result.isSuccess()).isTrue();
+        assertThat(result.getData().getPaymentNo()).isEqualTo(PAYMENT_NO);
+        // 复用不新建支付单
+        verify(paymentJdbcTemplate, never()).update(
+                startsWith("INSERT INTO t_payment"),
+                any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("换渠道 - 关旧渠道交易 + 旧单置已关闭(4) + 新建新单（ITER-002 A1 阶段2）")
+    void paymentSwitchChannel() {
+        // 旧 pending：支付宝渠道(1)
+        com.myxhs.payment.entity.Payment pending = new com.myxhs.payment.entity.Payment();
+        pending.setId(PAYMENT_ID);
+        pending.setOrderId(ORDER_ID);
+        pending.setUserId(USER_ID);
+        pending.setPaymentNo("PAY-ALIPAY-OLD");
+        pending.setAmount(AMOUNT);
+        pending.setPayType(1);
+        pending.setStatus(0);
+        pending.setCreatedAt(java.time.LocalDateTime.now());
+        pending.setUpdatedAt(java.time.LocalDateTime.now());
+        when(paymentJdbcTemplate.query(
+                org.mockito.ArgumentMatchers.contains("AND status = 0"),
+                any(org.springframework.jdbc.core.ResultSetExtractor.class),
+                any()
+        )).thenReturn(pending);
+
+        // 旧渠道策略：close 应被调用
+        PayChannelStrategy alipayStrategy = mock(PayChannelStrategy.class);
+        when(payChannelStrategyMap.get(1)).thenReturn(alipayStrategy);
+
+        // 旧单关闭（乐观锁 UPDATE，4 参）
+        when(paymentJdbcTemplate.update(
+                startsWith("UPDATE t_payment SET status = ?, updated_at = ?"),
+                any(), any(), any(), any())).thenReturn(1);
+
+        // 新单插入 + 新渠道（微信 mock：异步 → 注册回调模拟器）
         when(paymentJdbcTemplate.update(
                 startsWith("INSERT INTO t_payment"),
-                any(), any(), any(), any(), any(), any(), any(), any(), any(), any()
-        )).thenReturn(1);
+                any(), any(), any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(1);
+        PayChannelStrategy wechatStrategy = mock(PayChannelStrategy.class);
+        when(payChannelStrategyMap.get(2)).thenReturn(wechatStrategy);
+        when(wechatStrategy.pay(eq(ORDER_ID), any(java.math.BigDecimal.class), anyString())).thenReturn("WX-TRADE");
 
-        when(paymentJdbcTemplate.update(
-                startsWith("UPDATE t_payment SET status"),
-                any(), any(), any(), any(), any()
-        )).thenReturn(1);
-
-        // 第一次 get 返回 null（未支付），第二次返回 "1"（已支付）
-        when(valueOperations.get(eq("myxhs:payment:status:" + ORDER_ID)))
-                .thenReturn(null, "1");
-
-        // 第一次支付：应该成功
         PayCreateRequest request = buildPayRequest();
-        R<PaymentVO> firstResult = paymentService.pay(request);
-        assertThat(firstResult.isSuccess()).isTrue();
+        request.setPayType(2); // 换到微信
 
-        // 第二次支付：应该被幂等拦截
-        assertThatThrownBy(() -> paymentService.pay(buildPayRequest()))
-                .isInstanceOf(BizException.class)
-                .hasMessageContaining("请勿重复支付");
+        R<PaymentVO> result = paymentService.pay(request);
+
+        assertThat(result.isSuccess()).isTrue();
+        // 旧渠道交易被关闭
+        verify(alipayStrategy).close("PAY-ALIPAY-OLD");
+        // 旧单置已关闭
+        verify(paymentJdbcTemplate).update(
+                startsWith("UPDATE t_payment SET status = ?, updated_at = ?"),
+                any(), any(), any(), any());
+        // 新单已创建
+        verify(paymentJdbcTemplate).update(
+                startsWith("INSERT INTO t_payment"),
+                any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -311,7 +369,107 @@ class PaymentServiceTest {
         verify(orderFeignClient, times(1)).notifyPaySuccess(eq(ORDER_ID), eq(TRADE_NO));
     }
 
+    // ==================== 超时处置矩阵（ITER-002 阶段④） ====================
+
+    @Test
+    @DisplayName("超时处置矩阵 - 渠道已付→收敛 / 未付→置失败+关渠道+证据 / 不可达→不处置")
+    void checkPaymentTimeout_channelTruthMatrix() {
+        // payType=1（支付宝 mock）策略
+        when(payChannelStrategyMap.get(1)).thenReturn(mockStrategy);
+        // 分布式锁：拿到（未打桩时 Boolean 默认 false → 会走"未获取到锁"提前返回）
+        when(valueOperations.setIfAbsent(anyString(), anyString(), any(java.time.Duration.class))).thenReturn(true);
+        when(paymentJdbcTemplate.queryForList(
+                startsWith("SELECT id, order_id, user_id, payment_no, pay_type FROM t_payment WHERE status = ?"),
+                (Object) any(), (Object) any())).thenReturn(java.util.List.of(
+                timeoutRow(1L, 101L, 1001L, "PAY-PAID", 1),
+                timeoutRow(2L, 102L, 1001L, "PAY-UNPAID", 1),
+                timeoutRow(3L, 103L, 1001L, "PAY-UNKNOWN", 1)
+        ));
+        when(mockStrategy.queryPayStatus("PAY-PAID")).thenReturn(1);
+        when(mockStrategy.queryPayStatus("PAY-UNPAID")).thenReturn(0);
+        when(mockStrategy.queryPayStatus("PAY-UNKNOWN")).thenReturn(null);
+        // 收敛成功（乐观锁 0→1）
+        when(paymentJdbcTemplate.update(
+                startsWith("UPDATE t_payment SET status = ?, paid_at = ?"),
+                any(), any(), any(), any(), any())).thenReturn(1);
+        // 置失败（verify_method）
+        when(paymentJdbcTemplate.update(
+                startsWith("UPDATE t_payment SET status = ?, verify_method = ?"),
+                any(), any(), any(), any(), any())).thenReturn(1);
+
+        paymentService.checkPaymentTimeout();
+
+        // 渠道已付 → 本地收敛 + 通知订单；不关渠道、不置失败
+        verify(orderFeignClient).notifyPaySuccess(eq(101L), eq("PAY-PAID"));
+        verify(mockStrategy, never()).close("PAY-PAID");
+        // 渠道未付 → 关渠道 + 置失败 + 证据
+        verify(mockStrategy).close("PAY-UNPAID");
+        verify(paymentJdbcTemplate).update(
+                startsWith("UPDATE t_payment SET status = ?, verify_method = ?"),
+                any(), any(), any(), any(), any());
+        // 不可达 → 不处置（不关渠道、不置失败）
+        verify(mockStrategy, never()).close("PAY-UNKNOWN");
+        verify(orderFeignClient, never()).notifyPaySuccess(eq(103L), anyString());
+    }
+
+    @Test
+    @DisplayName("对账核查分支 - 未核实失败单渠道已付→收敛（GAP-4）")
+    void reconcile_unverifiedFailedRecheck() {
+        when(payChannelStrategyMap.get(1)).thenReturn(mockStrategy);
+        when(valueOperations.setIfAbsent(anyString(), anyString(), any(java.time.Duration.class))).thenReturn(true);
+        when(paymentJdbcTemplate.queryForList(
+                startsWith("SELECT id, order_id, user_id, payment_no, pay_type FROM t_payment WHERE status = ? AND verify_method = ?"),
+                (Object) any(), (Object) any(), (Object) any(), (Object) any())).thenReturn(java.util.List.of(
+                timeoutRow(9L, 109L, 1001L, "PAY-FAILED", 1)
+        ));
+        when(mockStrategy.queryPayStatus("PAY-FAILED")).thenReturn(1);
+        when(paymentJdbcTemplate.update(
+                startsWith("UPDATE t_payment SET status = ?, paid_at = ?"),
+                any(), any(), any(), any(), any())).thenReturn(1);
+
+        paymentService.reconcile();
+
+        verify(orderFeignClient).notifyPaySuccess(eq(109L), eq("PAY-FAILED"));
+    }
+
+    @Test
+    @DisplayName("订单终结 - 关闭 pending 支付单（status=4 + 渠道 close；ITER-002 阶段⑤）")
+    void closePendingOnTermination_closesPending() {
+        com.myxhs.payment.entity.Payment pending = new com.myxhs.payment.entity.Payment();
+        pending.setId(PAYMENT_ID);
+        pending.setOrderId(ORDER_ID);
+        pending.setUserId(USER_ID);
+        pending.setPaymentNo(PAYMENT_NO);
+        pending.setPayType(99);
+        pending.setStatus(0);
+        when(paymentJdbcTemplate.query(
+                org.mockito.ArgumentMatchers.contains("AND status = 0"),
+                any(org.springframework.jdbc.core.ResultSetExtractor.class),
+                any()
+        )).thenReturn(pending);
+        when(paymentJdbcTemplate.update(
+                startsWith("UPDATE t_payment SET status = ?, updated_at = ?"),
+                any(), any(), any(), any())).thenReturn(1);
+
+        paymentService.closePendingOnTermination(ORDER_ID);
+
+        verify(mockStrategy).close(PAYMENT_NO);
+        verify(paymentJdbcTemplate).update(
+                startsWith("UPDATE t_payment SET status = ?, updated_at = ?"),
+                any(), any(), any(), any());
+    }
+
     // ==================== 辅助方法 ====================
+
+    private java.util.Map<String, Object> timeoutRow(long id, long orderId, long uid, String paymentNo, int payType) {
+        java.util.Map<String, Object> m = new java.util.HashMap<>();
+        m.put("id", id);
+        m.put("order_id", orderId);
+        m.put("user_id", uid);
+        m.put("payment_no", paymentNo);
+        m.put("pay_type", payType);
+        return m;
+    }
 
     private PayCreateRequest buildPayRequest() {
         PayCreateRequest request = new PayCreateRequest();

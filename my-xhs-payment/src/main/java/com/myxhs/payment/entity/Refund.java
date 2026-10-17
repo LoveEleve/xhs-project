@@ -46,6 +46,9 @@ public class Refund implements Serializable {
     /** 退款单号（格式：REFUND_日期_流水号 (如 REFUND20260516000001，Redis INCR)） */
     private String refundNo;
 
+    /** 业务幂等键（ITER-002 阶段③：订单侧传入，如售后单号；同键重复请求返回既有退款单） */
+    private String outRefundNo;
+
     /** 退款金额 */
     private BigDecimal refundAmount;
 

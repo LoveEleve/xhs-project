@@ -85,6 +85,8 @@ public interface PaymentFeignClient {
         private BigDecimal refundAmount;
         private String reason;
         private Integer refundType;
+        /** 业务幂等键（ITER-002 阶段③：出金幂等，如售后单号；同键重复请求支付域返回既有退款单） */
+        private String outRefundNo;
     }
 
     /**

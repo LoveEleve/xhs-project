@@ -27,6 +27,9 @@ public class RefundByOrderRequest {
     /** 退款原因 */
     private String reason;
 
+    /** 业务幂等键（ITER-002 阶段③：订单侧传入，如售后单号；同键重复请求返回既有退款单） */
+    private String outRefundNo;
+
     /** 退款类型：1-仅退款 2-退货退款 */
     private Integer refundType;
 }

@@ -82,4 +82,19 @@ public interface PayChannelStrategy {
      * @return 支付状态：0-待支付 1-支付成功 2-支付失败
      */
     Integer queryPayStatus(String paymentNo);
+
+    /**
+     * 关闭渠道交易（ITER-002）
+     * <p>
+     * 使用场景：换渠道（关旧开新）/ 支付超时处置（按渠道真相关闭）/ 订单终结（关闭 pending）。
+     * 支付宝/微信：调渠道关闭接口（closeorder / trade.close）；Mock：无真实渠道交易，仅记录。
+     * </p>
+     * <p>
+     * 语义约定：调用方负责本地状态推进；本方法抛异常表示"渠道未确认关闭"，
+     * 换渠道场景应中止切换（避免"渠道旧交易仍可支付 + 本地已关闭"的错位）。
+     * </p>
+     *
+     * @param paymentNo 支付流水号
+     */
+    void close(String paymentNo);
 }

@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
  * <p>
  * 模拟支付宝异步回调流程：
  * 1. pay() → 模拟向支付宝提交支付请求，返回模拟交易号
- * 2. 异步回调 → 由 PayCallbackController 接收（支付宝服务器 POST 通知）
+ * 2. 异步回调 → 由 PayCallbackSimulator 模拟延迟回调（真实渠道接入时替换为回调端点 + 验签）
  * 3. handleCallback() → 处理回调，更新支付状态
  * </p>
  * <p>
@@ -32,6 +32,9 @@ public class AlipayPayStrategy implements PayChannelStrategy {
 
     /** 支付宝模拟交易号前缀 */
     private static final String ALIPAY_TRADE_NO_PREFIX = "ALIPAY_MOCK_";
+
+    /** Mock 渠道真值模拟器（ITER-002 阶段④：queryPayStatus 以"待回调标记"判定交易未决） */
+    private final com.myxhs.payment.simulator.PayCallbackSimulator callbackSimulator;
 
     @Override
     public String pay(Long orderId, java.math.BigDecimal amount, String paymentNo) {
@@ -68,8 +71,14 @@ public class AlipayPayStrategy implements PayChannelStrategy {
     @Override
     public Integer queryPayStatus(String paymentNo) {
         log.info("[支付宝Mock] 查询支付状态: paymentNo={}", paymentNo);
-        // 模拟：返回1（支付成功）
-        // 实际场景中，这里会调用支付宝 SDK 的 alipay.trade.query()
-        return 1;
+        // ITER-002 阶段④：Mock 渠道真值 = 待回调标记（存在=未决→0；不存在=未知→null）
+        // 真实场景中，这里会调用支付宝 SDK 的 alipay.trade.query()
+        return callbackSimulator.querySimulatedChannelStatus(paymentNo);
+    }
+
+    @Override
+    public void close(String paymentNo) {
+        // Mock：无真实渠道交易；关闭 = 仅记录（真实渠道：alipay.trade.close）
+        log.info("[支付宝Mock] 关闭渠道交易(模拟): paymentNo={}", paymentNo);
     }
 }
