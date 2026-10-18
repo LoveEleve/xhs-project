@@ -75,6 +75,8 @@ class CartServiceTest {
     @Mock
     private DefaultRedisScript<Long> cartCheckItemScript;
     @Mock
+    private DefaultRedisScript<Long> cartRemoveBatchScript;
+    @Mock
     private CartItemMapper cartItemMapper;
 
     private ObjectMapper objectMapper;
@@ -99,7 +101,8 @@ class CartServiceTest {
                 cartUpdateQuantityScript,
                 cartClearScript,
                 cartMergeItemScript,
-                cartCheckItemScript
+                cartCheckItemScript,
+                cartRemoveBatchScript
         );
     }
 
@@ -398,5 +401,51 @@ class CartServiceTest {
         int count = cartService.getCartCount(USER_ID);
 
         assertThat(count).isEqualTo(0);
+    }
+
+    // ==================== C-006：联动基础能力 ====================
+
+    @Test
+    @DisplayName("C-006：批量移除（下单清车）——原子脚本 + 逐 sku DELETE 同步事件")
+    void removeBySkusRemoves() {
+        when(stringRedisTemplate.execute(eq(cartRemoveBatchScript), anyList(), any(Object[].class)))
+                .thenReturn(2L);
+
+        int removed = cartService.removeBySkus(USER_ID, java.util.List.of(1L, 2L, 3L));
+
+        assertThat(removed).isEqualTo(2);
+        verify(stringRedisTemplate).execute(eq(cartRemoveBatchScript), anyList(), any(Object[].class));
+        verify(rocketMQTemplate, times(3)).asyncSendOrderly(anyString(),
+                any(org.springframework.messaging.Message.class), anyString(),
+                any(org.apache.rocketmq.client.producer.SendCallback.class));
+    }
+
+    @Test
+    @DisplayName("C-006：单项合并（回补）——已有项 max 语义（Lua 返回 10005）")
+    void mergeItemExistingTakesMax() {
+        ProductFeignClient.SkuDTO sku = new ProductFeignClient.SkuDTO();
+        sku.setId(5L);
+        sku.setStatus(1);
+        when(productFeignClient.getSkuDetail(5L)).thenReturn(R.ok(sku));
+        when(stringRedisTemplate.execute(eq(cartMergeItemScript), anyList(), any(), any(), any(), any(), any(), any()))
+                .thenReturn(10005L);
+
+        assertThat(cartService.mergeItem(USER_ID, 5L, 2)).isTrue();
+        verify(rocketMQTemplate).asyncSendOrderly(anyString(),
+                any(org.springframework.messaging.Message.class), anyString(),
+                any(org.apache.rocketmq.client.producer.SendCallback.class));
+    }
+
+    @Test
+    @DisplayName("C-006：单项合并——SKU 无效（未在架）跳过，不触脚本")
+    void mergeItemInvalidSkuSkips() {
+        ProductFeignClient.SkuDTO sku = new ProductFeignClient.SkuDTO();
+        sku.setId(6L);
+        sku.setStatus(0);
+        when(productFeignClient.getSkuDetail(6L)).thenReturn(R.ok(sku));
+
+        assertThat(cartService.mergeItem(USER_ID, 6L, 1)).isFalse();
+        verify(stringRedisTemplate, never())
+                .execute(eq(cartMergeItemScript), anyList(), any(), any(), any(), any(), any(), any());
     }
 }

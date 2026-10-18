@@ -36,6 +36,16 @@ public class RedisScriptConfig {
         return script;
     }
 
+    /** C-006：下单清车——批量移除（原子三结构） */
+    @Bean
+    public DefaultRedisScript<Long> cartRemoveBatchScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptSource(new ResourceScriptSource(
+                new ClassPathResource("lua/cart_remove_batch.lua")));
+        script.setResultType(Long.class);
+        return script;
+    }
+
     @Bean
     public DefaultRedisScript<Long> cartAddScript() {
         DefaultRedisScript<Long> script = new DefaultRedisScript<>();

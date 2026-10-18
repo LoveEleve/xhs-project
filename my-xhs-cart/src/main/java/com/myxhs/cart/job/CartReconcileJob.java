@@ -20,7 +20,7 @@ import java.util.Set;
 /**
  * 购物车对账修复任务（XXL-Job 分布式调度）
  * <p>
- * 每天凌晨 4 点，Redis ↔ MySQL 对比，以 Redis 为准修复。
+ * 每小时执行（部署 Cron = 0 0 * * * ?；C-006 修正原"每天凌晨 4 点"注释漂移），Redis ↔ MySQL 对比，以 Redis 为准修复。
  * </p>
  * <p>
  * XXL-Job 调度保证：Admin 只调度一个 Executor 实例执行，无需 Redisson 分布式锁。
@@ -71,7 +71,7 @@ public class CartReconcileJob {
     /**
      * 购物车对账修复（XXL-Job Handler）
      * <p>
-     * Admin 配置：Cron = 0 0 4 * * ?（每天凌晨 4 点）
+     * Admin 配置：Cron = 0 0 * * * ?（每小时）
      */
     @XxlJob("cartReconcileJob")
     public void reconcile() {
@@ -307,7 +307,7 @@ public class CartReconcileJob {
      * 事件流水保留策略：清理 30 天前（append-only 表必须配保留策略，否则无限增长）
      */
     private void purgeStaleEvents() {
-        // 有界排空：本任务每天 4 点跑一次，单批 5000 追不上日增量 → 循环到"清空或触顶"
+        // 有界排空：本任务每小时跑一次，单批 5000 追不上日增量 → 循环到"清空或触顶"
         final int batch = 5000;
         final int maxBatches = 20;   // 单次最多 10 万行/日，超出部分次日继续（会打 WARN）
         int total = 0;

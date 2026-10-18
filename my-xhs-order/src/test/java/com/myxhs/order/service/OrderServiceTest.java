@@ -216,6 +216,54 @@ class OrderServiceTest {
                 .hasMessageContaining("消息发送异常");
     }
 
+    @Test
+    @DisplayName("C-006：创建事务消息载荷含 source（下单清车联动；借发送异常路径捕获消息体）")
+    void createOrder_payloadContainsSource() throws Exception {
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.setIfAbsent(
+                startsWith("myxhs:order:idempotent:"), eq("1"), eq(24L), eq(TimeUnit.HOURS)))
+                .thenReturn(true);
+        when(valueOperations.setIfAbsent(
+                startsWith("myxhs:order:create:lock:"), anyString(), eq(10L), eq(TimeUnit.SECONDS)))
+                .thenReturn(true);
+        when(valueOperations.increment(startsWith("order:seq:"))).thenReturn(1L);
+        when(stringRedisTemplate.expire(anyString(), eq(48L), eq(TimeUnit.HOURS))).thenReturn(true);
+        when(stringRedisTemplate.execute(any(DefaultRedisScript.class), anyList(), anyString()))
+                .thenReturn(1L);
+        when(stringRedisTemplate.delete(startsWith("myxhs:order:idempotent:"))).thenReturn(true);
+
+        SkuInfoDTO sku = new SkuInfoDTO();
+        sku.setId(10001L);
+        sku.setSpuId(10001L);
+        sku.setName("Mock商品-10001");
+        sku.setPrice(new BigDecimal("99.00"));
+        sku.setSpuStatus(1);
+        when(productFeignClient.batchGetSkuDetails(anyList()))
+                .thenReturn(R.ok(Collections.singletonList(sku)));
+        when(inventoryFeignClient.queryStock(10001L))
+                .thenReturn(R.ok(Collections.singletonMap("availableStock", 2)));
+
+        TransactionSendResult sendResult = new TransactionSendResult();
+        sendResult.setSendStatus(SendStatus.FLUSH_DISK_TIMEOUT); // 触发既有异常收口（消息体已捕获）
+        when(rocketMQTemplate.sendMessageInTransaction(
+                eq(OrderService.ORDER_TRANSACTION_TOPIC), any(), any()))
+                .thenReturn(sendResult);
+
+        OrderCreateRequest request = buildCreateRequest("biz-cart-006");
+        request.setSource("CART");
+
+        assertThatThrownBy(() -> orderService.createOrder(USER_ID, request))
+                .isInstanceOf(BizException.class);
+
+        org.mockito.ArgumentCaptor<org.springframework.messaging.Message<String>> captor =
+                org.mockito.ArgumentCaptor.forClass(org.springframework.messaging.Message.class);
+        verify(rocketMQTemplate).sendMessageInTransaction(
+                eq(OrderService.ORDER_TRANSACTION_TOPIC), captor.capture(), any());
+        com.fasterxml.jackson.databind.JsonNode payload = objectMapper.readTree(captor.getValue().getPayload());
+        assertThat(payload.get("source").asText()).isEqualTo("CART");
+        assertThat(payload.get("skuItems").size()).isEqualTo(1);
+    }
+
     // ==================== 查询 ====================
 
     @Test
@@ -899,5 +947,43 @@ class OrderServiceTest {
         assertThat(rows.get(0)).containsEntry("sub_order_no", "ORDER-1001-1");
         assertThat(rows.get(0)).containsEntry("seller_id", 3001L);
         assertThat(rows.get(0)).containsEntry("id", 1L);
+    }
+
+    @Test
+    @DisplayName("C-006：终结事件载荷含 items + eventVersion=2（购物车回补联动）")
+    void terminationPayloadContainsItems() throws Exception {
+        Order order = buildOrder();
+        order.setStatus(0);
+        when(orderMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(order);
+        OrderItem item = new OrderItem();
+        item.setSkuId(1L);
+        item.setQuantity(2);
+        when(orderItemMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(java.util.List.of(item));
+        when(orderTerminationRocketMQTemplate.sendMessageInTransaction(
+                eq(OrderService.ORDER_TERMINATION_TOPIC), any(), any()))
+                .thenAnswer(invocation -> {
+                    OrderTerminationListener.OrderTerminationContext context = invocation.getArgument(2);
+                    context.setOutcome(OrderTerminationService.Outcome.TERMINATED);
+                    TransactionSendResult result = new TransactionSendResult();
+                    result.setSendStatus(SendStatus.SEND_OK);
+                    return result;
+                });
+        when(snapshotMapper.insert((OrderSnapshot) any())).thenReturn(1);
+        when(stringRedisTemplate.delete(startsWith("myxhs:order:info:"))).thenReturn(true);
+        when(localMessageMapper.markSuccessByTransactionIdAndType(anyString(), anyLong(), anyString()))
+                .thenReturn(1);
+
+        orderService.cancelOrder(USER_ID, ORDER_ID);
+
+        org.mockito.ArgumentCaptor<org.springframework.messaging.Message<String>> captor =
+                org.mockito.ArgumentCaptor.forClass(org.springframework.messaging.Message.class);
+        verify(orderTerminationRocketMQTemplate).sendMessageInTransaction(
+                eq(OrderService.ORDER_TERMINATION_TOPIC), captor.capture(), any());
+        com.fasterxml.jackson.databind.JsonNode payload = objectMapper.readTree(captor.getValue().getPayload());
+        assertThat(payload.get("eventVersion").asInt()).isEqualTo(2);
+        assertThat(payload.get("items")).isNotNull();
+        assertThat(payload.get("items").size()).isEqualTo(1);
+        assertThat(payload.get("items").get(0).get("skuId").asLong()).isEqualTo(1L);
+        assertThat(payload.get("items").get(0).get("quantity").asInt()).isEqualTo(2);
     }
 }

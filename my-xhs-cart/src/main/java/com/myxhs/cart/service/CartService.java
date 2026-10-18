@@ -66,6 +66,8 @@ public class CartService {
     private final DefaultRedisScript<Long> cartClearScript;
     private final DefaultRedisScript<Long> cartMergeItemScript;
     private final DefaultRedisScript<Long> cartCheckItemScript;
+    /** C-006：下单清车批量移除脚本 */
+    private final DefaultRedisScript<Long> cartRemoveBatchScript;
 
     /** 商品上架状态码（对应 ProductStatus.ON_SHELF） */
     private static final int PRODUCT_STATUS_ON_SHELF = 1;
@@ -227,6 +229,35 @@ public class CartService {
         // MQ 异步持久化
         refreshTTL(userId);
         sendCartSyncEvent(userId, skuId, 0, 0, "DELETE");
+    }
+
+    /**
+     * 批量移除（C-006 下单清车）：按订单 sku 列表原子移除三结构；不存在的忽略（幂等）。
+     * 同步事件：逐 sku DELETE（对齐 CartSyncEvent 动作规格）。
+     *
+     * @return 实际移除数量
+     */
+    public int removeBySkus(Long userId, List<Long> skuIds) {
+        if (skuIds == null || skuIds.isEmpty()) {
+            return 0;
+        }
+        List<Long> distinct = skuIds.stream().filter(java.util.Objects::nonNull).distinct()
+                .collect(java.util.stream.Collectors.toList());
+        if (distinct.isEmpty()) {
+            return 0;
+        }
+        String[] args = distinct.stream().map(String::valueOf).toArray(String[]::new);
+        Long removed = stringRedisTemplate.execute(
+                cartRemoveBatchScript,
+                List.of(itemsKey(userId), checkedKey(userId), sortKey(userId)),
+                (Object[]) args);
+        int count = removed != null ? removed.intValue() : 0;
+        log.info("[购物车] 批量移除(下单清车): userId={}, 请求={}, 实际移除={}", userId, distinct.size(), count);
+        refreshTTL(userId);
+        for (Long skuId : distinct) {
+            sendCartSyncEvent(userId, skuId, 0, 0, "DELETE");
+        }
+        return count;
     }
 
     // ==================== 勾选/取消勾选 ====================
@@ -545,34 +576,9 @@ public class CartService {
                 continue;
             }
 
-            String skuIdStr = String.valueOf(item.getSkuId());
-
-            // 统一 Lua 脚本原子处理：HEXISTS→已有项 HGET+max()+HSET / 新项 HLEN+HSET+SADD+ZADD NX
-            // 替代原 hasKey→get→put 非原子路径：并发删除后 put 会复活已删商品
-            Long mergeResult = stringRedisTemplate.execute(
-                    cartMergeItemScript,
-                    List.of(itemsKey, checkedKey, sortKey),
-                    skuIdStr, String.valueOf(item.getQuantity()),
-                    String.valueOf(MAX_CART_SIZE),
-                    String.valueOf(MAX_ITEM_QUANTITY),
-                    String.valueOf(System.currentTimeMillis()),
-                    String.valueOf(CART_TTL.getSeconds()));   // Lua 内滑动 TTL
-
+            Long mergeResult = executeMergeItem(userId, item.getSkuId(), item.getQuantity());
             if (mergeResult == null || Long.valueOf(0).equals(mergeResult)) {
                 log.warn("[购物车] 合并跳过（已满或上限触发）: userId={}, skuId={}", userId, item.getSkuId());
-                continue;
-            }
-
-            // Lua 返回值 >= 10000 表示已有商品（实际数量 = 返回值 - 10000），
-            // 已有商品 Lua 不触碰 checked Set，因此发 UPDATE 事件（checked=null 不改 MySQL 勾选状态），
-            // 避免统一发 ADD+checked=1 强制覆盖 MySQL 勾选状态与 Redis 不一致
-            if (mergeResult >= 10000) {
-                int actualQty = (int) (mergeResult - 10000);
-                sendCartSyncEvent(userId, item.getSkuId(), actualQty, null, "UPDATE");
-            } else {
-                int actualQty = mergeResult.intValue();
-                // 新商品：Lua 已 SADD 到 checked Set（默认勾选），发 ADD 事件对齐
-                sendCartSyncEvent(userId, item.getSkuId(), actualQty, 1, "ADD");
             }
         }
 
@@ -580,6 +586,54 @@ public class CartService {
         // 合并写入后刷新 TTL（与其他写路径一致，防止长期活跃用户购物车过期）
         refreshTTL(userId);
         log.info("[购物车] 匿名购物车合并完成: userId={}, 合并{}项", userId, request.getItems().size());
+    }
+
+    /** 执行 merge Lua + 同步事件（mergeAnonymousCart 与 mergeItem 共用；调用方负责有效性校验） */
+    private Long executeMergeItem(Long userId, Long skuId, Integer quantity) {
+        // 统一 Lua 脚本原子处理：HEXISTS→已有项 HGET+max()+HSET / 新项 HLEN+HSET+SADD+ZADD NX
+        // 替代原 hasKey→get→put 非原子路径：并发删除后 put 会复活已删商品
+        Long mergeResult = stringRedisTemplate.execute(
+                cartMergeItemScript,
+                List.of(itemsKey(userId), checkedKey(userId), sortKey(userId)),
+                String.valueOf(skuId), String.valueOf(quantity),
+                String.valueOf(MAX_CART_SIZE),
+                String.valueOf(MAX_ITEM_QUANTITY),
+                String.valueOf(System.currentTimeMillis()),
+                String.valueOf(CART_TTL.getSeconds()));   // Lua 内滑动 TTL
+        if (mergeResult == null || Long.valueOf(0).equals(mergeResult)) {
+            return mergeResult;
+        }
+        // Lua 返回值 >= 10000 表示已有商品（实际数量 = 返回值 - 10000），
+        // 已有商品 Lua 不触碰 checked Set，因此发 UPDATE 事件（checked=null 不改 MySQL 勾选状态）
+        if (mergeResult >= 10000) {
+            sendCartSyncEvent(userId, skuId, (int) (mergeResult - 10000), null, "UPDATE");
+        } else {
+            // 新商品：Lua 已 SADD 到 checked Set（默认勾选），发 ADD 事件对齐
+            sendCartSyncEvent(userId, skuId, mergeResult.intValue(), 1, "ADD");
+        }
+        return mergeResult;
+    }
+
+    /**
+     * 单项合并（C-006 回补联动）：SKU 有效性校验（商品服务异常降级放行，与匿名车合并同口径）
+     * → merge Lua（max 数量语义，已有项不触碰勾选）→ 同步事件。
+     *
+     * @return true=已合并（含已有项取 max）；false=跳过（无效/满/超限）
+     */
+    public boolean mergeItem(Long userId, Long skuId, Integer quantity) {
+        if (skuId == null || quantity == null || quantity <= 0) {
+            return false;
+        }
+        if (!skuExists(skuId)) {
+            log.warn("[购物车] 单项合并跳过（SKU不存在/未上架）: userId={}, skuId={}", userId, skuId);
+            return false;
+        }
+        Long mergeResult = executeMergeItem(userId, skuId, quantity);
+        if (mergeResult == null || Long.valueOf(0).equals(mergeResult)) {
+            log.warn("[购物车] 单项合并跳过（已满或上限触发）: userId={}, skuId={}", userId, skuId);
+            return false;
+        }
+        return true;
     }
 
     // ==================== 获取购物车商品数量 ====================

@@ -106,6 +106,8 @@ export default function OrderCreatePage() {
         addressId,
         couponId,
         bizIdentifier: bizIdentifierRef.current,
+        // C-006：订单来源（CART 触发下单清车；DIRECT 直接购买不碰购物车）
+        source: state.source === 'cart' ? 'CART' : 'DIRECT',
       });
       message.success('下单成功');
       navigate(`/order/${resp.data.data.orderId}`);

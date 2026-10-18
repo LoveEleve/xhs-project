@@ -32,6 +32,9 @@ public class OrderCreateRequest {
     @NotBlank(message = "幂等键不能为空")
     private String bizIdentifier;
 
+    /** 订单来源（C-006：CART=购物车结算 / DIRECT=直接购买；缺省按 DIRECT 保守处理——仅 CART 触发下单清车） */
+    private String source;
+
     @Data
     public static class SkuItem {
         @NotNull(message = "SKU ID不能为空")

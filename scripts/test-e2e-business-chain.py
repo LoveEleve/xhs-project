@@ -160,16 +160,22 @@ def main():
     stock_before = (body.get("data") or {}).get("stock") if isinstance(body.get("data"), dict) else body.get("data")
     step(9, f"库存快照(下单前): {stock_before}", code, body, code == 200)
 
-    # 6. 下单（用券 + 预扣库存）
-    code, body = call("POST", "/api/order/create", token, secret, user_id=uid,
-                      json_body={"skuItems": [{"skuId": sku_id, "quantity": 2}],
-                                 "addressId": addr_id, "couponId": user_coupon_id,
-                                 "bizIdentifier": f"chain-{TS}-order"})
+    # 6. 下单（用券 + 预扣库存；C-006：source=CART 触发下单清车联动）
+    create_code, body = call("POST", "/api/order/create", token, secret, user_id=uid,
+                             json_body={"skuItems": [{"skuId": sku_id, "quantity": 2}],
+                                        "addressId": addr_id, "couponId": user_coupon_id,
+                                        "bizIdentifier": f"chain-{TS}-order",
+                                        "source": "CART"})
     order_id = (body.get("data") or {}).get("orderId")
     order_no = (body.get("data") or {}).get("orderNo")
     pay_amount = (body.get("data") or {}).get("payAmount")
-    step(10, f"创建订单 orderId={order_id}", code, body, bool(order_id),
-         {"orderId": order_id, "orderNo": order_no, "payAmount": pay_amount})
+    # C-006：清车联动核验（下单即从购物车移除已购 sku；本单随后支付成功——回补场景见联动单测矩阵）
+    _, cart_body = call("GET", "/api/cart/list", token, secret, user_id=uid)
+    cart_items = (cart_body.get("data") or {}).get("items") or []
+    cart_cleared = all(i.get("skuId") != sku_id for i in cart_items)
+    step(10, f"创建订单 orderId={order_id}", create_code, body, bool(order_id),
+         {"orderId": order_id, "orderNo": order_no, "payAmount": pay_amount,
+          "cartCleared": cart_cleared})
     code, body = call("GET", f"/api/order/{order_id}", token, secret, user_id=uid)
     status_created = (body.get("data") or {}).get("status")
     step(11, f"订单详情(下单后): status={status_created}", code, body, code == 200)

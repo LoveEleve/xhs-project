@@ -432,6 +432,9 @@ public class OrderService {
                     "userId", userId,
                     "skuItems", request.getSkuItems(),
                     "couponId", request.getCouponId() != null ? request.getCouponId() : 0L,
+                    // C-006：订单来源（CART 才触发购物车清车；缺省 DIRECT——Map.of 不容 null）
+                    "source", request.getSource() != null && !request.getSource().isBlank()
+                            ? request.getSource() : "DIRECT",
                     "timestamp", System.currentTimeMillis()
             ));
         } catch (Exception e) {
@@ -669,14 +672,26 @@ public class OrderService {
 
     /** 构造终结事件载荷（与事务消息体同源；Long 经全局 JacksonConfig 序列化为字符串，消费者需兼容解析） */
     private String buildTerminationPayload(Order order, TerminationReason reason, String source) {
+        // C-006：回补联动需要商品明细（购物车按 items 恢复）——终结时订单明细已定型（不可变），预读期查询
+        java.util.List<OrderTerminationEvent.TerminationItem> items = orderItemMapper.selectList(
+                        new LambdaQueryWrapper<OrderItem>()
+                                .eq(OrderItem::getOrderId, order.getId())
+                                .eq(OrderItem::getUserId, order.getUserId()))
+                .stream()
+                .map(item -> OrderTerminationEvent.TerminationItem.builder()
+                        .skuId(item.getSkuId())
+                        .quantity(item.getQuantity())
+                        .build())
+                .collect(java.util.stream.Collectors.toList());
         OrderTerminationEvent event = OrderTerminationEvent.builder()
-                .eventVersion(1)
+                .eventVersion(2) // C-006：+items（回补联动；现有订阅方按字段读，向后兼容）
                 .orderId(order.getId())
                 .orderNo(order.getOrderNo())
                 .userId(order.getUserId())
                 .couponId(order.getCouponId())
                 .reason(reason.name())
                 .source(source)
+                .items(items)
                 .occurredAt(LocalDateTime.now().toString())
                 .traceId(com.myxhs.common.trace.TraceContextHolder.getTraceId())
                 .build();

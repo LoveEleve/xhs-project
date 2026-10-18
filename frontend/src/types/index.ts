@@ -331,7 +331,10 @@ export interface OrderVO {
 }
 
 export interface CreateOrderRequest {
-  skuItems: { skuId: string; quantity: number }[];
+  skuItems: { skuId: string; quantity: number
+  /** C-006：订单来源（CART=购物车结算 / DIRECT=直接购买） */
+  source?: string;
+}[];
   couponId?: string;
   addressId: string;
   /** 幂等键（前端每次下单生成一个，防重复提交） */

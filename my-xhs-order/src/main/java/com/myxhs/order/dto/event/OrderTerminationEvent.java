@@ -4,6 +4,7 @@ import lombok.Builder;
 import lombok.Data;
 
 import java.io.Serializable;
+import java.util.List;
 
 /**
  * 订单终结事件（ORDER_TERMINATION_TOPIC 消息体）
@@ -54,4 +55,18 @@ public class OrderTerminationEvent implements Serializable {
 
     /** 链路追踪ID（跨服务排障） */
     private String traceId;
+
+    /** 订单商品明细（C-006：购物车回补用；eventVersion=2 起新增，现有订阅方忽略） */
+    private List<TerminationItem> items;
+
+    /** 商品明细项 */
+    @Data
+    @Builder
+    public static class TerminationItem implements Serializable {
+        private static final long serialVersionUID = 1L;
+        /** SKU ID */
+        private Long skuId;
+        /** 数量 */
+        private Integer quantity;
+    }
 }
