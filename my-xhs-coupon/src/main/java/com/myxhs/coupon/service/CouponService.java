@@ -13,6 +13,7 @@ import com.myxhs.coupon.mapper.CouponTemplateMapper;
 import com.myxhs.coupon.mapper.CouponOutboxMapper;
 import com.myxhs.coupon.mapper.UserCouponMapper;
 import com.myxhs.common.id.IdGeneratorUtil;
+import com.myxhs.common.metrics.BusinessMetrics;
 import com.myxhs.coupon.validator.CouponValidator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -61,6 +62,7 @@ public class CouponService {
     private final DefaultRedisScript<Long> claimCouponScript;
     private final DefaultRedisScript<Long> returnCouponScript;
     private final List<CouponValidator> validators; // Spring 自动注入所有校验器（按 @Order 排序）
+    private final BusinessMetrics businessMetrics; // C-007：业务指标（领/用/退）
 
     /** 【修复M15】Key 使用 {templateId} 作为 hash tag，保证 stock 和 claimed 落同 slot */
     private static final String STOCK_KEY_TPL = "myxhs:coupon:{%d}:stock";
@@ -250,13 +252,24 @@ public class CouponService {
                 if (claimNo == null) {
                     // 唯一回滚路径：Outbox 双次写入失败（可证"无消息在途"）
                     rollbackRedisStock(stockKey, claimedKey);
+                    businessMetrics.recordCouponAction("claim_fail", false);
                     throw new BizException(ResultCode.INTERNAL_ERROR, "领券失败，请重试");
                 }
                 log.info("[优惠券] 领券成功{}: userId={}, templateId={}", logTag, userId, templateId);
+                businessMetrics.recordCouponAction("claim_ok", true);
             }
-            case -1 -> throw new BizException(ResultCode.COUPON_SOLD_OUT);
-            case -2 -> throw new BizException(ResultCode.COUPON_ALREADY_RECEIVED, "已达限领上限");
-            default -> throw new BizException(ResultCode.INTERNAL_ERROR, "领券异常: result=" + result);
+            case -1 -> {
+                businessMetrics.recordCouponAction("claim_sold_out", false);
+                throw new BizException(ResultCode.COUPON_SOLD_OUT);
+            }
+            case -2 -> {
+                businessMetrics.recordCouponAction("claim_limit", false);
+                throw new BizException(ResultCode.COUPON_ALREADY_RECEIVED, "已达限领上限");
+            }
+            default -> {
+                businessMetrics.recordCouponAction("claim_fail", false);
+                throw new BizException(ResultCode.INTERNAL_ERROR, "领券异常: result=" + result);
+            }
         }
     }
 
@@ -301,42 +314,49 @@ public class CouponService {
      * @return 折扣金额
      */
     public java.math.BigDecimal useCoupon(Long userId, UseCouponRequest request) {
-        // 1. 查询用户券
-        UserCoupon userCoupon = userCouponMapper.selectById(request.getUserCouponId());
-        if (userCoupon == null || !userCoupon.getUserId().equals(userId)) {
-            throw new BizException(ResultCode.COUPON_NOT_FOUND);
-        }
-        if (userCoupon.getStatus() != 0) {
-            // T-121（2026-08-16）：状态文案精确化——1=已使用（含并发乐观锁失败），2=已过期标记
-            if (userCoupon.getStatus() == 1) {
+        try {
+            // 1. 查询用户券
+            UserCoupon userCoupon = userCouponMapper.selectById(request.getUserCouponId());
+            if (userCoupon == null || !userCoupon.getUserId().equals(userId)) {
+                throw new BizException(ResultCode.COUPON_NOT_FOUND);
+            }
+            if (userCoupon.getStatus() != 0) {
+                // T-121（2026-08-16）：状态文案精确化——1=已使用（含并发乐观锁失败），2=已过期标记
+                if (userCoupon.getStatus() == 1) {
+                    throw new BizException(ResultCode.COUPON_NOT_AVAILABLE, "优惠券已被使用");
+                }
+                throw new BizException(ResultCode.COUPON_NOT_AVAILABLE, "优惠券状态异常");
+            }
+
+            // 2. 查询券模板（走缓存）
+            CouponTemplate template = getTemplateWithCache(userCoupon.getCouponId());
+            if (template == null) {
+                throw new BizException(ResultCode.COUPON_NOT_FOUND);
+            }
+
+            // 3. 责任链校验（门槛 → 有效期 → 状态）
+            for (CouponValidator validator : validators) {
+                validator.validate(template, request.getOrderAmount());
+            }
+
+            // 4. 计算折扣
+            java.math.BigDecimal discount = calculateDiscount(template, request.getOrderAmount());
+
+            // 5. 标记已使用（乐观锁：WHERE status = 0）
+            int affected = userCouponMapper.markUsed(userCoupon.getId(), request.getOrderId());
+            if (affected == 0) {
                 throw new BizException(ResultCode.COUPON_NOT_AVAILABLE, "优惠券已被使用");
             }
-            throw new BizException(ResultCode.COUPON_NOT_AVAILABLE, "优惠券状态异常");
+
+            log.info("[优惠券] 用券成功: userId={}, couponId={}, orderId={}, discount={}",
+                    userId, userCoupon.getCouponId(), request.getOrderId(), discount);
+            businessMetrics.recordCouponAction("use_ok", true);
+            return discount;
+        } catch (BizException e) {
+            // C-007：业务拒绝路径统一观测（未找到/不可用/责任链拦截/并发冲突）
+            businessMetrics.recordCouponAction("use_fail", false);
+            throw e;
         }
-
-        // 2. 查询券模板（走缓存）
-        CouponTemplate template = getTemplateWithCache(userCoupon.getCouponId());
-        if (template == null) {
-            throw new BizException(ResultCode.COUPON_NOT_FOUND);
-        }
-
-        // 3. 责任链校验（门槛 → 有效期 → 状态）
-        for (CouponValidator validator : validators) {
-            validator.validate(template, request.getOrderAmount());
-        }
-
-        // 4. 计算折扣
-        java.math.BigDecimal discount = calculateDiscount(template, request.getOrderAmount());
-
-        // 5. 标记已使用（乐观锁：WHERE status = 0）
-        int affected = userCouponMapper.markUsed(userCoupon.getId(), request.getOrderId());
-        if (affected == 0) {
-            throw new BizException(ResultCode.COUPON_NOT_AVAILABLE, "优惠券已被使用");
-        }
-
-        log.info("[优惠券] 用券成功: userId={}, couponId={}, orderId={}, discount={}",
-                userId, userCoupon.getCouponId(), request.getOrderId(), discount);
-        return discount;
     }
 
     private java.math.BigDecimal calculateDiscount(CouponTemplate template, java.math.BigDecimal orderAmount) {
@@ -379,12 +399,14 @@ public class CouponService {
         if (affected == 0) {
             log.warn("[优惠券] 退券失败(状态不匹配): userCouponId={}, orderId={}",
                     request.getUserCouponId(), request.getOrderId());
+            businessMetrics.recordCouponAction("return_skip", true);
             return; // 幂等：已退回或状态不匹配，不报错
         }
 
         // 3. 语义（RV30，见 javadoc）：仅恢复用户券状态；不触碰 stock/remain/claimed（防超发敞口）
         log.info("[优惠券] 退券完成(仅恢复用户券状态): couponId={}, userId={}, userCouponId={}",
                 userCoupon.getCouponId(), userId, userCoupon.getId());
+        businessMetrics.recordCouponAction("return_ok", true);
         // 【C-007 删除】原 evictTemplateCache 调用：退券不修改模板任何字段 → 无需失效模板缓存
     }
 

@@ -120,7 +120,10 @@ public class CouponReconcileJob {
     /**
      * 库存对账修复（XXL-Job Handler）
      * <p>
-     * Admin 配置：Cron = 0 0 2 * * ?（每天凌晨 2 点）
+     * Admin 配置：Cron = 0 0 * * * ?（每小时）。
+     * 部署基准：deploy/docker/my-xhs-deploy-zip/config/deploy-cloud/init-xxljob.sql:123。
+     * 【C-007 修正】旧注释"0 0 2 * * ?（每天凌晨 2 点）"与部署漂移
+     * （2026-09-18 审计确认，见 docs/reports/xxl-job-schedule-audit-20260918.md）。
      */
     @XxlJob("couponReconcileJob")
     public void reconcile() {

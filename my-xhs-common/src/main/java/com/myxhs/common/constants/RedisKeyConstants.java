@@ -134,12 +134,8 @@ public final class RedisKeyConstants {
     /** 库存缓存 myxhs:inventory:stock:{skuId} */
     public static final String INVENTORY_STOCK = PROJECT_PREFIX + "inventory:stock:";
 
-    /** 优惠券库存（已废弃：CouponService 自行管理 Key，使用 myxhs:coupon:{%s}:stock 格式） */
-    @Deprecated
-    public static final String COUPON_STOCK = PROJECT_PREFIX + "coupon:stock:";
-
-    /** 用户领券记录 myxhs:coupon:user:{userId}:{couponId} */
-    public static final String COUPON_USER = PROJECT_PREFIX + "coupon:user:";
+    // 【C-007 删除】原 COUPON_STOCK（@Deprecated）与 COUPON_USER：全仓零引用，
+    // 且格式与真实键不符（真实键：myxhs:coupon:{templateId}:stock 与 :claimed:{userId}，见 CouponService）
 
     // ==================== 搜索服务 ====================
 

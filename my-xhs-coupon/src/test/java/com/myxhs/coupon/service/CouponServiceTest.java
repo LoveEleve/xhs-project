@@ -93,7 +93,8 @@ class CouponServiceTest {
                 mock(com.myxhs.common.id.IdGeneratorUtil.class),
                 objectMapper,
                 claimCouponScript, returnCouponScript,
-                validators
+                validators,
+                mock(com.myxhs.common.metrics.BusinessMetrics.class)
         );
     }
 

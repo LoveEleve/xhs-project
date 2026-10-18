@@ -39,7 +39,10 @@ public class CouponExpireJob {
     /**
      * 优惠券过期扫描（XXL-Job Handler）
      * <p>
-     * Admin 配置：Cron = 0 0 * * * ?（每小时）
+     * Admin 配置：Cron = 0 *&#47;5 * * * ?（每 5 分钟）。
+     * 部署基准：deploy/docker/my-xhs-deploy-zip/config/deploy-cloud/init-xxljob.sql:118。
+     * 【C-007 修正】旧注释"每小时"与部署漂移
+     * （2026-09-18 审计确认，见 docs/reports/xxl-job-schedule-audit-20260918.md）。
      */
     @XxlJob("couponExpireJob")
     public void expireCoupons() {
