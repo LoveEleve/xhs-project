@@ -54,7 +54,8 @@ class SellerSubOrderIndexSyncConsumerTest {
         redisTemplate = mock(StringRedisTemplate.class);
         setOps = mock(SetOperations.class);
         when(redisTemplate.opsForSet()).thenReturn(setOps);
-        consumer = new SellerSubOrderIndexSyncConsumer(indexWriter, redisTemplate);
+        consumer = new SellerSubOrderIndexSyncConsumer(indexWriter, redisTemplate,
+                new com.myxhs.search.service.SellerSubOrderIndexDocumentBuilder());
     }
 
     private MessageExt message(String json) {

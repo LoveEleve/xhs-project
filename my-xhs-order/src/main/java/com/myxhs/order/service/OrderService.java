@@ -1426,6 +1426,59 @@ public class OrderService {
     }
 
     /** 行 → VO（ITER-001：含分摊/行实付/子单归属） */
+    // ==================== 商家侧查询（C-004 P1） ====================
+
+    /**
+     * 商家维度子单详情（服务端路由解析）：subOrderNo → orderNo（去 "-N" 后缀）→ 映射表 → userId
+     * → 路由读（不依赖 ES）。商家不持有买家 userId；映射缺失明确报错（不静默、不 scatter）。
+     */
+    public OrderVO.SubOrderVO getSellerSubOrderDetail(String subOrderNo) {
+        if (subOrderNo == null || subOrderNo.isBlank()) {
+            throw new BizException(ResultCode.PARAM_INVALID, "子单号必填");
+        }
+        int idx = subOrderNo.lastIndexOf('-');
+        if (idx <= 0) {
+            throw new BizException(ResultCode.PARAM_INVALID, "子单号格式非法");
+        }
+        String orderNo = subOrderNo.substring(0, idx);
+        OrderNoMapping mapping = orderNoMappingRepository.selectByOrderNo(orderNo);
+        if (mapping == null) {
+            throw new BizException(ResultCode.ORDER_NOT_FOUND, "订单路由信息缺失");
+        }
+        SubOrder sub = subOrderMapper.selectBySubOrderNo(subOrderNo, mapping.getUserId());
+        if (sub == null) {
+            throw new BizException(ResultCode.ORDER_NOT_FOUND, "子单不存在");
+        }
+        List<OrderItem> items = orderItemMapper.selectBySubOrderId(sub.getId(), mapping.getUserId());
+        return toSubOrderVO(sub, items);
+    }
+
+    /**
+     * 子单全量扫描（C-004 P1 回填用；游标分页，跨全部分片——一次性运维路径）。
+     * 返回 snake_case 字段（与 binlog 列名同口径，供索引文档构建复用）。
+     */
+    public List<Map<String, Object>> scanSubOrders(long cursor, int limit) {
+        List<SubOrder> subs = subOrderMapper.scanByCursor(cursor, limit);
+        List<Map<String, Object>> rows = new java.util.ArrayList<>(subs.size());
+        for (SubOrder sub : subs) {
+            Map<String, Object> row = new java.util.LinkedHashMap<>();
+            row.put("id", sub.getId());
+            row.put("order_id", sub.getOrderId());
+            row.put("order_no", sub.getOrderNo());
+            row.put("sub_order_no", sub.getSubOrderNo());
+            row.put("user_id", sub.getUserId());
+            row.put("seller_id", sub.getSellerId());
+            row.put("status", sub.getStatus());
+            row.put("total_amount", sub.getTotalAmount());
+            row.put("discount_amount", sub.getDiscountAmount());
+            row.put("pay_amount", sub.getPayAmount());
+            row.put("created_at", sub.getCreatedAt());
+            row.put("updated_at", sub.getUpdatedAt());
+            rows.add(row);
+        }
+        return rows;
+    }
+
     private OrderVO.OrderItemVO toItemVO(OrderItem item) {
         BigDecimal share = item.getDiscountShare() != null ? item.getDiscountShare() : BigDecimal.ZERO;
         BigDecimal total = item.getTotalAmount() != null ? item.getTotalAmount() : BigDecimal.ZERO;

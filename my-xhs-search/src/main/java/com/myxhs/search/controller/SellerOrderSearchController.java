@@ -8,6 +8,7 @@ import com.myxhs.search.service.SellerOrderSearchService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -36,6 +37,7 @@ public class SellerOrderSearchController {
 
     private final SellerOrderSearchService sellerOrderSearchService;
     private final AccessTokenGuard accessTokenGuard;
+    private final com.myxhs.search.job.SellerSubOrderIndexBackfillJob sellerSubOrderIndexBackfillJob;
 
     /**
      * 商家子单列表（筛选/排序/分页）。
@@ -64,5 +66,17 @@ public class SellerOrderSearchController {
             return R.fail(ResultCode.PARAM_INVALID, "sellerId 必填");
         }
         return R.ok(sellerOrderSearchService.search(sellerId, status, startTime, endTime, page, size));
+    }
+
+    /**
+     * 手动触发存量回填（管理员；canal 只捕增量——存量必须回填，部署顺序：先回填后切流量）。
+     */
+    @PostMapping("/backfill")
+    public R<String> triggerBackfill(@RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
+        if (!accessTokenGuard.isAdminCall(adminCall)) {
+            return R.fail(403, "无权访问管理接口");
+        }
+        sellerSubOrderIndexBackfillJob.manualBackfill();
+        return R.ok("存量回填任务已触发（异步执行，可重入）");
     }
 }

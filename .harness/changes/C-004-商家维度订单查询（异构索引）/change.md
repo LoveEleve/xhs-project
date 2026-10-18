@@ -1,7 +1,7 @@
 ---
 id: C-004
 slug: 商家维度订单查询（异构索引）
-status: confirmed
+status: done
 created: 2026-10-17
 updated: 2026-10-17
 iteration: ITER-004     # 机器可读迭代协议：.harness/iterations/ITER-004-商家维度订单查询/
@@ -16,6 +16,11 @@ relations:
 ---
 
 # C-004 商家维度订单查询（异构索引）
+
+> **完成记录（2026-10-17）**：P0（Canal order_instance + 消费者/ES 索引 + 商家列表 API）+ P1（详情路由解析 + 扫描端点 + 存量回填 Job）全部落地；
+> P0 深审查 40 项（0 严重 / 4 修复）；证据：七模块全量 **368 全绿**（order 118 / search 39 / 其余同基线）+ 全仓编译。
+> 详见 `.harness/iterations/ITER-004-商家维度订单查询/test/report.md`（含部署顺序说明：先回填后切流量）。
+> 运行时验证（真实 Canal→MQ→ES 全链路）按项目规则后置。
 
 > **立项（2026-10-17）**：ITER-001 引入商家维度（`t_sub_order.seller_id`）后，商家侧只有"操作"（发货，X-Admin-Call）
 > 没有"发现"（看单）——子单查找强制带分片键 `userId`（`SubOrderMapper.selectBySubOrderNo(subOrderNo, userId)`），

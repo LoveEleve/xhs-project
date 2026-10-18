@@ -28,6 +28,15 @@ public interface SubOrderMapper extends BaseMapper<SubOrder> {
     @Select("SELECT * FROM t_sub_order WHERE sub_order_no = #{subOrderNo} AND user_id = #{userId} AND deleted = 0 LIMIT 1")
     SubOrder selectBySubOrderNo(@Param("subOrderNo") String subOrderNo, @Param("userId") Long userId);
 
+    /**
+     * 全量扫描（C-004 P1 回填用；游标分页，无分片键 → 全路由 scatter+归并——一次性运维路径，
+     * 不用于线上查询链路）。
+     */
+    @Select("SELECT id, order_id, order_no, sub_order_no, user_id, seller_id, status, "
+            + "total_amount, discount_amount, pay_amount, created_at, updated_at "
+            + "FROM t_sub_order WHERE id > #{cursor} AND deleted = 0 ORDER BY id ASC LIMIT #{limit}")
+    List<SubOrder> scanByCursor(@Param("cursor") long cursor, @Param("limit") int limit);
+
     /** 发货（CAS：待发货 → 已发货，带时间戳） */
     @Update("UPDATE t_sub_order SET status = 2, delivered_at = NOW(), updated_at = NOW() "
             + "WHERE id = #{id} AND user_id = #{userId} AND status = 1 AND deleted = 0")

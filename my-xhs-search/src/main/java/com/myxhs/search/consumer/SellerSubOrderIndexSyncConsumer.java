@@ -14,8 +14,6 @@ import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * 商家维度子单索引同步消费者（C-004）
@@ -47,6 +45,7 @@ public class SellerSubOrderIndexSyncConsumer implements RocketMQListener<Message
 
     private final SellerSubOrderIndexWriter indexWriter;
     private final StringRedisTemplate stringRedisTemplate;
+    private final com.myxhs.search.service.SellerSubOrderIndexDocumentBuilder documentBuilder;
 
     @Override
     public void onMessage(MessageExt msg) {
@@ -94,7 +93,7 @@ public class SellerSubOrderIndexSyncConsumer implements RocketMQListener<Message
                     // 逻辑删除（UPDATE deleted=1）与物理 DELETE 统一走软删除标记
                     indexWriter.softDelete(subOrderNo, version);
                 } else if ("INSERT".equals(type) || "UPDATE".equals(type)) {
-                    indexWriter.upsert(subOrderNo, buildDoc(row), version);
+                    indexWriter.upsert(subOrderNo, documentBuilder.build(row), version);
                 } else {
                     log.debug("[卖家子单索引] 未知事件类型，跳过: type={}, subOrderNo={}", type, subOrderNo);
                 }
@@ -143,21 +142,4 @@ public class SellerSubOrderIndexSyncConsumer implements RocketMQListener<Message
         }
     }
 
-    /** canal 行数据（列名）→ ES 文档（字段名） */
-    private Map<String, Object> buildDoc(JSONObject row) {
-        Map<String, Object> doc = new HashMap<>();
-        doc.put("subOrderNo", row.getString("sub_order_no"));
-        doc.put("orderNo", row.getString("order_no"));
-        doc.put("orderId", row.getLong("order_id"));
-        doc.put("userId", row.getLong("user_id"));
-        doc.put("sellerId", row.getLong("seller_id"));
-        doc.put("status", row.getIntValue("status"));
-        doc.put("totalAmount", row.getBigDecimal("total_amount"));
-        doc.put("discountAmount", row.getBigDecimal("discount_amount"));
-        doc.put("payAmount", row.getBigDecimal("pay_amount"));
-        doc.put("createdAt", row.getString("created_at"));
-        doc.put("updatedAt", row.getString("updated_at"));
-        doc.put("deleted", false);
-        return doc;
-    }
 }

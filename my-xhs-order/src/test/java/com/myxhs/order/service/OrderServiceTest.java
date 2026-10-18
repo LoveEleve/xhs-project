@@ -802,4 +802,102 @@ class OrderServiceTest {
         item.setTotalAmount(new BigDecimal("198.00"));
         return item;
     }
+
+    // ==================== 商家侧查询（C-004 P1） ====================
+
+    @Test
+    @DisplayName("商家子单详情 - 服务端路由解析（subOrderNo→orderNo→映射表→userId→路由读）+ 行明细")
+    void sellerSubOrderDetailResolvesRoute() {
+        com.myxhs.order.entity.OrderNoMapping mapping = new com.myxhs.order.entity.OrderNoMapping();
+        mapping.setUserId(USER_ID);
+        mapping.setOrderId(ORDER_ID);
+        when(orderNoMappingRepository.selectByOrderNo("ORDER-1001")).thenReturn(mapping);
+
+        SubOrder sub = new SubOrder();
+        sub.setId(9001L);
+        sub.setOrderId(ORDER_ID);
+        sub.setOrderNo("ORDER-1001");
+        sub.setSubOrderNo("ORDER-1001-1");
+        sub.setUserId(USER_ID);
+        sub.setSellerId(3001L);
+        sub.setStatus(2);
+        sub.setTotalAmount(new java.math.BigDecimal("199.00"));
+        sub.setDiscountAmount(new java.math.BigDecimal("9.00"));
+        sub.setPayAmount(new java.math.BigDecimal("190.00"));
+        when(subOrderMapper.selectBySubOrderNo("ORDER-1001-1", USER_ID)).thenReturn(sub);
+
+        OrderItem item = new OrderItem();
+        item.setId(8001L);
+        item.setSubOrderId(9001L);
+        item.setSkuId(1L);
+        item.setQuantity(2);
+        when(orderItemMapper.selectBySubOrderId(9001L, USER_ID)).thenReturn(java.util.List.of(item));
+
+        OrderVO.SubOrderVO vo = orderService.getSellerSubOrderDetail("ORDER-1001-1");
+
+        assertThat(vo.getSubOrderNo()).isEqualTo("ORDER-1001-1");
+        assertThat(vo.getSellerId()).isEqualTo(3001L);
+        assertThat(vo.getStatus()).isEqualTo(2);
+        assertThat(vo.getItems()).hasSize(1);
+        // 路由解析：映射表按 orderNo 查询（不带分片键的商家路径）
+        verify(orderNoMappingRepository).selectByOrderNo("ORDER-1001");
+        verify(subOrderMapper).selectBySubOrderNo("ORDER-1001-1", USER_ID);
+    }
+
+    @Test
+    @DisplayName("商家子单详情 - 子单号格式非法 → PARAM_INVALID")
+    void sellerSubOrderDetailBadFormat() {
+        assertThatThrownBy(() -> orderService.getSellerSubOrderDetail("NODASHFORMATLESS"))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("子单号格式非法");
+        assertThatThrownBy(() -> orderService.getSellerSubOrderDetail("-1"))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("子单号格式非法");
+    }
+
+    @Test
+    @DisplayName("商家子单详情 - 映射缺失 → 明确报错（不静默、不 scatter）")
+    void sellerSubOrderDetailMappingMissing() {
+        when(orderNoMappingRepository.selectByOrderNo("ORDER-9999")).thenReturn(null);
+
+        assertThatThrownBy(() -> orderService.getSellerSubOrderDetail("ORDER-9999-1"))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("路由信息缺失");
+        verify(subOrderMapper, never()).selectBySubOrderNo(anyString(), anyLong());
+    }
+
+    @Test
+    @DisplayName("商家子单详情 - 子单不存在 → ORDER_NOT_FOUND")
+    void sellerSubOrderDetailSubMissing() {
+        com.myxhs.order.entity.OrderNoMapping mapping = new com.myxhs.order.entity.OrderNoMapping();
+        mapping.setUserId(USER_ID);
+        when(orderNoMappingRepository.selectByOrderNo("ORDER-1001")).thenReturn(mapping);
+        when(subOrderMapper.selectBySubOrderNo("ORDER-1001-1", USER_ID)).thenReturn(null);
+
+        assertThatThrownBy(() -> orderService.getSellerSubOrderDetail("ORDER-1001-1"))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("子单不存在");
+    }
+
+    @Test
+    @DisplayName("子单扫描 - snake_case 行映射（回填口径）")
+    void scanSubOrdersMapsRows() {
+        SubOrder sub = new SubOrder();
+        sub.setId(1L);
+        sub.setOrderId(ORDER_ID);
+        sub.setOrderNo("ORDER-1001");
+        sub.setSubOrderNo("ORDER-1001-1");
+        sub.setUserId(USER_ID);
+        sub.setSellerId(3001L);
+        sub.setStatus(2);
+        sub.setTotalAmount(new java.math.BigDecimal("199.00"));
+        when(subOrderMapper.scanByCursor(0L, 500)).thenReturn(java.util.List.of(sub));
+
+        java.util.List<java.util.Map<String, Object>> rows = orderService.scanSubOrders(0L, 500);
+
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0)).containsEntry("sub_order_no", "ORDER-1001-1");
+        assertThat(rows.get(0)).containsEntry("seller_id", 3001L);
+        assertThat(rows.get(0)).containsEntry("id", 1L);
+    }
 }

@@ -66,6 +66,14 @@ _Avoid_: 回调、消息推送
 换渠道前先查前一个交易：已付=受理收敛、未付=close 后新开、不可达=不切换。
 _Avoid_: 先关再开
 
+**商家订单索引（Seller Order Index）:**
+商家维度子单的异构索引（Canal→MQ→ES）：解决"订单按买家（user_id）分片、商家维度无法路由"的经典问题；**ES 只做发现**，写操作/终态以 DB+CAS 为准。
+_Avoid_: 订单副本、ES 备份
+
+**路由解析（Route Resolution）:**
+非分片键点查的分片键还原：subOrderNo→orderNo→映射表（t_order_no_mapping）→userId→路由读；商家不持有买家 userId。
+_Avoid_: 反查、寻址
+
 **TRADE_CLOSED 双语义:**
 支付宝交易关闭态有两种含义——未付款超时关闭 / 支付完成后全额退款；收到该通知须按本地状态分流处置。
 _Avoid_: 交易关闭（单义）

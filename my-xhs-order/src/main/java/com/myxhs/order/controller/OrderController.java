@@ -125,6 +125,36 @@ public class OrderController {
         return R.ok();
     }
 
+    // ==================== 商家侧查询（C-004 P1） ====================
+
+    /**
+     * 商家维度子单详情（服务端路由解析：subOrderNo→orderNo→映射表→userId→路由读）。
+     */
+    @GetMapping("/seller/sub-order/{subOrderNo}")
+    public R<OrderVO.SubOrderVO> sellerSubOrderDetail(
+            @PathVariable("subOrderNo") String subOrderNo,
+            @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
+        if (!accessTokenGuard.isAdminCall(adminCall)) {
+            return R.fail(403, "无权访问管理接口");
+        }
+        return R.ok(orderService.getSellerSubOrderDetail(subOrderNo));
+    }
+
+    /**
+     * 子单全量扫描（内部；C-004 回填用，游标分页）。
+     */
+    @GetMapping("/internal/sub-order-scan")
+    public R<List<Map<String, Object>>> subOrderScan(
+            @RequestParam(value = "cursor", required = false, defaultValue = "0") Long cursor,
+            @RequestParam(value = "limit", required = false, defaultValue = "500") Integer limit,
+            @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
+        if (!accessTokenGuard.isInternalCall(internalCall)) {
+            return R.fail(403, "仅限内部服务调用");
+        }
+        int capped = Math.min(Math.max(limit, 1), 1000);
+        return R.ok(orderService.scanSubOrders(cursor, capped));
+    }
+
     // ==================== 支付接口 ====================
 
     /**

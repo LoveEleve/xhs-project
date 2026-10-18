@@ -32,14 +32,17 @@ class SellerOrderSearchControllerTest {
 
     private SellerOrderSearchService sellerOrderSearchService;
     private AccessTokenGuard accessTokenGuard;
+    private com.myxhs.search.job.SellerSubOrderIndexBackfillJob sellerSubOrderIndexBackfillJob;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
         sellerOrderSearchService = mock(SellerOrderSearchService.class);
         accessTokenGuard = mock(AccessTokenGuard.class);
+        sellerSubOrderIndexBackfillJob = mock(com.myxhs.search.job.SellerSubOrderIndexBackfillJob.class);
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new SellerOrderSearchController(sellerOrderSearchService, accessTokenGuard))
+                .standaloneSetup(new SellerOrderSearchController(sellerOrderSearchService, accessTokenGuard,
+                        sellerSubOrderIndexBackfillJob))
                 .build();
     }
 
@@ -119,5 +122,31 @@ class SellerOrderSearchControllerTest {
                 .andExpect(jsonPath("$.code").value(200));
 
         verify(sellerOrderSearchService).search(eq(0L), isNull(), isNull(), isNull(), isNull(), isNull());
+    }
+
+    @Test
+    @DisplayName("回填触发：非 Admin-Call → 403（不触达 Job）")
+    void backfillRejectedWithoutAdmin() throws Exception {
+        when(accessTokenGuard.isAdminCall(any())).thenReturn(false);
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/search/seller-order/backfill"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(403));
+
+        verify(sellerSubOrderIndexBackfillJob, never()).manualBackfill();
+    }
+
+    @Test
+    @DisplayName("回填触发：Admin-Call → 触发异步回填")
+    void backfillTriggeredByAdmin() throws Exception {
+        when(accessTokenGuard.isAdminCall(any())).thenReturn(true);
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .post("/api/search/seller-order/backfill"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        verify(sellerSubOrderIndexBackfillJob).manualBackfill();
     }
 }
