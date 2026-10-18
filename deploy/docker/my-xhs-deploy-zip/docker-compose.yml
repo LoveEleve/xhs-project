@@ -487,6 +487,7 @@ services:
       - ./config/canal/conf/note_instance/instance.properties:/home/admin/canal-server/conf/note_instance/instance.properties
       - ./config/canal/conf/product_instance/instance.properties:/home/admin/canal-server/conf/product_instance/instance.properties
       - ./config/canal/conf/inventory_instance/instance.properties:/home/admin/canal-server/conf/inventory_instance/instance.properties
+      - ./config/canal/conf/order_instance/instance.properties:/home/admin/canal-server/conf/order_instance/instance.properties
       - /opt/openjdk8:/opt/openjdk8:ro
       - canal-data:/home/admin/canal-server/logs
     healthcheck:
