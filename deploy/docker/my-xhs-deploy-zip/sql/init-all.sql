@@ -511,7 +511,7 @@ CREATE TABLE IF NOT EXISTS t_coupon_outbox (
     user_id         BIGINT       NOT NULL COMMENT '用户ID',
     template_id     BIGINT       NOT NULL COMMENT '优惠券模板ID',
     claim_no        VARCHAR(64)  NOT NULL COMMENT '幂等流水号(UUID)',
-    status          TINYINT      NOT NULL DEFAULT 0 COMMENT '0=待发送 1=已发送 2=已作废（发送失败且已回滚Redis，禁止补发）',
+    status          TINYINT      NOT NULL DEFAULT 0 COMMENT '0=待发送 1=已发送 2=已作废（遗留值：C-007 Design B 后不再产生，发送失败一律保留补发）',
     retry_count     INT          NOT NULL DEFAULT 0 COMMENT '补发失败次数（指数退避+抖动，P2/2026-09-27）',
     next_retry_time DATETIME     NULL COMMENT '下次可补发时间（NULL=立即可发）',
     created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',

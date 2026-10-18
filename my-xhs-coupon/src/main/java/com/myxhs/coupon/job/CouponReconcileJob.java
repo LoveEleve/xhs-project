@@ -17,15 +17,15 @@ import java.util.List;
 /**
  * 优惠券库存对账修复任务（XXL-Job 分布式调度）
  * <p>
- * 每天凌晨 2 点执行，对比 Redis 库存与 MySQL remain_count。
+ * 每小时执行，对比 Redis 库存与 MySQL remain_count。
  * 以 Redis 为准修复 MySQL（因为 Redis 是实时扣减的权威数据源，
  * claimCoupon 通过 Lua 原子扣减 Redis 库存，MySQL 异步持久）。
  * </p>
  * <p>
- * 为什么需要对账？
- * 1. 退券时 MySQL 已提交但 Redis 操作可能失败 → Redis stock 比 MySQL remain_count 少
- * 2. MQ 回滚失败 → Redis stock 比 MySQL remain_count 多
- * 3. Redis 重启后数据丢失 → Redis stock 为 0 或未初始化
+ * 为什么需要对账？（【C-007 修正】原注释列"退券时 Redis 操作失败/ MQ 回滚失败"为 RV30 前旧语义）
+ * 1. 消费端扣减 MySQL remain_count 失败后重试短路（DuplicateKey 路径跳过扣减）→ MySQL remain 偏大
+ * 2. 领券"双败回滚"失败（回滚 Redis 失败仅日志）→ Redis stock 偏小 → 对账固化漏损（安全方向）
+ * 3. Redis 重启后数据丢失 → Redis stock 缺失（key 缺失时反向从 MySQL 补全）
  * </p>
  * <p>
  * XXL-Job 调度保证：Admin 只调度一个 Executor 实例执行，无需 Redisson 分布式锁。
@@ -129,7 +129,7 @@ public class CouponReconcileJob {
     public void reconcile() {
         try {
             int repairCount = doReconcile();
-            XxlJobHelper.handleSuccess("对账修复完成，修复 " + repairCount + " 个模板");
+            XxlJobHelper.handleSuccess("对账修复完成，修复 " + repairCount + " 项（含模板库存 + 限领计数）");
         } catch (Exception e) {
             log.error("[券对账] 执行异常", e);
             XxlJobHelper.handleFail("券对账异常: " + e.getMessage());
@@ -192,7 +192,7 @@ public class CouponReconcileJob {
         checkStuckOutbox();
 
         long elapsed = System.currentTimeMillis() - startTime;
-        log.info("[券对账] 完成: 对账{}个模板, 修复{}个, 耗时{}ms",
+        log.info("[券对账] 完成: 对账{}个模板, 修复{}项, 耗时{}ms",
                 templates.size(), repairCount, elapsed);
 
         return repairCount;

@@ -10,7 +10,8 @@ import org.springframework.stereotype.Component;
 /**
  * 优惠券过期定时任务（XXL-Job 分布式调度）
  * <p>
- * 每小时扫描已过期但状态仍为"未使用"的券，分批更新为"已过期"。
+ * 每 5 分钟扫描已过期但状态仍为"未使用"的券，分批更新为"已过期"
+ * （部署 cron 基准见 expireCoupons 方法 javadoc；【C-007 修正】原"每小时"与部署漂移）。
  * </p>
  * <p>
  * XXL-Job 调度保证：Admin 只调度一个 Executor 实例执行，无需 Redisson 分布式锁。

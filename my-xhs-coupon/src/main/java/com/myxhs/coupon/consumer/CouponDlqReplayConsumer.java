@@ -88,7 +88,6 @@ public final class CouponDlqReplayConsumer {
     }
 
     /** 领券消费组 DLQ 重放 */
-    @Slf4j
     @Component
     @RequiredArgsConstructor
     @RocketMQMessageListener(
@@ -107,7 +106,6 @@ public final class CouponDlqReplayConsumer {
     }
 
     /** 订单终止消费组 DLQ 重放（退券消息） */
-    @Slf4j
     @Component
     @RequiredArgsConstructor
     @RocketMQMessageListener(

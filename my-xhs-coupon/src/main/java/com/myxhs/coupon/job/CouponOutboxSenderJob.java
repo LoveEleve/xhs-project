@@ -24,7 +24,9 @@ import java.util.concurrent.TimeUnit;
  * Coupon Outbox 兜底发送任务
  * <p>
  * 扫描 t_coupon_outbox 中未发送的事件，重新投递到 MQ。
- * 解决 syncSend 超时回滚导致的"券已入账但 Redis 已退回"双花问题。
+ * C-007 Design B（至少一次）下的职责：syncSend 异常/非 SEND_OK/未及标记的事件一律保留在表内，
+ * 由本任务补发至成功（失败指数退避重试，记录不丢弃）——保证"名额锁定即成功"后券必达。
+ * 【C-007 修正】旧注释"解决 syncSend 超时回滚导致的双花"已随 Design B 失效（超时不再回滚）。
  * </p>
  */
 @Slf4j
