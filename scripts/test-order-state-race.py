@@ -235,17 +235,12 @@ def main():
     pid, pamount = pinfo.get("id"), pinfo.get("amount") or pay_amt
     call("POST", "/api/payment/refund", tok, sec, uid,
          json_body={"paymentId": pid, "refundAmount": pamount, "reason": "竞态S3", "refundType": 1})
-    rno = wait_refund_no(oid)
-
-    def rcb():
-        return call("POST", "/api/payment/refund-callback/99", tok, sec,
-                    raw_body=json.dumps({"refund_no": rno, "refund_status": "REFUND_SUCCESS", "status": "SUCCESS"}))
-    rres = run_parallel([rcb] * 3)
+    # C-003：退款为同步语义（/refund 返回即完成）——原"重复退款回调×3"幂等场景
+    # 改由支付域单测覆盖（同 out_request_no 只退一次）；此处核验退款结果收敛
     time.sleep(3)
     st = order_status(tok, sec, uid, oid)
     evs = event_types(oid)
-    rec("S3 重复退款回调×3", {"status": st, "events": evs, "refund": refund_of(oid),
-                            "codes": [(r[1] or {}).get("code") if isinstance(r, tuple) else r for r in rres]},
+    rec("S3 退款同步完成（幂等由同 out 键保证）", {"status": st, "events": evs, "refund": refund_of(oid)},
         st == 5 and evs.count("ORDER_REFUNDED") == 1)
 
     # ===== S4 确认收货 vs 退款竞态 =====
@@ -260,16 +255,14 @@ def main():
     time.sleep(1)
     pinfo = payment_info(tok, sec, uid, oid)
     pid, pamount = pinfo.get("id"), pinfo.get("amount") or pay_amt
-    call("POST", "/api/payment/refund", tok, sec, uid,
-         json_body={"paymentId": pid, "refundAmount": pamount, "reason": "竞态S4", "refundType": 1})
-    rno = wait_refund_no(oid)
-
     def do_confirm():
         return ("confirm",) + call("POST", "/api/order/confirm", tok, sec, uid, params={"subOrderNo": sub_no})
-    def do_refund_cb():
-        return ("refund",) + call("POST", "/api/payment/refund-callback/99", tok, sec,
-                                  raw_body=json.dumps({"refund_no": rno, "refund_status": "REFUND_SUCCESS", "status": "SUCCESS"}))
-    res4 = run_parallel([do_confirm, do_refund_cb])
+    def do_refund():
+        # C-003：退款同步——并发竞态由"/refund 调用 vs 确认收货"直接构成
+        return ("refund",) + call("POST", "/api/payment/refund", tok, sec, uid,
+                                  json_body={"paymentId": pid, "refundAmount": pamount,
+                                             "reason": "竞态S4", "refundType": 1})
+    res4 = run_parallel([do_confirm, do_refund])
     time.sleep(3)
     st = order_status(tok, sec, uid, oid)
     evs = event_types(oid)
@@ -288,10 +281,7 @@ def main():
     part = 100.00 if float(pamount or 0) > 100 else round(float(pamount or 1) / 2, 2)
     call("POST", "/api/payment/refund", tok, sec, uid,
          json_body={"paymentId": pid, "refundAmount": part, "reason": "部分退款S5", "refundType": 1})
-    rno = wait_refund_no(oid)
-    if rno:
-        call("POST", "/api/payment/refund-callback/99", tok, sec,
-             raw_body=json.dumps({"refund_no": rno, "refund_status": "REFUND_SUCCESS", "status": "SUCCESS"}))
+    # C-003：退款同步（无回调步骤）
     time.sleep(3)
     st = order_status(tok, sec, uid, oid)
     stock_after = stock_of(tok, sec, uid)

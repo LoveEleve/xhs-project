@@ -1,22 +1,23 @@
 package com.myxhs.payment.strategy.impl;
 
+import com.myxhs.payment.alipay.RefundTradeResult;
 import com.myxhs.payment.strategy.PayChannelStrategy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+
 /**
- * Mock 支付策略
+ * Mock 支付策略（测试/开发用同步渠道）
  * <p>
- * 默认支付方式，直接在 pay() 方法中返回成功，
- * 不走第三方支付平台，用于开发和测试环境。
- * </p>
- * <p>
- * Mock 模式特点：
- * 1. pay() 是同步的，直接标记支付成功
- * 2. 不需要处理异步回调
- * 3. refund() 也是同步的，直接标记退款成功
- * 4. queryPayStatus() 直接查数据库
+ * 与真实渠道的差异（有意为之的测试夹具）：
+ * <ul>
+ *   <li>pay：同步成功（无渠道交易、无异步通知）</li>
+ *   <li>refund：同步成功（无渠道出金）</li>
+ *   <li>queryPayStatus：返回 0（无外部交易——本地 pending 即"渠道未付"，可安全处置）</li>
+ *   <li>close：无真实渠道交易，仅记录</li>
+ * </ul>
  * </p>
  */
 @Slf4j
@@ -25,42 +26,30 @@ import org.springframework.stereotype.Component;
 public class MockPayStrategy implements PayChannelStrategy {
 
     @Override
-    public String pay(Long orderId, java.math.BigDecimal amount, String paymentNo) {
+    public String pay(Long orderId, BigDecimal amount, String paymentNo) {
         log.info("[Mock支付] 发起支付: orderId={}, amount={}, paymentNo={}", orderId, amount, paymentNo);
         // Mock：直接返回 paymentNo 作为交易号，调用方会立即标记支付成功
         return paymentNo;
     }
 
     @Override
-    public void handleCallback(String paymentNo, String tradeNo, boolean success) {
-        // Mock 模式不需要处理异步回调
-        log.debug("[Mock支付] 忽略回调: paymentNo={}", paymentNo);
-    }
-
-    @Override
-    public String refund(Long paymentId, String refundNo, java.math.BigDecimal refundAmount, String reason) {
-        log.info("[Mock退款] 发起退款: paymentId={}, refundNo={}, amount={}, reason={}",
-                paymentId, refundNo, refundAmount, reason);
-        // Mock：直接返回 refundNo，调用方会立即标记退款成功
-        return refundNo;
-    }
-
-    @Override
-    public void handleRefundCallback(String refundNo, boolean success) {
-        // Mock 模式不需要处理退款异步回调
-        log.debug("[Mock退款] 忽略退款回调: refundNo={}", refundNo);
+    public RefundTradeResult refund(String paymentNo, String outRequestNo, BigDecimal refundAmount, String reason) {
+        log.info("[Mock退款] 同步退款成功: paymentNo={}, outRequestNo={}, amount={}, reason={}",
+                paymentNo, outRequestNo, refundAmount, reason);
+        // Mock：无渠道出金，直接成功（tradeNo 位用 outRequestNo 占位，与旧行为一致）
+        return RefundTradeResult.success(outRequestNo);
     }
 
     @Override
     public Integer queryPayStatus(String paymentNo) {
-        // Mock：不需要查第三方，调用方会自行查数据库
-        log.debug("[Mock支付] 查询支付状态: paymentNo={}", paymentNo);
-        return null;
+        // Mock 无外部渠道交易：本地 pending 即渠道未付（0）——超时处置可安全置失败、换渠道可安全关闭
+        log.debug("[Mock支付] 查询支付状态(无外部交易=未付): paymentNo={}", paymentNo);
+        return 0;
     }
 
     @Override
     public void close(String paymentNo) {
-        // Mock：无真实渠道交易；关闭 = 仅记录（真实渠道：closeorder / trade.close）
+        // Mock：无真实渠道交易；关闭 = 仅记录（真实渠道：alipay.trade.close）
         log.info("[Mock支付] 关闭渠道交易(模拟): paymentNo={}", paymentNo);
     }
 }

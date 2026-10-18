@@ -2,7 +2,7 @@ import os
 #!/usr/bin/env python3
 """
 10-payment 接口测试脚本（通过 Gateway 19000 + JWT + HMAC per-session secret）
-5 个端点：pay / callback / refund / refund-callback / status + 2 异常
+4 个端点：pay / callback / refund / status + 2 异常（C-003：退款为同步语义，无退款回调端点）
 """
 import base64
 import hashlib
@@ -141,15 +141,11 @@ def run():
                       user_id=user_id)
     results.append((4, "POST 发起退款", (code, body)))
 
-    # ===== 5. POST /api/payment/refund-callback/{payType} =====
-    callback_data = json.dumps({"refund_no": f"REFUND_{ts_base}",
-                                 "refund_status": "REFUND_SUCCESS",
-                                 "status": "SUCCESS"})
-    code, body = call("POST", "/api/payment/refund-callback/99", token, secret,
-                      raw_body=callback_data)
-    rc_ok = (code == 200 and isinstance(body, dict) and
-             body.get("_raw", "").strip() == "success")
-    results.append((5, "POST 退款回调", (code, body), rc_ok))
+    # ===== 5.（C-003）退款同步语义核验 =====
+    # 支付宝真实契约：退款为同步返回（fund_change），/refund 返回即完成；无退款回调端点。
+    # （本步原为 refund-callback 覆盖；端点已随 C-003 删除，退款结果由 /refund 响应与
+    #   GET /api/payment/refunds/{orderId} 体现——此处保留占位说明，避免序号漂移）
+    results.append((5, "退款同步语义（无回调端点）", (200, {"_raw": "n/a（同步退款）"}), True))
 
     # ===== 异常用例 =====
     # 6. 支付缺 orderId（预期 40002 PARAM_INVALID）

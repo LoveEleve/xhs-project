@@ -1,28 +1,29 @@
 package com.myxhs.payment.strategy.impl;
 
+import com.myxhs.payment.alipay.AlipayTradeClient;
+import com.myxhs.payment.alipay.AlipayTradeQueryResult;
+import com.myxhs.payment.alipay.RefundTradeResult;
 import com.myxhs.payment.strategy.PayChannelStrategy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
+
 /**
- * 支付宝 Mock 策略
+ * 支付宝支付策略（渠道契约对齐 · C-003）
  * <p>
- * 模拟支付宝异步回调流程：
- * 1. pay() → 模拟向支付宝提交支付请求，返回模拟交易号
- * 2. 异步回调 → 由 PayCallbackSimulator 模拟延迟回调（真实渠道接入时替换为回调端点 + 验签）
- * 3. handleCallback() → 处理回调，更新支付状态
+ * 本策略是<b>契约层之上</b>的薄适配：全部渠道交互委托 {@link AlipayTradeClient}
+ * （真实场景 = 官方 SDK 封装；本地 = 模拟支付宝服务器 + 真实签名验签）。
  * </p>
  * <p>
- * 为什么用 Mock 而不是真实支付宝 SDK？
- * - 真实支付宝 SDK 需要商户资质（AppID、私钥等）
- * - Mock 模式可以完整模拟异步回调流程，体现架构设计能力
- * - 只需替换为真实 SDK 即可上线
- * </p>
- * <p>
- * 异步回调模拟机制：
- * pay() 被调用后，通过定时任务（PayCallbackSimulator）延迟 1~3 秒发送回调通知，
- * 模拟第三方支付平台的异步通知行为。
+ * 状态映射（四态 → 三值契约）：
+ * <ul>
+ *   <li>WAIT_BUYER_PAY → 0（未付）</li>
+ *   <li>TRADE_SUCCESS / TRADE_FINISHED → 1（已付）</li>
+ *   <li>TRADE_CLOSED → 0（对"本地 pending"单 = 未付款超时关闭；全退后关闭不可能出现在 pending 单）</li>
+ *   <li>不可达/不可判定 → null（"不知道"≠"没付"）</li>
+ * </ul>
  * </p>
  */
 @Slf4j
@@ -30,56 +31,46 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class AlipayPayStrategy implements PayChannelStrategy {
 
-    /** 支付宝模拟交易号前缀 */
-    private static final String ALIPAY_TRADE_NO_PREFIX = "ALIPAY_MOCK_";
-
-    /** Mock 渠道真值模拟器（ITER-002 阶段④：queryPayStatus 以"待回调标记"判定交易未决） */
-    private final com.myxhs.payment.simulator.PayCallbackSimulator callbackSimulator;
+    private final AlipayTradeClient alipayTradeClient;
 
     @Override
-    public String pay(Long orderId, java.math.BigDecimal amount, String paymentNo) {
-        String tradeNo = ALIPAY_TRADE_NO_PREFIX + System.currentTimeMillis();
-        log.info("[支付宝Mock] 发起支付: orderId={}, amount={}, paymentNo={}, tradeNo={}",
+    public String pay(Long orderId, BigDecimal amount, String paymentNo) {
+        String tradeNo = alipayTradeClient.tradeCreate(orderId, amount, "订单支付", paymentNo);
+        log.info("[支付宝] 发起支付: orderId={}, amount={}, paymentNo={}, tradeNo={}",
                 orderId, amount, paymentNo, tradeNo);
-        // 模拟：返回交易号，等待异步回调
-        // 实际场景中，这里会调用支付宝 SDK 的 alipay.trade.page.pay()
         return tradeNo;
     }
 
     @Override
-    public void handleCallback(String paymentNo, String tradeNo, boolean success) {
-        log.info("[支付宝Mock] 处理回调: paymentNo={}, tradeNo={}, success={}", paymentNo, tradeNo, success);
-        // 回调处理逻辑由 PaymentService 统一处理
-        // 此处只做日志记录，具体状态更新在 PaymentService.handlePayCallback() 中
-    }
-
-    @Override
-    public String refund(Long paymentId, String refundNo, java.math.BigDecimal refundAmount, String reason) {
-        String refundTradeNo = "ALIPAY_REFUND_" + System.currentTimeMillis();
-        log.info("[支付宝Mock] 发起退款: paymentId={}, refundNo={}, amount={}, reason={}, refundTradeNo={}",
-                paymentId, refundNo, refundAmount, reason, refundTradeNo);
-        // 模拟：返回退款交易号，等待异步回调
-        return refundTradeNo;
-    }
-
-    @Override
-    public void handleRefundCallback(String refundNo, boolean success) {
-        log.info("[支付宝Mock] 处理退款回调: refundNo={}, success={}", refundNo, success);
-        // 退款回调处理逻辑由 PaymentService 统一处理
+    public RefundTradeResult refund(String paymentNo, String outRequestNo, BigDecimal refundAmount, String reason) {
+        RefundTradeResult result = alipayTradeClient.tradeRefund(paymentNo, outRequestNo, refundAmount, reason);
+        log.info("[支付宝] 同步退款: paymentNo={}, outRequestNo={}, fundChange={}, errorCode={}",
+                paymentNo, outRequestNo, result.isFundChange(), result.getErrorCode());
+        return result;
     }
 
     @Override
     public Integer queryPayStatus(String paymentNo) {
-        log.info("[支付宝Mock] 查询支付状态: paymentNo={}", paymentNo);
-        // ITER-002 阶段④：Mock 渠道真值 = 待回调标记（存在=未决→0；不存在=未知→null）
-        // 真实场景中，这里会调用支付宝 SDK 的 alipay.trade.query()
-        return callbackSimulator.querySimulatedChannelStatus(paymentNo);
+        AlipayTradeQueryResult result = alipayTradeClient.tradeQuery(paymentNo);
+        if (result == null || result.getStatus() == null) {
+            log.warn("[支付宝] 查单不可达/不可判定: paymentNo={}", paymentNo);
+            return null;
+        }
+        Integer mapped = switch (result.getStatus()) {
+            case TRADE_SUCCESS, TRADE_FINISHED -> 1;
+            case WAIT_BUYER_PAY, TRADE_CLOSED -> 0;
+        };
+        log.info("[支付宝] 查单: paymentNo={}, tradeStatus={} → {}", paymentNo, result.getStatus(), mapped);
+        return mapped;
     }
 
     @Override
     public void close(String paymentNo) {
-        // Mock：关闭 = 取消待回调注册（不再发送模拟回调）+ 记录（真实渠道：alipay.trade.close）
-        callbackSimulator.cancel(paymentNo);
-        log.info("[支付宝Mock] 关闭渠道交易(模拟): paymentNo={}", paymentNo);
+        boolean closed = alipayTradeClient.tradeClose(paymentNo);
+        if (!closed) {
+            // 已支付交易不可关闭（官方 ACQ.TRADE_HAS_SUCCESS）→ 抛异常让调用方"先查后决"
+            throw new IllegalStateException("渠道交易不可关闭（已支付或状态异常）: " + paymentNo);
+        }
+        log.info("[支付宝] 关闭渠道交易: paymentNo={}", paymentNo);
     }
 }

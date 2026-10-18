@@ -6,6 +6,7 @@ import com.myxhs.common.metrics.BusinessMetrics;
 import com.myxhs.common.response.R;
 import com.myxhs.common.response.ResultCode;
 import com.myxhs.common.trace.MqTraceHelper;
+import com.myxhs.payment.alipay.RefundTradeResult;
 import com.myxhs.payment.dto.request.PayCreateRequest;
 import com.myxhs.payment.dto.request.RefundByOrderRequest;
 import com.myxhs.payment.dto.request.RefundRequest;
@@ -42,7 +43,6 @@ import java.util.concurrent.TimeUnit;
  * 1. 创建支付单（状态机：待支付 → 支付成功/支付失败）
  * 2. 处理支付回调（异步通知）
  * 3. 退款流程（状态机：退款中 → 退款成功/退款失败）
- * 4. 处理退款回调
  * 5. 支付超时检查（定时任务兜底）
  * 6. 退款超时检查（定时任务兜底）
  * 7. 对账机制
@@ -71,7 +71,6 @@ public class PaymentService {
     private final RocketMQTemplate rocketMQTemplate;
     private final RedissonClient redissonClient;
     private final Map<Integer, PayChannelStrategy> payChannelStrategyMap;
-    private final com.myxhs.payment.simulator.PayCallbackSimulator callbackSimulator;
     private final OrderFeignClient orderFeignClient;
     private final IdGeneratorUtil idGeneratorUtil;
     private final BusinessMetrics businessMetrics;
@@ -211,16 +210,34 @@ public class PaymentService {
             Payment pending = findPendingByOrderId(orderId);
             if (pending != null && pending.getPayType() != null && pending.getPayType().equals(payType)) {
                 recordPaymentEvent(pending.getPaymentNo(), orderId, userId, "REUSE", null, null);
-                if (!isMockMode(payType)) {
-                    // 刷新待回调标记（幂等覆盖；保证复用后模拟回调链路仍在）
-                    callbackSimulator.registerCallback(pending.getPaymentNo(), payType);
-                }
                 log.info("[支付] 复用既有支付单: orderId={}, paymentNo={}, payType={}",
                         orderId, pending.getPaymentNo(), payType);
                 return R.ok(buildPaymentVO(pending));
             }
             if (pending != null) {
-                closePaymentForSwitch(pending);
+                // 换渠道"先查后决"（C-003，官方指引）：先查前一个交易——
+                // 已付=受理收敛（不重发）；未付=close 后新开；不可达=不切换（"不知道"≠"没付"）
+                PayChannelStrategy oldStrategy = payChannelStrategyMap.get(pending.getPayType());
+                Integer oldChannelStatus = oldStrategy != null
+                        ? queryChannelSafely(oldStrategy, pending.getPaymentNo()) : null;
+                if (oldChannelStatus == null) {
+                    log.warn("[支付] 换渠道先查：渠道不可达，不切换: orderId={}, paymentNo={}",
+                            orderId, pending.getPaymentNo());
+                    throw new BizException(ResultCode.PAYMENT_FAIL, "渠道暂不可达，请稍后重试");
+                }
+                if (oldChannelStatus == 1) {
+                    // 用户已在前一个渠道完成支付 → 受理收敛（不新建、不重发）
+                    acceptPaidPending(pending);
+                    log.info("[支付] 换渠道先查：旧交易已支付，受理收敛: orderId={}, paymentNo={}",
+                            orderId, pending.getPaymentNo());
+                    Payment fresh = findById(pending.getId());
+                    return R.ok(buildPaymentVO(fresh != null ? fresh : pending));
+                }
+                if (!closePaymentForSwitch(pending)) {
+                    // close 失败但复查确认已付 → 受理收敛（先查后决的竞态兜底）
+                    Payment fresh = findById(pending.getId());
+                    return R.ok(buildPaymentVO(fresh != null ? fresh : pending));
+                }
             }
 
             // 3. 生成支付流水号 + 插入支付记录（status=0 待支付）
@@ -249,9 +266,6 @@ public class PaymentService {
                 // uk_order_pending 兜底（并发纵深防御：锁失效/多实例时钟漂移等）：重查复用既有 pending
                 Payment existing = findPendingByOrderId(orderId);
                 if (existing != null) {
-                    if (!isMockMode(existing.getPayType())) {
-                        callbackSimulator.registerCallback(existing.getPaymentNo(), existing.getPayType());
-                    }
                     log.warn("[支付] 并发建单冲突，复用既有支付单: orderId={}, paymentNo={}", orderId, existing.getPaymentNo());
                     return R.ok(buildPaymentVO(existing));
                 }
@@ -283,15 +297,13 @@ public class PaymentService {
             String tradeNo = strategy.pay(orderId, amount, paymentNo);
             log.info("[支付] 支付请求已发送: paymentNo={}, tradeNo={}, payType={}", paymentNo, tradeNo, payType);
 
-            // 6. Mock 模式：同步标记成功；异步模式（支付宝/微信）：登记到模拟器，由定时任务发回调闭环
+            // 6. Mock 模式：同步标记成功；异步渠道（支付宝）：交易已在契约层创建（模拟服务器台账就绪），
+            //    状态推进由渠道异步通知驱动（签名 → HTTP 端点 → 验签 → 处理 → ACK）
             if (isMockMode(payType)) {
                 handlePaySuccessInternal(orderId, userId, paymentNo, tradeNo);
                 // 本地对象同步状态（原实现同步成功后 VO 仍显示"待支付"）
                 payment.setStatus(STATUS_SUCCESS);
                 payment.setPaidAt(LocalDateTime.now());
-            } else {
-                // 修复：此前漏掉 registerCallback，导致异步支付回调永远不触发、订单停留在待付款
-                callbackSimulator.registerCallback(paymentNo, payType);
             }
 
             return R.ok(buildPaymentVO(payment));
@@ -336,7 +348,16 @@ public class PaymentService {
      * 3. 补记 CLOSE 事件（归因：CHANNEL_SWITCH）。
      * </p>
      */
-    private void closePaymentForSwitch(Payment old) {
+    /**
+     * 关闭旧支付单（换渠道）。
+     * <p>
+     * 先查后决的竞态兜底：close 失败（如用户恰在 close 前完成支付 → 官方 ACQ.TRADE_HAS_SUCCESS）
+     * 时<b>复查渠道</b>——已付则受理收敛（返回 false，调用方不新建）；仍未付/不可达则报错中止。
+     * </p>
+     *
+     * @return true=旧单已关闭（可继续新建）；false=旧交易实际已支付（已受理收敛，调用方直接返回）
+     */
+    private boolean closePaymentForSwitch(Payment old) {
         PayChannelStrategy oldStrategy = payChannelStrategyMap.get(old.getPayType());
         if (oldStrategy == null) {
             throw new BizException(ResultCode.PAYMENT_FAIL, "旧支付渠道不可用，无法切换");
@@ -344,7 +365,14 @@ public class PaymentService {
         try {
             oldStrategy.close(old.getPaymentNo());
         } catch (Exception e) {
-            log.error("[支付] 关闭旧渠道交易失败，中止换渠道: orderId={}, paymentNo={}", old.getOrderId(), old.getPaymentNo(), e);
+            log.error("[支付] 关闭旧渠道交易失败，复查渠道真相: orderId={}, paymentNo={}", old.getOrderId(), old.getPaymentNo(), e);
+            Integer recheck = queryChannelSafely(oldStrategy, old.getPaymentNo());
+            if (recheck != null && recheck == 1) {
+                acceptPaidPending(old);
+                log.warn("[支付] close 失败但复查确认已支付，受理收敛: orderId={}, paymentNo={}",
+                        old.getOrderId(), old.getPaymentNo());
+                return false;
+            }
             throw new BizException(ResultCode.PAYMENT_FAIL, "渠道交易关闭失败，请稍后重试");
         }
         int closed = paymentJdbcTemplate.update(
@@ -355,6 +383,25 @@ public class PaymentService {
         }
         recordPaymentEvent(old.getPaymentNo(), old.getOrderId(), old.getUserId(), "CLOSE", "CHANNEL_SWITCH", "换渠道关闭旧支付单");
         log.info("[支付] 旧支付单已关闭(换渠道): orderId={}, paymentNo={}", old.getOrderId(), old.getPaymentNo());
+        return true;
+    }
+
+    /** 查渠道（异常按"不可达"处理返回 null——"不知道"≠"没付"，绝不据此推进状态） */
+    private Integer queryChannelSafely(PayChannelStrategy strategy, String paymentNo) {
+        try {
+            return strategy.queryPayStatus(paymentNo);
+        } catch (Exception e) {
+            log.warn("[支付] 查渠道异常（按不可达处理）: paymentNo={}", paymentNo, e);
+            return null;
+        }
+    }
+
+    /**
+     * 受理"渠道已支付但本地仍 pending"的支付单（换渠道先查/close 失败复查两条路径共用）。
+     * <p>tradeNo 位传 paymentNo——与超时处置/对账路径同口径（order 侧仅记日志）。</p>
+     */
+    private void acceptPaidPending(Payment pending) {
+        handlePaySuccessInternal(pending.getOrderId(), pending.getUserId(), pending.getPaymentNo(), pending.getPaymentNo());
     }
 
     /**
@@ -393,7 +440,7 @@ public class PaymentService {
     /**
      * 处理支付回调（异步通知）
      * <p>
-     * 由 PayCallbackSimulator 模拟回调（真实渠道接入时由回调端点调用，需补验签）后调用此方法。
+     * 由支付宝异步通知端点（验签+二次校验后）/测试触发口（/callback/1）调用。
      * 乐观锁保证幂等：只有"待支付"状态的支付单才能更新为"支付成功"。
      * </p>
      *
@@ -733,19 +780,28 @@ public class PaymentService {
             recordPaymentEvent(payment.getPaymentNo(), payment.getOrderId(), userId, "REFUND",
                     null, request.getReason());
 
-            // 5. 通过策略模式调用对应支付渠道的退款
+            // 5. 通过策略模式调用对应支付渠道的退款（C-003：同步返回——支付宝真实契约，无退款回调）
             PayChannelStrategy strategy = payChannelStrategyMap.get(payment.getPayType());
             if (strategy == null) {
                 throw new BizException(ResultCode.PAYMENT_FAIL, "不支持的支付方式");
             }
-            String refundTradeNo = strategy.refund(paymentId, refundNo, refundAmount, request.getReason());
-            log.info("[退款] 退款请求已发送: refundNo={}, refundTradeNo={}", refundNo, refundTradeNo);
+            // 渠道幂等键：优先业务键 outRefundNo（重试稳定），缺省用 refundNo——
+            // "同 out_request_no 只退一次"由渠道侧保证（结果未知的重试同键不会重复出金）
+            String channelRequestNo = (outRefundNo != null && !outRefundNo.isBlank()) ? outRefundNo : refundNo;
+            RefundTradeResult result = strategy.refund(payment.getPaymentNo(), channelRequestNo, refundAmount, request.getReason());
 
-            // 6. Mock 模式：同步标记退款成功；异步渠道：注册退款回调模拟器（T-075 闭环）
-            if (isMockMode(payment.getPayType())) {
+            // 6. 同步结果三分支：成功 → 退款成功链路；明确失败 → 退款失败链路；
+            //    调用异常 → 上抛回滚事务（结果未知 ≠ 失败——调用方同 out 键重试，渠道幂等兜底）
+            if (result != null && result.isFundChange()) {
+                log.info("[退款] 渠道同步退款成功: refundNo={}, outRequestNo={}, refundTradeNo={}",
+                        refundNo, channelRequestNo, result.getTradeNo());
                 handleRefundSuccessInternal(refundNo);
             } else {
-                callbackSimulator.registerRefundCallback(refundNo);
+                log.warn("[退款] 渠道同步退款失败: refundNo={}, outRequestNo={}, errorCode={}, errorMsg={}",
+                        refundNo, channelRequestNo,
+                        result == null ? "UNKNOWN" : result.getErrorCode(),
+                        result == null ? "渠道返回空结果" : result.getErrorMsg());
+                handleRefundFailInternal(refundNo);
             }
 
             return R.ok(refundNo);
@@ -764,36 +820,6 @@ public class PaymentService {
             if (locked && refundLock.isHeldByCurrentThread()) {
                 refundLock.unlock();
             }
-        }
-    }
-
-    // ==================== 4. 处理退款回调 ====================
-
-    /**
-     * 处理退款回调
-     * <p>
-     * 乐观锁保证幂等：只有"退款中"状态的退款单才能更新。
-     * </p>
-     */
-    @Transactional(transactionManager = "paymentTransactionManager", rollbackFor = Exception.class)
-    public void handleRefundCallback(String refundNo, boolean success) {
-        // 1. 查询退款单
-        Refund refund = findByRefundNo(refundNo);
-        if (refund == null) {
-            log.warn("[退款回调] 退款单不存在: refundNo={}", refundNo);
-            return;
-        }
-
-        // 2. 幂等校验
-        if (refund.getStatus() != REFUND_STATUS_PROCESSING) {
-            log.info("[退款回调] 退款单已处理: refundNo={}, status={}", refundNo, refund.getStatus());
-            return;
-        }
-
-        if (success) {
-            handleRefundSuccessInternal(refundNo);
-        } else {
-            handleRefundFailInternal(refundNo);
         }
     }
 
@@ -1303,6 +1329,16 @@ public class PaymentService {
                 },
                 orderId
         );
+    }
+
+    /**
+     * 按支付单号查询（供支付宝通知端点做二次校验）。
+     *
+     * @param paymentNo 支付单号（= 渠道侧 out_trade_no）
+     * @return 支付单；不存在 → {@code null}
+     */
+    public Payment findPaymentByNo(String paymentNo) {
+        return findByPaymentNo(paymentNo);
     }
 
     private Payment findByPaymentNo(String paymentNo) {

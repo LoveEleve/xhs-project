@@ -20,9 +20,9 @@ import org.springframework.web.bind.annotation.*;
  * <p>
  * RESTful API 设计：
  * POST /api/payment/pay — 发起支付
- * POST /api/payment/callback/{payType} — 第三方支付回调
+ * POST /api/payment/notify/alipay — 支付宝异步通知（真实契约入口，见 AlipayNotifyController）
+ * POST /api/payment/callback/{payType} — 测试触发口（模拟"用户完成支付/放弃"；C-003 后走真实通知链路）
  * POST /api/payment/refund — 发起退款
- * POST /api/payment/refund-callback/{payType} — 第三方退款回调
  * GET  /api/payment/status/{orderId} — 查询支付状态
  * </p>
  */
@@ -35,6 +35,7 @@ public class PaymentController {
 
     private final PaymentService paymentService;
     private final AccessTokenGuard accessTokenGuard;
+    private final com.myxhs.payment.simulator.SimulatedAlipayServer simulatedAlipayServer;
 
     @PostConstruct
     public void validateTokens() {
@@ -69,6 +70,15 @@ public class PaymentController {
      *
      * @param payType 支付方式：1-支付宝 2-微信
      */
+    /**
+     * 测试触发口：模拟"用户在渠道完成支付/放弃"（C-003 语义升级）。
+     * <p>
+     * 支付宝(1)：触发模拟支付宝服务器发送<b>真实通知</b>——form + RSA2 签名 → HTTP POST 到
+     * {@code /api/payment/notify/alipay} → 验签 → 二次校验 → 处理 → ACK。测试从此覆盖完整真实链路。
+     * Mock(99)：兼容直调（同步渠道无渠道交易，保留原语义）。
+     * 保留 X-Internal-Call 守卫：本端点是测试/联调触发口，<b>真实通知入口是 notify 端点</b>（验签即鉴权）。
+     * </p>
+     */
     @PostMapping("/callback/{payType}")
     public String payCallback(@PathVariable Integer payType,
                               @RequestBody String callbackData,
@@ -77,16 +87,9 @@ public class PaymentController {
             log.warn("[支付回调] 非内部调用被拒绝: payType={}", payType);
             return "fail";
         }
-        // 解析回调数据（不同支付渠道格式不同）
-        // Mock 实现：简化解析逻辑
         String paymentNo = extractPaymentNo(callbackData, payType);
         if (paymentNo == null || paymentNo.isBlank()) {
             log.error("[支付回调] 缺少有效paymentNo，拒绝确认: payType={}", payType);
-            return "fail";
-        }
-        String tradeNo = extractTradeNo(callbackData, payType);
-        if (tradeNo == null || tradeNo.isBlank()) {
-            log.error("[支付回调] 缺少有效tradeNo，拒绝确认: paymentNo={}", paymentNo);
             return "fail";
         }
         // 三态解析：UNKNOWN（格式不符/解析失败）必须"返回 fail 让渠道重试"，
@@ -98,11 +101,25 @@ public class PaymentController {
         }
         boolean success = parsed == 1;
         // P2-5: 回调体脱敏，仅记录摘要（原实现打印完整回调体，泄露支付数据）
-        log.info("[支付回调] 收到回调: payType={}, paymentNo={}, success={}, bodySize={}B", payType, paymentNo, success, callbackData.length());
+        log.info("[支付回调] 收到触发: payType={}, paymentNo={}, success={}, bodySize={}B",
+                payType, paymentNo, success, callbackData.length());
 
+        if (payType != null && payType == 1) {
+            // 支付宝：触发模拟服务器发真实通知（签名→HTTP→端点→验签→处理→ACK 全链路）
+            simulatedAlipayServer.triggerPay(paymentNo, success);
+            return "success";
+        }
+        if (payType == null || payType != 99) {
+            log.error("[支付回调] 不支持的渠道: payType={}", payType);
+            return "fail";
+        }
+        // Mock(99)：兼容直调（同步渠道无渠道交易）
+        String tradeNo = extractTradeNo(callbackData, payType);
+        if (tradeNo == null || tradeNo.isBlank()) {
+            log.error("[支付回调] 缺少有效tradeNo，拒绝确认: paymentNo={}", paymentNo);
+            return "fail";
+        }
         paymentService.handlePayCallback(paymentNo, tradeNo, success);
-
-        // 返回 success 给第三方（支付宝要求返回 "success"，微信要求返回 XML/JSON）
         return "success";
     }
 
@@ -158,31 +175,6 @@ public class PaymentController {
             return R.fail(403, "仅限内部服务调用");
         }
         return paymentService.listRefundsByOrder(orderId);
-    }
-
-    /**
-     * 第三方退款回调
-     */
-    @PostMapping("/refund-callback/{payType}")
-    public String refundCallback(@PathVariable Integer payType,
-                                 @RequestBody String callbackData,
-                                 @RequestHeader(value = "X-Internal-Call", required = false) String internalCall) {
-        if (!accessTokenGuard.isInternalCall(internalCall)) {
-            log.warn("[退款回调] 非内部调用被拒绝: payType={}", payType);
-            return "fail";
-        }
-        String refundNo = extractRefundNo(callbackData, payType);
-        if (refundNo == null) {
-            log.error("[退款回调] 无法解析退款单号(要求渠道重试, 不处理): payType={}", payType);
-            return "fail";
-        }
-        boolean success = extractRefundResult(callbackData, payType);
-        // P2-5: 回调体脱敏
-        log.info("[退款回调] 收到回调: payType={}, refundNo={}, success={}, bodySize={}B", payType, refundNo, success, callbackData.length());
-
-        paymentService.handleRefundCallback(refundNo, success);
-
-        return "success";
     }
 
     /**
@@ -259,36 +251,6 @@ public class PaymentController {
         } catch (Exception e) {
             log.warn("[支付回调] 支付结果解析失败: {}", e.getMessage());
             return -1;
-        }
-    }
-
-
-    private String extractRefundNo(String callbackData, Integer payType) {
-        try {
-            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            com.fasterxml.jackson.databind.JsonNode node = mapper.readTree(callbackData);
-            if (node.has("refund_no")) return node.get("refund_no").asText();
-            if (node.has("out_refund_no")) return node.get("out_refund_no").asText();
-        } catch (Exception e) {
-            log.warn("[退款回调] 解析回调数据失败: {}", e.getMessage());
-        }
-        // 不得伪造单号：伪造会让 handleRefundCallback 查不到退款单而静默丢弃真实回调
-        return null;
-    }
-
-    private boolean extractRefundResult(String callbackData, Integer payType) {
-        try {
-            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            com.fasterxml.jackson.databind.JsonNode node = mapper.readTree(callbackData);
-            String refundStatus = node.has("refund_status") ? node.get("refund_status").asText() : null;
-            String resultCode = node.has("result_code") ? node.get("result_code").asText() : null;
-            String status = node.has("status") ? node.get("status").asText() : null;
-            return "REFUND_SUCCESS".equals(refundStatus)
-                    || "SUCCESS".equals(resultCode)
-                    || "SUCCESS".equals(status);
-        } catch (Exception e) {
-            log.warn("[退款回调] 退款结果解析失败: {}", e.getMessage());
-            return false;
         }
     }
 }

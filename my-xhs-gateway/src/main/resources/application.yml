@@ -329,6 +329,8 @@ gateway:
       - /api/im/ws
       # ===== 优惠券领券中心（公开查询可领券模板列表） =====
       - /api/coupon/template/list
+      # ===== 支付宝异步通知（C-003：渠道服务器直连，无 JWT——验签即鉴权） =====
+      - /api/payment/notify/**
       # ===== 后续模块的公开接口（待扩展） =====
       # - /api/search/**
     # HMAC 签名校验白名单（不需要签名校验的路径，支持 Ant 风格匹配）
@@ -376,6 +378,8 @@ gateway:
       - /api/im/conversations
       - /api/im/unread-count
       - /api/notification/unread-count
+      # ===== 支付宝异步通知（C-003：渠道服务器不带 HMAC 签名头——验签即鉴权） =====
+      - /api/payment/notify/**
       # ===== 通知 SSE 端点（ticket-based auth，无需 HMAC 签名） =====
       - /api/notification/sse
       - /api/notification/sse/**
