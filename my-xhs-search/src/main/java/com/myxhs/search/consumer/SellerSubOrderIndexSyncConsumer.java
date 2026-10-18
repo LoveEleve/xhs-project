@@ -52,6 +52,8 @@ public class SellerSubOrderIndexSyncConsumer implements RocketMQListener<Message
     public void onMessage(MessageExt msg) {
         MqTraceHelper.restoreTraceId(msg);
         String currentSubOrderNo = null;
+        JSONArray dataArray = null;
+        int currentIndex = -1;
         try {
             String body = new String(msg.getBody(), StandardCharsets.UTF_8);
             JSONObject canalMsg = JSON.parseObject(body);
@@ -66,7 +68,7 @@ public class SellerSubOrderIndexSyncConsumer implements RocketMQListener<Message
                 return;
             }
 
-            JSONArray dataArray = canalMsg.getJSONArray("data");
+            dataArray = canalMsg.getJSONArray("data");
             if (dataArray == null || dataArray.isEmpty()) {
                 log.warn("[卖家子单索引] data 为空，跳过: msgId={}", msg.getMsgId());
                 return;
@@ -79,6 +81,7 @@ public class SellerSubOrderIndexSyncConsumer implements RocketMQListener<Message
             }
 
             for (int i = 0; i < dataArray.size(); i++) {
+                currentIndex = i;
                 JSONObject row = dataArray.getJSONObject(i);
                 String subOrderNo = row.getString("sub_order_no");
                 if (subOrderNo == null || subOrderNo.isBlank()) {
@@ -98,17 +101,45 @@ public class SellerSubOrderIndexSyncConsumer implements RocketMQListener<Message
             }
         } catch (Exception e) {
             // 记录失败单号 → Redis 补偿键（与商品索引同模式）；上抛触发重试
-            if (currentSubOrderNo != null) {
-                try {
-                    stringRedisTemplate.opsForSet().add(FAILED_KEY, currentSubOrderNo);
-                    stringRedisTemplate.expire(FAILED_KEY, Duration.ofHours(1));
-                } catch (Exception redisEx) {
-                    log.warn("[卖家子单索引] 记录失败单号到 Redis 失败: subOrderNo={}", currentSubOrderNo, redisEx);
-                }
-            }
+            recordFailedBatch(dataArray, currentIndex, currentSubOrderNo);
             log.error("[卖家子单索引] 同步失败（触发重试）: subOrderNo={}, msgId={}, reconsumeTimes={}",
                     currentSubOrderNo, msg.getMsgId(), msg.getReconsumeTimes(), e);
             throw new IllegalStateException("卖家子单索引同步失败（可重试）", e);
+        }
+    }
+
+    /**
+     * 失败补偿：记录"当前失败行 + 批次内未处理行"的单号——
+     * MQ 重试会整批重放（正常路径）；此处覆盖"重试仍失败进 DLQ"时后续行不丢失（兜底）。
+     */
+    private void recordFailedBatch(JSONArray dataArray, int currentIndex, String fallbackSubOrderNo) {
+        java.util.Set<String> failed = new java.util.LinkedHashSet<>();
+        if (dataArray != null && currentIndex >= 0) {
+            for (int i = currentIndex; i < dataArray.size(); i++) {
+                try {
+                    JSONObject row = dataArray.getJSONObject(i);
+                    String subOrderNo = row == null ? null : row.getString("sub_order_no");
+                    if (subOrderNo != null && !subOrderNo.isBlank()) {
+                        failed.add(subOrderNo);
+                    }
+                } catch (Exception ignored) {
+                    // 行解析失败：跳过（无法提取单号）
+                }
+            }
+        }
+        if (failed.isEmpty() && fallbackSubOrderNo != null) {
+            failed.add(fallbackSubOrderNo);
+        }
+        if (failed.isEmpty()) {
+            return;
+        }
+        try {
+            for (String subOrderNo : failed) {
+                stringRedisTemplate.opsForSet().add(FAILED_KEY, subOrderNo);
+            }
+            stringRedisTemplate.expire(FAILED_KEY, Duration.ofHours(1));
+        } catch (Exception redisEx) {
+            log.warn("[卖家子单索引] 记录失败单号到 Redis 失败: subOrderNos={}", failed, redisEx);
         }
     }
 

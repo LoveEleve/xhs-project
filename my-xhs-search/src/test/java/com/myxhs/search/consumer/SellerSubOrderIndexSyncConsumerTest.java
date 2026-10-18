@@ -171,6 +171,57 @@ class SellerSubOrderIndexSyncConsumerTest {
     }
 
     @Test
+    @DisplayName("多行批次：逐行处理（全部 upsert）")
+    void multiRowBatchHandlesAllRows() throws Exception {
+        Map<String, Object> row2 = row();
+        row2.put("sub_order_no", "ORDER-1002-1");
+
+        JSONObject msg = new JSONObject();
+        msg.put("database", "my_xhs_order_0");
+        msg.put("table", "t_sub_order_0");
+        msg.put("type", "INSERT");
+        JSONArray data = new JSONArray();
+        data.add(row());
+        data.add(row2);
+        msg.put("data", data);
+        msg.put("ts", TS);
+
+        consumer.onMessage(message(msg.toJSONString()));
+
+        verify(indexWriter).upsert(eq("ORDER-1001-1"), anyMap(), eq(TS));
+        verify(indexWriter).upsert(eq("ORDER-1002-1"), anyMap(), eq(TS));
+    }
+
+    @Test
+    @DisplayName("多行批次中途失败：补偿覆盖当前失败行及后续未处理行（DLQ 兜底），已成功行不记录")
+    void multiRowBatchFailureRecordsRemaining() throws Exception {
+        Map<String, Object> row2 = row();
+        row2.put("sub_order_no", "ORDER-1002-1");
+        Map<String, Object> row3 = row();
+        row3.put("sub_order_no", "ORDER-1003-1");
+
+        JSONObject msg = new JSONObject();
+        msg.put("database", "my_xhs_order_0");
+        msg.put("table", "t_sub_order_0");
+        msg.put("type", "UPDATE");
+        JSONArray data = new JSONArray();
+        data.add(row());
+        data.add(row2);
+        data.add(row3);
+        msg.put("data", data);
+        msg.put("ts", TS);
+
+        doThrow(new IOException("ES down")).when(indexWriter).upsert(eq("ORDER-1002-1"), anyMap(), anyLong());
+
+        assertThatThrownBy(() -> consumer.onMessage(message(msg.toJSONString())))
+                .isInstanceOf(IllegalStateException.class);
+
+        verify(setOps).add(eq(SellerSubOrderIndexSyncConsumer.FAILED_KEY), eq("ORDER-1002-1"));
+        verify(setOps).add(eq(SellerSubOrderIndexSyncConsumer.FAILED_KEY), eq("ORDER-1003-1"));
+        verify(setOps, never()).add(eq(SellerSubOrderIndexSyncConsumer.FAILED_KEY), eq("ORDER-1001-1"));
+    }
+
+    @Test
     @DisplayName("ES 写入失败 → 失败单号落 Redis 补偿键 + 上抛（触发 MQ 重试）")
     void esFailureRecordsCompensationAndRetries() throws Exception {
         doThrow(new IOException("ES down")).when(indexWriter).upsert(anyString(), anyMap(), anyLong());

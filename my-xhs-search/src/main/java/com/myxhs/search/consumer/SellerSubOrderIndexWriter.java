@@ -16,6 +16,10 @@ import java.util.Map;
 /**
  * 商家子单 ES 索引写入器（C-004）
  * <p>
+ * 正确性守卫：<b>ES 只做发现</b>；一切写操作/终态判断以 DB + CAS 为准
+ * （索引的最终一致延迟不得导致错误操作）。
+ * </p>
+ * <p>
  * 从消费者中抽出的 ES 薄胶水（便于消费者单测 mock）：
  * <ul>
  *   <li><b>版本化 upsert</b>：{@code ExternalGte} + binlog ts——乱序/陈旧事件不覆盖新版本（同既有消费者模式）</li>
@@ -62,8 +66,16 @@ public class SellerSubOrderIndexWriter {
         }
     }
 
-    private boolean isVersionConflict(Exception e) {
-        String msg = e.getMessage();
-        return msg != null && msg.contains("version_conflict_engine_exception");
+    /** 版本冲突判定（对齐既有消费者实现：cause 链 + 双写法匹配） */
+    private boolean isVersionConflict(Throwable e) {
+        Throwable t = e;
+        while (t != null) {
+            String m = String.valueOf(t.getMessage());
+            if (m.contains("version_conflict") || m.contains("version conflict")) {
+                return true;
+            }
+            t = t.getCause();
+        }
+        return false;
     }
 }

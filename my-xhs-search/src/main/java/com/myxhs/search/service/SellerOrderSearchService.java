@@ -59,6 +59,10 @@ public class SellerOrderSearchService {
      */
     public SellerOrderPageVO search(Long sellerId, Integer status, String startTime, String endTime,
                                     Integer page, Integer size) {
+        // 纵深防御：控制器已守卫；服务层再兜底（防未来直呼导致 NPE/全量语义）
+        if (sellerId == null || sellerId < 0) {
+            throw new BizException(ResultCode.PARAM_INVALID, "sellerId 必填");
+        }
         int pageNo = (page == null || page < 1) ? 1 : page;
         int pageSize = (size == null || size < 1) ? defaultPageSize : Math.min(size, maxPageSize);
 
@@ -94,7 +98,7 @@ public class SellerOrderSearchService {
         return SearchRequest.of(s -> {
             s.index(indexName).from(from).size(pageSize);
             s.query(q -> q.bool(b -> {
-                // sellerId 必填（控制器守卫；查询层兜底再带一次）
+                // sellerId 必填（控制器/服务双层守卫）
                 b.filter(f -> f.term(t -> t.field("sellerId").value(sellerId)));
                 // 软删除标记过滤（deleted=true 为已删除）
                 b.filter(f -> f.term(t -> t.field("deleted").value(false)));

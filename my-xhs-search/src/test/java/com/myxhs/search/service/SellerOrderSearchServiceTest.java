@@ -102,6 +102,17 @@ class SellerOrderSearchServiceTest {
     }
 
     @Test
+    @DisplayName("服务层纵深守卫：sellerId 为 null/负 → BizException（不触达 ES）")
+    void sellerIdGuardAtServiceLevel() {
+        assertThatThrownBy(() -> service.search(null, null, null, null, 1, 20))
+                .isInstanceOf(BizException.class)
+                .hasMessageContaining("sellerId 必填");
+        assertThatThrownBy(() -> service.search(-1L, null, null, null, 1, 20))
+                .isInstanceOf(BizException.class);
+        org.mockito.Mockito.verifyNoInteractions(esClient);
+    }
+
+    @Test
     @DisplayName("文档 → VO 映射（金额/状态/时间）")
     void mapsDocumentToVO() {
         Map<String, Object> source = new HashMap<>();
