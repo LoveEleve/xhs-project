@@ -104,8 +104,12 @@ public class SimulatedAlipayServer {
         if (AlipayTradeStatus.WAIT_BUYER_PAY.name().equals(record.getStatus())) {
             transitionTo(record, AlipayTradeStatus.TRADE_CLOSED);
             repository.save(record);
-            scheduleDelivery(record); // 关单通知异步投递（真实支付宝关单亦推送通知）
-            log.info("[模拟支付宝] 交易关闭: outTradeNo={}", outTradeNo);
+            // 商户主动关单（换渠道/超时处置/订单终结）→ 不投递业务通知：
+            // ① 发起方已知悉关闭动作，通知无增量信息；
+            // ② 避免竞态：通知若抢先到达，会把"待支付"旧单置为支付失败并联动订单取消，
+            //    随后流程的"置已关闭(4)"UPDATE 落空 → 换渠道失败 + 订单被误取消。
+            // 用户侧放弃/失败的 TRADE_CLOSED 通知由 triggerPay(false) 模拟（真实异步语义）。
+            log.info("[模拟支付宝] 交易关闭(商户发起，不发通知): outTradeNo={}", outTradeNo);
             return true;
         }
         if (AlipayTradeStatus.TRADE_SUCCESS.name().equals(record.getStatus())) {
@@ -158,13 +162,15 @@ public class SimulatedAlipayServer {
         RefundTradeResult result = RefundTradeResult.success("ALIPAY_REFUND_" + System.nanoTime());
         boolean fullyRefunded = new BigDecimal(record.getRefundedAmount()).compareTo(total) >= 0;
         if (fullyRefunded) {
-            transitionTo(record, AlipayTradeStatus.TRADE_CLOSED); // 全额退款后交易关闭（官方语义）
-        }
-        repository.save(record);
-        if (fullyRefunded) {
+            // 全额退款后交易关闭（官方语义）；关闭通知异步投递——
+            // 注意：scheduleDelivery 必须在 save 之前（否则 nextRetryAt 不落库、通知永不投递）
+            transitionTo(record, AlipayTradeStatus.TRADE_CLOSED);
             scheduleDelivery(record);
         }
+        // 幂等结果先落（"同号只退一次"优先于台账记账）：
+        // 崩溃后同键重试命中幂等返回既有结果，绝不重复出金（台账计数漂移仅影响超额防护，可容忍）
         repository.saveRefundResult(outRequestNo, result);
+        repository.save(record);
         log.info("[模拟支付宝] 退款成功: outTradeNo={}, outRequestNo={}, amount={}, fullyRefunded={}",
                 outTradeNo, outRequestNo, refundAmount, fullyRefunded);
         return result;
@@ -219,15 +225,21 @@ public class SimulatedAlipayServer {
                     || record.isAutoPayRolled() || System.currentTimeMillis() < record.getPayAfterAt()) {
                 continue;
             }
-            record.setAutoPayRolled(true);
-            boolean success = ThreadLocalRandom.current().nextDouble() < properties.getSuccessRate();
-            if (success) {
-                transitionTo(record, AlipayTradeStatus.TRADE_SUCCESS);
-                repository.save(record);
-                deliverNotify(record);
-            } else {
-                repository.save(record);
-                log.info("[模拟支付宝] 用户未完成支付（掷骰未中）: outTradeNo={}", record.getOutTradeNo());
+            // 定时线程无入站 traceId：每单开新链路（投递→端点→MQ→订单全链可追）
+            com.myxhs.common.trace.TraceContextHolder.startNewTrace();
+            try {
+                record.setAutoPayRolled(true);
+                boolean success = ThreadLocalRandom.current().nextDouble() < properties.getSuccessRate();
+                if (success) {
+                    transitionTo(record, AlipayTradeStatus.TRADE_SUCCESS);
+                    repository.save(record);
+                    deliverNotify(record);
+                } else {
+                    repository.save(record);
+                    log.info("[模拟支付宝] 用户未完成支付（掷骰未中）: outTradeNo={}", record.getOutTradeNo());
+                }
+            } finally {
+                com.myxhs.common.trace.TraceContextHolder.clear();
             }
         }
     }
@@ -248,7 +260,13 @@ public class SimulatedAlipayServer {
                     || record.getNextRetryAt() <= 0 || System.currentTimeMillis() < record.getNextRetryAt()) {
                 continue;
             }
-            deliverNotify(record);
+            // 定时线程无入站 traceId：重投也开新链路（与首次投递同口径可追）
+            com.myxhs.common.trace.TraceContextHolder.startNewTrace();
+            try {
+                deliverNotify(record);
+            } finally {
+                com.myxhs.common.trace.TraceContextHolder.clear();
+            }
         }
     }
 

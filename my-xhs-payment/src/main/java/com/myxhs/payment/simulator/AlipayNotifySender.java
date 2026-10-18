@@ -50,6 +50,12 @@ public class AlipayNotifySender {
         params.forEach(form::add);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+        // 链路染色透传：端点侧 TraceIdConfig 拦截器读取 X-Trace-Id——
+        // 保证"渠道投递 → 通知端点处理 → MQ → 订单"全链同一 traceId 可追
+        String traceId = com.myxhs.common.trace.TraceContextHolder.getTraceId();
+        if (traceId != null && !traceId.isEmpty()) {
+            headers.set("X-Trace-Id", traceId);
+        }
 
         String body = restTemplate.postForObject(
                 properties.getNotifyUrl(), new HttpEntity<>(form, headers), String.class);

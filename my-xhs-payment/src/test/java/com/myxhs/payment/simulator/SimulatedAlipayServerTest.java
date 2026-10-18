@@ -178,13 +178,15 @@ class SimulatedAlipayServerTest {
         when(repository.load("PAY1")).thenReturn(waiting);
         assertThat(server.handleCloseTrade(signedRequest("alipay.trade.close", "PAY1"))).isTrue();
         assertThat(waiting.getStatus()).isEqualTo("TRADE_CLOSED");
-        assertThat(waiting.getNextRetryAt()).isGreaterThan(0); // 关单通知异步投递
+        // 商户主动关单 → 不发业务通知（避免与本地状态推进的竞态；用户侧放弃由 triggerPay(false) 模拟）
+        assertThat(waiting.getNextRetryAt()).isEqualTo(0);
 
         MockTradeRecord paid = record("PAY2", "TRADE_SUCCESS", "199.00");
         when(repository.tryLock("PAY2")).thenReturn(true);
         when(repository.load("PAY2")).thenReturn(paid);
         assertThat(server.handleCloseTrade(signedRequest("alipay.trade.close", "PAY2"))).isFalse();
         assertThat(paid.getStatus()).isEqualTo("TRADE_SUCCESS"); // 不可关闭
+        verify(notifySender, never()).send(anyMap()); // 关单全程零投递
     }
 
     // ==================== 退款 ====================
@@ -202,6 +204,8 @@ class SimulatedAlipayServerTest {
         assertThat(result.isFundChange()).isTrue();
         assertThat(paid.getRefundedAmount()).isEqualTo("199.00");
         assertThat(paid.getStatus()).isEqualTo("TRADE_CLOSED");
+        // 全退关闭通知已排程（nextRetryAt 在 save 之前设置 → 已随台账落库，等待扫描投递）
+        assertThat(paid.getNextRetryAt()).isGreaterThan(0);
         verify(repository).saveRefundResult(eq("REQ1"), any(RefundTradeResult.class));
     }
 

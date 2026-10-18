@@ -39,7 +39,7 @@ updated: 2026-10-17
 | TC-15 | AC-7 | 🟢 | `#notifyRetryScheduledOnNoAck`（未 ACK → attempts+1 + 5s 重试）+ `#retryScanRedeliversAndGivesUp`（到期重投 notify_id 不变；超上限放弃） | |
 | TC-16 | AC-8 | 🟢 | `#refundSuccessAndFullClose` + `#refundIdempotentByOutRequestNo`（同号只退一次） | |
 | TC-17 | AC-8 | 🟢 | `#refundFaultInjection`（异常 + 不落幂等键） | |
-| TC-18 | AC-8 | 🟢 | `#closeTradeRules`（WAIT→CLOSED+异步通知；已支付→拒绝关闭） | |
+| TC-18 | AC-8 | 🟢 | `#closeTradeRules`（WAIT→CLOSED，商户主动关单**不发通知**；已支付→拒绝关闭） | 二轮 Review 修正 |
 | TC-19 | AC-9 | 🟢 | `#simulateUserPaymentSuccess`（自动付款→投递）；"服务器签名→端点公钥验签"两段真实链路拼接核验（HTTP 跳为 mock） | |
 | TC-20 | AC-9 | 🟢 | `PaymentControllerTest#alipayTriggerGoesRealChain`（/callback/1 → triggerPay，不再直调）+ `#mockChannelDirectCompat`（/callback/99 兼容） | 本轮补齐 |
 | TC-21 | AC-10 | 🟡 | 退款成功分支：统一同步分支代码路径就绪；失败分支已测（TC-22），成功分支无独立用例 | 记补测 |
@@ -66,6 +66,15 @@ updated: 2026-10-17
 | `RefundTradeResult` 缺无参构造 → Jackson 反序列化（退款幂等结果回读）失败 | 中（潜在运行时） | 补 `@NoArgsConstructor`（同补 `AlipayTradeQueryResult` 对称防护） |
 | 换渠道测试原设计（旧单与请求同渠道）落入复用分支 → 未触达先查后决 | 低（测试用例） | 重写为 99→1 跨渠道矩阵（4 用例） |
 | `refund()` 入口返回 `R<Void>`（`refundByOrder` 才返回 R<String>）→ 测试断言口径修正 | 低 | 断言调整为 isSuccess + 失败链路 UPDATE 验证 |
+
+## 深 Review 第二轮（代码逻辑复审，2026-10-17）
+
+| 发现 | 严重度 | 处理 |
+|------|--------|------|
+| **商户关单通知竞态**：close（换渠道/终结/超时）触发的 TRADE_CLOSED 通知若被扫描线程抢先投递，会把"待支付"旧单置为支付失败并联动**订单取消**；随后流程"置已关闭(4)"UPDATE 落空（换渠道失败 + 订单误取消） | 中高 | 商户主动关单**不投递业务通知**（发起方已知悉，通知无增量信息；用户侧放弃/失败由 `triggerPay(false)` 模拟）——消除竞态 |
+| **全退通知 nextRetryAt 未落库**：`scheduleDelivery` 在 `repository.save` 之后调用 → 全退关闭通知永不投递（死路径） | 中 | 调整顺序（transition + schedule 在 save 之前）；测试补断言（nextRetryAt > 0 且已落库） |
+| **退款幂等结果落库顺序**：台账 save 先于幂等 save → 崩溃窗口内同键重试会重复累计退款额（或全退后误报"交易已关闭"失败） | 中 | 幂等结果**先落**（"同号只退一次"优先于台账记账；计数漂移仅影响超额防护，可容忍） |
+| 通知投递链路染色断裂：sender 不带 X-Trace-Id；扫描线程不建新 trace（旧模拟器有 startNewTrace） | 低 | sender 透传 X-Trace-Id（端点 `TraceIdConfig` 拦截器接收）+ 两个扫描循环 startNewTrace/clear |
 
 ## 规划微调记录（执行 vs 规划）
 
