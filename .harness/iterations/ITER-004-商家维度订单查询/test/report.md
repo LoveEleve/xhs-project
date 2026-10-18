@@ -13,10 +13,10 @@ updated: 2026-10-17
 
 ## 执行摘要
 
-- 执行时间: 2026-10-17（P0 + P1 + P0 深审查修复后的最终回归）
+- 执行时间: 2026-10-17（P0 + P1 + P0/P1 两轮深审查修复后的最终回归）
 - 环境 profile: JDK 17（`/env/javaEnv/jdk17`）+ Maven 3.9 离线（`-o`）；**无运行时环境**（项目规则：单测口径；删 `target/test-classes` 强制全量重编防增量假绿）
 - 命令: `mvn -o -pl my-xhs-common,my-xhs-product,my-xhs-coupon,my-xhs-order,my-xhs-inventory,my-xhs-payment,my-xhs-search -am test` + 全仓 `mvn -o -q compile`
-- 结果: ✅ 通过（BUILD SUCCESS；**368 全绿**：common 93 / product 14 / coupon 11 / **order 118** / inventory 20 / **search 39** / payment 73——较 352 基线净增 16，零回归）
+- 结果: ✅ 通过（BUILD SUCCESS；**376 全绿**：common 93 / product 14 / coupon 11 / **order 122** / inventory 20 / **search 43** / payment 73——较 352 基线净增 24，零回归）
 
 ## 用例执行结果
 
@@ -48,6 +48,15 @@ updated: 2026-10-17
 - 方式：**40 项清单先行 → 逐项校验 → 回填结论**（脚本核验：properties 转义/正则全匹配/partitionHash 覆盖/JSON 合法性/DDL 列名对照）
 - 🔴 严重问题 0；🟡 发现并修复 4（R-17 批次补偿覆盖 / R-20 版本冲突判定对齐既有实现 / R-29 服务层纵深守卫 / R-33 写入器守卫注释）；📝 记录 6
 - P1 执行中修正：详情测试数据缺陷（"NO-DASH-FORMATLESS" 含横杠 → 换无横杠输入）；文档构建器抽取为共享组件（增量/存量同一映射，杜绝结构漂移）
+
+## 深审查记录（P1，见 test/review-p1.md）
+
+- 方式：**36 项清单先行 → 逐项校验 → 回填结论**（实证：jshell 验证 fastjson2 空值省略行为 / Feign 配置逐行 diff / 路由表冲突核对 / 分片键配置对照）
+- 🔴 严重问题 0；🟡 发现并修复 4——其中 **2 个真 bug**：
+  - **R-17（静默漏回填）**：batchSize>1000 时与 order 域 limit 截断口径不一致 → 满批被误判收尾 → `effectiveLimit=min(batchSize,1000)` 统一
+  - **R-18（潜在死循环）**：末行 id 不可解析时游标不推进 → 显式抛错拒绝
+  - R-09/R-24：控制器守卫用例 + Job 锁路径用例补齐（+8 用例）
+- 📝 记录 4（ISO 缺秒形态/版本方向论证/fail-fast 启动影响已入部署说明/ShardingSphere 全路由运行时行为）
 
 ## 部署说明（运维口径）
 

@@ -97,9 +97,12 @@ public class SellerSubOrderIndexBackfillJob {
         String lastIdStr = (String) stringRedisTemplate.opsForHash().get(STATUS_KEY, LAST_ID_FIELD);
         long cursor = lastIdStr != null ? Long.parseLong(lastIdStr) : 0L;
         int total = 0;
+        // R-17（深审查）：order 域对 limit 截断为 1000——有效批次必须同口径，
+        // 否则 batchSize>1000 时"返回 1000 行 < batchSize"被误判为收尾（静默漏回填）
+        int effectiveLimit = Math.min(batchSize, 1000);
 
         while (true) {
-            R<List<Map<String, Object>>> resp = orderFeignClient.subOrderScan(cursor, batchSize);
+            R<List<Map<String, Object>>> resp = orderFeignClient.subOrderScan(cursor, effectiveLimit);
             if (resp == null || !resp.isSuccess() || resp.getData() == null) {
                 log.warn("[卖家子单回填] 扫描失败（保留断点，可重入）: cursor={}", cursor);
                 break;
@@ -126,10 +129,14 @@ public class SellerSubOrderIndexBackfillJob {
             }
 
             Object lastId = rows.get(rows.size() - 1).get("id");
-            cursor = lastId instanceof Number n ? n.longValue() : cursor;
+            if (!(lastId instanceof Number lastIdNumber)) {
+                // R-18（深审查）：id 不可解析时游标无法推进——满批场景会死循环，必须显式拒绝
+                throw new IllegalStateException("回填行 id 不可解析（游标无法推进，拒绝死循环）: lastId=" + lastId);
+            }
+            cursor = lastIdNumber.longValue();
             stringRedisTemplate.opsForHash().put(STATUS_KEY, LAST_ID_FIELD, String.valueOf(cursor));
 
-            if (rows.size() < batchSize) {
+            if (rows.size() < effectiveLimit) {
                 break;
             }
         }

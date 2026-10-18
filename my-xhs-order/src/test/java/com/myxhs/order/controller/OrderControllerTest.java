@@ -174,6 +174,63 @@ class OrderControllerTest {
                 .andExpect(jsonPath("$.code").value(ResultCode.ORDER_NOT_FOUND.getCode()));
     }
 
+    // ==================== 商家侧查询（C-004 P1） ====================
+
+    @Test
+    @DisplayName("GET /api/order/seller/sub-order/{subOrderNo} - 非 Admin-Call 拒绝")
+    void sellerSubOrderDetail_nonAdminRejected() throws Exception {
+        when(accessTokenGuard.isAdminCall(any())).thenReturn(false);
+
+        mockMvc.perform(get("/api/order/seller/sub-order/ORDER-1001-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(403));
+
+        verify(orderService, never()).getSellerSubOrderDetail(anyString());
+    }
+
+    @Test
+    @DisplayName("GET /api/order/seller/sub-order/{subOrderNo} - 查询成功（商家视角）")
+    void sellerSubOrderDetail_success() throws Exception {
+        when(accessTokenGuard.isAdminCall(any())).thenReturn(true);
+        OrderVO.SubOrderVO vo = OrderVO.SubOrderVO.builder()
+                .subOrderNo("ORDER-1001-1")
+                .sellerId(3001L)
+                .status(2)
+                .build();
+        when(orderService.getSellerSubOrderDetail("ORDER-1001-1")).thenReturn(vo);
+
+        mockMvc.perform(get("/api/order/seller/sub-order/ORDER-1001-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.subOrderNo").value("ORDER-1001-1"))
+                .andExpect(jsonPath("$.data.sellerId").value(3001));
+    }
+
+    @Test
+    @DisplayName("GET /api/order/internal/sub-order-scan - 非内部调用拒绝")
+    void subOrderScan_nonInternalRejected() throws Exception {
+        when(accessTokenGuard.isInternalCall(any())).thenReturn(false);
+
+        mockMvc.perform(get("/api/order/internal/sub-order-scan"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(403));
+
+        verify(orderService, never()).scanSubOrders(anyLong(), anyInt());
+    }
+
+    @Test
+    @DisplayName("GET /api/order/internal/sub-order-scan - limit 截断到 1000 + 默认 cursor=0")
+    void subOrderScan_capsLimit() throws Exception {
+        when(accessTokenGuard.isInternalCall(any())).thenReturn(true);
+        when(orderService.scanSubOrders(0L, 1000)).thenReturn(java.util.List.of());
+
+        mockMvc.perform(get("/api/order/internal/sub-order-scan").param("limit", "5000"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        verify(orderService).scanSubOrders(0L, 1000);
+    }
+
     // ==================== 订单列表 ====================
 
     @Test

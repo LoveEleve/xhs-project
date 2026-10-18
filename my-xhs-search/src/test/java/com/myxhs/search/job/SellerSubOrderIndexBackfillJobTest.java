@@ -26,11 +26,14 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -147,5 +150,62 @@ class SellerSubOrderIndexBackfillJobTest {
                 .hasMessageContaining("回填写入失败");
 
         verify(hashOps, never()).put(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("batchSize 超上限（>1000）→ 有效 limit 截断为 1000（防提前收尾静默漏回填）")
+    void batchSizeCappedTo1000() throws Exception {
+        ReflectionTestUtils.setField(job, "batchSize", 2000);
+        when(hashOps.get(SellerSubOrderIndexBackfillJob.STATUS_KEY, SellerSubOrderIndexBackfillJob.LAST_ID_FIELD))
+                .thenReturn(null);
+        when(orderFeignClient.subOrderScan(0L, 1000)).thenReturn(R.ok(List.of(row(1L, "ORDER-1-1"))));
+
+        job.backfill();
+
+        verify(orderFeignClient).subOrderScan(0L, 1000);
+    }
+
+    @Test
+    @DisplayName("末行 id 不可解析 → 抛错（拒绝游标不推进的死循环）")
+    void unparsableLastIdRejected() throws Exception {
+        when(hashOps.get(SellerSubOrderIndexBackfillJob.STATUS_KEY, SellerSubOrderIndexBackfillJob.LAST_ID_FIELD))
+                .thenReturn(null);
+        Map<String, Object> badRow = row(2L, "ORDER-2-1");
+        badRow.put("id", "not-a-number");
+        when(orderFeignClient.subOrderScan(0L, 2))
+                .thenReturn(R.ok(List.of(row(1L, "ORDER-1-1"), badRow)));
+
+        assertThatThrownBy(() -> job.backfill())
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("id 不可解析");
+    }
+
+    @Test
+    @DisplayName("锁被占 → 跳过本次触发（不扫描）")
+    void lockBusySkips() throws Exception {
+        org.redisson.api.RLock lock = mock(org.redisson.api.RLock.class);
+        when(redissonClient.getLock(anyString())).thenReturn(lock);
+        when(lock.tryLock(anyLong(), anyLong(), any(java.util.concurrent.TimeUnit.class))).thenReturn(false);
+
+        job.scheduledBackfill();
+
+        verify(orderFeignClient, never()).subOrderScan(anyLong(), anyInt());
+    }
+
+    @Test
+    @DisplayName("锁获取成功 → 执行回填并释放锁")
+    void lockAcquiredRunsBackfill() throws Exception {
+        org.redisson.api.RLock lock = mock(org.redisson.api.RLock.class);
+        when(redissonClient.getLock(anyString())).thenReturn(lock);
+        when(lock.tryLock(anyLong(), anyLong(), any(java.util.concurrent.TimeUnit.class))).thenReturn(true);
+        when(lock.isHeldByCurrentThread()).thenReturn(true);
+        when(hashOps.get(SellerSubOrderIndexBackfillJob.STATUS_KEY, SellerSubOrderIndexBackfillJob.LAST_ID_FIELD))
+                .thenReturn(null);
+        when(orderFeignClient.subOrderScan(0L, 2)).thenReturn(R.ok(List.of()));
+
+        job.scheduledBackfill();
+
+        verify(orderFeignClient).subOrderScan(0L, 2);
+        verify(lock).unlock();
     }
 }
