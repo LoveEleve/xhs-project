@@ -1,7 +1,7 @@
 ---
 id: C-003
 slug: 渠道契约对齐支付宝
-status: confirmed
+status: done
 created: 2026-10-17
 updated: 2026-10-17
 iteration: ITER-003     # 机器可读迭代协议：.harness/iterations/ITER-003-渠道契约对齐支付宝/
@@ -18,6 +18,12 @@ relations:
 ---
 
 # C-003 渠道契约对齐支付宝
+
+> **完成记录（2026-10-17）**：五阶段全部落地（契约层+双向密钥 → 通知端点 → 模拟服务器 → 链路切换 → 收口）。
+> 证据：六模块全量测试 **324 全绿**（common 93 / product 14 / coupon 11 / order 113 / inventory 20 / payment 73——净增 63，零回归）+ 全仓编译通过；
+> 详见 `.harness/iterations/ITER-003-渠道契约对齐支付宝/test/report.md`。
+> 执行中修正：台账扫描 hasNext/next 循环（mock 默认方法陷阱）；RefundTradeResult 补 @NoArgsConstructor；配置键落为 `pay.alipay.mock.*`。
+> 运行时验证（真实 Redis/MySQL/MQ/HTTP）按项目规则后置。
 
 > **立项（2026-10-17）**：Owner 挑战——"回调/接口要按支付宝 SDK 文档来，要改造就彻底改造"。
 > 已完成核验：支付宝官方文档（异步通知 / alipay.trade.query / alipay.trade.close / alipay.trade.refund 契约）+ 代码事实（两条回调路径、退款回调链、脚本引用面、跨模块影响面）。
