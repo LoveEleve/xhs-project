@@ -93,7 +93,8 @@ class SpuServiceTest {
     void setUp() {
         spuService = new SpuService(
                 spuMapper, skuMapper, categoryMapper, redisOperator, redissonClient,
-                rocketMQTemplate, idGeneratorUtil, productBehaviorMapper);
+                rocketMQTemplate, idGeneratorUtil, productBehaviorMapper,
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry());
 
         // 通过反射注入布隆过滤器（避免调用 @PostConstruct 初始化逻辑）
         ReflectionTestUtils.setField(spuService, "spuBloomFilter", spuBloomFilter);
@@ -133,6 +134,34 @@ class SpuServiceTest {
             assertThat(spuId).isEqualTo(SPU_ID);
             verify(spuMapper).insert(any(Spu.class));
             verify(spuBloomFilter).add(SPU_ID);
+        }
+    }
+
+    @Test
+    @DisplayName("C-005：创建 SPU 默认下架（对齐 建SPU→加SKU→上架 流程，消灭空商品在架）")
+    void createSpuDefaultsOffShelf() {
+        try (org.mockito.MockedStatic<org.springframework.transaction.support.TransactionSynchronizationManager> mockedTs =
+                     mockStatic(org.springframework.transaction.support.TransactionSynchronizationManager.class)) {
+            mockedTs.when(() -> org.springframework.transaction.support.TransactionSynchronizationManager
+                            .registerSynchronization(any()))
+                    .thenAnswer(invocation -> {
+                        org.springframework.transaction.support.TransactionSynchronization sync =
+                                invocation.getArgument(0);
+                        sync.afterCommit();
+                        return null;
+                    });
+
+            Category category = new Category();
+            category.setId(CATEGORY_ID);
+            when(categoryMapper.selectById(CATEGORY_ID)).thenReturn(category);
+            when(idGeneratorUtil.nextId()).thenReturn(SPU_ID);
+            when(spuMapper.insert(any(Spu.class))).thenReturn(1);
+
+            spuService.createSpu(buildCreateRequest());
+
+            org.mockito.ArgumentCaptor<Spu> captor = org.mockito.ArgumentCaptor.forClass(Spu.class);
+            verify(spuMapper).insert(captor.capture());
+            assertThat(captor.getValue().getStatus()).isEqualTo(0); // OFF_SHELF=0（原默认 ON_SHELF=1）
         }
     }
 
@@ -315,5 +344,13 @@ class SpuServiceTest {
         spu.setStatus(ProductStatus.ON_SHELF.getCode());
         spu.setCreatedAt(LocalDateTime.now());
         return spu;
+    }
+
+    @Test
+    @DisplayName("C-005：布隆重建异步化（立即返回已触发，不阻塞请求线程）")
+    void rebuildBloomFilterReturnsTriggered() {
+        String result = spuService.rebuildBloomFilter();
+
+        assertThat(result).contains("已触发");
     }
 }

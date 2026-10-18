@@ -46,6 +46,8 @@ public class SkuService {
     private final com.myxhs.product.feign.InventoryFeignClient inventoryFeignClient;
     /** 库存初始化失败打点（失败仅告警，管理端可用 /api/inventory/init 重试） */
     private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
+    /** C-005：库存初始化失败补偿（pending set → InventoryInitRepairJob 自动重试） */
+    private final org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
 
     /**
      * 创建 SKU
@@ -57,6 +59,11 @@ public class SkuService {
         Spu spu = spuMapper.selectById(request.getSpuId());
         if (spu == null) {
             throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
+        }
+
+        // C-005：价格非负（服务层纵深防御；0 元单合法——payment 有零元单路径）
+        if (request.getPrice() != null && request.getPrice().compareTo(java.math.BigDecimal.ZERO) < 0) {
+            throw new BizException(ResultCode.PARAM_INVALID, "价格不能为负数");
         }
 
         // P6：划线价不得低于售价（前端展示"原价 < 现价"是明显的数据错误）
@@ -118,17 +125,27 @@ public class SkuService {
             } else if (r != null && r.getMessage() != null && r.getMessage().contains("已初始化")) {
                 log.info("[商品] SKU 库存已存在(跳过): skuId={}", skuId);
             } else {
-                log.error("[商品] SKU 库存初始化失败(管理端 /api/inventory/init 可重试): skuId={}, resp={}",
+                log.error("[商品] SKU 库存初始化失败(已入补偿队列, Job 自动重试; 管理端 /api/inventory/init 亦可): skuId={}, resp={}",
                         skuId, r != null ? r.getMessage() : "null");
-                io.micrometer.core.instrument.Counter
-                        .builder("myxhs_product_inventory_init_fail_total")
-                        .register(meterRegistry).increment();
+                recordInitFailure(skuId);
             }
         } catch (Exception e) {
-            log.error("[商品] SKU 库存初始化调用异常(管理端 /api/inventory/init 可重试): skuId={}", skuId, e);
-            io.micrometer.core.instrument.Counter
-                    .builder("myxhs_product_inventory_init_fail_total")
-                    .register(meterRegistry).increment();
+            log.error("[商品] SKU 库存初始化调用异常(已入补偿队列, Job 自动重试): skuId={}", skuId, e);
+            recordInitFailure(skuId);
+        }
+    }
+
+    /** C-005：记录初始化失败 → pending set（InventoryInitRepairJob 周期重试；Redis 不可用时仅告警） */
+    private void recordInitFailure(Long skuId) {
+        io.micrometer.core.instrument.Counter
+                .builder("myxhs_product_inventory_init_fail_total")
+                .register(meterRegistry).increment();
+        try {
+            stringRedisTemplate.opsForSet().add(
+                    com.myxhs.common.constants.RedisKeyConstants.PRODUCT_INVENTORY_INIT_PENDING,
+                    String.valueOf(skuId));
+        } catch (Exception redisEx) {
+            log.warn("[商品] 补偿队列写入失败(依赖管理端手动重试): skuId={}", skuId, redisEx);
         }
     }
 
@@ -144,7 +161,8 @@ public class SkuService {
         if (spu == null || spu.getStatus() == null || spu.getStatus() != ProductStatus.ON_SHELF.getCode()) {
             throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
         }
-        return toSkuVO(sku, resolveSpuImage(sku.getSpuId()), spu.getStatus());
+        // C-005：复用已查 spu（原 resolveSpuImage 对同一 SPU 重复 selectById）
+        return toSkuVO(sku, firstImageOf(spu), spu.getStatus());
     }
 
     /**
@@ -192,9 +210,8 @@ public class SkuService {
         if (skuList.isEmpty()) {
             return List.of();
         }
-        // P2-1：批量预取 SPU 首图，消除 N+1
-        Map<Long, String> spuImageMap = buildSpuImageMap(
-                spuMapper.selectBatchIds(skuList.stream().map(Sku::getSpuId).collect(Collectors.toSet())));
+        // P2-1：批量预取 SPU 首图，消除 N+1；C-005：复用本方法已查的 spu（原再 selectBatchIds 重复查同一行）
+        Map<Long, String> spuImageMap = buildSpuImageMap(List.of(spu));
         final Integer spuStatus = spu.getStatus();
         return skuList.stream()
                 .map(sku -> toSkuVO(sku, spuImageMap.get(sku.getSpuId()), spuStatus))
@@ -260,14 +277,10 @@ public class SkuService {
     }
 
     /**
-     * 解析 SKU 主图：SKU 表无 image 字段，图片存储在所属 SPU 的 images(JSON数组)，取第一张作主图。
-     * <p>（getSkuDetail 单查路径使用；批量路径走 buildSpuImageMap 避免 N+1）</p>
+     * 取 SPU 首图：SKU 表无 image 字段，图片存储在所属 SPU 的 images(JSON数组)，取第一张作主图。
+     * <p>C-005：接收已查 SPU 对象（原 resolveSpuImage 会二次 selectById 同一行）；批量路径走 buildSpuImageMap。</p>
      */
-    private String resolveSpuImage(Long spuId) {
-        if (spuId == null) {
-            return null;
-        }
-        Spu spu = spuMapper.selectById(spuId);
+    private String firstImageOf(Spu spu) {
         if (spu == null || spu.getImages() == null) {
             return null;
         }
@@ -276,7 +289,7 @@ public class SkuService {
                     objectMapper.getTypeFactory().constructCollectionType(List.class, String.class));
             return (images == null || images.isEmpty()) ? null : images.get(0);
         } catch (Exception e) {
-            log.warn("[商品] SPU images 解析失败, spuId={}", spuId, e);
+            log.warn("[商品] SPU images 解析失败, spuId={}", spu.getId(), e);
             return null;
         }
     }

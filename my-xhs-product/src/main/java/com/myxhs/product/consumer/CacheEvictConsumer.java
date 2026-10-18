@@ -16,8 +16,9 @@ import java.nio.charset.StandardCharsets;
 /**
  * 缓存失效兜底消费者（P2/2026-09-27）
  * <p>
- * 消费 {@link CacheEvictMessage#TOPIC}：延迟双删失败/Redis 不可用时由 CacheHelper 或本服务发出的
- * 兜底消息，在 Redis 恢复后完成删除（删除天然幂等，重复消费无副作用）。
+ * 消费 {@link CacheEvictMessage#TOPIC}：写路径删缓存失败（Redis 抖动）时发出的兜底消息，
+ * 在 Redis 恢复后完成删除（删除天然幂等，重复消费无副作用）。
+ * C-005 后为一致性第二层（写入侧兜底）；最终保证见 Canal 失效通道（ProductCacheCanalEvictConsumer）。
  * </p>
  * <p>
  * 每个使用兜底的服各自注册独立消费组（集群模式下各组均收到全量消息），避免此前

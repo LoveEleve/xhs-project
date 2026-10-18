@@ -41,6 +41,10 @@ class SkuServiceTest {
     private IdGeneratorUtil idGeneratorUtil;
     @Mock
     private com.myxhs.product.feign.InventoryFeignClient inventoryFeignClient;
+    @Mock
+    private org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
+    @Mock
+    private org.springframework.data.redis.core.SetOperations<String, String> setOps;
 
     private SkuService skuService;
     private ObjectMapper objectMapper;
@@ -55,7 +59,8 @@ class SkuServiceTest {
     void setUp() {
         objectMapper = new ObjectMapper();
         skuService = new SkuService(skuMapper, spuMapper, spuService, idGeneratorUtil, objectMapper,
-                inventoryFeignClient, meterRegistry);
+                inventoryFeignClient, meterRegistry, stringRedisTemplate);
+        when(stringRedisTemplate.opsForSet()).thenReturn(setOps);
         // 新建 SKU 后提交回调会触发库存初始化（远程调用）
         when(inventoryFeignClient.initStock(any())).thenReturn(com.myxhs.common.response.R.ok());
     }
@@ -98,6 +103,91 @@ class SkuServiceTest {
             assertThat(skuId).isEqualTo(SKU_ID);
             verify(skuMapper).insert(any(Sku.class));
             verify(spuService).evictSpuCache(SPU_ID);
+        }
+    }
+
+    @Test
+    @DisplayName("C-005：价格负数 → 拒绝（服务层纵深；0 元单合法）")
+    void createSkuRejectsNegativePrice() {
+        Spu spu = new Spu();
+        spu.setId(SPU_ID);
+        when(spuMapper.selectById(SPU_ID)).thenReturn(spu);
+
+        com.myxhs.product.dto.request.SkuCreateRequest request =
+                new com.myxhs.product.dto.request.SkuCreateRequest();
+        request.setSpuId(SPU_ID);
+        request.setName("测试SKU");
+        request.setPrice(new java.math.BigDecimal("-1"));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> skuService.createSku(request))
+                .isInstanceOf(com.myxhs.common.exception.BizException.class)
+                .hasMessageContaining("价格不能为负数");
+        verify(skuMapper, never()).insert(any(Sku.class));
+    }
+
+    @Test
+    @DisplayName("C-005：价格 0 合法（零元单场景；仅拒绝负数）")
+    void createSkuAllowsZeroPrice() {
+        try (org.mockito.MockedStatic<org.springframework.transaction.support.TransactionSynchronizationManager> mockedTs =
+                     org.mockito.Mockito.mockStatic(
+                             org.springframework.transaction.support.TransactionSynchronizationManager.class)) {
+            mockedTs.when(() -> org.springframework.transaction.support.TransactionSynchronizationManager
+                            .registerSynchronization(any()))
+                    .thenAnswer(invocation -> {
+                        org.springframework.transaction.support.TransactionSynchronization sync =
+                                invocation.getArgument(0);
+                        sync.afterCommit();
+                        return null;
+                    });
+            Spu spu = new Spu();
+            spu.setId(SPU_ID);
+            when(spuMapper.selectById(SPU_ID)).thenReturn(spu);
+            when(idGeneratorUtil.nextId()).thenReturn(SKU_ID);
+            when(skuMapper.insert(any(Sku.class))).thenReturn(1);
+
+            com.myxhs.product.dto.request.SkuCreateRequest request =
+                    new com.myxhs.product.dto.request.SkuCreateRequest();
+            request.setSpuId(SPU_ID);
+            request.setName("零元单SKU");
+            request.setPrice(java.math.BigDecimal.ZERO);
+
+            assertThat(skuService.createSku(request)).isEqualTo(SKU_ID);
+        }
+    }
+
+    @Test
+    @DisplayName("C-005：库存初始化失败 → 入补偿队列（pending set）")
+    void createSkuInventoryFailureRecordsPending() {
+        try (org.mockito.MockedStatic<org.springframework.transaction.support.TransactionSynchronizationManager> mockedTs =
+                     org.mockito.Mockito.mockStatic(
+                             org.springframework.transaction.support.TransactionSynchronizationManager.class)) {
+            mockedTs.when(() -> org.springframework.transaction.support.TransactionSynchronizationManager
+                            .registerSynchronization(any()))
+                    .thenAnswer(invocation -> {
+                        org.springframework.transaction.support.TransactionSynchronization sync =
+                                invocation.getArgument(0);
+                        sync.afterCommit();
+                        return null;
+                    });
+
+            Spu spu = new Spu();
+            spu.setId(SPU_ID);
+            when(spuMapper.selectById(SPU_ID)).thenReturn(spu);
+            when(idGeneratorUtil.nextId()).thenReturn(SKU_ID);
+            when(skuMapper.insert(any(Sku.class))).thenReturn(1);
+            when(inventoryFeignClient.initStock(any()))
+                    .thenReturn(com.myxhs.common.response.R.fail(500, "库存服务不可用"));
+
+            com.myxhs.product.dto.request.SkuCreateRequest request =
+                    new com.myxhs.product.dto.request.SkuCreateRequest();
+            request.setSpuId(SPU_ID);
+            request.setName("测试SKU");
+            request.setPrice(new java.math.BigDecimal("9.9"));
+
+            skuService.createSku(request);
+
+            verify(setOps).add(com.myxhs.common.constants.RedisKeyConstants.PRODUCT_INVENTORY_INIT_PENDING,
+                    String.valueOf(SKU_ID));
         }
     }
 
@@ -177,5 +267,45 @@ class SkuServiceTest {
 
         assertThat(list).isEmpty();
         verify(skuMapper, never()).selectList(any(LambdaQueryWrapper.class));
+    }
+
+    @Test
+    @DisplayName("C-005：getSkuDetail 复用已查 SPU（单查，无重复 selectById）")
+    void getSkuDetailQueriesSpuOnce() {
+        Sku sku = new Sku();
+        sku.setId(SKU_ID);
+        sku.setSpuId(SPU_ID);
+        sku.setStatus(1);
+        Spu spu = new Spu();
+        spu.setId(SPU_ID);
+        spu.setStatus(1);
+        spu.setImages("[\"img1\"]");
+        when(skuMapper.selectById(SKU_ID)).thenReturn(sku);
+        when(spuMapper.selectById(SPU_ID)).thenReturn(spu);
+
+        SkuVO vo = skuService.getSkuDetail(SKU_ID);
+
+        assertThat(vo.getImage()).isEqualTo("img1");
+        verify(spuMapper, times(1)).selectById(SPU_ID);
+    }
+
+    @Test
+    @DisplayName("C-005：listSkusBySpuId 复用已查 SPU（不再 selectBatchIds 重复查）")
+    void listSkusBySpuIdQueriesSpuOnce() {
+        Spu spu = new Spu();
+        spu.setId(SPU_ID);
+        spu.setStatus(1);
+        when(spuMapper.selectById(SPU_ID)).thenReturn(spu);
+        Sku sku = new Sku();
+        sku.setId(SKU_ID);
+        sku.setSpuId(SPU_ID);
+        sku.setStatus(1);
+        when(skuMapper.selectList(any())).thenReturn(java.util.List.of(sku));
+
+        java.util.List<SkuVO> list = skuService.listSkusBySpuId(SPU_ID);
+
+        assertThat(list).hasSize(1);
+        verify(spuMapper, times(1)).selectById(SPU_ID);
+        verify(spuMapper, never()).selectBatchIds(any());
     }
 }

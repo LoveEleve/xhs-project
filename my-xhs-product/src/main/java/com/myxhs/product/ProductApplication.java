@@ -12,6 +12,7 @@ import org.springframework.scheduling.annotation.EnableAsync;
  * </p>
  */
 @EnableAsync
+@org.springframework.scheduling.annotation.EnableScheduling
 @SpringBootApplication(scanBasePackages = {"com.myxhs.product", "com.myxhs.common"})
 @org.springframework.cloud.openfeign.EnableFeignClients(basePackages = "com.myxhs.product.feign")
 public class ProductApplication {

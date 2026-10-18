@@ -85,6 +85,21 @@ public class CategoryService {
      *
      * @return 预热的分类节点数（0 = 缓存已存在或分类树为空）
      */
+    /**
+     * C-005：手动刷新分类树缓存（管理端点）——关闭"改 DB 后最长 2h 生效"的运维缺口。
+     * 先删 key（失败继续重建），再走预热路径重建并回填。
+     *
+     * @return 重建后的节点数
+     */
+    public int refreshCategoryTree() {
+        try {
+            redisOperator.delete(CATEGORY_TREE_REDIS_KEY);
+        } catch (Exception e) {
+            log.warn("[分类] 刷新删除缓存失败(继续重建)", e);
+        }
+        return warmUpCategoryTree();
+    }
+
     public int warmUpCategoryTree() {
         try {
             List<CategoryTreeVO> cached = redisOperator.get(CATEGORY_TREE_REDIS_KEY);

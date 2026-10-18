@@ -112,4 +112,27 @@ class CategoryServiceTest {
         assertThat(tree).isEmpty();
         verify(redisOperator, never()).set(any(), any(), anyLong(), any());
     }
+
+    @Test
+    @DisplayName("C-005：刷新分类树缓存（删 key + 重建返回节点数）")
+    void refreshCategoryTreeRebuilds() {
+        // 刷新：先删 key（warmUp 里 get 返回 null → 查 DB 重建）
+        when(redisOperator.get("myxhs:product:category:tree")).thenReturn(null);
+
+        Category root = new Category();
+        root.setId(1L);
+        root.setName("服装");
+        root.setParentId(0L);
+        root.setLevel(1);
+        root.setSort(1);
+        root.setIcon("icon1");
+        root.setStatus(1);
+        when(categoryMapper.selectList(any(LambdaQueryWrapper.class))).thenReturn(java.util.List.of(root));
+
+        int nodes = categoryService.refreshCategoryTree();
+
+        assertThat(nodes).isEqualTo(1);
+        verify(redisOperator).delete("myxhs:product:category:tree");
+        verify(redisOperator).set(eq("myxhs:product:category:tree"), any(), eq(2L), eq(TimeUnit.HOURS));
+    }
 }

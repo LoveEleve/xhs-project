@@ -1,5 +1,6 @@
 package com.myxhs.product.dto.request;
 
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -24,6 +25,7 @@ public class SkuCreateRequest {
     private String name;
 
     @NotNull(message = "价格不能为空")
+    @DecimalMin(value = "0", message = "价格不能为负数")
     @Positive(message = "价格必须大于0")
     private BigDecimal price;
 

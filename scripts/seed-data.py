@@ -47,6 +47,8 @@ for name, price, sku_name in products:
         }, headers={'X-User-Id': '1', **ADM})
         sid = r2.get('data', {}).get('skuId')
         if sid: sku_ids.append(sid)
+        # C-005：建 SPU 默认下架 → 加完 SKU 后显式上架（对齐"建 SPU(下架)→加 SKU→上架"流程）
+        api('PUT', f'{PRODUCT}/api/product/spu/{spu_id}/status?status=1', headers={'X-User-Id': '1', **ADM})
         T(f'SPU+SKU {name}', bool(sid))
 
 # 初始化库存 (inventory模块)

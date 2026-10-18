@@ -122,6 +122,9 @@ public final class RedisKeyConstants {
     /** SKU 缓存 myxhs:product:sku:{skuId} */
     public static final String PRODUCT_SKU = PROJECT_PREFIX + "product:sku:";
 
+    /** C-005：库存初始化失败补偿（pending set：待重试初始化的 SKU） myxhs:product:inventory-init:pending */
+    public static final String PRODUCT_INVENTORY_INIT_PENDING = PROJECT_PREFIX + "product:inventory-init:pending";
+
     /** 购物车 myxhs:cart:{userId} */
     public static final String CART = PROJECT_PREFIX + "cart:";
 

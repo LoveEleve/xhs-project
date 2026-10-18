@@ -212,6 +212,18 @@ public class ProductController {
     /**
      * 三级分类树（缓存 2 小时）
      */
+    /**
+     * 手动刷新分类树缓存（C-005：改 DB 后不必等 2h TTL 过期）
+     */
+    @PostMapping("/category/refresh")
+    public R<String> refreshCategoryTree(
+            @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
+        if (!accessTokenGuard.isAdminCall(adminCall)) {
+            return R.fail(403, "仅限管理员操作");
+        }
+        return R.ok("分类树缓存已刷新: " + categoryService.refreshCategoryTree() + " 个节点");
+    }
+
     @GetMapping("/category/tree")
     public R<List<CategoryTreeVO>> getCategoryTree() {
         return R.ok(categoryService.getCategoryTree());

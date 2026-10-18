@@ -145,6 +145,10 @@ spring.datasource.readwrite.enabled: true
 
 # 管理/内部接口令牌（环境变量注入，未配置时用默认值）
 myxhs:
+  # C-005：库存初始化失败补偿 Job（pending set 周期重试）
+  product:
+    inventory-init:
+      repair-interval-ms: 300000
   # 启动预热：本服务负责预热的任务（逗号分隔，空=全部）；预热失败降级为按需加载
   cache-warmup:
     enabled: true

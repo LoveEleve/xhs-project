@@ -55,8 +55,12 @@ import java.util.stream.Collectors;
  * - 缓存击穿：逻辑过期（热点 Key 在逻辑过期后异步刷新，旧值仍可用）
  * - 缓存雪崩：逻辑过期本身避免 Key 集中失效，不需额外随机 TTL
  * <p>
- * 【一致性策略】
- * 写操作：先更新 DB → TransactionSynchronization.afterCommit 删 Redis
+ * 【一致性策略（C-005：Canal 失效替代延迟双删）】
+ * ① afterCommit 立即删（快路径，低延迟）
+ * ② 删失败 → CACHE_EVICT_TOPIC MQ 兜底（写入侧）
+ * ③ Canal（PRODUCT_INDEX_TOPIC → ProductCacheCanalEvictConsumer）→ 删缓存（最终保证：
+ *    覆盖并发读重建窗口 / 外部直改 DB / 删失败 / 主从延迟脏回填——binlog 是"已提交数据"的因果链，
+ *    确定性优于"睡固定时长再删一次"的延迟双删）
  * </p>
  */
 @Slf4j
@@ -73,6 +77,8 @@ public class SpuService {
     private final org.apache.rocketmq.spring.core.RocketMQTemplate rocketMQTemplate;
     private final IdGeneratorUtil idGeneratorUtil;
     private final com.myxhs.product.mapper.ProductBehaviorMapper productBehaviorMapper;
+    /** C-005：缓存指标族（myxhs_product_*） */
+    private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
 
     /** 【修复m12】自定义有界线程池，替代 ForkJoinPool.commonPool()，避免阻塞公共线程池 */
     /** 【O2修复】MdcAwareExecutorService 包装，异步任务（缓存刷新/延迟双删/布隆加载）日志携带 traceId */
@@ -85,28 +91,18 @@ public class SpuService {
                             new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy()
                     ));
 
-    /**
-     * 延迟双删调度器（1 线程）
-     * <p>
-     * 原实现把"sleep(1000) 后二次删缓存"塞进 SPU_ASYNC_EXECUTOR：队列满触发 CallerRunsPolicy 时
-     * 由<b>请求线程</b>执行并睡 1s（更新接口被延迟双删拖慢）。改用 schedule 到点执行，不占用请求线程、不占池内线程。
-     * </p>
-     */
-    private static final java.util.concurrent.ScheduledExecutorService SPU_DELAY_EVICT_SCHEDULER =
-            java.util.concurrent.Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "spu-delay-evict");
-                t.setDaemon(true);
-                return t;
-            });
+    /** 商品浏览事件丢弃计数（C-005：DiscardPolicy 静默丢弃不可观测 → 计数 + gauge 暴露） */
+    private static final java.util.concurrent.atomic.AtomicLong VIEW_DROP_COUNTER =
+            new java.util.concurrent.atomic.AtomicLong();
 
-    /** 商品浏览事件落库线程池（可观测性）：DiscardPolicy——事件可容忍丢失，绝不影响详情响应 */
+    /** 商品浏览事件落库线程池（可观测性）：事件可容忍丢失（丢弃有计数），绝不影响详情响应 */
     private static final java.util.concurrent.ExecutorService SPU_VIEW_EXECUTOR =
             new com.myxhs.common.trace.MdcAwareExecutorService(
                     new java.util.concurrent.ThreadPoolExecutor(
                             1, 2, 60, java.util.concurrent.TimeUnit.SECONDS,
                             new java.util.concurrent.LinkedBlockingQueue<>(500),
                             r -> { Thread t = new Thread(r, "spu-view"); t.setDaemon(true); return t; },
-                            new java.util.concurrent.ThreadPoolExecutor.DiscardPolicy()
+                            (r, executor) -> VIEW_DROP_COUNTER.incrementAndGet()
                     ));
 
     /**
@@ -115,7 +111,6 @@ public class SpuService {
     @PreDestroy
     public void shutdownAsyncExecutor() {
         log.info("[SPU] 关闭异步线程池...");
-        SPU_DELAY_EVICT_SCHEDULER.shutdown();
         SPU_ASYNC_EXECUTOR.shutdown();
         try {
             if (!SPU_ASYNC_EXECUTOR.awaitTermination(10, java.util.concurrent.TimeUnit.SECONDS)) {
@@ -166,27 +161,35 @@ public class SpuService {
      * </p>
      */
     @PostConstruct
+    public void registerViewDropGauge() {
+        // C-005：埋点丢弃可见化（此前 DiscardPolicy 静默丢弃、连 catch 都不触发）
+        io.micrometer.core.instrument.Gauge
+                .builder("myxhs_product_view_drop_total", VIEW_DROP_COUNTER, java.util.concurrent.atomic.AtomicLong::get)
+                .register(meterRegistry);
+    }
+
+    @PostConstruct
     public void initBloomFilter() {
         try {
             spuBloomFilter = redissonClient.getBloomFilter("myxhs:product:bloom:spu");
             boolean isNewFilter = spuBloomFilter.tryInit(1_000_000L, 0.01);
 
-        if (isNewFilter) {
-            // 首次部署：异步分批加载历史数据，不阻塞启动
-            // bloomFilterReady 保持 false，加载期间跳过布隆过滤器（降级为直接查缓存/DB）
-            log.info("[布隆过滤器] 检测到首次初始化, 异步加载历史 SPU ID...");
-            asyncLoadBloomFilter();
-        } else {
-            // 已有布隆过滤器，但检查是否为空（count=0 说明之前加载失败或数据被清空）
-            if (spuBloomFilter.count() == 0) {
-                log.info("[布隆过滤器] Redis 中布隆过滤器为空(count=0), 重新异步加载...");
+            if (isNewFilter) {
+                // 首次部署：异步分批加载历史数据，不阻塞启动
+                // bloomFilterReady 保持 false，加载期间跳过布隆过滤器（降级为直接查缓存/DB）
+                log.info("[布隆过滤器] 检测到首次初始化, 异步加载历史 SPU ID...");
                 asyncLoadBloomFilter();
             } else {
-                bloomFilterReady.set(true);
-                log.info("[布隆过滤器] Redis 中已存在布隆过滤器(count={}), 直接复用, 跳过全量加载",
-                        spuBloomFilter.count());
+                // 已有布隆过滤器，但检查是否为空（count=0 说明之前加载失败或数据被清空）
+                if (spuBloomFilter.count() == 0) {
+                    log.info("[布隆过滤器] Redis 中布隆过滤器为空(count=0), 重新异步加载...");
+                    asyncLoadBloomFilter();
+                } else {
+                    bloomFilterReady.set(true);
+                    log.info("[布隆过滤器] Redis 中已存在布隆过滤器(count={}), 直接复用, 跳过全量加载",
+                            spuBloomFilter.count());
+                }
             }
-        }
         } catch (Exception e) {
             log.error("[布隆过滤器] 初始化失败(Redis 不可用?), 服务降级启动: bloomFilterReady=false", e);
         }
@@ -281,29 +284,43 @@ public class SpuService {
      * @return 结果描述（含加载条数）
      */
     public String rebuildBloomFilter() {
-        RLock lock = redissonClient.getLock("myxhs:product:bloom:spu:init-lock");
-        boolean locked = false;
-        try {
-            locked = lock.tryLock(0, 300, TimeUnit.SECONDS);
-            if (!locked) {
-                throw new BizException(ResultCode.RATE_LIMIT_REJECT, "布隆过滤器正在重建中，请稍后再试");
+        // C-005：异步执行（原同步阻塞 HTTP 线程跑分钟级全量加载）——锁的获取/释放在同一线程内（异步线程）
+        CompletableFuture.runAsync(() -> {
+            RLock lock = redissonClient.getLock("myxhs:product:bloom:spu:init-lock");
+            boolean locked = false;
+            try {
+                locked = lock.tryLock(0, 300, TimeUnit.SECONDS);
+                if (!locked) {
+                    log.warn("[布隆过滤器] 重建任务已在执行中, 本次触发跳过");
+                    return;
+                }
+                bloomFilterReady.set(false);
+                redissonClient.getBloomFilter("myxhs:product:bloom:spu").delete();
+                spuBloomFilter = redissonClient.getBloomFilter("myxhs:product:bloom:spu");
+                spuBloomFilter.tryInit(1_000_000L, 0.01);
+                int loaded = loadAllSpuIds();
+                bloomFilterReady.set(true);
+                log.warn("[布隆过滤器] 手动重建完成: 加载 {} 条", loaded);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("[布隆过滤器] 重建被中断");
+            } catch (Exception e) {
+                log.error("[布隆过滤器] 重建失败(防穿透降级为直查缓存/DB)", e);
+            } finally {
+                if (locked && lock.isHeldByCurrentThread()) {
+                    lock.unlock();
+                }
             }
-            bloomFilterReady.set(false);
-            redissonClient.getBloomFilter("myxhs:product:bloom:spu").delete();
-            spuBloomFilter = redissonClient.getBloomFilter("myxhs:product:bloom:spu");
-            spuBloomFilter.tryInit(1_000_000L, 0.01);
-            int loaded = loadAllSpuIds();
-            bloomFilterReady.set(true);
-            log.warn("[布隆过滤器] 手动重建完成: 加载 {} 条", loaded);
-            return "重建完成: 加载 " + loaded + " 条";
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new BizException(ResultCode.INTERNAL_ERROR, "重建被中断");
-        } finally {
-            if (locked && lock.isHeldByCurrentThread()) {
-                lock.unlock();
-            }
-        }
+        }, SPU_ASYNC_EXECUTOR);
+        return "重建任务已触发（异步执行；期间防穿透降级为直查缓存/DB）";
+    }
+
+    /** C-005：缓存指标（统一命名族 myxhs_product_*；micrometer 同名同标签自动去重） */
+    private void countCache(String metric, String... tags) {
+        io.micrometer.core.instrument.Counter.builder(metric)
+                .tags(tags)
+                .register(meterRegistry)
+                .increment();
     }
 
     // ==================== 写操作 ====================
@@ -327,7 +344,9 @@ public class SpuService {
         spu.setBrandId(request.getBrandId());
         spu.setDescription(request.getDescription());
         spu.setImages(request.getImages() != null ? JSON.toJSONString(request.getImages()) : null);
-        spu.setStatus(ProductStatus.ON_SHELF.getCode());
+        // C-005：默认下架——对齐"建 SPU(下架) → 加 SKU → 上架"流程与 updateSpuStatus 的
+        // "至少一个上架 SKU"校验；原默认 ON_SHELF 会产生"空商品在架"（无 SKU 可被搜到/详情为空）
+        spu.setStatus(ProductStatus.OFF_SHELF.getCode());
 
         // 3. 入库
         spuMapper.insert(spu);
@@ -405,13 +424,12 @@ public class SpuService {
                 throw new BizException(ResultCode.PRODUCT_NOT_FOUND);
             }
 
-            // 4. 事务提交后删除缓存(延迟双删: 立即删 + 1s后二次删, 防并发异步重建回填旧值)
+            // 4. 事务提交后立即删缓存（快路径）；并发读重建窗口/外部直改等由
+            //    Canal 失效通道（ProductCacheCanalEvictConsumer）最终保证——替代原延迟双删
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
                     evictSpuCache(spuId);
-                    // 延迟二次删除: 覆盖并发读异步重建窗口(异步刷新DB查询+Redis写回, 正常<1s)
-                    SPU_DELAY_EVICT_SCHEDULER.schedule(() -> evictSpuCache(spuId), 1, TimeUnit.SECONDS);
                 }
             });
         }
@@ -511,7 +529,8 @@ public class SpuService {
         if (bloomFilterReady.get()) {
             try {
                 if (!spuBloomFilter.contains(spuId)) {
-                    log.info("[多级缓存] 布隆过滤器拦截, spuId={} 不存在", spuId);
+                    countCache("myxhs_product_bloom_block_total");
+                    log.debug("[多级缓存] 布隆过滤器拦截, spuId={} 不存在", spuId);
                     return null;
                 }
             } catch (Exception e) {
@@ -534,9 +553,11 @@ public class SpuService {
                 // 未逻辑过期
                 if (cacheData.getData() == null) {
                     // 空值缓存命中（第二层防穿透核心）
-                    log.info("[多级缓存] 命中空值缓存(防穿透), spuId={}", spuId);
+                    countCache("myxhs_product_cache_null_hit_total");
+                    log.debug("[多级缓存] 命中空值缓存(防穿透), spuId={}", spuId);
                     return null;
                 }
+                countCache("myxhs_product_cache_hit_total", "layer", "l2");
                 log.debug("[多级缓存] L2 Redis 命中(未过期), spuId={}", spuId);
                 return cacheData.getData();
             }
@@ -544,11 +565,11 @@ public class SpuService {
             // 已逻辑过期
             if (cacheData.getData() == null) {
                 // 空值缓存过期 → 不异步刷新，直接穿透到 DB 重新查（可能数据已新增）
-                log.info("[多级缓存] 空值缓存已过期, 重新查 DB, spuId={}", spuId);
+                log.debug("[多级缓存] 空值缓存已过期, 重新查 DB, spuId={}", spuId);
                 // 继续往下走到 L3
             } else {
                 // 正常数据过期 → 返回旧值 + 异步刷新（只有一个线程刷新）
-                log.info("[多级缓存] L2 Redis 逻辑过期, 异步刷新, spuId={}", spuId);
+                log.debug("[多级缓存] L2 Redis 逻辑过期, 异步刷新, spuId={}", spuId);
                 asyncRefreshCache(spuId, redisKey);
                 return cacheData.getData();
             }
@@ -572,7 +593,8 @@ public class SpuService {
                     log.warn("[多级缓存] 双重检查读缓存失败(降级), spuId={}", spuId, e);
                 }
 
-                log.info("[多级缓存] L2 Redis 未命中, 查询 DB, spuId={}", spuId);
+                countCache("myxhs_product_cache_miss_total");
+                log.debug("[多级缓存] L2 Redis 未命中, 查询 DB, spuId={}", spuId);
                 SpuDetailVO detail = loadSpuDetailFromDb(spuId);
                 if (detail != null) {
                     // 回填 L2（逻辑过期 30min + 物理 TTL 2h 兜底）；Redis 故障降级仅记日志
@@ -592,7 +614,7 @@ public class SpuService {
                     } catch (Exception e) {
                         log.warn("[多级缓存] 空值缓存写入失败(降级), spuId={}", spuId, e);
                     }
-                    log.info("[多级缓存] DB 未查到, 缓存空值(防穿透, 逻辑过期={}min, 物理TTL=5min), spuId={}",
+                    log.debug("[多级缓存] DB 未查到, 缓存空值(防穿透, 逻辑过期={}min, 物理TTL=5min), spuId={}",
                             NULL_CACHE_EXPIRE_MINUTES, spuId);
                 }
                 return detail;
@@ -660,7 +682,8 @@ public class SpuService {
                 }
             });
         } catch (Exception e) {
-            // 队列满/提交异常：丢弃（DiscardPolicy 已兜底，此处仅防御）
+            // 队列满走拒绝处理器（VIEW_DROP_COUNTER 计数）；此处兜底提交异常（如线程池已关闭）
+            VIEW_DROP_COUNTER.incrementAndGet();
             log.warn("[商品浏览] 事件提交失败(可容忍): spuId={}", spuId);
         }
     }
@@ -696,12 +719,15 @@ public class SpuService {
         String redisKey = RedisKeyConstants.PRODUCT_SPU + spuId;
         try {
             redisOperator.delete(redisKey);
+            countCache("myxhs_product_cache_evict_total", "source", "write", "result", "ok");
         } catch (Exception e) {
             log.warn("[多级缓存] 删除缓存失败, 发MQ兜底, spuId={}", spuId, e);
             try {
-                rocketMQTemplate.syncSend("CACHE_EVICT_TOPIC", redisKey, 3000);
+                rocketMQTemplate.syncSend(com.myxhs.common.cache.CacheEvictMessage.TOPIC, redisKey, 3000);
+                countCache("myxhs_product_cache_evict_total", "source", "write", "result", "mq_fallback");
             } catch (Exception mqEx) {
-                log.error("[多级缓存] MQ兜底发送失败(依赖逻辑过期30min/物理TTL 2h收敛), spuId={}", spuId, mqEx);
+                log.error("[多级缓存] MQ兜底发送失败(依赖 Canal 失效/逻辑过期30min/物理TTL 2h收敛), spuId={}", spuId, mqEx);
+                countCache("myxhs_product_cache_evict_total", "source", "write", "result", "fail");
             }
         }
     }
@@ -728,6 +754,7 @@ public class SpuService {
                     log.debug("[缓存刷新] 未获取到锁, 跳过刷新, spuId={}", spuId);
                     return;
                 }
+                countCache("myxhs_product_cache_refresh_total");
 
                 SpuDetailVO detail = loadSpuDetailFromDb(spuId);
                 if (detail != null) {
@@ -769,7 +796,7 @@ public class SpuService {
         }
         // P2-2：下架/删除商品详情不可见
         if (spu.getStatus() == null || spu.getStatus() != ProductStatus.ON_SHELF.getCode()) {
-            log.info("[多级缓存] SPU 非上架状态, 详情不可见, spuId={}, status={}", spuId, spu.getStatus());
+            log.debug("[多级缓存] SPU 非上架状态, 详情不可见, spuId={}, status={}", spuId, spu.getStatus());
             return null;
         }
 
