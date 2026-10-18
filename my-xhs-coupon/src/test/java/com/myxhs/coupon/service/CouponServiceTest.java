@@ -239,6 +239,31 @@ class CouponServiceTest {
     }
 
     @Test
+    @DisplayName("C-007：Outbox 首次写入失败、重试直接成功 → 正常发送（超时≠失败的正向路径）")
+    void claimCouponOutboxInsertRetrySucceeds() {
+        when(valueOperations.get(startsWith("myxhs:coupon:template:"))).thenReturn(null);
+        when(templateMapper.selectById(TEMPLATE_ID)).thenReturn(buildTemplate());
+        when(stringRedisTemplate.execute(eq(claimCouponScript), anyList(), anyString())).thenReturn(1L);
+        when(couponOutboxMapper.insertOutboxEvent(anyLong(), eq(USER_ID), eq(TEMPLATE_ID), anyString()))
+                .thenThrow(new RuntimeException("db timeout"))
+                .thenReturn(1);
+        SendResult sendResult = new SendResult();
+        sendResult.setSendStatus(SendStatus.SEND_OK);
+        when(rocketMQTemplate.syncSend(eq("COUPON_CLAIM_TOPIC"), any(Message.class), eq(3000L)))
+                .thenReturn(sendResult);
+
+        ClaimCouponRequest request = new ClaimCouponRequest();
+        request.setTemplateId(TEMPLATE_ID);
+
+        assertThatCode(() -> couponService.claimCoupon(USER_ID, request))
+                .doesNotThrowAnyException();
+        verify(couponOutboxMapper, times(2))
+                .insertOutboxEvent(anyLong(), eq(USER_ID), eq(TEMPLATE_ID), anyString());
+        verify(couponOutboxMapper).markOutboxSent(anyString());
+        verify(stringRedisTemplate, never()).execute(eq(returnCouponScript), anyList(), any());
+    }
+
+    @Test
     @DisplayName("C-007：Outbox 双次写入失败 → 回滚 Redis + 抛错（唯一回滚路径）")
     void claimCouponOutboxDoubleFailureRollsBack() {
         when(valueOperations.get(startsWith("myxhs:coupon:template:"))).thenReturn(null);

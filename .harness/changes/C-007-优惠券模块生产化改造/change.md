@@ -1,9 +1,9 @@
 ---
 id: C-007
 slug: 优惠券模块生产化改造
-status: confirmed
+status: done
 created: 2026-10-17
-updated: 2026-10-17
+updated: 2026-10-18
 iteration: ITER-007     # 机器可读迭代协议：.harness/iterations/ITER-007-优惠券模块生产化改造/
 relations:
   relates_to:
@@ -15,6 +15,11 @@ relations:
 ---
 
 # C-007 优惠券模块生产化改造
+
+> **完成记录（2026-10-18）**：三阶段全部落地（Design B 领券可靠性重构 + 一致性与兜底 + 可观测与工程）；
+> 证据：**八模块全量 445 全绿**（coupon 24，基线 11）+ 全仓编译；两轮 review 34 项（超发洞 ×2 修复、G3/G-H1/H2/G25/G35 落位）；
+> 详见 `.harness/iterations/ITER-007-优惠券模块生产化改造/test/report.md`。§7 回写：`docs/学习/模块对照/03-优惠券.md` §8（含 lead5 翻案）。
+> 运行时验证（真实 MQ DLQ 重放/守卫触发）按项目规则后置。
 
 > **立项（2026-10-17）**：模块对照阶段二第三站（交易域收官）。深度探索 + **两轮 review（34 项走查）+ 业务/产品语义对照**：
 > 核心 = **领券发送链的"部分失败→超发"洞**（Design B：至少一次语义重构）；另 1 个语义级缺口（G35 投递时限领守卫）。
