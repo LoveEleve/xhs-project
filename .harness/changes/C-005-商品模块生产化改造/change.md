@@ -17,7 +17,7 @@ relations:
 # C-005 商品模块生产化改造
 
 > **完成记录（2026-10-17）**：四阶段全部落地（业务正确性 → Canal 失效替代延迟双删 → 可观测与质量 → 收口）；
-> 证据：七模块全量 **396 全绿**（product 34，+20）+ 全仓编译；详见 `.harness/iterations/ITER-005-商品模块生产化改造/test/report.md`。
+> 证据：七模块全量 **397 全绿**（product 35，+21，含深审查轮）+ 全仓编译；深审查 27 项（0 严重/1 修复）；详见 `.harness/iterations/ITER-005-商品模块生产化改造/test/report.md`。
 > 评审修订已落地：Canal 失效通道替代延迟双删（binlog 因果链 vs 猜时间魔数）。
 > 运行时验证（真实 Canal→MQ→Redis 链路）按项目规则后置。
 

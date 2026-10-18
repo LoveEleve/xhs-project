@@ -73,6 +73,8 @@ public class ProductCacheCanalEvictConsumer implements RocketMQListener<MessageE
                     Long id = dataArray.getJSONObject(i).getLong("id");
                     if (id != null) {
                         spuIds.add(id);
+                    } else {
+                        log.warn("[商品缓存-Canal] t_spu 行缺少 id(行镜像/格式异常), 跳过: msgId={}", msg.getMsgId());
                     }
                 }
             } else if ("t_sku".equals(table)) {
@@ -80,6 +82,10 @@ public class ProductCacheCanalEvictConsumer implements RocketMQListener<MessageE
                     Long spuId = dataArray.getJSONObject(i).getLong("spu_id");
                     if (spuId != null) {
                         spuIds.add(spuId);
+                    } else {
+                        // DELETE 在 binlog_row_image=MINIMAL 时仅含主键 → 无法定位父 SPU；
+                        // 本项目 SKU 无删除路径，仅告警（如出现需改按 id 反查或调大行镜像）
+                        log.warn("[商品缓存-Canal] t_sku 行缺少 spu_id(行镜像/格式异常), 跳过: msgId={}", msg.getMsgId());
                     }
                 }
             } else {

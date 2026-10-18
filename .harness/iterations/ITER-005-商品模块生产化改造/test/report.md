@@ -16,7 +16,7 @@ updated: 2026-10-17
 - 执行时间: 2026-10-17（四阶段：业务正确性 → 一致性重构 → 可观测与质量 → 收口）
 - 环境 profile: JDK 17（`/env/javaEnv/jdk17`）+ Maven 3.9 离线（`-o`）；**无运行时环境**（项目规则：单测口径；删 `target/test-classes` 强制全量重编防增量假绿）
 - 命令: `mvn -o -pl my-xhs-common,my-xhs-product,my-xhs-coupon,my-xhs-order,my-xhs-inventory,my-xhs-payment,my-xhs-search -am test` + 全仓 `mvn -o -q compile`
-- 结果: ✅ 通过（BUILD SUCCESS；**396 全绿**：common 93 / **product 34** / coupon 11 / order 122 / inventory 20 / search 43 / payment 73——较 376 基线净增 20，零回归）
+- 结果: ✅ 通过（BUILD SUCCESS；**397 全绿**：common 93 / **product 35** / coupon 11 / order 122 / inventory 20 / search 43 / payment 73——较 376 基线净增 21，零回归（含审查轮 +1））
 
 ## 用例执行结果
 
@@ -55,6 +55,11 @@ updated: 2026-10-17
 - **业务正确性**：建 SPU 默认下架（三处自相矛盾收口）+ 价格非负 + 库存初始化失败自动补偿（pending set + Job，补 @EnableScheduling）
 - **可观测**：缓存指标族 + 埋点丢弃计数（原 DiscardPolicy 静默）+ 热路径日志降噪
 - **质量**：N1/N2 重复查询消除 + 布隆重建异步化 + 缩进/常量清理
+
+## 深审查记录（见 test/review-c005.md）
+
+- 方式：**27 项清单先行 → 逐项校验 → 回填结论**
+- 🔴 0；🟡 发现并修复 1（R-07 行缺失 id/spu_id 静默跳过 → WARN 日志 + 测试）；📝 记录 3（重建失败 flag 残留/Redis 降级返回 0 歧义/租约过期重复执行幂等 benign）
 
 ## 覆盖对账
 

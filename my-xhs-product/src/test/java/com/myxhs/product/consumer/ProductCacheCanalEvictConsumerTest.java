@@ -125,4 +125,14 @@ class ProductCacheCanalEvictConsumerTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("缓存失效失败");
     }
+
+    @Test
+    @DisplayName("行缺少 spu_id（行镜像异常）→ 告警跳过，不删不炸")
+    void missingSpuIdWarnsAndSkips() {
+        Map<String, Object> incomplete = new HashMap<>();
+        incomplete.put("id", "20001");
+        consumer.onMessage(message(canalMessage("t_sku", "DELETE", incomplete)));
+
+        verify(redisOperator, never()).delete(anyString());
+    }
 }
