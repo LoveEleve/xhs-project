@@ -331,6 +331,49 @@ class CouponServiceTest {
         verify(userCouponMapper).selectList(any(LambdaQueryWrapper.class));
     }
 
+    @Test
+    @DisplayName("C-007：可用券列表语义锁定（T-121：下线/孤儿/未生效/已过期过滤 + 单次批量查询消 N+1）")
+    void getAvailableCouponsSemanticsLocked() {
+        UserCoupon valid = buildUserCoupon();                    // template 1（上线、窗口内）→ 保留
+        UserCoupon offline = buildUserCoupon();                  // template 2（已下线）→ 过滤
+        offline.setId(2L);
+        offline.setCouponId(2L);
+        UserCoupon future = buildUserCoupon();                   // template 3（未生效）→ 过滤
+        future.setId(3L);
+        future.setCouponId(3L);
+        UserCoupon expired = buildUserCoupon();                  // template 4（已过期）→ 过滤
+        expired.setId(4L);
+        expired.setCouponId(4L);
+        UserCoupon orphan = buildUserCoupon();                   // template 5（不存在）→ 过滤（孤儿券）
+        orphan.setId(5L);
+        orphan.setCouponId(5L);
+
+        when(userCouponMapper.selectList(any(LambdaQueryWrapper.class)))
+                .thenReturn(java.util.Arrays.asList(valid, offline, future, expired, orphan));
+
+        CouponTemplate t1 = buildTemplate();                     // 上线、窗口内
+        CouponTemplate t2 = buildTemplate();
+        t2.setId(2L);
+        t2.setStatus(0);                                         // 下线
+        CouponTemplate t3 = buildTemplate();
+        t3.setId(3L);
+        t3.setValidStart(LocalDateTime.now().plusDays(1));       // 未生效
+        CouponTemplate t4 = buildTemplate();
+        t4.setId(4L);
+        t4.setValidEnd(LocalDateTime.now().minusDays(1));        // 已过期
+        // t5 缺失（孤儿）
+        when(templateMapper.selectBatchIds(anySet()))
+                .thenReturn(java.util.Arrays.asList(t1, t2, t3, t4));
+
+        List<UserCouponVO> result = couponService.getAvailableCoupons(USER_ID);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getCouponId()).isEqualTo(TEMPLATE_ID);
+        // N+1 消除：单次批量查询（绝不逐个 selectById）
+        verify(templateMapper, times(1)).selectBatchIds(anySet());
+        verify(templateMapper, never()).selectById(any(Long.class));
+    }
+
     // ==================== 查询模板 ====================
 
     @Test

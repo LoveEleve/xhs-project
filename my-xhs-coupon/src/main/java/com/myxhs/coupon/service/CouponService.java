@@ -354,16 +354,16 @@ public class CouponService {
     // ==================== 退券 ====================
 
     /**
-     * 退回优惠券（取消订单时调用）
+     * 退回优惠券（取消订单时恢复为"未使用"）
      * <p>
-     * 1. MySQL：恢复券状态为未使用（乐观锁）
-     * 2. MySQL：原子回退模板剩余数量（SQL: remain_count + 1）
-     * 3. Redis：回退库存 + 减少用户领取次数（Lua 原子操作）
+     * 语义（RV30 修正）：只恢复用户券状态（乐观锁 WHERE status=1 AND used_order_id=orderId，天然幂等）；
+     * **不回补模板 stock/remain、不减 claimed**——核销（useCoupon）不扣 remain，
+     * 若退券回补会形成 remain+已发>total 的超发敞口，且用户可"领→用→退→再领"绕过 perUserLimit；
+     * 用户仍持有该券，领取次数不应回退。
      * </p>
      * <p>
-     * 为什么退券时要回退 Redis 库存？
-     * 如果不回退，券的"剩余数量"会越来越少（即使实际上券被退回了）。
-     * 回退后其他用户可以重新领取这张券。
+     * 为什么状态不匹配时静默返回？退券由订单终止事件驱动（可能重复投递），
+     * affected=0 表示已退回/非本单，属正常幂等路径，不报错。
      * </p>
      */
     @Transactional(rollbackFor = Exception.class)
@@ -382,12 +382,10 @@ public class CouponService {
             return; // 幂等：已退回或状态不匹配，不报错
         }
 
-        // 3. 语义修正（RV30）：退券只把用户券恢复为"未使用"，不回补模板 stock/remain，也不减少 claimed。
-        //    原因：核销（useCoupon）不扣 remain；若退券回补，会形成 remain+已发>total 的超发敞口，
-        //    且用户可"领→用→退→再领"绕过 perUserLimit。用户仍持有该券，领取次数不应回退。
+        // 3. 语义（RV30，见 javadoc）：仅恢复用户券状态；不触碰 stock/remain/claimed（防超发敞口）
         log.info("[优惠券] 退券完成(仅恢复用户券状态): couponId={}, userId={}, userCouponId={}",
                 userCoupon.getCouponId(), userId, userCoupon.getId());
-        evictTemplateCache(userCoupon.getCouponId());
+        // 【C-007 删除】原 evictTemplateCache 调用：退券不修改模板任何字段 → 无需失效模板缓存
     }
 
     // ==================== 查询 ====================
@@ -423,23 +421,31 @@ public class CouponService {
 
         List<UserCoupon> userCoupons = userCouponMapper.selectList(wrapper);
 
-        // 批量转换 + 过滤已过期/未生效（实时校验，不依赖定时任务）
-        // T-121（2026-08-16）：补 validStart 过滤——修复前"可用"列表含未来生效券
+        if (userCoupons.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // C-007：单次批量查询模板（原实现按 distinct couponId 逐个 selectById → N+1），
+        // 同一份 Map 复用给"下线过滤"与"VO 构建"（batchToVO 重载）。
+        // T-121 语义保持（2026-08-16）：补 validStart 过滤——修复前"可用"列表含未来生效券
         // （用户可见但 use 时被责任链拦截，体验不一致；与 useCoupon 语义对齐）
-        LocalDateTime now = LocalDateTime.now();
-        // 过滤下线模板（原实现不过滤 → 已下线模板的券仍出现在"可用"列表，用券时才被拒）
-        java.util.Set<Long> offlineTemplateIds = userCoupons.stream()
+        Set<Long> templateIds = userCoupons.stream()
                 .map(UserCoupon::getCouponId)
                 .filter(java.util.Objects::nonNull)
-                .distinct()
-                .filter(couponId -> {
-                    com.myxhs.coupon.entity.CouponTemplate t = templateMapper.selectById(couponId);
-                    // 模板不存在（逻辑删除）或状态非"上线"都视为下线：不能出现在可用券列表
-                    return t == null || t.getStatus() == null || t.getStatus() != 1;
-                })
                 .collect(Collectors.toSet());
-        return batchToVO(userCoupons).stream()
-                .filter(vo -> !offlineTemplateIds.contains(vo.getCouponId()))
+        Map<Long, CouponTemplate> templateMap = templateIds.isEmpty()
+                ? Collections.emptyMap()
+                : templateMapper.selectBatchIds(templateIds).stream()
+                        .collect(Collectors.toMap(CouponTemplate::getId, Function.identity()));
+
+        LocalDateTime now = LocalDateTime.now();
+        // 过滤下线模板（原实现不过滤 → 已下线模板的券仍出现在"可用"列表，用券时才被拒）：
+        // 模板不存在（逻辑删除）或状态非"上线"都视为下线
+        return batchToVO(userCoupons, templateMap).stream()
+                .filter(vo -> {
+                    CouponTemplate t = templateMap.get(vo.getCouponId());
+                    return t != null && t.getStatus() != null && t.getStatus() == 1;
+                })
                 .filter(vo -> vo.getValidEnd() != null && vo.getValidEnd().isAfter(now)
                         && (vo.getValidStart() == null || !vo.getValidStart().isAfter(now)))
                 .collect(Collectors.toList());
@@ -632,7 +638,15 @@ public class CouponService {
         Map<Long, CouponTemplate> templateMap = templates.stream()
                 .collect(Collectors.toMap(CouponTemplate::getId, Function.identity()));
 
-        // 3. 组装 VO（T-121：孤儿券防御——模板已删除/不存在的券行过滤，避免列表出现 name=null 脏条目）
+        return batchToVO(userCoupons, templateMap);
+    }
+
+    /** 批量转换重载（C-007）：调用方已持有模板 Map 时复用（getAvailableCoupons 单查复用给过滤+构建） */
+    private List<UserCouponVO> batchToVO(List<UserCoupon> userCoupons, Map<Long, CouponTemplate> templateMap) {
+        if (userCoupons.isEmpty()) {
+            return Collections.emptyList();
+        }
+        // T-121：孤儿券防御——模板已删除/不存在的券行过滤，避免列表出现 name=null 脏条目
         return userCoupons.stream().map(uc -> {
             CouponTemplate template = templateMap.get(uc.getCouponId());
             if (template == null) {
