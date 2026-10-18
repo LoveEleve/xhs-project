@@ -207,57 +207,55 @@ public class CouponService {
             throw new BizException(ResultCode.COUPON_EXPIRED);
         }
 
-        // 2. Lua 原子领券
+        // 2. Lua 原子领券（-3 = 库存未初始化 → DB 自愈重试一次）
         String stockKey = stockKey(templateId);
         String claimedKey = claimedKey(templateId, userId);
 
-        Long result = stringRedisTemplate.execute(
-                claimCouponScript,
-                List.of(stockKey, claimedKey),
-                String.valueOf(template.getPerUserLimit())
-        );
-
+        Long result = executeClaimLua(stockKey, claimedKey, template.getPerUserLimit());
         if (result == null) {
             throw new BizException(ResultCode.INTERNAL_ERROR, "领券操作失败");
         }
 
-        switch (result.intValue()) {
+        if (result.intValue() == -3) {
+            // 券库存未初始化，尝试从 MySQL 实时初始化
+            initStockFromDb(templateId);
+            // 重试一次（T-121：重试结果按语义分派——-2 限领应返回 30013 而非 30014 售罄）
+            result = executeClaimLua(stockKey, claimedKey, template.getPerUserLimit());
+            if (result == null) {
+                throw new BizException(ResultCode.INTERNAL_ERROR, "领券操作失败");
+            }
+            dispatchClaimResult(result.intValue(), userId, templateId, stockKey, claimedKey, "(重试)");
+        } else {
+            dispatchClaimResult(result.intValue(), userId, templateId, stockKey, claimedKey, "");
+        }
+    }
+
+    /** 执行领券 Lua（主流程与 -3 自愈重试共用） */
+    private Long executeClaimLua(String stockKey, String claimedKey, Integer perUserLimit) {
+        return stringRedisTemplate.execute(
+                claimCouponScript,
+                List.of(stockKey, claimedKey),
+                String.valueOf(perUserLimit));
+    }
+
+    /**
+     * 领券结果分派（主流程与 -3 自愈重试共用；C-007：提取原重复 switch）。
+     * <p>result=1 → 发送链（Design B：仅 Outbox 双次写入失败才回滚 + 报错，其余恒成功）。</p>
+     */
+    private void dispatchClaimResult(int result, Long userId, Long templateId,
+                                     String stockKey, String claimedKey, String logTag) {
+        switch (result) {
             case 1 -> {
                 String claimNo = sendClaimEventSync(userId, templateId);
                 if (claimNo == null) {
+                    // 唯一回滚路径：Outbox 双次写入失败（可证"无消息在途"）
                     rollbackRedisStock(stockKey, claimedKey);
                     throw new BizException(ResultCode.INTERNAL_ERROR, "领券失败，请重试");
                 }
-                log.info("[优惠券] 领券成功: userId={}, templateId={}", userId, templateId);
+                log.info("[优惠券] 领券成功{}: userId={}, templateId={}", logTag, userId, templateId);
             }
             case -1 -> throw new BizException(ResultCode.COUPON_SOLD_OUT);
             case -2 -> throw new BizException(ResultCode.COUPON_ALREADY_RECEIVED, "已达限领上限");
-            case -3 -> {
-                // 券库存未初始化，尝试从 MySQL 实时初始化
-                initStockFromDb(templateId);
-                // 重试一次（T-121：重试结果按语义分派——-2 限领应返回 30013 而非 30014 售罄）
-                result = stringRedisTemplate.execute(
-                        claimCouponScript,
-                        List.of(stockKey, claimedKey),
-                        String.valueOf(template.getPerUserLimit())
-                );
-                if (result == null) {
-                    throw new BizException(ResultCode.INTERNAL_ERROR, "领券操作失败");
-                }
-                switch (result.intValue()) {
-                    case 1 -> {
-                        String claimNo = sendClaimEventSync(userId, templateId);
-                        if (claimNo == null) {
-                            rollbackRedisStock(stockKey, claimedKey);
-                            throw new BizException(ResultCode.INTERNAL_ERROR, "领券失败，请重试");
-                        }
-                        log.info("[优惠券] 领券成功(重试): userId={}, templateId={}", userId, templateId);
-                    }
-                    case -1 -> throw new BizException(ResultCode.COUPON_SOLD_OUT);
-                    case -2 -> throw new BizException(ResultCode.COUPON_ALREADY_RECEIVED, "已达限领上限");
-                    default -> throw new BizException(ResultCode.INTERNAL_ERROR, "领券异常: result=" + result);
-                }
-            }
             default -> throw new BizException(ResultCode.INTERNAL_ERROR, "领券异常: result=" + result);
         }
     }
@@ -529,46 +527,64 @@ public class CouponService {
     }
 
     /**
-     * 同步发送领券事件到 MQ
+     * 领券事件同步发送（C-007 Design B：名额锁定即成功 + 券必达·至少一次）
      * <p>
-     * 为什么用同步而非异步？
-     * 异步发送失败时无法回滚 Redis 库存，导致"Redis 扣了但 MySQL 没写"的不一致。
-     * 同步发送失败时可以立即回滚，保证强一致。
+     * 语义（产品对齐：内部故障不进用户视野——超时≠失败）：
+     * ① Outbox 先落（同 claimNo 幂等重试一次：写入"超时≠失败"，DuplicateKey=实际已写入按成功）；
+     *    **双次写入仍失败 → 返回 null**（调用方回滚 Redis + 报错——唯一回滚路径：此刻可证"无消息在途"）
+     * ② syncSend 任何结果均**保留 Outbox**（补发 Job 必达）：
+     *    SEND_OK → markOutboxSent 尽力（失败仅告警，行保留 → 补发重复由消费端 uk_claim_no 幂等兜底）；
+     *    异常/非 SEND_OK（消息可能已写入 broker）→ 仅告警，行保留
+     * ③ 返回 claimNo（闸门放行后恒成功）
      * </p>
      *
-     * @return claimNo=发送成功, null=发送失败
+     * @return claimNo=成功（含"发送未确认但已入 Outbox"）；null=仅"Outbox 双次写入失败"
      */
     private String sendClaimEventSync(Long userId, Long templateId) {
         String claimNo = java.util.UUID.randomUUID().toString().replace("-", "");
-        try {
-            // Outbox 模式：先写入 Outbox 表（幂等），syncSend 失败由 Job 补发
-            Long outboxId = idGeneratorUtil.nextId();
-            outboxMapper.insertOutboxEvent(outboxId, userId, templateId, claimNo);
 
+        // ① Outbox 先落（同 claimNo 幂等重试一次——写入超时≠失败）
+        try {
+            outboxMapper.insertOutboxEvent(idGeneratorUtil.nextId(), userId, templateId, claimNo);
+        } catch (org.springframework.dao.DuplicateKeyException dup) {
+            log.warn("[优惠券] Outbox 写入命中已有记录(写入超时≠失败), 按成功继续: claimNo={}", claimNo);
+        } catch (Exception first) {
+            try {
+                outboxMapper.insertOutboxEvent(idGeneratorUtil.nextId(), userId, templateId, claimNo);
+            } catch (org.springframework.dao.DuplicateKeyException dup) {
+                log.warn("[优惠券] Outbox 重试命中已有记录(写入超时≠失败), 按成功继续: claimNo={}", claimNo);
+            } catch (Exception second) {
+                log.error("[优惠券] Outbox 双次写入失败(回滚 Redis + 报错——唯一回滚路径): userId={}, templateId={}, claimNo={}",
+                        userId, templateId, claimNo, second);
+                return null;
+            }
+        }
+
+        // ② 同步发送（任何结果均保留 Outbox——补发必达；SEND_OK 仅做标记尽力）
+        try {
             String payload = objectMapper.writeValueAsString(
                     new CouponClaimEvent(userId, templateId, claimNo));
             SendResult sendResult = rocketMQTemplate.syncSend(
                     COUPON_CLAIM_TOPIC,
                     MqTraceHelper.wrapWithTraceId(MessageBuilder.withPayload(payload).build()),
                     3000);
-            if (sendResult.getSendStatus() == SendStatus.SEND_OK) {
-                log.debug("[优惠券] MQ同步发送成功: userId={}, templateId={}, claimNo={}", userId, templateId, claimNo);
-                outboxMapper.markOutboxSent(claimNo);
-                return claimNo;
+            if (sendResult != null && sendResult.getSendStatus() == SendStatus.SEND_OK) {
+                try {
+                    outboxMapper.markOutboxSent(claimNo);
+                } catch (Exception e) {
+                    // 标记失败仅告警：行保留 → 补发重复由消费端幂等兜底（不再回滚/作废——消息已确认发出）
+                    log.warn("[优惠券] markSent 失败(Outbox 将重复补发, 消费端幂等兜底): claimNo={}", claimNo, e);
+                }
             } else {
-                log.error("[优惠券] MQ发送状态异常: userId={}, templateId={}, claimNo={}, status={}",
-                        userId, templateId, claimNo, sendResult.getSendStatus());
-                // 调用方会回滚 Redis 计数并报错 → 必须作废 Outbox，否则补发任务再投递会让用户"失败却拿到券 + 计数已回滚可再领"（超发）
-                outboxMapper.markOutboxCancelled(claimNo);
-                return null;
+                log.warn("[优惠券] MQ 发送状态非 SEND_OK(保留 Outbox 交补发——消息可能已写入 broker): userId={}, templateId={}, claimNo={}, status={}",
+                        userId, templateId, claimNo, sendResult != null ? sendResult.getSendStatus() : "null");
             }
         } catch (Exception e) {
-            log.error("[优惠券] MQ同步发送异常: userId={}, templateId={}, claimNo={}",
+            // 发送异常（超时等）：结果未知——不回滚、不作废；Outbox 补发必达（"发送超时≠失败"）
+            log.warn("[优惠券] MQ 发送异常(保留 Outbox 交补发——超时≠失败): userId={}, templateId={}, claimNo={}",
                     userId, templateId, claimNo, e);
-            // 同上：调用方回滚 Redis → 作废 Outbox，禁止补发（避免超发）
-            outboxMapper.markOutboxCancelled(claimNo);
-            return null;
         }
+        return claimNo;
     }
 
     /**

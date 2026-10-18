@@ -57,10 +57,7 @@ public interface CouponOutboxMapper {
             + "WHERE status = 0 AND created_at < #{cutoff}")
     Long countStuck(@Param("cutoff") LocalDateTime cutoff);
 
-    /**
-     * 作废 Outbox（status=2）：发送失败且调用方已回滚 Redis 计数时必须调用，
-     * 否则补发任务会再次投递 → 消费端发券，而 Redis 已回滚 → 超发（用户可再领）
-     */
-    @Update("UPDATE t_coupon_outbox SET status = 2 WHERE claim_no = #{claimNo} AND status = 0")
-    int markOutboxCancelled(@Param("claimNo") String claimNo);
+    // 【C-007 删除】原 markOutboxCancelled（作废 Outbox，status=2）为旧"同步强一致"语义残留：
+    // Design B（至少一次）下发送失败/未知一律保留 Outbox 交补发（消费端幂等兜底），
+    // 不再有"调用方回滚 Redis 需作废 Outbox"的场景 → 方法零调用删除。
 }
