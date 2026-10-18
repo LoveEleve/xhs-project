@@ -22,6 +22,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -188,5 +189,33 @@ class CartOrderLinkageServiceTest {
                 .hasMessageContaining("回补失败");
 
         verify(valueOps, never()).setIfAbsent(eq(marker("restored")), any(), any());
+    }
+
+    @Test
+    @DisplayName("深审查F1：竞态握手回补部分失败重入——清车重试补做回补（不因 cleared 去重而漏）")
+    void raceRestorePartialFailureReentryCompletes() {
+        // 第一段：回补先到 → 挂起（pending 置位、不 merge）
+        when(stringRedisTemplate.hasKey(marker("restored"))).thenReturn(false);
+        when(stringRedisTemplate.hasKey(marker("cleared"))).thenReturn(false);
+        linkageService.handleOrderTerminated(ORDER_NO, USER_ID, items());
+        verify(cartService, never()).mergeItem(anyLong(), anyLong(), anyInt());
+
+        // 第二段：清车到达（pending 在）→ 握手回补中途失败（item1 成功、item2 失败）→ 抛错（触发 MQ 重试）
+        when(stringRedisTemplate.hasKey(marker("cleared"))).thenReturn(false, true); // 首查 false；重试查 true
+        when(stringRedisTemplate.hasKey(marker("restore-pending"))).thenReturn(true);
+        when(cartService.mergeItem(USER_ID, 1L, 2)).thenReturn(true);
+        when(cartService.mergeItem(USER_ID, 2L, 1)).thenThrow(new RuntimeException("redis blip"))
+                .thenReturn(true);
+        assertThatThrownBy(() -> linkageService.handleOrderCreated(ORDER_NO, USER_ID, "CART", items()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("回补失败");
+
+        // 第三段：清车消费者重试 → cleared 已存在但握手回补未完成 → 补做回补（幂等收敛）
+        linkageService.handleOrderCreated(ORDER_NO, USER_ID, "CART", items());
+
+        verify(cartService, times(2)).mergeItem(USER_ID, 1L, 2); // 两轮均 merge（max 幂等）
+        verify(cartService, times(2)).mergeItem(USER_ID, 2L, 1); // 首失败 + 重试成功
+        verify(valueOps).setIfAbsent(eq(marker("restored")), eq("1"), eq(Duration.ofDays(7)));
+        verify(stringRedisTemplate).delete(marker("restore-pending"));
     }
 }

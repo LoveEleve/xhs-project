@@ -16,7 +16,7 @@ updated: 2026-10-17
 - 执行时间: 2026-10-17（四阶段：联动主线 → 可观测 → 工程质量 → 收口）
 - 环境 profile: JDK 17（`/env/javaEnv/jdk17`）+ Maven 3.9 离线（`-o`）；**无运行时环境**（项目规则：单测口径；删 `target/test-classes` 强制全量重编防增量假绿）
 - 命令: `mvn -o -pl my-xhs-common,my-xhs-product,my-xhs-coupon,my-xhs-order,my-xhs-inventory,my-xhs-payment,my-xhs-search,my-xhs-cart -am test` + 全仓 `mvn -o -q compile`
-- 结果: ✅ 通过（BUILD SUCCESS；**431 全绿**：common 93 / product 35 / coupon 11 / **order 124** / inventory 20 / **cart 32** / search 43 / payment 73——**cart 首次纳入回归集**（基线 15），净增 21，零回归）
+- 结果: ✅ 通过（BUILD SUCCESS；**432 全绿**：common 93 / product 35 / coupon 11 / **order 124** / inventory 20 / **cart 33** / search 43 / payment 73——**cart 首次纳入回归集**（基线 15），零回归（含深审查轮 +1））
 
 ## 用例执行结果
 
@@ -53,6 +53,14 @@ updated: 2026-10-17
 - **基础能力**：`cart_remove_batch.lua`（原子批量移除）；`CartService.removeBySkus/mergeItem`（merge 循环提取 `executeMergeItem` 复用）
 - **前端**：OrderCreatePage + 类型 +source 透传；**e2e 脚本**：source=CART + 清车核验（cartCleared 证据字段）
 - **可观测**：联动指标族 + 竞态计数；cron 注释漂移修复（3 处）
+
+## 深审查记录（见 test/review-c006.md）
+
+- 重点：**部分成功/部分失败**、分布式、工程问题（21 项清单）
+- 🔴 **发现并修复 1 个真 bug（F1）**：竞态握手回补部分失败后，清车消费者重试被 `cleared` 去重短路 → 握手回补永不完成（商品被清后永久丢失，终结消息已 ack 无人再触发）——修：重入路径补查 pending（`cleared 存在 && pending 存在 && restored 不存在` → 补做回补）+ 专项测试（竞态→回补失败→重试补做→收敛）
+- 🟡 工程修复 2：回补挂起日志降噪（INFO→DEBUG）/ e2e 脚本异步容忍（清车为 MQ 异步）
+- 📝 记录 5：残余 DLQ 兜底 / 用户并发窗口×2 / Feign 逐项 / 指标少计
+- ✅ 关键验证：对账 SCAN 模式无 marker 碰撞（`myxhs:cart:{*:items`）；跨槽位协议可见性推演成立
 
 ## 覆盖对账
 

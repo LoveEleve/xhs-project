@@ -69,8 +69,17 @@ public class CartOrderLinkageService {
         String clearedKey = markerKey("cleared", orderNo);
         // 去重（重复投递/Outbox 重发）：已清过则跳过——防误删用户清车后的新加购
         if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(clearedKey))) {
-            log.debug("[购物车联动] 清车已处理（重复投递），跳过: orderNo={}", orderNo);
-            count("clear", "skip");
+            // 深审查修复（F1·部分失败重入）：竞态路径的握手回补 merge 失败后，本消费者重试会走到这里——
+            // 不能因 cleared 去重而漏掉"未完成的握手回补"（否则商品被清后永不回补、终结消息已 ack 无人再触发）
+            String pendingKey = markerKey("restore-pending", orderNo);
+            if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(pendingKey))
+                    && !Boolean.TRUE.equals(stringRedisTemplate.hasKey(markerKey("restored", orderNo)))) {
+                log.warn("[购物车联动] 清车重入：握手回补未完成，补做回补: orderNo={}, userId={}", orderNo, userId);
+                restoreItems(orderNo, userId, items, pendingKey);
+            } else {
+                log.debug("[购物车联动] 清车已处理（重复投递），跳过: orderNo={}", orderNo);
+                count("clear", "skip");
+            }
             return;
         }
 
@@ -125,7 +134,8 @@ public class CartOrderLinkageService {
             restoreItems(orderNo, userId, items, pendingKey);
         } else {
             // 商品仍在车中（清车未到或未发生——直接购买单 / clear 失败自愈）；pending 待 clear 侧消费或自然过期
-            log.info("[购物车联动] 回补挂起（清车未到），置 pending 待握手: orderNo={}", orderNo);
+            // E1（深审查）：直接购买单/竞态前半段每次终结都会走到这里——降为 DEBUG（竞态由 clear 侧 WARN 覆盖）
+            log.debug("[购物车联动] 回补挂起（清车未到），置 pending 待握手: orderNo={}", orderNo);
             count("restore", "skip");
         }
     }

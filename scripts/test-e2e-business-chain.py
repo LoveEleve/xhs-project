@@ -169,7 +169,8 @@ def main():
     order_id = (body.get("data") or {}).get("orderId")
     order_no = (body.get("data") or {}).get("orderNo")
     pay_amount = (body.get("data") or {}).get("payAmount")
-    # C-006：清车联动核验（下单即从购物车移除已购 sku；本单随后支付成功——回补场景见联动单测矩阵）
+    # C-006：清车联动核验（下单即从购物车移除已购 sku；清车为 MQ 异步联动——等待消费窗口）
+    time.sleep(3)
     _, cart_body = call("GET", "/api/cart/list", token, secret, user_id=uid)
     cart_items = (cart_body.get("data") or {}).get("items") or []
     cart_cleared = all(i.get("skuId") != sku_id for i in cart_items)
