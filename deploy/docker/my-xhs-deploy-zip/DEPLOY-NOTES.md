@@ -177,3 +177,15 @@
 3. **新增配置（有默认值，可不配）**：`myxhs.settlement.fee-rate`（默认 0.0060）、`myxhs.settlement.channels`（默认 1,2,99）、
    `myxhs.cache-warmup.targets`（product=product-category-tree、search=search-hot-and-recommend）
 4. **新增内部接口（需 X-Internal-Call）**：售后审核/退款重试（order）、结算账单生成/重跑/作废/对账/差异处理/对账单导入与演练（payment）、支付域按订单退款与退款单查询（payment）
+
+## 二·补三、2026-10-19 升级：搜索索引别名模型（C-011）
+
+1. **ES 索引模型变更（无 SQL）**：`note_index` / `product_index` 从"实体索引"升级为"**别名**"（实体 = `{alias}_v{n}`）：
+   - **全新环境**：无需操作——启动时 IndexInitializer 自动建 `{alias}_v1` + 别名；
+   - **存量环境（legacy）**：保持可用（重建自动回退原地模式 + 日志告警）；建议低峰执行一次性迁移：
+     a. 触发一次全量重建（`POST /search/index/rebuild`）——自动建 `{alias}_v1` 实体并在构建完成后**原子切换别名**（切换前线上不受影响）；
+     b. 确认 `GET /_cat/aliases?v` 中 `note_index`/`product_index` 已指向 `*_v1`；
+     c. 旧实体（同名）由重建流程在切换后自动删除（失败仅告警，可人工 `DELETE /{index}`）。
+2. **DLQ 重放新增 5 个消费组**（`search-dlq-replay-*-group`）：消费 `%DLQ%note-index-sync-consumer-group`、`%DLQ%product-index-sync-consumer-group`、`%DLQ%counter-es-sync-consumer-group`、`%DLQ%recommend-behavior-consumer-group`、`%DLQ%seller-sub-order-index-sync-group` 并重投源 topic（保留 tag）；无需配置。
+3. **限流**：搜索/推荐/商家搜索 8 端点新增 `@RateLimit`（Redis 窗口限流；匿名按 IP）——依赖 Redis（已有）。
+4. **墓碑清理**：索引新增 `deletedAt` 字段（物理删墓碑），重建流程清理超龄（7 天）墓碑——mapping 由 IndexInitializer/重建自动应用。
