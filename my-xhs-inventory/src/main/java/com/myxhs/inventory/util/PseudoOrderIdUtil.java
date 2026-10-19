@@ -8,7 +8,7 @@ import java.security.NoSuchAlgorithmException;
  * 伪订单ID派生工具（04B 提取自 OrderTransactionConsumer）
  * <p>
  * orderNo（字符串）→ SHA-256 前 8 字节（Big-endian signed long），作为库存域
- * "预扣/释放/确认"的幂等键（inventory:prededuct:{pseudoOrderId}）。
+ * "预扣/释放/确认"的幂等键（C-008 单键：inventory:{skuId}:prededuct:{pseudoOrderId}）。
  * </p>
  * <p>
  * ⚠️ 必须与 OrderService.derivePseudoOrderId（订单域，Feign 补偿路径使用）保持**算法完全一致**——

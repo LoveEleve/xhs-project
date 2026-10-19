@@ -195,9 +195,7 @@ public class InventoryCacheEvictConsumer implements RocketMQListener<MessageExt>
      * 删除 SKU 的 Redis 缓存（INSERT/UPDATE 事件）
      * <p>
      * 删除范围：
-     * 1. 总库存 Key：inventory:{skuId}:total
-     * 2. 所有分桶 Key：inventory:{skuId}:bucket:*
-     * 3. 分桶数量 Key：inventory:bucket:count:{skuId}
+     * 1. 单库存 Key：inventory:{skuId}:stock（C-008：原 total + bucket* + bucket:count 收敛为一键）
      * </p>
      * <p>
      * 版本号防乱序：

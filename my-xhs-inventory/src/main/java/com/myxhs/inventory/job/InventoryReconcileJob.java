@@ -123,7 +123,7 @@ public class InventoryReconcileJob {
             }
         }
 
-        // 【新增】locked_stock 对账：以 Redis 在途预扣（inventory:prededuct:* Hash）为权威重算。
+        // 【新增】locked_stock 对账：以 Redis 在途预扣记录（C-008 单键 inventory:{skuId}:prededuct:{orderId}）为权威重算。
         // 修复缺口：预扣记录丢失/TTL 过期/确认失败都会留下"幽灵锁"，而 reinitStock 会把 locked 计入总库存
         // → 可售虚增。方向保守：预扣记录不存在即视为 0（宁可少算可售，不会多卖）。
         repairCount += reconcileLockedStock(inventories);

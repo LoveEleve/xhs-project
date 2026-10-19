@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * 预扣超时回退任务（C-008：per-sku 索引扫描 + per-(sku,order) 释放/补确认）
  * <p>
- * 每 1 分钟扫描 Redis 中 per-sku 预扣索引（inventory:prededuct:index:{skuId}），
+ * 每 1 分钟扫描 Redis 中 per-sku 预扣索引（inventory:{skuId}:prededuct:index），
  * 对已到期的记录执行库存回退（ZSet score=到期时间戳ms，物理 TTL=到期+缓冲）。
  * </p>
  * <p>
@@ -150,7 +150,7 @@ public class PreDeductTimeoutJob {
         }
     }
 
-    /** 从索引键 inventory:prededuct:index:{skuId} 解析 skuId */
+    /** 从索引键 inventory:{skuId}:prededuct:index 解析 skuId */
     private Long parseSkuIdFromIndexKey(String indexKeyStr) {
         try {
             int l = indexKeyStr.indexOf('{');
