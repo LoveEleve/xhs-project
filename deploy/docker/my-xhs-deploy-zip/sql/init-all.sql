@@ -1003,6 +1003,15 @@ CREATE TABLE IF NOT EXISTS t_inventory_prededuct_idem (
     PRIMARY KEY (order_id, sku_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='预扣幂等表';
 
+-- C-008：L2 落账事务内幂等表（INSERT IGNORE 与库存变更同事务；补发/重投/崩溃重投不双扣不丢）
+CREATE TABLE IF NOT EXISTS t_inventory_l2_event (
+    order_id   BIGINT      NOT NULL COMMENT '订单ID(pseudoOrderId)',
+    sku_id     BIGINT      NOT NULL COMMENT 'SKU ID',
+    action     VARCHAR(32) NOT NULL COMMENT '事件类型: PRE_DEDUCT/CONFIRM/RELEASE/REFUND_RESTORE',
+    created_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '处理完成时间',
+    PRIMARY KEY (order_id, sku_id, action)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='L2落账幂等表(C-008)';
+
 -- =====================================================================
 -- Canal CDC 账号（只创建一次）
 -- =====================================================================

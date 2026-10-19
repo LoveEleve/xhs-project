@@ -695,9 +695,10 @@ public class InventoryService {
             );
 
             if (sendResult.getSendStatus() == org.apache.rocketmq.client.producer.SendStatus.SEND_OK) {
-                // 同步发送成功立即标记 Outbox 已发送，
-                // 防止 OutboxSenderJob 用新 msgId 重发同事件绕过消费者幂等 → MySQL 双扣
-                inventoryMapper.markOutboxSent(eventId);
+                // 同步发送成功立即标记 Outbox 已发送（防 Job 重发已确认事件）
+                // C-008 F2：按 (order,sku,action) 匹配（原按 eventId 在 dup 复用行场景 0 行静默失效）；
+                // 消费端另有逻辑事件幂等兜底（L2 inbox / 完成态标记）
+                inventoryMapper.markOutboxSent(orderId, skuId, action);
                 log.debug("[库存] MQ发送成功: action={}, orderId={}, skuId={}",
                         action, orderId, skuId);
                 return true;
@@ -705,14 +706,14 @@ public class InventoryService {
                 log.error("[库存] MQ发送状态异常: action={}, orderId={}, skuId={}, status={}",
                         action, orderId, skuId, sendResult.getSendStatus());
                 if ("PRE_DEDUCT".equals(action)) {
-                    inventoryMapper.cancelOutboxEvent(eventId);
+                    inventoryMapper.cancelOutboxEvent(orderId, skuId, action);
                 }
                 return false;
             }
         } catch (Exception e) {
             log.error("[库存] MQ发送异常: orderId={}, skuId={}, action={}", orderId, skuId, action, e);
             if ("PRE_DEDUCT".equals(action)) {
-                inventoryMapper.cancelOutboxEvent(eventId);
+                inventoryMapper.cancelOutboxEvent(orderId, skuId, action);
             }
             return false;
         }

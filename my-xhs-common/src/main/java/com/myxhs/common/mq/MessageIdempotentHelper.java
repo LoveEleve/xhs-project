@@ -84,4 +84,41 @@ public class MessageIdempotentHelper {
             log.error("[消息幂等] 删除幂等标记失败: bizType={}, bizId={}", bizType, bizId, e);
         }
     }
+
+    /**
+     * 只读检查：该业务标识是否已"完成处理"（C-008 完成态标记语义）。
+     * <p>
+     * 与 {@link #isFirstProcess} 的区别：本方法**只读不置位**——
+     * 配合"处理后置标记"模式（{@link #markProcessed}）使用：
+     * 崩溃发生在处理中时无标记 → 重投可重新处理（修复"前置标记拦死重投"的崩溃窗口）。
+     * </p>
+     */
+    public boolean isProcessed(String bizType, String bizId) {
+        String key = KEY_PREFIX + bizType + ":" + bizId;
+        try {
+            return Boolean.TRUE.equals(stringRedisTemplate.hasKey(key));
+        } catch (Exception e) {
+            // Redis 不可用时保守放行（宁可重复处理——业务侧幂等兜底，不可漏处理）
+            log.error("[消息幂等] Redis不可用，isProcessed 降级放行: bizType={}, bizId={}", bizType, bizId, e);
+            return false;
+        }
+    }
+
+    /**
+     * 置"完成处理"标记（C-008 完成态标记语义：业务处理成功后调用）。
+     * <p>
+     * 用 SETNX：并发重复投递时先完成者置位、后完成者无副作用。
+     * 崩溃窗口分析：标记在业务成功之后才置位——处理中崩溃 → 无标记 → 重投重新处理；
+     * 处理后崩溃（标记已置）→ 重投被 isProcessed 拦截（业务已成功）✓
+     * </p>
+     */
+    public void markProcessed(String bizType, String bizId, long ttlSeconds) {
+        String key = KEY_PREFIX + bizType + ":" + bizId;
+        try {
+            stringRedisTemplate.opsForValue().setIfAbsent(key, "1", ttlSeconds, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            // 标记失败不阻断（重复处理由业务幂等兜底）
+            log.error("[消息幂等] 置完成标记失败: bizType={}, bizId={}", bizType, bizId, e);
+        }
+    }
 }

@@ -23,8 +23,9 @@ import java.nio.charset.StandardCharsets;
  * 收到消息后按 orderNo 派生伪订单ID，调用 releaseStock 释放预扣 + 写终结墓碑。
  * </p>
  * <p>
- * 幂等保证（三重）：
- * 1. 消息 KEYS（=orderNo）去重：跨重投稳定（Outbox 补发换新 msgId，msgId 去重会失效）
+ * 幂等保证（C-008 F4 完成态语义）：
+ * 1. 消息 KEYS（=orderNo）完成态标记：跨重投稳定（Outbox 补发换新 msgId）；处理成功后置位，
+ *    处理中崩溃无标记 → 重投重新释放（releaseStock 本身幂等）
  * 2. releaseStock 终结墓碑：原子「检查记录 + 总是写墓碑」，重复投递安全
  * 3. 终结墓碑 + prededuct.lua 前置检查：拦截释放完成后迟到/重投的预扣消息（防泄漏）
  * </p>
@@ -66,7 +67,9 @@ public class OrderTerminationConsumer implements RocketMQListener<MessageExt> {
             String orderNo = orderNoNode.asText();
 
             String dedupKey = resolveDedupKey(msg);
-            if (!idempotentHelper.isFirstProcess(BIZ_TYPE, dedupKey, IDEMPOTENT_TTL_SECONDS)) {
+            // C-008 F4 完成态标记：只读检查（不置位）——处理中崩溃无标记，重投重新释放（releaseStock 幂等）
+            if (idempotentHelper.isProcessed(BIZ_TYPE, dedupKey)) {
+                log.info("[库存-终结消费] 已完成处理(重投跳过): dedupKey={}", dedupKey);
                 return;
             }
 
@@ -78,14 +81,13 @@ public class OrderTerminationConsumer implements RocketMQListener<MessageExt> {
 
             // releaseStock 内在幂等（终结墓碑 + 无记录即返回），重复消费安全
             inventoryService.releaseStock(request);
+            // C-008 F4：完成后置标记（失败不置标记 → 重投重新释放；releaseStock 幂等安全）
+            idempotentHelper.markProcessed(BIZ_TYPE, dedupKey, IDEMPOTENT_TTL_SECONDS);
             log.info("[库存-终结消费] 预扣释放完成: orderNo={}, pseudoOrderId={}", orderNo, pseudoOrderId);
         } catch (RuntimeException e) {
-            // 失败时移除幂等标记，允许 MQ 重投重新处理
-            idempotentHelper.removeMark(BIZ_TYPE, resolveDedupKey(msg));
-            throw e; // 直接抛出触发 MQ 重试
+            throw e; // 直接抛出触发 MQ 重试（完成态语义：失败无标记，重投可重新处理）
         } catch (Exception e) {
             log.error("[库存-终结消费] 消费失败: msgId={}", msg.getMsgId(), e);
-            idempotentHelper.removeMark(BIZ_TYPE, resolveDedupKey(msg));
             throw new RuntimeException("订单终结消息消费失败", e);
         } finally {
             MqTraceHelper.clearTraceId();

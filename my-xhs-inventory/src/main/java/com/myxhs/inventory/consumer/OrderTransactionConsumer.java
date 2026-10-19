@@ -24,15 +24,10 @@ import java.nio.charset.StandardCharsets;
  * 收到消息后对订单中的每个 SKU 执行预扣减。
  * </p>
  * <p>
- * 幂等保证（双重）：
- * 1. 消费者层面：MessageIdempotentHelper（msgId），RocketMQ at-least-once 重复投递时跳过
- * 2. InventoryService 层面：Lua 脚本内置幂等（PREDEDUCT_KEY 已存在则返回 -1）
- * </p>
- * <p>
- * 幂等键选择说明：
- * - 使用 msgId 而非 orderNo：避免 rebalance 时实例崩溃导致部分 SKU 永久跳过
- *   （旧实现：幂等标记在循环前设置，实例崩溃后新实例因 orderNo 幂等跳过全部 SKU）
- * - preDeduct() Lua 脚本以 pseudoOrderId 为幂等键，防止同一订单重复预扣
+ * 幂等保证（C-008 F4 完成态语义）：
+ * 1. 消费者层面：MessageIdempotentHelper **完成态标记**（处理成功后置位，isProcessed 只读拦截重投）——
+ *    处理中崩溃无标记 → 重投重新处理（旧"前置标记"会把重投拦死，未处理 SKU 永久漏扣）
+ * 2. InventoryService 层面：Lua 脚本内置幂等（预扣记录已存在则返回 -1）——重投时已扣 SKU 跳过、未扣补扣
  * </p>
  * <p>
  * 失败策略：
@@ -84,9 +79,10 @@ public class OrderTransactionConsumer implements RocketMQListener<MessageExt> {
             // 用 resolveLong 兼容数字/字符串两种形态。
             Long userId = resolveLong(userIdNode, "userId");
 
-            // 消费者层面幂等校验：msgId 级别去重，避免 rebalance 时部分 SKU 永久跳过
-            // 使用 msgId 而非 orderNo：orderNo 在循环内部分成功时会导致 rebalance 后新实例跳过
-            if (!idempotentHelper.isFirstProcess(BIZ_TYPE, msg.getMsgId(), IDEMPOTENT_TTL_SECONDS)) {
+            // C-008 F4 完成态标记：只读检查"已完成"（不置位）——处理中崩溃无标记，重投可重新处理；
+            // 已扣 SKU 由 prededuct.lua 幂等跳过、未扣 SKU 补扣（见方法尾部置标记）
+            if (idempotentHelper.isProcessed(BIZ_TYPE, msg.getMsgId())) {
+                log.info("[库存-事务消费] 已完成处理(重投跳过): msgId={}", msg.getMsgId());
                 return;
             }
 
@@ -139,15 +135,15 @@ public class OrderTransactionConsumer implements RocketMQListener<MessageExt> {
             }
 
             log.info("[库存-事务消费] 订单库存预扣减完成: orderNo={}, userId={}", orderNo, userId);
+            // C-008 F4：完成后置标记（崩溃窗口修复——前置标记会把重投拦死，未处理 SKU 永久漏扣）
+            idempotentHelper.markProcessed(BIZ_TYPE, msg.getMsgId(), IDEMPOTENT_TTL_SECONDS);
 
         } catch (RuntimeException e) {
-            // 失败时移除幂等标记，允许 MQ 重投重新处理（否则重投被 isFirstProcess=false 跳过，
-            // 部分 SKU 永久不预扣 → 超卖）。preDeduct Lua 幂等保证重复处理安全。
-            idempotentHelper.removeMark(BIZ_TYPE, msg.getMsgId());
+            // C-008 F4 完成态语义：失败不置标记（无需 removeMark）→ 重投重新处理；
+            // 已处理成功的 SKU 由 prededuct.lua 幂等跳过，未处理的补扣
             throw e; // 直接抛出触发 MQ 重试
         } catch (Exception e) {
             log.error("[库存-事务消费] 消费失败: msgId={}", msg.getMsgId(), e);
-            idempotentHelper.removeMark(BIZ_TYPE, msg.getMsgId());
             throw new RuntimeException("订单事务消息消费失败", e);
         } finally {
             MqTraceHelper.clearTraceId();

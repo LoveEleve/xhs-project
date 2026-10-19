@@ -265,7 +265,7 @@ public class PreDeductTimeoutJob {
                     MessageBuilder.withPayload(objectMapper.writeValueAsString(event)).build(),
                     3000);
             if (sendResult.getSendStatus() == org.apache.rocketmq.client.producer.SendStatus.SEND_OK) {
-                inventoryMapper.markOutboxSent(eventId);
+                inventoryMapper.markOutboxSent(orderId, skuId, "RELEASE"); // C-008 F2：按业务键匹配
                 log.debug("[预扣超时] RELEASE事件发送成功: orderId={}, skuId={}", orderId, skuId);
             } else {
                 log.error("[预扣超时] RELEASE事件发送状态异常(等待Outbox补发): orderId={}, skuId={}, status={}",

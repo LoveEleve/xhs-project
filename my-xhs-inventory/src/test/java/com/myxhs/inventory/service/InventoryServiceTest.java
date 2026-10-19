@@ -274,7 +274,7 @@ class InventoryServiceTest {
         assertThatCode(() -> inventoryService.confirmDeduct(request)).doesNotThrowAnyException();
 
         verify(inventoryMapper).insertOutboxEvent(anyLong(), eq(ORDER_ID), eq(SKU_ID), eq(3), eq("CONFIRM"));
-        verify(inventoryMapper, never()).cancelOutboxEvent(anyLong());
+        verify(inventoryMapper, never()).cancelOutboxEvent(anyLong(), anyLong(), anyString());
     }
 
     @Test
@@ -313,7 +313,7 @@ class InventoryServiceTest {
         assertThatThrownBy(() -> inventoryService.preDeduct(request))
                 .isInstanceOf(BizException.class);
 
-        verify(inventoryMapper).cancelOutboxEvent(anyLong());
+        verify(inventoryMapper).cancelOutboxEvent(anyLong(), anyLong(), anyString());
     }
 
     // ==================== releaseStock ====================

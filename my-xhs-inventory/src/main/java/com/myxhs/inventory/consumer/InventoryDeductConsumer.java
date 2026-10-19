@@ -2,10 +2,10 @@ package com.myxhs.inventory.consumer;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.common.metrics.BusinessMetrics;
-import com.myxhs.common.mq.MessageIdempotentHelper;
 import com.myxhs.common.trace.MqTraceHelper;
 import com.myxhs.inventory.dto.event.InventoryDeductEvent;
 import com.myxhs.inventory.mapper.InventoryMapper;
+import com.myxhs.inventory.service.InventoryL2InboxService;
 import java.nio.charset.StandardCharsets;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -21,16 +21,19 @@ import org.springframework.stereotype.Component;
  * 库存扣减消费者（L2：MQ 异步扣 MySQL）
  * <p>
  * 消费 INVENTORY_TOPIC 消息，将库存变更持久化到 MySQL。
- * 三种操作：
+ * 四种操作：
  * - PRE_DEDUCT：预扣减（available_stock → locked_stock）
  * - CONFIRM：确认扣减（locked_stock 减少）
  * - RELEASE：释放库存（locked_stock → available_stock）
+ * - REFUND_RESTORE：退款回补（available_stock +qty）
  * </p>
  * <p>
- * 幂等保证（双重）：
- * 1. 消费者层面：MessageIdempotentHelper（msgId, 24h）快速去重，避免重复消费
+ * 幂等保证（C-008 F4：事务内幂等 + 完成态版本门）：
+ * 1. 逻辑事件幂等：t_inventory_l2_event INSERT IGNORE 与库存变更**同事务**——
+ *    补发（新 msgId）/重投/崩溃重投均不双扣、不丢（旧"前置 msgId 标记"崩溃后会把重投拦死）
  * 2. MySQL 使用乐观锁（WHERE locked_stock >= quantity / available_stock >= quantity）
- * 3. 最坏情况：重复扣减导致 MySQL 库存偏低，L3 对账修复会以 Redis 为准修正
+ * 3. 版本门"完成后推进"（只读检查旧事件跳过，不再前置占位）——跨 action 乱序防护保留
+ * 4. 最坏情况：条件失败导致 MySQL 镜像偏差，L3 对账以 Redis 为准修正
  * </p>
  */
 @Slf4j
@@ -46,75 +49,70 @@ public class InventoryDeductConsumer implements RocketMQListener<MessageExt> {
 
     private final InventoryMapper inventoryMapper;
     private final ObjectMapper objectMapper;
-    private final MessageIdempotentHelper idempotentHelper;
     private final StringRedisTemplate stringRedisTemplate;
     private final RocketMQTemplate rocketMQTemplate;
     private final BusinessMetrics businessMetrics;
+    private final InventoryL2InboxService inboxService;
 
-    private static final String BIZ_TYPE = "inventory:deduct";
-    private static final long IDEMPOTENT_TTL_SECONDS = 86400; // 24 小时
     private static final String EVENT_VERSION_PREFIX = "inventory:event:version:";
+    private static final long EVENT_VERSION_TTL_SECONDS = 86400; // 24 小时
 
     /** 库存失败事件 Topic（订单侧收口：未支付自动关单 / 已支付人工介入） */
     public static final String INVENTORY_FAILED_TOPIC = "INVENTORY_FAILED_TOPIC";
 
     /**
-     * 原子版本检查+更新 Lua 脚本（GET+比较+SET 单原子操作，消除并发双过窗口）
-     * 脏数据（非数字）视为无版本，直接覆盖
+     * 版本单调推进（C-008：只增不减）——仅在事件处理完成后调用；
+     * 并发乱序时旧值不覆盖新值（崩溃后重投靠 inbox 幂等 + 本步收敛）
      */
-    /**
-     * 预留版本（原子 check-and-set）：返回 -1=旧事件（调用方跳过）；>=0=成功预留并返回"预留前的版本"（0 表示无）
-     */
-    private final org.springframework.data.redis.core.script.DefaultRedisScript<Long> versionReserveScript
+    private final org.springframework.data.redis.core.script.DefaultRedisScript<Long> versionAdvanceScript
             = new org.springframework.data.redis.core.script.DefaultRedisScript<>(
-            "local current = redis.call('get', KEYS[1]) " +
-            "local currentNum = tonumber(current) or 0 " +
-            "local newVersion = tonumber(ARGV[1]) " +
-            "if currentNum >= newVersion then return -1 end " +
-            "redis.call('set', KEYS[1], ARGV[1], 'EX', ARGV[2]) " +
-            "return currentNum", Long.class);
-
-    /**
-     * 条件回滚版本：仅当当前值仍是本次预留值时才恢复为预留前的值（并发期间已被更新则不动）
-     */
-    private final org.springframework.data.redis.core.script.DefaultRedisScript<Long> versionRestoreScript
-            = new org.springframework.data.redis.core.script.DefaultRedisScript<>(
-            "local current = tonumber(redis.call('get', KEYS[1]) or '0') " +
-            "local mine = tonumber(ARGV[1]) " +
-            "if current ~= mine then return 0 end " +
-            "local prev = tonumber(ARGV[2]) " +
-            "if prev <= 0 then redis.call('del', KEYS[1]) else redis.call('set', KEYS[1], ARGV[2], 'EX', ARGV[3]) end " +
-            "return 1", Long.class);
+            "local cur = tonumber(redis.call('get', KEYS[1]) or '0') " +
+            "local v = tonumber(ARGV[1]) " +
+            "if cur < v then redis.call('set', KEYS[1], ARGV[1], 'EX', ARGV[2]) end " +
+            "return cur", Long.class);
 
     @Override
     public void onMessage(MessageExt msg) {
         MqTraceHelper.restoreTraceId(msg);
         try {
-            // 统一幂等检查
-            if (!idempotentHelper.isFirstProcess(BIZ_TYPE, msg.getMsgId(), IDEMPOTENT_TTL_SECONDS)) {
-                return;
-            }
-
             String body = new String(msg.getBody(), StandardCharsets.UTF_8);
             InventoryDeductEvent event = objectMapper.readValue(body, InventoryDeductEvent.class);
 
             log.info("[库存L2] 收到消息: action={}, orderId={}, skuId={}, qty={}",
                     event.getAction(), event.getOrderId(), event.getSkuId(), event.getQuantity());
 
-            switch (event.getAction()) {
-                case "PRE_DEDUCT" -> handlePreDeduct(event);
-                case "CONFIRM" -> handleConfirm(event);
-                case "RELEASE" -> handleRelease(event);
-                case "REFUND_RESTORE" -> handleRefundRestore(event);
-                default -> log.warn("[库存L2] 未知操作类型: {}", event.getAction());
+            // C-008 F4：版本门"完成后推进"——只读检查旧事件（跨 action 乱序防护；不前置占位）
+            if (isStaleEvent(event)) {
+                log.debug("[库存L2] 跳过旧版本事件: orderId={}, skuId={}, action={}, eventTime={}",
+                        event.getOrderId(), event.getSkuId(), event.getAction(), event.getEventTime());
+                return;
             }
+
+            // C-008 F4：事务内幂等——INSERT IGNORE 与库存变更同事务（补发/重投/崩溃重投不双扣不丢）
+            boolean applied = inboxService.applyOnce(event.getOrderId(), event.getSkuId(), event.getAction(),
+                    () -> dispatch(event));
+            if (!applied) {
+                log.warn("[库存L2] 逻辑事件幂等拦截(已应用过): orderId={}, skuId={}, action={}",
+                        event.getOrderId(), event.getSkuId(), event.getAction());
+            }
+            // 完成后单调推进版本（应用与否都推进：收敛乱序状态）
+            advanceEventVersion(event);
         } catch (Exception e) {
             log.error("[库存L2] 消费失败: msgId={}", msg.getMsgId(), e);
-            // 失败时移除幂等标记，允许 MQ 重投时重新处理（否则重投被 isFirstProcess=false 跳过，消息静默吞没）
-            idempotentHelper.removeMark(BIZ_TYPE, msg.getMsgId());
             throw new RuntimeException("库存消费失败", e);
         } finally {
             MqTraceHelper.clearTraceId();
+        }
+    }
+
+    /** 按 action 分派（在事务内执行——inbox 幂等与库存变更同事务提交） */
+    private void dispatch(InventoryDeductEvent event) {
+        switch (event.getAction()) {
+            case "PRE_DEDUCT" -> doHandlePreDeduct(event);
+            case "CONFIRM" -> doHandleConfirm(event);
+            case "RELEASE" -> doHandleRelease(event);
+            case "REFUND_RESTORE" -> doHandleRefundRestore(event);
+            default -> log.warn("[库存L2] 未知操作类型: {}", event.getAction());
         }
     }
 
@@ -126,12 +124,6 @@ public class InventoryDeductConsumer implements RocketMQListener<MessageExt> {
      * 重试失败后仍不抛异常，L3 对账兜底。
      * </p>
      */
-    private void handlePreDeduct(InventoryDeductEvent event) {
-        // PRE_DEDUCT 也需要版本防护：若 CONFIRM/RELEASE 已先处理（版本更高），
-        // 说明本事件是乱序迟到的旧事件，跳过避免幻影 locked_stock（对账以 Redis 为准修复）
-        withEventVersion(event, () -> doHandlePreDeduct(event));
-    }
-
     private void doHandlePreDeduct(InventoryDeductEvent event) {
         int maxRetry = 3;
         for (int i = 0; i < maxRetry; i++) {
@@ -139,6 +131,7 @@ public class InventoryDeductConsumer implements RocketMQListener<MessageExt> {
             if (affected > 0) {
                 log.info("[库存L2] 预扣减MySQL成功: skuId={}, qty={}, attempt={}",
                         event.getSkuId(), event.getQuantity(), i + 1);
+                businessMetrics.recordInventoryAction("l2_prededuct_ok");
                 return;
             }
             // 乐观锁竞争失败，退避后重试
@@ -162,115 +155,88 @@ public class InventoryDeductConsumer implements RocketMQListener<MessageExt> {
 
     /**
      * 确认扣减：locked_stock 减少（库存正式扣除）
-     * <p>时间戳防护：仅当 eventTime > 已处理版本时执行，防止 MQ 乱序</p>
      */
-    private void handleConfirm(InventoryDeductEvent event) {
-        withEventVersion(event, () -> {
-            int affected = inventoryMapper.confirmDeduct(event.getSkuId(), event.getQuantity());
+    private void doHandleConfirm(InventoryDeductEvent event) {
+        int affected = inventoryMapper.confirmDeduct(event.getSkuId(), event.getQuantity());
         if (affected > 0) {
             log.info("[库存L2] 确认扣减MySQL成功: skuId={}, qty={}", event.getSkuId(), event.getQuantity());
+            businessMetrics.recordInventoryAction("l2_confirm_ok");
         } else {
             log.warn("[库存L2] 确认扣减MySQL失败: skuId={}, qty={}（已发失败事件，等待L3对账修复）",
                     event.getSkuId(), event.getQuantity());
             businessMetrics.recordInventoryFailure("CONFIRM_FAILED");
             publishFailureEvent(event, "CONFIRM_FAILED");
-            }
-        });
+        }
     }
 
     /**
      * 释放库存：locked_stock 回退到 available_stock
-     * <p>时间戳防护：仅当 eventTime > 已处理版本时执行，防止 MQ 乱序</p>
      */
-    private void handleRelease(InventoryDeductEvent event) {
-        withEventVersion(event, () -> {
-            int affected = inventoryMapper.releaseStock(event.getSkuId(), event.getQuantity());
+    private void doHandleRelease(InventoryDeductEvent event) {
+        int affected = inventoryMapper.releaseStock(event.getSkuId(), event.getQuantity());
         if (affected > 0) {
             log.info("[库存L2] 释放库存MySQL成功: skuId={}, qty={}", event.getSkuId(), event.getQuantity());
+            businessMetrics.recordInventoryAction("l2_release_ok");
         } else {
             log.warn("[库存L2] 释放库存MySQL失败: skuId={}, qty={}（等待L3对账修复）",
                     event.getSkuId(), event.getQuantity());
-            }
-        });
+        }
     }
 
     /** T-071：退款回补（MySQL available_stock +qty——独立语义，非 locked→available） */
-    private void handleRefundRestore(InventoryDeductEvent event) {
-        withEventVersion(event, () -> {
-            int affected = inventoryMapper.refundRestoreStock(event.getSkuId(), event.getQuantity());
+    private void doHandleRefundRestore(InventoryDeductEvent event) {
+        int affected = inventoryMapper.refundRestoreStock(event.getSkuId(), event.getQuantity());
         if (affected > 0) {
             log.info("[库存L2] 退款回补MySQL成功: skuId={}, qty={}", event.getSkuId(), event.getQuantity());
+            businessMetrics.recordInventoryAction("l2_refund_ok");
         } else {
             log.warn("[库存L2] 退款回补MySQL失败: skuId={}, qty={}（等待L3对账修复）",
                     event.getSkuId(), event.getQuantity());
-            }
-        });
-    }
-
-    /**
-     * 时间戳版本检查（MQ 乱序防护）
-     * <p>
-     * 版本 key 按 orderId+skuId 统一（不按 action 分割）：
-     * 防止跨 action 乱序——CONFIRM/RELEASE 先于 PRE_DEDUCT 到达时，
-     * 晚到事件先记录版本，早到的 PRE_DEDUCT 被识别为旧事件跳过，由对账以 Redis 为准修复，
-     * 避免乱序执行产生幻影 locked_stock。
-     * </p>
-     */
-    /**
-     * 预留事件版本（原子 check-and-set）
-     * <p>
-     * 语义：同 (orderId, skuId) 只允许版本严格递增的事件执行；本方法先原子占位再执行 DB。
-     * 与"只读比较 + 成功后推进"相比保留了**并发顺序保证**（否则新旧事件可并发穿过检查）；
-     * 与"检查即推进"相比，DB 异常时会由 {@link #restoreEventVersion} 回滚预留，
-     * 修复"异常重投被当成旧事件永久跳过、locked_stock 虚高"的问题。
-     * </p>
-     *
-     * @return -1=旧事件（跳过）；>=0=预留成功（返回值=预留前版本，用于失败回滚）
-     */
-    private long reserveEventVersion(InventoryDeductEvent event) {
-        if (event.getEventTime() == null) return 0L; // 无版本号不拦截
-        String versionKey = EVENT_VERSION_PREFIX + event.getOrderId() + ":" + event.getSkuId();
-        Long prev = stringRedisTemplate.execute(versionReserveScript,
-                java.util.List.of(versionKey),
-                String.valueOf(event.getEventTime()),
-                String.valueOf(IDEMPOTENT_TTL_SECONDS));
-        if (prev == null || prev < 0) {
-            log.debug("[库存L2] 跳过旧版本事件: orderId={}, skuId={}, action={}, eventTime={}",
-                    event.getOrderId(), event.getSkuId(), event.getAction(), event.getEventTime());
-            return -1L;
         }
-        return prev;
     }
 
-    /** DB 失败时回滚预留（仅当未被并发更新时），使 MQ 重投可以再次处理同一事件 */
-    private void restoreEventVersion(InventoryDeductEvent event, long prev) {
-        if (event.getEventTime() == null || prev < 0) return;
+    /** 版本 key（按 orderId+skuId 统一，跨 action 防乱序） */
+    private String eventVersionKey(InventoryDeductEvent event) {
+        return EVENT_VERSION_PREFIX + event.getOrderId() + ":" + event.getSkuId();
+    }
+
+    /**
+     * C-008：只读检查旧事件（version >= eventTime → 跳过）。
+     * <p>
+     * 语义：同一 (orderId, skuId) 只允许 eventTime 严格递增的事件应用；
+     * 旧实现"先占位再执行"在崩溃时会永久丢事件（重投被自己的占位拦死），
+     * 改为"完成后推进"——崩溃后重投版本未推进 → 可重新处理（inbox 幂等保证不双扣）。
+     * </p>
+     */
+    private boolean isStaleEvent(InventoryDeductEvent event) {
+        if (event.getEventTime() == null) {
+            return false; // 无版本号不拦截
+        }
         try {
-            String versionKey = EVENT_VERSION_PREFIX + event.getOrderId() + ":" + event.getSkuId();
-            stringRedisTemplate.execute(versionRestoreScript,
-                    java.util.List.of(versionKey),
-                    String.valueOf(event.getEventTime()),
-                    String.valueOf(prev),
-                    String.valueOf(IDEMPOTENT_TTL_SECONDS));
-        } catch (Exception e) {
-            log.error("[库存L2] 版本回滚失败(可能漏处理, 依赖对账): orderId={}, skuId={}, eventTime={}",
-                    event.getOrderId(), event.getSkuId(), event.getEventTime(), e);
+            String v = stringRedisTemplate.opsForValue().get(eventVersionKey(event));
+            if (v == null) {
+                return false;
+            }
+            return Long.parseLong(v) >= event.getEventTime();
+        } catch (NumberFormatException e) {
+            return false; // 脏数据不拦截
         }
     }
 
-    /**
-     * 统一的"预留-执行-失败回滚"包装
-     */
-    private void withEventVersion(InventoryDeductEvent event, Runnable action) {
-        long prev = reserveEventVersion(event);
-        if (prev < 0) {
+    /** C-008：完成后单调推进版本（只增不减） */
+    private void advanceEventVersion(InventoryDeductEvent event) {
+        if (event.getEventTime() == null) {
             return;
         }
         try {
-            action.run();
-        } catch (RuntimeException e) {
-            restoreEventVersion(event, prev);
-            throw e;
+            stringRedisTemplate.execute(versionAdvanceScript,
+                    java.util.List.of(eventVersionKey(event)),
+                    String.valueOf(event.getEventTime()),
+                    String.valueOf(EVENT_VERSION_TTL_SECONDS));
+        } catch (Exception e) {
+            // 推进失败仅告警：inbox 幂等不受影响（版本门退化为下一轮重投再收敛）
+            log.warn("[库存L2] 版本推进失败(幂等不受影响): orderId={}, skuId={}",
+                    event.getOrderId(), event.getSkuId(), e);
         }
     }
 

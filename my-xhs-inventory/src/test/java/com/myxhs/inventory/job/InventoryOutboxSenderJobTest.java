@@ -45,7 +45,7 @@ class InventoryOutboxSenderJobTest {
     }
 
     @Test
-    void shouldMarkOutboxByEventId() {
+    void shouldMarkOutboxByBusinessKey() {
         Map<String, Object> row = new HashMap<>();
         row.put("id", 99L);
         row.put("order_id", 123L);
@@ -63,6 +63,7 @@ class InventoryOutboxSenderJobTest {
 
         job.sendOutboxEvents();
 
-        verify(inventoryMapper).markOutboxSent(99L);
+        // C-008 F2：按 (order,sku,action) 匹配（消除 eventId 失配 0 行静默失效）
+        verify(inventoryMapper).markOutboxSent(123L, 456L, "CONFIRM");
     }
 }

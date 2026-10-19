@@ -136,6 +136,16 @@ public class InventoryReconcileJob {
             log.warn("[库存对账] 清理过期预扣幂等占位失败(下轮重试)", e);
         }
 
+        // C-008：L2 幂等表 7 天清理（同预扣占位窗口语义）
+        try {
+            int purgedL2 = inventoryMapper.deleteStaleL2Events(java.time.LocalDateTime.now().minusDays(7), 2000);
+            if (purgedL2 > 0) {
+                log.info("[库存对账] 清理过期 L2 幂等记录 {} 行", purgedL2);
+            }
+        } catch (Exception e) {
+            log.warn("[库存对账] 清理 L2 幂等记录失败(下轮重试)", e);
+        }
+
         // outbox（7 天）/ 补偿表（90 天）保留：同样日切一次 + 有界排空
         purgeTablesDaily();
 

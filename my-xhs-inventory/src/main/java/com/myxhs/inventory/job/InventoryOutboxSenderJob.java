@@ -81,7 +81,7 @@ public class InventoryOutboxSenderJob {
                             3000);
                     // 只有真正发送成功才标记，防止发送失败却标记导致事件丢失
                     if (sendResult.getSendStatus() == org.apache.rocketmq.client.producer.SendStatus.SEND_OK) {
-                        inventoryMapper.markOutboxSent(eventId);
+                        inventoryMapper.markOutboxSent(orderId, skuId, action); // C-008 F2：按业务键匹配
                         log.debug("[Outbox] 补发成功: eventId={}, orderId={}, skuId={}, action={}", eventId, orderId, skuId, action);
                     } else {
                         log.warn("[Outbox] 补发状态异常(延后重试): orderId={}, skuId={}, action={}, status={}",

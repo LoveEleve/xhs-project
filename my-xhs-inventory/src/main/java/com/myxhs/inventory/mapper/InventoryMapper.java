@@ -60,6 +60,15 @@ public interface InventoryMapper extends BaseMapper<Inventory> {
             "VALUES (#{orderId}, #{skuId})")
     int insertPredeductIdem(@Param("orderId") Long orderId, @Param("skuId") Long skuId);
 
+    /** C-008 F4：L2 事务内幂等——INSERT IGNORE（冲突返回 0=此前已应用） */
+    @org.apache.ibatis.annotations.Insert("INSERT IGNORE INTO t_inventory_l2_event (order_id, sku_id, action) " +
+            "VALUES (#{orderId}, #{skuId}, #{action})")
+    int insertL2Event(@Param("orderId") Long orderId, @Param("skuId") Long skuId, @Param("action") String action);
+
+    /** C-008：L2 幂等表 7 天清理（覆盖 MQ 重投 + DLQ 重放窗口） */
+    @org.apache.ibatis.annotations.Delete("DELETE FROM t_inventory_l2_event WHERE created_at < #{before} LIMIT #{limit}")
+    int deleteStaleL2Events(@Param("before") java.time.LocalDateTime before, @Param("limit") int limit);
+
     /** T-079：预扣失败（库存不足/未初始化）时删除幂等占位，允许重试 */
     @org.apache.ibatis.annotations.Delete("DELETE FROM t_inventory_prededuct_idem WHERE order_id = #{orderId} AND sku_id = #{skuId}")
     int deletePredeductIdem(@Param("orderId") Long orderId, @Param("skuId") Long skuId);
@@ -171,17 +180,21 @@ public interface InventoryMapper extends BaseMapper<Inventory> {
     int markOutboxRetry(@Param("eventId") Long eventId, @Param("nextRetryTime") LocalDateTime nextRetryTime);
 
     /**
-     * 标记 Outbox 事件已发送
+     * 标记 Outbox 事件已发送（C-008 F2：按 (order,sku,action) 匹配——uk_order_sku_action 保证唯一行；
+     * 修复原按 id 匹配在"ON DUPLICATE 复用行"场景下 0 行静默失效：应用持有的 eventId ≠ 行真实 id）
      */
-    @org.apache.ibatis.annotations.Update("UPDATE t_inventory_outbox SET status = 1 WHERE id = #{eventId}")
-    int markOutboxSent(@Param("eventId") Long eventId);
+    @org.apache.ibatis.annotations.Update("UPDATE t_inventory_outbox SET status = 1 " +
+            "WHERE order_id = #{orderId} AND sku_id = #{skuId} AND action = #{action}")
+    int markOutboxSent(@Param("orderId") Long orderId, @Param("skuId") Long skuId, @Param("action") String action);
 
     /**
      * 取消 Outbox 事件（syncSend 失败且已回滚 Redis 时调用，
      * 防止 OutboxSenderJob 补发已回滚的事件导致 MySQL 幻影扣减）
+     * <p>C-008 F2：按 (order,sku,action) 匹配（同 markOutboxSent——消除 eventId 失配 0 行失效）</p>
      */
-    @org.apache.ibatis.annotations.Delete("DELETE FROM t_inventory_outbox WHERE id = #{eventId} AND status = 0")
-    int cancelOutboxEvent(@Param("eventId") Long eventId);
+    @org.apache.ibatis.annotations.Delete("DELETE FROM t_inventory_outbox WHERE order_id = #{orderId} " +
+            "AND sku_id = #{skuId} AND action = #{action} AND status = 0")
+    int cancelOutboxEvent(@Param("orderId") Long orderId, @Param("skuId") Long skuId, @Param("action") String action);
 
     /**
      * 写入补偿记录（回滚失败时需要人工/自动重试）
