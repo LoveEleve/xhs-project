@@ -36,7 +36,7 @@ import static org.mockito.Mockito.when;
  * LikeService 单元测试
  * <p>
  * 测试策略：纯 Mockito Mock，不连接任何外部服务。
- * Mock 对象：StringRedisTemplate, RocketMQTemplate, DefaultRedisScript (likeAtomicScript, unlikeAtomicScript)
+ * Mock 对象：StringRedisTemplate, RocketMQTemplate, DefaultRedisScript (likeForwardAtomicScript, unlikeForwardAtomicScript)
  * </p>
  */
 @ExtendWith(MockitoExtension.class)
@@ -49,11 +49,11 @@ class LikeServiceTest {
     @Mock
     private RocketMQTemplate rocketMQTemplate;
 
-    @Mock(name = "likeAtomicScript")
-    private DefaultRedisScript<Long> likeAtomicScript;
+    @Mock(name = "likeForwardAtomicScript")
+    private DefaultRedisScript<Long> likeForwardAtomicScript;
 
-    @Mock(name = "unlikeAtomicScript")
-    private DefaultRedisScript<Long> unlikeAtomicScript;
+    @Mock(name = "unlikeForwardAtomicScript")
+    private DefaultRedisScript<Long> unlikeForwardAtomicScript;
 
     @Mock
     private SetOperations<String, String> setOperations;
@@ -72,7 +72,7 @@ class LikeServiceTest {
         objectMapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
         likeService = new LikeService(
                 stringRedisTemplate, rocketMQTemplate, objectMapper,
-                likeAtomicScript, unlikeAtomicScript, contentFeignClient);
+                likeForwardAtomicScript, unlikeForwardAtomicScript, contentFeignClient);
         when(contentFeignClient.batchGetNoteDetail(anyList()))
                 .thenReturn(com.myxhs.common.response.R.ok(
                         java.util.Map.of(String.valueOf(BIZ_ID), java.util.Map.of())));
@@ -86,7 +86,7 @@ class LikeServiceTest {
         LikeRequest request = buildLikeRequest(1, BIZ_ID);
 
         // Lua脚本 SADD 成功返回 1（新增）
-        when(stringRedisTemplate.execute(eq(likeAtomicScript), anyList(), anyString()))
+        when(stringRedisTemplate.execute(eq(likeForwardAtomicScript), anyList(), anyString()))
                 .thenReturn(1L);
 
         // MQ 同步发送成功
@@ -110,7 +110,7 @@ class LikeServiceTest {
         LikeRequest request = buildLikeRequest(1, BIZ_ID);
 
         // Lua脚本 SADD 返回 0（已存在）
-        when(stringRedisTemplate.execute(eq(likeAtomicScript), anyList(), anyString()))
+        when(stringRedisTemplate.execute(eq(likeForwardAtomicScript), anyList(), anyString()))
                 .thenReturn(0L);
 
         assertThatCode(() -> likeService.like(USER_ID, request))
@@ -127,7 +127,7 @@ class LikeServiceTest {
         LikeRequest request = buildLikeRequest(1, BIZ_ID);
 
         // Lua脚本 SADD 成功返回 1
-        when(stringRedisTemplate.execute(eq(likeAtomicScript), anyList(), anyString()))
+        when(stringRedisTemplate.execute(eq(likeForwardAtomicScript), anyList(), anyString()))
                 .thenReturn(1L);
 
         // MQ 同步发送失败（异常）
@@ -140,7 +140,7 @@ class LikeServiceTest {
 
         verify(rocketMQTemplate).syncSend(startsWith("SOCIAL_TOPIC:LIKE"),
                 ArgumentMatchers.<org.springframework.messaging.Message>any(), eq(3000L));
-        verify(stringRedisTemplate, never()).execute(eq(unlikeAtomicScript), anyList(), anyString());
+        verify(stringRedisTemplate, never()).execute(eq(unlikeForwardAtomicScript), anyList(), anyString());
     }
 
     // ==================== 取消点赞 ====================
@@ -151,7 +151,7 @@ class LikeServiceTest {
         LikeRequest request = buildLikeRequest(1, BIZ_ID);
 
         // Lua脚本 SREM 成功返回 1
-        when(stringRedisTemplate.execute(eq(unlikeAtomicScript), anyList(), anyString()))
+        when(stringRedisTemplate.execute(eq(unlikeForwardAtomicScript), anyList(), anyString()))
                 .thenReturn(1L);
 
         // MQ 同步发送成功
@@ -175,7 +175,7 @@ class LikeServiceTest {
         LikeRequest request = buildLikeRequest(1, BIZ_ID);
 
         // Lua脚本 SREM 成功返回 1
-        when(stringRedisTemplate.execute(eq(unlikeAtomicScript), anyList(), anyString()))
+        when(stringRedisTemplate.execute(eq(unlikeForwardAtomicScript), anyList(), anyString()))
                 .thenReturn(1L);
 
         // MQ 发送失败（异常）
@@ -196,13 +196,13 @@ class LikeServiceTest {
     @DisplayName("查询点赞状态 - 已点赞返回true")
     void checkLikeStatusLiked() {
         when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
-        when(setOperations.isMember(contains("note:100"), eq(String.valueOf(USER_ID))))
+        when(setOperations.isMember(contains("note:{100}"), eq(String.valueOf(USER_ID))))
                 .thenReturn(true);
 
         boolean result = likeService.isLiked(USER_ID, 1, BIZ_ID);
 
         assertThat(result).isTrue();
-        verify(setOperations).isMember(contains("note:100"), eq(String.valueOf(USER_ID)));
+        verify(setOperations).isMember(contains("note:{100}"), eq(String.valueOf(USER_ID)));
     }
 
     @Test

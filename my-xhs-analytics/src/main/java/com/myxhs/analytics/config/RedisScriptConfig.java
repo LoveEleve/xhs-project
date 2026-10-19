@@ -84,30 +84,6 @@ public class RedisScriptConfig {
     }
 
     /**
-     * 点赞原子 Lua 脚本
-     * 原子操作：SADD 正向索引 + SADD 反向索引，防止中间状态不一致
-     */
-    @Bean
-    public DefaultRedisScript<Long> likeAtomicScript() {
-        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
-        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/like_atomic.lua")));
-        script.setResultType(Long.class);
-        return script;
-    }
-
-    /**
-     * 取消点赞原子 Lua 脚本
-     * 原子操作：SREM 正向索引 + SREM 反向索引，防止中间状态不一致
-     */
-    @Bean
-    public DefaultRedisScript<Long> unlikeAtomicScript() {
-        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
-        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/unlike_atomic.lua")));
-        script.setResultType(Long.class);
-        return script;
-    }
-
-    /**
      * 点赞正向索引原子 Lua 脚本（单 Key，Redis Cluster 兼容）
      * 仅操作正向索引，反向索引由调用方单独处理
      */

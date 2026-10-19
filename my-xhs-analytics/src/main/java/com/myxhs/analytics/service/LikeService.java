@@ -32,8 +32,9 @@ import java.util.stream.Collectors;
  * Redis Key 设计：
  * - 笔记点赞集合：myxhs:like:note:{noteId}（Set，member=userId）
  * - 评论点赞集合：myxhs:like:comment:{commentId}（Set，member=userId）
- * - （已移除）用户点赞笔记反向索引 myxhs:like:user:{userId}:note——当前无写入/读取方，
- *   原javadoc保留会造成"有该能力"的误解；如需"我的点赞"列表，请先补写入+对账再启用
+ * - （C-009 已彻底移除）用户点赞笔记反向索引 myxhs:like:user:{userId}:note——
+ *   原 javadoc 称"已移除"但代码多处仍在写（write-only 死键：白耗 Redis 操作 + TTL 续期），
+ *   C-009 清理全部写入路径；如需"我的点赞"列表，请先补写入+对账再启用
  * </p>
  */
 @Slf4j
@@ -60,9 +61,11 @@ public class LikeService {
     /**
      * 点赞（笔记/评论）
      * <p>
-     * 流程：SADD 添加点赞 → 维护反向索引 → MQ 同步落库 + 通知计数
-     * SADD 天然幂等：返回 1=新增，返回 0=已存在（直接返回成功）
-     * MQ 同步发送失败 → 回滚 Redis 操作，保证一致性
+     * 流程：单键 Lua 原子 SADD 添加点赞 → MQ 同步落库 + 通知计数。
+     * SADD 天然幂等：返回 1=新增，返回 0=已存在（直接返回成功）。
+     * MQ 发送失败**不回滚**（有意行为：防"Broker 已消费但回滚"造成 Redis/DB 不一致；
+     * 消费端完成态版本门 + 幂等兜底）——【已知边界】真正未送达时用户重试会命中幂等提前返回
+     * 不会重发，极端场景依赖"取消再赞"或后续对账（记录，语义未改）。
      * </p>
      *
      * @param userId  当前用户ID
@@ -76,7 +79,6 @@ public class LikeService {
         }
         String likeKey = buildLikeKey(request.getBizType(), request.getBizId());
         boolean isNoteType = request.getBizType() == BIZ_TYPE_NOTE;
-        String userLikeKey = isNoteType ? RedisKeyConstants.LIKE_SET + "user:" + userId + ":note" : null;
 
         // 单 Key Lua 原子操作：SADD 正向索引（Redis Cluster 兼容，不跨 slot）
         Long added = stringRedisTemplate.execute(
@@ -90,15 +92,8 @@ public class LikeService {
             return;
         }
 
-        // 反向索引单独维护（非原子但幂等，crash 由对账修复）
-        if (isNoteType) {
-            try {
-                stringRedisTemplate.opsForSet().add(userLikeKey, String.valueOf(request.getBizId()));
-            } catch (Exception e) {
-                log.warn("[点赞] 反向索引写入失败（对账修复）: userId={}, bizId={}", userId, request.getBizId(), e);
-            }
-        }
-        renewLikeSetTtl(likeKey, userLikeKey);
+        // C-009：反索引写入已移除（write-only 死键，全仓无读取方）
+        renewLikeSetTtl(likeKey);
 
         log.info("[点赞] 点赞成功: userId={}, bizType={}, bizId={}", userId, request.getBizType(), request.getBizId());
 
@@ -121,27 +116,7 @@ public class LikeService {
         }
     }
 
-    /**
-     * 回滚点赞 Redis 操作（MQ 发送失败时调用）
-     * 使用单 Key 正向 Lua + 非原子反向索引（Cluster 兼容）
-     */
-    private void rollbackLikeLua(String likeKey, String userLikeKey, String member, String reverseMember, boolean isNoteType) {
-        try {
-            // 回滚正向索引（member=userId）
-            stringRedisTemplate.execute(
-                    unlikeForwardAtomicScript,
-                    java.util.List.of(likeKey),
-                    member
-            );
-            // 回滚反向索引（member=bizId/noteId，非原子但幂等）
-            if (isNoteType) {
-                stringRedisTemplate.opsForSet().remove(userLikeKey, reverseMember);
-            }
-        } catch (Exception e) {
-            log.error("[点赞] 回滚Redis失败: likeKey={}, userLikeKey={}", likeKey, userLikeKey, e);
-        }
-        renewLikeSetTtl(likeKey, userLikeKey);
-    }
+    // 【C-009 D7 删除】原 rollbackLikeLua：生产零调用（死方法；且含已移除的反索引回滚）
 
     // ==================== 取消点赞 ====================
 
@@ -158,8 +133,6 @@ public class LikeService {
      */
     public void unlike(Long userId, LikeRequest request) {
         String likeKey = buildLikeKey(request.getBizType(), request.getBizId());
-        boolean isNoteType = request.getBizType() == BIZ_TYPE_NOTE;
-        String userLikeKey = isNoteType ? RedisKeyConstants.LIKE_SET + "user:" + userId + ":note" : null;
 
         // 单 Key Lua 原子操作：SREM 正向索引（Redis Cluster 兼容）
         Long removed = stringRedisTemplate.execute(
@@ -173,31 +146,20 @@ public class LikeService {
             return;
         }
 
-        // 反向索引单独维护（非原子但幂等，crash 由对账修复）
-        if (isNoteType) {
-            try {
-                stringRedisTemplate.opsForSet().remove(userLikeKey, String.valueOf(request.getBizId()));
-            } catch (Exception e) {
-                log.warn("[点赞] 反向索引移除失败（对账修复）: userId={}, bizId={}", userId, request.getBizId(), e);
-            }
-        }
-        renewLikeSetTtl(likeKey, userLikeKey);
+        // C-009：反索引写入已移除（write-only 死键，全仓无读取方）
+        renewLikeSetTtl(likeKey);
 
         log.info("[点赞] 取消点赞成功: userId={}, bizType={}, bizId={}", userId, request.getBizType(), request.getBizId());
 
-        // MQ 同步删除（失败则回滚 Redis）
+        // MQ 同步删除（失败则回滚 Redis——逆向操作保留回滚语义，与正向有意不对称）
         if (!sendLikeEventSync(userId, request.getBizType(), request.getBizId(), "UNLIKE")) {
-            // MQ 发送失败，回滚 Redis 操作（SADD 正向 + 反向索引）
             try {
                 stringRedisTemplate.opsForSet().add(likeKey, String.valueOf(userId));
-                if (isNoteType) {
-                    stringRedisTemplate.opsForSet().add(userLikeKey, String.valueOf(request.getBizId()));
-                }
             } catch (Exception rollbackEx) {
                 log.error("[点赞] MQ失败+Redis回滚也失败: userId={}, bizType={}, bizId={}",
                         userId, request.getBizType(), request.getBizId(), rollbackEx);
             }
-            renewLikeSetTtl(likeKey, userLikeKey);
+            renewLikeSetTtl(likeKey);
             log.error("[点赞] MQ发送失败已回滚Redis: userId={}, bizType={}, bizId={}",
                     userId, request.getBizType(), request.getBizId());
             throw new com.myxhs.common.exception.BizException(
@@ -300,10 +262,11 @@ public class LikeService {
      * </p>
      */
     private String buildLikeKey(int bizType, Long bizId) {
+        // C-009 D5：{bizId} hash tag——与 counter 侧 like 集合/计数键同 slot（对账 SUNIONSTORE 单 slot）
         if (bizType == BIZ_TYPE_NOTE) {
-            return RedisKeyConstants.LIKE_SET + "note:" + bizId;
+            return RedisKeyConstants.LIKE_SET + "note:{" + bizId + "}";
         } else {
-            return RedisKeyConstants.LIKE_SET + "comment:" + bizId;
+            return RedisKeyConstants.LIKE_SET + "comment:{" + bizId + "}";
         }
     }
 

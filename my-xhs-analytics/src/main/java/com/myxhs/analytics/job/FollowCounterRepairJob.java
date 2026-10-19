@@ -18,7 +18,9 @@ import java.util.List;
  * 2. 修复关系行（Redis ↔ MySQL 差异补全/清理）
  * </p>
  * <p>
- * Admin 配置建议：Cron = 0 0 &#42;/1 * * ? (每小时执行一次)
+ * Admin 配置：Cron = 0 &#42;/10 * * * ?（每 10 分钟）。
+ * 部署基准：deploy/docker/my-xhs-deploy-zip/config/deploy-cloud/init-xxljob.sql:157。
+ * 【C-009 修正】原注释"每小时"与部署漂移（SERIAL_EXECUTION 提供防重入）。
  * </p>
  */
 @Slf4j

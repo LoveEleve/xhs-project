@@ -1,14 +1,15 @@
 -- follow_self.lua
 -- 关注用户（当前用户侧）：写入关注列表 + 更新关注数
 --
--- 【修复M6】拆分为 self/target 两个脚本，每个脚本的 KEYS 属于同一用户，
--- 保证 Redis Cluster 下所有 KEYS 落在同一个 slot（通过 {userId} hash tag）。
+-- 【修复M6 + C-009 D5】拆分为 self/target 两个脚本，每个脚本的 KEYS 属于同一用户；
+-- 真实键均带 {userId} hash tag（C-009 补齐——原注释声称有 tag 但实际键无花括号）：
+-- Cluster 下两键落同一 slot（单脚本单 slot）。
 --
 -- 原子性保证：当前用户的关注列表和关注数仍然是原子操作。
 -- 跨用户一致性：通过调用方保证两个脚本都执行，极端失败由对账修复。
 --
--- KEYS[1] = social:following:{userId}        (ZSet: 当前用户的关注列表)
--- KEYS[2] = counter:{userId}:following       (String: 当前用户的关注数)
+-- KEYS[1] = myxhs:follow:list:{userId}       (ZSet: 当前用户的关注列表)
+-- KEYS[2] = myxhs:counter:user_following:{userId} (String: 当前用户的关注数)
 -- ARGV[1] = targetUserId (关注列表的 member)
 -- ARGV[2] = currentTime (score，关注时间戳)
 --

@@ -49,6 +49,8 @@ public class CounterController {
      * </p>
      */
     @PostMapping("/batch-get")
+    // C-009 D7：补限流（原零限流——单请求 100 项×7 类型 = 700 键 Pipeline 放大，DoS 暴露面）
+    @RateLimit(windowSeconds = 1, maxRequests = 10, perUser = true, prefix = "myxhs:counter:batch-get")
     public R<Map<String, Map<String, Long>>> batchGetCounts(@RequestBody @Valid CounterBatchRequest request) {
         Map<String, Map<String, Long>> result = counterService.batchGetCounts(request);
         return R.ok(result);

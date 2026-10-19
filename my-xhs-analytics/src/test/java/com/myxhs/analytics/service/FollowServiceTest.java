@@ -136,18 +136,18 @@ class FollowServiceTest {
         Set<ZSetOperations.TypedTuple<String>> fans = new LinkedHashSet<>();
         fans.add(new DefaultTypedTuple<>("3002", 1.0));
         fans.add(new DefaultTypedTuple<>("3003", 2.0));
-        when(zSetOperations.rangeWithScores(eq("myxhs:follow:fans:2001"), eq(0L), eq(-1L))).thenReturn(fans);
+        when(zSetOperations.rangeWithScores(eq("myxhs:follow:fans:{2001}"), eq(0L), eq(-1L))).thenReturn(fans);
 
         when(followMapper.selectFollowerRowsByUserId(2001L)).thenReturn(List.of(
                 followRow(3001L, 2001L), followRow(3002L, 2001L), followRow(3003L, 2001L)));
 
         // 证据：3001 的 FOLLOW_LIST 含 2001 → 真实关系（Step B 失败）
-        when(zSetOperations.score("myxhs:follow:list:3001", "2001")).thenReturn(3.0);
+        when(zSetOperations.score("myxhs:follow:list:{3001}", "2001")).thenReturn(3.0);
 
         String result = followService.repairFollowerRelationships(2001L);
 
         assertThat(result).contains("Redis修复1条");
-        verify(zSetOperations).add(eq("myxhs:follow:fans:2001"), eq("3001"), anyDouble());
+        verify(zSetOperations).add(eq("myxhs:follow:fans:{2001}"), eq("3001"), anyDouble());
         verify(followMapper, never()).deleteByUserIdAndFollowUserId(3001L, 2001L);
     }
 
@@ -161,19 +161,19 @@ class FollowServiceTest {
         fans.add(new DefaultTypedTuple<>("3001", 0.5));
         fans.add(new DefaultTypedTuple<>("3002", 1.0));
         fans.add(new DefaultTypedTuple<>("3003", 2.0));
-        when(zSetOperations.rangeWithScores(eq("myxhs:follow:fans:2001"), eq(0L), eq(-1L))).thenReturn(fans);
+        when(zSetOperations.rangeWithScores(eq("myxhs:follow:fans:{2001}"), eq(0L), eq(-1L))).thenReturn(fans);
 
         when(followMapper.selectFollowerRowsByUserId(2001L)).thenReturn(List.of(
                 followRow(3002L, 2001L), followRow(3003L, 2001L)));
 
         // 证据：3001 的列表在、成员不在 → 确定未关注（残留）
-        when(zSetOperations.score("myxhs:follow:list:3001", "2001")).thenReturn(null);
-        when(stringRedisTemplate.hasKey("myxhs:follow:list:3001")).thenReturn(true);
+        when(zSetOperations.score("myxhs:follow:list:{3001}", "2001")).thenReturn(null);
+        when(stringRedisTemplate.hasKey("myxhs:follow:list:{3001}")).thenReturn(true);
 
         String result = followService.repairFollowerRelationships(2001L);
 
         assertThat(result).contains("Redis修复1条");
-        verify(zSetOperations).remove(eq("myxhs:follow:fans:2001"), eq("3001"));
+        verify(zSetOperations).remove(eq("myxhs:follow:fans:{2001}"), eq("3001"));
         verify(followMapper, never()).insert(any(Follow.class));
     }
 
@@ -185,19 +185,19 @@ class FollowServiceTest {
         Set<ZSetOperations.TypedTuple<String>> fans = new LinkedHashSet<>();
         fans.add(new DefaultTypedTuple<>("3002", 1.0));
         fans.add(new DefaultTypedTuple<>("3003", 2.0));
-        when(zSetOperations.rangeWithScores(eq("myxhs:follow:fans:2001"), eq(0L), eq(-1L))).thenReturn(fans);
+        when(zSetOperations.rangeWithScores(eq("myxhs:follow:fans:{2001}"), eq(0L), eq(-1L))).thenReturn(fans);
 
         when(followMapper.selectFollowerRowsByUserId(2001L)).thenReturn(List.of(
                 followRow(3001L, 2001L), followRow(3002L, 2001L), followRow(3003L, 2001L)));
 
-        when(zSetOperations.score("myxhs:follow:list:3001", "2001")).thenReturn(null);
-        when(stringRedisTemplate.hasKey("myxhs:follow:list:3001")).thenReturn(true);
+        when(zSetOperations.score("myxhs:follow:list:{3001}", "2001")).thenReturn(null);
+        when(stringRedisTemplate.hasKey("myxhs:follow:list:{3001}")).thenReturn(true);
 
         String result = followService.repairFollowerRelationships(2001L);
 
         assertThat(result).contains("清孤儿行1条");
         verify(followMapper).deleteByUserIdAndFollowUserId(3001L, 2001L);
-        verify(zSetOperations, never()).add(eq("myxhs:follow:fans:2001"), eq("3001"), anyDouble());
+        verify(zSetOperations, never()).add(eq("myxhs:follow:fans:{2001}"), eq("3001"), anyDouble());
     }
 
     @Test
@@ -208,21 +208,21 @@ class FollowServiceTest {
         Set<ZSetOperations.TypedTuple<String>> fans = new LinkedHashSet<>();
         fans.add(new DefaultTypedTuple<>("3002", 1.0));
         fans.add(new DefaultTypedTuple<>("3003", 2.0));
-        when(zSetOperations.rangeWithScores(eq("myxhs:follow:fans:2001"), eq(0L), eq(-1L))).thenReturn(fans);
+        when(zSetOperations.rangeWithScores(eq("myxhs:follow:fans:{2001}"), eq(0L), eq(-1L))).thenReturn(fans);
 
         when(followMapper.selectFollowerRowsByUserId(2001L)).thenReturn(List.of(
                 followRow(3001L, 2001L), followRow(3002L, 2001L), followRow(3003L, 2001L)));
 
         // 证据不可判：3001 的列表 key 不存在（疑似丢失）+ MySQL 有行
-        when(zSetOperations.score("myxhs:follow:list:3001", "2001")).thenReturn(null);
-        when(stringRedisTemplate.hasKey("myxhs:follow:list:3001")).thenReturn(false);
+        when(zSetOperations.score("myxhs:follow:list:{3001}", "2001")).thenReturn(null);
+        when(stringRedisTemplate.hasKey("myxhs:follow:list:{3001}")).thenReturn(false);
         when(followMapper.selectFollowUserIdsByUserId(3001L)).thenReturn(List.of(2001L));
 
         String result = followService.repairFollowerRelationships(2001L);
 
         assertThat(result).contains("无需修复");
         verify(followMapper, never()).deleteByUserIdAndFollowUserId(3001L, 2001L);
-        verify(zSetOperations, never()).add(eq("myxhs:follow:fans:2001"), eq("3001"), anyDouble());
+        verify(zSetOperations, never()).add(eq("myxhs:follow:fans:{2001}"), eq("3001"), anyDouble());
     }
 
     private Follow followRow(Long userId, Long followUserId) {

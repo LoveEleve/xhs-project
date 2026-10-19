@@ -131,7 +131,7 @@ CREATE TABLE IF NOT EXISTS t_notification (
     sender_id       BIGINT       DEFAULT NULL COMMENT '发送者ID',
     sender_name     VARCHAR(32)  DEFAULT NULL COMMENT '发送者昵称(冗余，避免查用户表)',
     target_id       BIGINT       DEFAULT NULL COMMENT '关联目标ID(笔记/商品/订单)',
-    target_type     TINYINT      DEFAULT NULL COMMENT '目标类型：1-笔记 2-商品 3-订单',
+    target_type     TINYINT      DEFAULT NULL COMMENT '目标类型：1-笔记 2-用户 3-评论 4-商品（C-009 修正注释）',
     sender_avatar   VARCHAR(512) DEFAULT NULL COMMENT '发送者头像URL（冗余）',
     is_read         TINYINT      NOT NULL DEFAULT 0 COMMENT '是否已读：0-未读 1-已读',
     extra_data      TEXT         DEFAULT NULL COMMENT '扩展数据JSON',

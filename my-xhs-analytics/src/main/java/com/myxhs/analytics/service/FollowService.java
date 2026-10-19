@@ -70,6 +70,17 @@ public class FollowService {
     /** 单次重建上限：超过则只告警不重建，避免超大列表在对账线程长时间阻塞 */
     private static final int RELATION_REBUILD_MAX = 10_000;
 
+    // ==================== C-009 D5：键构造统一 {userId} hash tag（每脚本单 slot，Cluster 兼容） ====================
+
+    /** 关注列表 key（tag 与关注数键同 slot——follow_self/unfollow_self 脚本两键单 slot） */
+    private static String followListKeyOf(Long userId) { return RedisKeyConstants.FOLLOW_LIST + "{" + userId + "}"; }
+    /** 粉丝列表 key（tag 与粉丝数键同 slot——follow_target/unfollow_target 脚本两键单 slot） */
+    private static String fansListKeyOf(Long userId) { return RedisKeyConstants.FOLLOW_FANS + "{" + userId + "}"; }
+    /** 关注数 key（analytics 自有计数） */
+    private static String followCountKeyOf(Long userId) { return RedisKeyConstants.COUNTER + "user_following:{" + userId + "}"; }
+    /** 粉丝数 key */
+    private static String fansCountKeyOf(Long userId) { return RedisKeyConstants.COUNTER + "user_follower:{" + userId + "}"; }
+
     // ==================== 关注用户 ====================
 
     /**
@@ -99,8 +110,8 @@ public class FollowService {
 
         // 2.【修复M6】拆分为两个 Lua 脚本，每个仅操作同一用户的 Key（Cluster 兼容）
         //   Step A: 当前用户侧（关注列表 + 关注数）
-        String followingKey = RedisKeyConstants.FOLLOW_LIST + userId;
-        String followingCountKey = RedisKeyConstants.COUNTER + "user_following:" + userId;
+        String followingKey = followListKeyOf(userId);
+        String followingCountKey = followCountKeyOf(userId);
 
         long currentTime = System.currentTimeMillis();
 
@@ -116,8 +127,8 @@ public class FollowService {
         }
 
         //   Step B: 目标用户侧（粉丝列表 + 粉丝数）
-        String followerKey = RedisKeyConstants.FOLLOW_FANS + targetUserId;
-        String followerCountKey = RedisKeyConstants.COUNTER + "user_follower:" + targetUserId;
+        String followerKey = fansListKeyOf(targetUserId);
+        String followerCountKey = fansCountKeyOf(targetUserId);
 
         try {
             stringRedisTemplate.execute(
@@ -170,8 +181,8 @@ public class FollowService {
 
         // 2.【修复M6】拆分为两个 Lua 脚本（Cluster 兼容）
         //   Step A: 当前用户侧（移除关注列表 + 关注数 -1）
-        String followingKey = RedisKeyConstants.FOLLOW_LIST + userId;
-        String followingCountKey = RedisKeyConstants.COUNTER + "user_following:" + userId;
+        String followingKey = followListKeyOf(userId);
+        String followingCountKey = followCountKeyOf(userId);
 
         Long selfResult = stringRedisTemplate.execute(
                 unfollowSelfScript,
@@ -184,8 +195,8 @@ public class FollowService {
         }
 
         //   Step B: 目标用户侧（移除粉丝列表 + 粉丝数 -1）
-        String followerKey = RedisKeyConstants.FOLLOW_FANS + targetUserId;
-        String followerCountKey = RedisKeyConstants.COUNTER + "user_follower:" + targetUserId;
+        String followerKey = fansListKeyOf(targetUserId);
+        String followerCountKey = fansCountKeyOf(targetUserId);
 
         try {
             stringRedisTemplate.execute(
@@ -223,7 +234,7 @@ public class FollowService {
     public List<FollowVO> getFollowingList(Long userId, int page, int pageSize) {
         // 下限保护：pageSize<=0 时 ZREVRANGE 会退化为全量（公开接口可拉大V全量列表）
         pageSize = Math.max(1, Math.min(pageSize, MAX_PAGE_SIZE));
-        String key = RedisKeyConstants.FOLLOW_LIST + userId;
+        String key = followListKeyOf(userId);
 
         // ZSet 按 score 倒序分页（reverseRangeWithScores）
         long start = (long) (page - 1) * pageSize;
@@ -237,7 +248,7 @@ public class FollowService {
         }
 
         // 批量查询是否互关（Pipeline 批量 ZSCORE，避免 N+1）
-        String myFollowerKey = RedisKeyConstants.FOLLOW_FANS + userId;
+        String myFollowerKey = fansListKeyOf(userId);
         List<ZSetOperations.TypedTuple<String>> tupleList = new ArrayList<>(tuples);
         List<String> targetUserIds = tupleList.stream()
                 .map(ZSetOperations.TypedTuple::getValue)
@@ -287,7 +298,7 @@ public class FollowService {
     public List<FollowVO> getFollowerList(Long userId, int page, int pageSize) {
         // 下限保护：pageSize<=0 时 ZREVRANGE 会退化为全量（公开接口可拉大V全量列表）
         pageSize = Math.max(1, Math.min(pageSize, MAX_PAGE_SIZE));
-        String key = RedisKeyConstants.FOLLOW_FANS + userId;
+        String key = fansListKeyOf(userId);
 
         long start = (long) (page - 1) * pageSize;
         long end = start + pageSize - 1;
@@ -300,7 +311,7 @@ public class FollowService {
         }
 
         // Pipeline 批量查询是否互关（我是否也关注了对方，避免 N+1）
-        String myFollowingKey = RedisKeyConstants.FOLLOW_LIST + userId;
+        String myFollowingKey = followListKeyOf(userId);
         List<ZSetOperations.TypedTuple<String>> tupleList = new ArrayList<>(tuples);
         List<String> followerIds = tupleList.stream()
                 .map(ZSetOperations.TypedTuple::getValue)
@@ -349,27 +360,23 @@ public class FollowService {
      * @return 共同关注的用户ID列表
      */
     public List<Long> getCommonFollowing(Long userId, Long targetUserId) {
-        String myKey = RedisKeyConstants.FOLLOW_LIST + userId;
-        String targetKey = RedisKeyConstants.FOLLOW_LIST + targetUserId;
-        String tempKey = RedisKeyConstants.FOLLOW_LIST + "common:" + userId + ":" + targetUserId + ":" + UUID.randomUUID();
+        String myKey = followListKeyOf(userId);
+        String targetKey = followListKeyOf(targetUserId);
 
-        try {
-            Long stored = stringRedisTemplate.opsForZSet().intersectAndStore(myKey, targetKey, tempKey);
-            if (stored == null || stored == 0) {
-                return Collections.emptyList();
-            }
-            stringRedisTemplate.expire(tempKey, java.time.Duration.ofSeconds(30));
-
-            Set<String> common = stringRedisTemplate.opsForZSet().range(tempKey, 0, MAX_COMMON_FOLLOW_FETCH - 1);
-            if (common == null || common.isEmpty()) {
-                return Collections.emptyList();
-            }
-            return common.stream()
-                    .map(Long::valueOf)
-                    .collect(Collectors.toList());
-        } finally {
-            stringRedisTemplate.delete(tempKey);
+        // C-009 D5：原 ZINTERSTORE 三键跨两用户（Cluster 下必跨 slot）→ 改为两次单键读 + 本地交集
+        Set<String> mine = stringRedisTemplate.opsForZSet().range(myKey, 0, MAX_COMMON_FOLLOW_FETCH - 1);
+        if (mine == null || mine.isEmpty()) {
+            return Collections.emptyList();
         }
+        Set<String> theirs = stringRedisTemplate.opsForZSet().range(targetKey, 0, MAX_COMMON_FOLLOW_FETCH - 1);
+        if (theirs == null || theirs.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Set<String> common = new java.util.LinkedHashSet<>(mine);
+        common.retainAll(theirs);
+        return common.stream()
+                .map(Long::valueOf)
+                .collect(Collectors.toList());
     }
 
     // ==================== 查询关注关系 ====================
@@ -382,7 +389,7 @@ public class FollowService {
      * @return true=已关注，false=未关注
      */
     public boolean isFollowing(Long userId, Long targetUserId) {
-        String key = RedisKeyConstants.FOLLOW_LIST + userId;
+        String key = followListKeyOf(userId);
         Double score = stringRedisTemplate.opsForZSet().score(key, String.valueOf(targetUserId));
         return score != null;
     }
@@ -393,7 +400,7 @@ public class FollowService {
      * 获取用户的关注数
      */
     public long getFollowingCount(Long userId) {
-        String key = RedisKeyConstants.COUNTER + "user_following:" + userId;
+        String key = followCountKeyOf(userId);
         String count = stringRedisTemplate.opsForValue().get(key);
         return count != null ? Long.parseLong(count) : 0L;
     }
@@ -402,7 +409,7 @@ public class FollowService {
      * 获取用户的粉丝数
      */
     public long getFollowerCount(Long userId) {
-        String key = RedisKeyConstants.COUNTER + "user_follower:" + userId;
+        String key = fansCountKeyOf(userId);
         String count = stringRedisTemplate.opsForValue().get(key);
         return count != null ? Long.parseLong(count) : 0L;
     }
@@ -427,10 +434,10 @@ public class FollowService {
      * @return 修复结果描述
      */
     public String repairUserCounters(Long userId) {
-        String followingKey = RedisKeyConstants.FOLLOW_LIST + userId;
-        String followerKey = RedisKeyConstants.FOLLOW_FANS + userId;
-        String followingCountKey = RedisKeyConstants.COUNTER + "user_following:" + userId;
-        String followerCountKey = RedisKeyConstants.COUNTER + "user_follower:" + userId;
+        String followingKey = followListKeyOf(userId);
+        String followerKey = fansListKeyOf(userId);
+        String followingCountKey = followCountKeyOf(userId);
+        String followerCountKey = fansCountKeyOf(userId);
 
         // 以 ZCARD 为准修复计数
         Long actualFollowing = stringRedisTemplate.opsForZSet().zCard(followingKey);
@@ -504,7 +511,7 @@ public class FollowService {
      * @return 对账结果
      */
     public String repairUserRelationships(Long userId) {
-        String followingKey = RedisKeyConstants.FOLLOW_LIST + userId;
+        String followingKey = followListKeyOf(userId);
 
         // 1. 获取 Redis ZSet 中所有关注目标及其 score（关注时间戳）
         Set<ZSetOperations.TypedTuple<String>> redisFollowing = stringRedisTemplate.opsForZSet()
@@ -592,7 +599,7 @@ public class FollowService {
      * </p>
      */
     public String repairFollowerRelationships(Long userId) {
-        String followerKey = RedisKeyConstants.FOLLOW_FANS + userId;
+        String followerKey = fansListKeyOf(userId);
 
         Set<ZSetOperations.TypedTuple<String>> redisFollowers = stringRedisTemplate.opsForZSet()
                 .rangeWithScores(followerKey, 0, -1);
@@ -706,7 +713,7 @@ public class FollowService {
      * @return true=仍关注（真实关系）；false=确定未关注（残留）；null=不可判（对侧列表疑似丢失，保守跳过）
      */
     private Boolean followerListContains(Long followerId, Long targetUserId) {
-        String followingKey = RedisKeyConstants.FOLLOW_LIST + followerId;
+        String followingKey = followListKeyOf(followerId);
         Double score = stringRedisTemplate.opsForZSet().score(followingKey, String.valueOf(targetUserId));
         if (score != null) {
             return true;
@@ -745,7 +752,7 @@ public class FollowService {
      * @return 重建条数；-1 表示超过单次重建上限被跳过
      */
     public int rebuildFollowingList(Long userId) {
-        return rebuildList(RedisKeyConstants.FOLLOW_LIST + userId,
+        return rebuildList(followListKeyOf(userId),
                 followMapper.selectFollowRowsByUserId(userId), true);
     }
 
@@ -755,7 +762,7 @@ public class FollowService {
      * @return 重建条数；-1 表示超过单次重建上限被跳过
      */
     public int rebuildFollowerList(Long userId) {
-        return rebuildList(RedisKeyConstants.FOLLOW_FANS + userId,
+        return rebuildList(fansListKeyOf(userId),
                 followMapper.selectFollowerRowsByUserId(userId), false);
     }
 

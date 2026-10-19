@@ -41,17 +41,6 @@ public class CounterService {
     private final CounterMapper counterMapper;
     private final LikeAuthorityMapper likeAuthorityMapper; // C-009 D2-B：like 权威重建（跨库读 t_like）
 
-    /** 【修复m11】归零保护 Lua 脚本（静态常量，复用 SHA1 缓存） */
-    private static final org.springframework.data.redis.core.script.DefaultRedisScript<Long> DECREMENT_SCRIPT;
-    static {
-        DECREMENT_SCRIPT = new org.springframework.data.redis.core.script.DefaultRedisScript<>(
-                "local current = tonumber(redis.call('GET', KEYS[1]) or '0') " +
-                "if current <= 0 then return 0 end " +
-                "redis.call('DECR', KEYS[1]) " +
-                "return 1",
-                Long.class);
-    }
-
     /**
      * 原子去重 + 增减 Lua 脚本（生产级 MQ 幂等保护）
      * <p>
@@ -100,8 +89,8 @@ public class CounterService {
     /**
      * 【修复H2】Set-based Like/Unlike 原子 Lua 脚本 — 解决 MQ 乱序计数虚增
      * <p>
-     * KEYS[1]: dedup key（myxhs:counter:dedup:{msgId}）
-     * KEYS[2]: like set key（myxhs:like:set:{targetType}:{targetId}）
+     * KEYS[1]: dedup key（myxhs:counter:dedup:{targetId}:{msgId}——C-009 D5：全部 KEYS 同 {targetId} tag 单 slot）
+     * KEYS[2]: like set key（myxhs:like:set:{targetId}:{targetType}）
      * KEYS[3]: counter key（myxhs:counter:{targetType}:{targetId}:{countType}）
      * ARGV[1]: member（userId — SADD/SREM 的目标元素）
      * ARGV[2]: action（"ADD" 或 "REMOVE"）
@@ -138,58 +127,13 @@ public class CounterService {
                 List.class);
     }
 
-    /** Like Set Key 前缀 */
     // counter内部的like Set(优化展示缓存), 与analytics权威Set(myxhs:like:note:/myxhs:like:comment:)独立维护
-    private static final String LIKE_SET_PREFIX = "myxhs:like:set:";
+    // C-009 D7：前缀统一到 RedisKeyConstants（原硬编码 myxhs:like:set:）
 
     // ==================== 写操作 ====================
 
-    /**
-     * 计数 +1
-     * <p>
-     * 1. Redis INCR（实时，用户立即可见）
-     * 2. 写入 Buffer（攒批后批量刷盘 DB）
-     * </p>
-     */
-    public void increment(int targetType, long targetId, int countType) {
-        String redisKey = buildRedisKey(targetType, targetId, countType);
-
-        // 1. Redis INCR（原子操作，实时生效）
-        stringRedisTemplate.opsForValue().increment(redisKey);
-        // P2-6: 计数 key 永久无界 → 每次写入续期 30 天（活跃 key 不丢，冷 key 自动回收）
-        stringRedisTemplate.expire(redisKey, java.time.Duration.ofDays(30));
-
-        // 2. 写入 Buffer（攒批后批量刷盘 DB）
-        counterBuffer.add(targetType, targetId, countType, 1L);
-
-        log.debug("[计数] +1: targetType={}, targetId={}, countType={}", targetType, targetId, countType);
-    }
-
-    /**
-     * 计数 -1（带归零保护）
-     * <p>
-     * 归零保护：DECR 前检查当前值，防止计数变为负数。
-     * 使用 Lua 脚本保证 "检查 + 扣减" 的原子性。
-     * </p>
-     */
-    public boolean decrement(int targetType, long targetId, int countType) {
-        String redisKey = buildRedisKey(targetType, targetId, countType);
-
-        // 【修复m11】Lua 脚本提为静态常量，避免每次创建对象（复用 SHA1 缓存 → EVALSHA 优化）
-        Long result = stringRedisTemplate.execute(DECREMENT_SCRIPT, List.of(redisKey));
-
-        if (result == null || result == 0) {
-            log.warn("[计数] 归零保护触发，拒绝 -1: targetType={}, targetId={}, countType={}",
-                    targetType, targetId, countType);
-            return false;
-        }
-
-        // 写入 Buffer
-        counterBuffer.add(targetType, targetId, countType, -1L);
-
-        log.debug("[计数] -1: targetType={}, targetId={}, countType={}", targetType, targetId, countType);
-        return true;
-    }
+    // 【C-009 D7 删除】原 increment()/decrement()（非 dedup 老路径）：生产零调用（真实写路径全走 dedup 系列），
+    // 仅单测在测——随测试一并删除；计数语义以 dedup/Set-based 路径为准。
 
     /**
      * 计数 +1（带 MQ 去重，由 Consumer 调用）
@@ -224,7 +168,7 @@ public class CounterService {
      * O-Counter-2：带 delta 的 dedup 计数（Lua 已支持 ARGV[1] 任意 delta）
      */
     private boolean incrWithDedup(String msgId, int targetType, long targetId, int countType, long delta) {
-        String dedupKey = buildDedupKey(msgId);
+        String dedupKey = buildDedupKey(targetId, msgId);
         String counterKey = buildRedisKey(targetType, targetId, countType);
 
         @SuppressWarnings("unchecked")
@@ -270,8 +214,8 @@ public class CounterService {
      */
     public boolean setBasedLikeWithDedup(String msgId, int targetType, long targetId,
                                           Long userId, boolean isLike) {
-        String dedupKey = buildDedupKey(msgId);
-        String likeSetKey = LIKE_SET_PREFIX + targetType + ":" + targetId;
+        String dedupKey = buildDedupKey(targetId, msgId);
+        String likeSetKey = RedisKeyConstants.COUNTER_LIKE_SET + "{" + targetId + "}:" + targetType; // C-009 D5：{targetId} tag
         String counterKey = buildRedisKey(targetType, targetId, 1); // countType=1 LIKE
 
         // 懒迁移：counter Set 为空但 counter 值 > 0（有历史数据），从 analytics 权威 Set 同步
@@ -318,13 +262,15 @@ public class CounterService {
         if (counterValue == null || Long.parseLong(counterValue) == 0) return false; // 无历史数据
 
         // 构建 analytics 权威 Set key
-        String analyticsKey = RedisKeyConstants.LIKE_SET + (targetType == 1 ? "note:" : "comment:") + targetId;
+        String analyticsKey = RedisKeyConstants.LIKE_SET + (targetType == 1 ? "note:" : "comment:") + "{" + targetId + "}"; // C-009 D5
         java.util.Set<String> members = stringRedisTemplate.opsForSet().members(analyticsKey);
         if (members == null || members.isEmpty()) return false;
 
         // 批量迁移
         String[] memberArray = members.toArray(new String[0]);
         stringRedisTemplate.opsForSet().add(likeSetKey, memberArray);
+        // C-009 D7：迁移出的集合补 TTL（原实现漏——noeviction 下无 TTL 会无限增长）
+        stringRedisTemplate.expire(likeSetKey, java.time.Duration.ofDays(30));
         // 用 SCARD 覆盖 counter 值
         Long actualCount = stringRedisTemplate.opsForSet().size(likeSetKey);
         if (actualCount != null) {
@@ -336,9 +282,9 @@ public class CounterService {
         return true;
     }
 
-    /** 构建 MQ 消息去重 Key */
-    private String buildDedupKey(String msgId) {
-        return RedisKeyConstants.COUNTER_DEDUP + msgId;
+    /** 构建 MQ 消息去重 Key（C-009 D5：{targetId} tag——与计数键/集合键同 slot，脚本 Cluster 单 slot） */
+    private String buildDedupKey(long targetId, String msgId) {
+        return RedisKeyConstants.COUNTER_DEDUP + "{" + targetId + "}:" + msgId;
     }
 
     /**
@@ -368,10 +314,11 @@ public class CounterService {
                     long counterValue = Long.parseLong(val);
                     String[] parts = counterKey.split(":");
                     if (parts.length < 4) continue;
-                    String targetId = parts[3];
+                    // C-009 D5：新格式 myxhs:counter:{targetType}:{targetId}:{countType}——parts[3] 含花括号
+                    String targetId = parts[3].replace("{", "").replace("}", "");
 
                     // 读 analytics 权威 Set SCARD
-                    String analyticsKey = RedisKeyConstants.LIKE_SET + typeName + ":" + targetId;
+                    String analyticsKey = RedisKeyConstants.LIKE_SET + typeName + ":{" + targetId + "}"; // C-009 D5
                     Long analyticsCount = stringRedisTemplate.opsForSet().size(analyticsKey);
                     // 【防清零守卫 2026-10-12 → C-009 D2-B 升级】SCARD 对不存在的 key 返回 0，与"真 0 赞"不可区分：
                     // 旧守卫"缺失即跳过等人工"；现改为**从 t_like 重建权威集**（对齐 follow 重建先例）——
@@ -397,7 +344,7 @@ public class CounterService {
                         stringRedisTemplate.expire(counterKey, java.time.Duration.ofDays(30));
                         // C-009 D2②：同时重建 counter 内部 like:set（SUNIONSTORE 单命令复制权威集）——
                         // 修复"只修值不修集合"：否则下一次事件用旧集合 SCARD 会把修正值覆盖回去（两套权威分叉）
-                        String counterSetKey = LIKE_SET_PREFIX + targetType + ":" + targetId;
+                        String counterSetKey = RedisKeyConstants.COUNTER_LIKE_SET + "{" + targetId + "}:" + targetType; // C-009 D5（与 analytics 集同 tag）
                         stringRedisTemplate.opsForSet().unionAndStore(analyticsKey,
                                 java.util.Collections.emptyList(), counterSetKey);
                         stringRedisTemplate.expire(counterSetKey, java.time.Duration.ofDays(30));
@@ -509,8 +456,17 @@ public class CounterService {
 
         for (int i = 0; i < flatItems.size(); i++) {
             Object val = redisValues.get(i);
+            // C-009 D7：脏值守卫——单个脏值不再炸整批（按未命中走 DB 兜底）
+            Long parsed = null;
             if (val != null) {
-                redisHitCounts.put(i, Long.parseLong(val.toString()));
+                try {
+                    parsed = Long.parseLong(val.toString());
+                } catch (NumberFormatException e) {
+                    log.warn("[计数] 批量查询遇脏值(按未命中处理): value={}", val);
+                }
+            }
+            if (parsed != null) {
+                redisHitCounts.put(i, parsed);
             } else {
                 CounterBatchRequest.QueryItem item = flatItems.get(i);
                 missedQueries.add(new CounterBatchQuery(
@@ -543,9 +499,9 @@ public class CounterService {
                 String lookupKey = item.getTargetType() + ":" + item.getTargetId() + ":" + countType;
                 Counter counter = missedMap.get(lookupKey);
                 count = counter != null ? counter.getCountValue() : 0;
-                // 回填 Redis
-                stringRedisTemplate.opsForValue().set(redisKeys.get(i), String.valueOf(count));
-                stringRedisTemplate.expire(redisKeys.get(i), java.time.Duration.ofDays(30));
+                // C-009 D7：回填改单命令 SET+TTL（防 set/expire 间崩溃留永久 key）
+                stringRedisTemplate.opsForValue().set(redisKeys.get(i), String.valueOf(count),
+                        java.time.Duration.ofDays(30));
             }
 
             String countName = CountType.of(countType).getEnglishName();
@@ -596,13 +552,21 @@ public class CounterService {
                 Counter dbCounter = batch.get(i);
                 String redisKey = redisKeys.get(i);
                 String redisValue = i < redisValues.size() ? redisValues.get(i) : null;
-                long redisCount = redisValue != null ? Long.parseLong(redisValue) : 0;
+                long redisCount;
+                try {
+                    redisCount = redisValue != null ? Long.parseLong(redisValue) : 0;
+                } catch (NumberFormatException e) {
+                    // C-009 D7：脏值守卫——跳过该键（单个脏值不再使整轮对账失败）
+                    log.warn("[对账修复] 遇脏值跳过: key={}, value={}", redisKey, redisValue);
+                    continue;
+                }
                 long dbCount = dbCounter.getCountValue();
 
                 if (redisCount != dbCount) {
                     if (redisCount == 0 && dbCount > 0) {
-                        stringRedisTemplate.opsForValue().set(redisKey, String.valueOf(dbCount));
-                        stringRedisTemplate.expire(redisKey, java.time.Duration.ofDays(30));
+                        // C-009 D7：单命令 SET+TTL（防 set/expire 间崩溃留永久 key）
+                        stringRedisTemplate.opsForValue().set(redisKey, String.valueOf(dbCount),
+                                java.time.Duration.ofDays(30));
                         log.warn("[对账修复] Redis恢复: key={}, redis=0, db={}", redisKey, dbCount);
                     } else {
                         counterMapper.updateCountValue(dbCounter.getId(), redisCount);
@@ -631,7 +595,8 @@ public class CounterService {
      * 格式：myxhs:counter:{targetType}:{targetId}:{countType}
      */
     private String buildRedisKey(int targetType, long targetId, int countType) {
-        return RedisKeyConstants.COUNTER + targetType + ":" + targetId + ":" + countType;
+        // C-009 D5：{targetId} hash tag——LIKE_SET_SCRIPT/INCR_WITH_DEDUP_SCRIPT 全部 KEYS 同 slot
+        return RedisKeyConstants.COUNTER + targetType + ":{" + targetId + "}:" + countType;
     }
 
 }

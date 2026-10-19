@@ -27,7 +27,9 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -76,52 +78,14 @@ class CounterServiceTest {
 
     // ==================== 计数 +1 ====================
 
-    @Test
-    @DisplayName("计数 +1 - Redis 自增后 Buffer 攒批写入")
-    void incrementSuccess() {
-        String expectedKey = "myxhs:counter:1:20001:1";
-        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.increment(expectedKey)).thenReturn(43L);
-
-        counterService.increment(1, 20001L, 1);
-
-        verify(valueOperations).increment(expectedKey);
-        verify(counterBuffer).add(1, 20001L, 1, 1L);
-    }
-
     // ==================== 计数 -1 ====================
-
-    @Test
-    @DisplayName("计数 -1 - Lua 脚本执行成功，Buffer 攒批写入")
-    void decrementSuccess() {
-        String expectedKey = "myxhs:counter:1:20001:2";
-        when(stringRedisTemplate.execute(any(DefaultRedisScript.class), eq(List.of(expectedKey))))
-                .thenReturn(1L);
-
-        boolean result = counterService.decrement(1, 20001L, 2);
-
-        assertThat(result).isTrue();
-        verify(counterBuffer).add(1, 20001L, 2, -1L);
-    }
-
-    @Test
-    @DisplayName("计数 -1 - 归零保护拒绝扣减")
-    void decrementZeroGuardRejects() {
-        String expectedKey = "myxhs:counter:1:20001:2";
-        when(stringRedisTemplate.execute(any(DefaultRedisScript.class), eq(List.of(expectedKey))))
-                .thenReturn(0L);
-
-        boolean result = counterService.decrement(1, 20001L, 2);
-
-        assertThat(result).isFalse();
-    }
 
     // ==================== 查询计数 ====================
 
     @Test
     @DisplayName("查询计数 - Redis 命中直接返回")
     void getCounterSuccess() {
-        String expectedKey = "myxhs:counter:1:20001:1";
+        String expectedKey = "myxhs:counter:1:{20001}:1";
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(expectedKey)).thenReturn("42");
 
@@ -133,7 +97,7 @@ class CounterServiceTest {
     @Test
     @DisplayName("查询计数 - Redis 未命中回源 MySQL")
     void getCounterFallbackToMySQL() {
-        String expectedKey = "myxhs:counter:1:20001:1";
+        String expectedKey = "myxhs:counter:1:{20001}:1";
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(expectedKey)).thenReturn(null);
 
@@ -190,18 +154,18 @@ class CounterServiceTest {
     // ==================== Buffer 攒批机制 ====================
 
     @Test
-    @DisplayName("Buffer 攒批 - 增量操作后 Buffer 正确接收数据，确保刷盘链路连通")
+    @DisplayName("Buffer 攒批 - dedup 路径增量后 Buffer 正确接收数据（刷盘链路连通）")
+    @SuppressWarnings({"unchecked", "rawtypes"})
     void counterBufferFlush() {
-        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.increment("myxhs:counter:1:20001:1")).thenReturn(100L);
+        // C-009：原用已删除的 increment()（死路径）验证——改用生产活跃的 dedup 路径
+        when(stringRedisTemplate.execute(any(DefaultRedisScript.class), anyList(),
+                anyString(), anyString(), anyString()))
+                .thenReturn(List.of(1L, 5L));
 
-        counterService.increment(1, 20001L, 1);
+        counterService.incrementWithDedup("msg-1", 1, 20001L, 1);
 
         // 验证 Buffer 正确接收了 +1 增量，保证后续定时/满量刷盘能持久化到 DB
         verify(counterBuffer).add(1, 20001L, 1, 1L);
-
-        // 验证 Redis 也正确自增
-        verify(valueOperations).increment("myxhs:counter:1:20001:1");
     }
 
     // ==================== 对账修复：防清零守卫（2026-10-12，模块对照 07 §7-8） ====================
@@ -215,15 +179,15 @@ class CounterServiceTest {
         when(stringRedisTemplate.opsForSet()).thenReturn(setOps);
         when(stringRedisTemplate.scan(any(ScanOptions.class))).thenReturn(cursor);
         when(cursor.hasNext()).thenReturn(true, false);
-        when(cursor.next()).thenReturn("myxhs:counter:1:20001:1");
-        when(valueOperations.get("myxhs:counter:1:20001:1")).thenReturn("12");
-        when(setOps.size("myxhs:like:note:20001")).thenReturn(0L);
+        when(cursor.next()).thenReturn("myxhs:counter:1:{20001}:1");
+        when(valueOperations.get("myxhs:counter:1:{20001}:1")).thenReturn("12");
+        when(setOps.size("myxhs:like:note:{20001}")).thenReturn(0L);
 
         int fixed = counterService.reconcileLikeFromAnalytics();
 
         assertThat(fixed).isZero();
         verify(counterMapper, never()).updateCountValue(anyLong(), anyLong());
-        verify(valueOperations, never()).set(eq("myxhs:counter:1:20001:1"), any(String.class));
+        verify(valueOperations, never()).set(eq("myxhs:counter:1:{20001}:1"), any(String.class));
     }
 
     @Test
@@ -235,9 +199,9 @@ class CounterServiceTest {
         when(stringRedisTemplate.opsForSet()).thenReturn(setOps);
         when(stringRedisTemplate.scan(any(ScanOptions.class))).thenReturn(cursor);
         when(cursor.hasNext()).thenReturn(true, false);
-        when(cursor.next()).thenReturn("myxhs:counter:1:20001:1");
-        when(valueOperations.get("myxhs:counter:1:20001:1")).thenReturn("12");
-        when(setOps.size("myxhs:like:note:20001")).thenReturn(15L);
+        when(cursor.next()).thenReturn("myxhs:counter:1:{20001}:1");
+        when(valueOperations.get("myxhs:counter:1:{20001}:1")).thenReturn("12");
+        when(setOps.size("myxhs:like:note:{20001}")).thenReturn(15L);
         Counter dbRow = new Counter();
         dbRow.setId(55L);
         dbRow.setCountValue(12L);
@@ -246,7 +210,7 @@ class CounterServiceTest {
         int fixed = counterService.reconcileLikeFromAnalytics();
 
         assertThat(fixed).isEqualTo(1);
-        verify(valueOperations).set("myxhs:counter:1:20001:1", "15");
+        verify(valueOperations).set("myxhs:counter:1:{20001}:1", "15");
         verify(counterMapper).updateCountValue(55L, 15L);
     }
 
@@ -257,12 +221,12 @@ class CounterServiceTest {
     void reconcile_rebuildsAuthorityFromDb() {
         when(stringRedisTemplate.scan(any(ScanOptions.class))).thenReturn(cursor);
         when(cursor.hasNext()).thenReturn(true).thenReturn(false);
-        when(cursor.next()).thenReturn("myxhs:counter:1:500:1");
+        when(cursor.next()).thenReturn("myxhs:counter:1:{500}:1");
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.get("myxhs:counter:1:500:1")).thenReturn("42");
+        when(valueOperations.get("myxhs:counter:1:{500}:1")).thenReturn("42");
         when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
         // 权威集缺失（SCARD=0）→ 从 t_like 重建（2 个 liker）
-        when(setOperations.size("myxhs:like:note:500")).thenReturn(0L);
+        when(setOperations.size("myxhs:like:note:{500}")).thenReturn(0L);
         when(likeAuthorityMapper.selectUserIdsByBiz(1, 500L)).thenReturn(List.of(3001L, 3002L));
         Counter dbRow = new Counter();
         dbRow.setId(9L);
@@ -272,11 +236,11 @@ class CounterServiceTest {
         int fixed = counterService.reconcileLikeFromAnalytics();
 
         assertThat(fixed).isEqualTo(1);
-        verify(setOperations).add(eq("myxhs:like:note:500"), eq("3001"), eq("3002"));
-        verify(valueOperations).set("myxhs:counter:1:500:1", "2");
+        verify(setOperations).add(eq("myxhs:like:note:{500}"), eq("3001"), eq("3002"));
+        verify(valueOperations).set("myxhs:counter:1:{500}:1", "2");
         // D2②：SUNIONSTORE 复制权威集到 counter 内部集
-        verify(setOperations).unionAndStore(eq("myxhs:like:note:500"),
-                eq(Collections.emptyList()), eq("myxhs:like:set:1:500"));
+        verify(setOperations).unionAndStore(eq("myxhs:like:note:{500}"),
+                eq(Collections.emptyList()), eq("myxhs:like:set:{500}:1"));
         verify(counterMapper).updateCountValue(9L, 2L);
     }
 
@@ -285,17 +249,17 @@ class CounterServiceTest {
     void reconcile_copiesSetOnMismatch() {
         when(stringRedisTemplate.scan(any(ScanOptions.class))).thenReturn(cursor);
         when(cursor.hasNext()).thenReturn(true).thenReturn(false);
-        when(cursor.next()).thenReturn("myxhs:counter:1:500:1");
+        when(cursor.next()).thenReturn("myxhs:counter:1:{500}:1");
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.get("myxhs:counter:1:500:1")).thenReturn("42");
+        when(valueOperations.get("myxhs:counter:1:{500}:1")).thenReturn("42");
         when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
-        when(setOperations.size("myxhs:like:note:500")).thenReturn(2L);
+        when(setOperations.size("myxhs:like:note:{500}")).thenReturn(2L);
 
         int fixed = counterService.reconcileLikeFromAnalytics();
 
         assertThat(fixed).isEqualTo(1);
         verify(likeAuthorityMapper, never()).selectUserIdsByBiz(any(), any());
-        verify(setOperations).unionAndStore(eq("myxhs:like:note:500"),
-                eq(Collections.emptyList()), eq("myxhs:like:set:1:500"));
+        verify(setOperations).unionAndStore(eq("myxhs:like:note:{500}"),
+                eq(Collections.emptyList()), eq("myxhs:like:set:{500}:1"));
     }
 }

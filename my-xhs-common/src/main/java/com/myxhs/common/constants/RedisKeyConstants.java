@@ -109,7 +109,9 @@ public final class RedisKeyConstants {
     public static final String COUNTER = PROJECT_PREFIX + "counter:";
 
     /** 计数 Buffer myxhs:counter:buffer */
-    public static final String COUNTER_BUFFER = PROJECT_PREFIX + "counter:buffer";
+    /** counter 内部 like Set 前缀（C-009 D7：从 CounterService 硬编码收敛；格式 myxhs:like:set:{targetId}:{targetType}） */
+    public static final String COUNTER_LIKE_SET = PROJECT_PREFIX + "like:set:";
+    // 【C-009 D7 删除】原 COUNTER_BUFFER：全仓零引用（死常量）
 
     /** MQ 去重 myxhs:counter:dedup:{msgId}（2小时TTL） */
     public static final String COUNTER_DEDUP = PROJECT_PREFIX + "counter:dedup:";
