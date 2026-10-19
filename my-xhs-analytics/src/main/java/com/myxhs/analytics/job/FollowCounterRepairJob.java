@@ -60,15 +60,17 @@ public class FollowCounterRepairJob {
             totalScanned += userIds.size();
             for (Long userId : userIds) {
                 try {
-                    String counterResult = followService.repairUserCounters(userId);
-                    if (!counterResult.contains("无需修复")) counterFixed++;
-
+                    // C-009：顺序调整——关系修复在前（含 ZADD/ZREM 粉丝 ZSet），计数修复在后
+                    // （repairUserCounters 按 ZCARD 收敛，同周期即可反映关系修复结果）
                     String relationResult = followService.repairUserRelationships(userId);
                     if (!relationResult.contains("无需修复")) relationFixed++;
 
-                    // 粉丝侧对账（修复 Step B 失败导致的粉丝列表不一致）
+                    // 粉丝侧对账（C-009 D1：另一侧证据判别，修复 Step B 失败且不颤振）
                     String followerResult = followService.repairFollowerRelationships(userId);
                     if (!followerResult.contains("无需修复")) relationFixed++;
+
+                    String counterResult = followService.repairUserCounters(userId);
+                    if (!counterResult.contains("无需修复")) counterFixed++;
 
                     // 同步到 counter 模块 key（双计数体系一致性）
                     followService.syncCountersToCounterModule(userId);

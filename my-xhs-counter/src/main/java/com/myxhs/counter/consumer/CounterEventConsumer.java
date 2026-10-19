@@ -52,55 +52,16 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
     private final CounterService counterService;
     private final ObjectMapper objectMapper;
     private final org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
+    private final com.myxhs.common.mq.VersionGateHelper versionGate; // C-009 D3：完成态版本门（共用件）
 
-    /** 点赞事件版本门（2026-09-20 review）：防"后到的旧事件"改写计数（与 analytics 侧同构语义） */
+    /** 点赞事件版本门 key 前缀（C-009：门实现收敛为 VersionGateHelper；防"后到的旧事件"改写计数） */
     private static final String LIKE_VERSION_PREFIX = "myxhs:counter:event:version:like:";
-    private static final long LIKE_VERSION_TTL_HOURS = 24;
-
-    private static final org.springframework.data.redis.core.script.DefaultRedisScript<Long> LIKE_VERSION_SCRIPT =
-            new org.springframework.data.redis.core.script.DefaultRedisScript<>(
-                    "local cur = redis.call('GET', KEYS[1]) " +
-                    "if cur and tonumber(cur) >= tonumber(ARGV[1]) then return 0 end " +
-                    "redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2]) " +
-                    "return 1",
-                    Long.class);
-
-    private boolean isStaleLikeEvent(Long userId, Integer bizType, Long bizId, Long actionTime) {
-        String key = LIKE_VERSION_PREFIX + userId + ":" + bizType + ":" + bizId;
-        Long passed = stringRedisTemplate.execute(LIKE_VERSION_SCRIPT,
-                java.util.List.of(key), String.valueOf(actionTime),
-                String.valueOf(LIKE_VERSION_TTL_HOURS * 3600));
-        return passed == null || passed == 0;
-    }
-
-    /** 收藏事件版本门（2026-09-20 review：与点赞同构，防"后到的旧 UNFAVORITE"改写收藏数） */
+    /** 收藏事件版本门 key 前缀（防"后到的旧 UNFAVORITE"改写收藏数） */
     private static final String FAVORITE_VERSION_PREFIX = "myxhs:counter:event:version:favorite:";
-
-    private boolean isStaleFavoriteEvent(Long userId, Long noteId, Long actionTime) {
-        String key = FAVORITE_VERSION_PREFIX + userId + ":" + noteId;
-        Long passed = stringRedisTemplate.execute(LIKE_VERSION_SCRIPT,
-                java.util.List.of(key), String.valueOf(actionTime),
-                String.valueOf(LIKE_VERSION_TTL_HOURS * 3600));
-        return passed == null || passed == 0;
-    }
-
-    /** 通用版本门 key 前缀（评论/关注扩展，2026-09-21） */
+    /** 通用版本门 key 前缀（评论/关注扩展） */
     private static final String EVENT_VERSION_PREFIX = "myxhs:counter:event:version:";
-
-    /**
-     * 通用事件版本门：actionTime 缺失或 <=0 时不做判断（兼容旧格式事件）；
-     * 命中旧事件返回 true（调用方跳过），否则写入新版本放行。
-     */
-    private boolean isStaleEvent(String scope, String entityKey, Long actionTime) {
-        if (actionTime == null || actionTime <= 0) {
-            return false;
-        }
-        String key = EVENT_VERSION_PREFIX + scope + ":" + entityKey;
-        Long passed = stringRedisTemplate.execute(LIKE_VERSION_SCRIPT,
-                java.util.List.of(key), String.valueOf(actionTime),
-                String.valueOf(LIKE_VERSION_TTL_HOURS * 3600));
-        return passed == null || passed == 0;
-    }
+    /** 版本门 TTL（24 小时） */
+    private static final long VERSION_TTL_SECONDS = 24 * 3600;
 
     /** 计数类型常量：1-点赞 2-收藏 3-评论 4-分享 5-浏览 6-粉丝 7-关注 */
     private static final int COUNT_TYPE_LIKE = 1;
@@ -194,13 +155,16 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
             return;
         }
 
-        // 版本门：actionTime 更旧的事件一律跳过（原实现只靠 SADD/SREM 可交换性，
-        // 实测"后到的旧 UNLIKE"会把计数改回 0，与 analytics 侧（版本校验后拒绝）产生分叉）
+        // C-009 D3 完成态版本门：只读检查旧事件（不 reserve——崩溃重投可重处理；操作幂等=set-based/dedup）
         Long actionTime = toLong(eventMap.get("actionTime"));
-        if (actionTime != null && isStaleLikeEvent(userId, bizType, bizId, actionTime)) {
-            log.info("[计数Consumer] 跳过旧点赞事件(版本门): userId={}, bizType={}, bizId={}, actionTime={}",
-                    userId, bizType, bizId, actionTime);
-            return;
+        String versionKey = null;
+        if (actionTime != null) {
+            versionKey = LIKE_VERSION_PREFIX + userId + ":" + bizType + ":" + bizId;
+            if (versionGate.isStale(versionKey, actionTime)) {
+                log.info("[计数Consumer] 跳过旧点赞事件(版本门): userId={}, bizType={}, bizId={}, actionTime={}",
+                        userId, bizType, bizId, actionTime);
+                return;
+            }
         }
 
         int targetType;
@@ -221,6 +185,10 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
                 bizType == 2 ? "评论" : "",
                 executed ? "更新" : "去重跳过",
                 msgId, bizType, targetType, bizId, userId, tag);
+        // C-009：完成后单调推进（失败不推进 → 重投可重处理）
+        if (versionKey != null) {
+            versionGate.markDone(versionKey, actionTime, VERSION_TTL_SECONDS);
+        }
     }
 
     /**
@@ -242,13 +210,17 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
         int targetType = TARGET_TYPE_NOTE;
         int countType = COUNT_TYPE_FAVORITE;
 
-        // 版本门：actionTime 更旧的收藏/取消收藏事件跳过（与点赞同构）
+        // C-009 D3 完成态版本门：只读检查旧收藏/取消收藏事件
         Long userId = toLong(eventMap.get("userId"));
         Long actionTime = toLong(eventMap.get("actionTime"));
-        if (userId != null && actionTime != null && isStaleFavoriteEvent(userId, noteId, actionTime)) {
-            log.info("[计数Consumer] 跳过旧收藏事件(版本门): userId={}, noteId={}, actionTime={}",
-                    userId, noteId, actionTime);
-            return;
+        String versionKey = null;
+        if (userId != null && actionTime != null) {
+            versionKey = FAVORITE_VERSION_PREFIX + userId + ":" + noteId;
+            if (versionGate.isStale(versionKey, actionTime)) {
+                log.info("[计数Consumer] 跳过旧收藏事件(版本门): userId={}, noteId={}, actionTime={}",
+                        userId, noteId, actionTime);
+                return;
+            }
         }
 
         boolean executed;
@@ -260,6 +232,10 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
 
         log.info("[计数Consumer] 收藏计数{}: msgId={}, targetType={}, targetId={}, countType={}, action={}",
                 executed ? "更新" : "去重跳过", msgId, targetType, noteId, countType, tag);
+        // C-009：完成后单调推进
+        if (versionKey != null) {
+            versionGate.markDone(versionKey, actionTime, VERSION_TTL_SECONDS);
+        }
     }
 
     /**
@@ -288,11 +264,14 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
         }
         Long commentId = toLong(eventMap.get("commentId"));
         Long actionTime = toLong(eventMap.get("actionTime"));
-        if (commentId != null && eventCount <= 1
-                && isStaleEvent("comment", String.valueOf(commentId), actionTime)) {
-            log.warn("[计数Consumer] 旧评论事件被版本门拒绝: msgId={}, commentId={}, actionTime={}",
-                    msgId, commentId, actionTime);
-            return;
+        String versionKey = null;
+        if (commentId != null && eventCount <= 1 && actionTime != null && actionTime > 0) {
+            versionKey = EVENT_VERSION_PREFIX + "comment:" + commentId;
+            if (versionGate.isStale(versionKey, actionTime)) {
+                log.warn("[计数Consumer] 旧评论事件被版本门拒绝: msgId={}, commentId={}, actionTime={}",
+                        msgId, commentId, actionTime);
+                return;
+            }
         }
 
         int targetType = TARGET_TYPE_NOTE;
@@ -308,6 +287,10 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
 
         log.info("[计数Consumer] 评论计数{}: msgId={}, targetType={}, targetId={}, countType=COMMENT, action={}",
                 executed ? "更新" : "去重跳过", msgId, targetType, noteId, tag);
+        // C-009：完成后单调推进（仅锚定单评论事件；级联删除无锚点不推）
+        if (versionKey != null) {
+            versionGate.markDone(versionKey, actionTime, VERSION_TTL_SECONDS);
+        }
     }
 
     /**
@@ -377,10 +360,14 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
 
         // 版本门：同一对关注关系的事件按 actionTime 收敛，防"后到的旧 UNFOLLOW"改写双方计数
         Long actionTime = toLong(eventMap.get("actionTime"));
-        if (isStaleEvent("follow", followerUserId + ":" + followeeUserId, actionTime)) {
-            log.warn("[计数Consumer] 旧关注事件被版本门拒绝: msgId={}, follower={}, followee={}, actionTime={}",
-                    msgId, followerUserId, followeeUserId, actionTime);
-            return;
+        String versionKey = null;
+        if (actionTime != null && actionTime > 0) {
+            versionKey = EVENT_VERSION_PREFIX + "follow:" + followerUserId + ":" + followeeUserId;
+            if (versionGate.isStale(versionKey, actionTime)) {
+                log.warn("[计数Consumer] 旧关注事件被版本门拒绝: msgId={}, follower={}, followee={}, actionTime={}",
+                        msgId, followerUserId, followeeUserId, actionTime);
+                return;
+            }
         }
 
         boolean isFollow = "FOLLOW".equals(tag);
@@ -409,6 +396,10 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
 
         log.info("[计数Consumer] 关注计数更新: msgId={}, follower={}({}), followee={}({}), action={}",
                 msgId, followerUserId, f1 ? "更新" : "去重", followeeUserId, f2 ? "更新" : "去重", tag);
+        // C-009：完成后单调推进（f2 失败已抛出 → 不推进 → 重投重处理）
+        if (versionKey != null) {
+            versionGate.markDone(versionKey, actionTime, VERSION_TTL_SECONDS);
+        }
     }
 
     private static Integer toInt(Object value) {

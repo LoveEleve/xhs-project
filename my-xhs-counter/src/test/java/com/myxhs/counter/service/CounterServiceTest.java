@@ -58,11 +58,20 @@ class CounterServiceTest {
     private CounterMapper counterMapper;
 
     @Mock
+    private com.myxhs.counter.mapper.LikeAuthorityMapper likeAuthorityMapper;
+
+    @Mock
+    private SetOperations<String, String> setOperations;
+
+    @Mock
+    private Cursor<String> cursor;
+
+    @Mock
     private CounterService counterService;
 
     @BeforeEach
     void setUp() {
-        counterService = new CounterService(stringRedisTemplate, counterBuffer, counterMapper);
+        counterService = new CounterService(stringRedisTemplate, counterBuffer, counterMapper, likeAuthorityMapper);
     }
 
     // ==================== 计数 +1 ====================
@@ -239,5 +248,54 @@ class CounterServiceTest {
         assertThat(fixed).isEqualTo(1);
         verify(valueOperations).set("myxhs:counter:1:20001:1", "15");
         verify(counterMapper).updateCountValue(55L, 15L);
+    }
+
+    // ==================== C-009 D2：like 权威对账（重建 + 集合复制） ====================
+
+    @Test
+    @DisplayName("C-009 D2-B：analytics 权威集缺失 + t_like 有行 → 重建集 + 修正值 + 复制 counter 集")
+    void reconcile_rebuildsAuthorityFromDb() {
+        when(stringRedisTemplate.scan(any(ScanOptions.class))).thenReturn(cursor);
+        when(cursor.hasNext()).thenReturn(true).thenReturn(false);
+        when(cursor.next()).thenReturn("myxhs:counter:1:500:1");
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("myxhs:counter:1:500:1")).thenReturn("42");
+        when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
+        // 权威集缺失（SCARD=0）→ 从 t_like 重建（2 个 liker）
+        when(setOperations.size("myxhs:like:note:500")).thenReturn(0L);
+        when(likeAuthorityMapper.selectUserIdsByBiz(1, 500L)).thenReturn(List.of(3001L, 3002L));
+        Counter dbRow = new Counter();
+        dbRow.setId(9L);
+        dbRow.setCountValue(42L);
+        when(counterMapper.selectByBusinessKey(1, 500L, 1)).thenReturn(dbRow);
+
+        int fixed = counterService.reconcileLikeFromAnalytics();
+
+        assertThat(fixed).isEqualTo(1);
+        verify(setOperations).add(eq("myxhs:like:note:500"), eq("3001"), eq("3002"));
+        verify(valueOperations).set("myxhs:counter:1:500:1", "2");
+        // D2②：SUNIONSTORE 复制权威集到 counter 内部集
+        verify(setOperations).unionAndStore(eq("myxhs:like:note:500"),
+                eq(Collections.emptyList()), eq("myxhs:like:set:1:500"));
+        verify(counterMapper).updateCountValue(9L, 2L);
+    }
+
+    @Test
+    @DisplayName("C-009 D2②：权威集存在但值漂移 → 修正值 + 复制 counter 集（不重建）")
+    void reconcile_copiesSetOnMismatch() {
+        when(stringRedisTemplate.scan(any(ScanOptions.class))).thenReturn(cursor);
+        when(cursor.hasNext()).thenReturn(true).thenReturn(false);
+        when(cursor.next()).thenReturn("myxhs:counter:1:500:1");
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get("myxhs:counter:1:500:1")).thenReturn("42");
+        when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
+        when(setOperations.size("myxhs:like:note:500")).thenReturn(2L);
+
+        int fixed = counterService.reconcileLikeFromAnalytics();
+
+        assertThat(fixed).isEqualTo(1);
+        verify(likeAuthorityMapper, never()).selectUserIdsByBiz(any(), any());
+        verify(setOperations).unionAndStore(eq("myxhs:like:note:500"),
+                eq(Collections.emptyList()), eq("myxhs:like:set:1:500"));
     }
 }

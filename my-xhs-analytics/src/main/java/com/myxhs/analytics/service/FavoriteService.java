@@ -42,6 +42,10 @@ public class FavoriteService {
     private final DefaultRedisScript<Long> favoriteAtomicScript;
     private final DefaultRedisScript<Long> unfavoriteAtomicScript;
     private final com.myxhs.analytics.feign.ContentFeignClient contentFeignClient;
+    private final com.myxhs.analytics.mapper.FavoriteMapper favoriteMapper; // C-009 D2-B：列表重建
+
+    /** C-009 D2-B：单次重建上限（对齐 follow 的 RELATION_REBUILD_MAX 模式） */
+    private static final int REBUILD_MAX = 10_000;
 
     /** 收藏列表最大返回条数 */
     private static final int MAX_PAGE_SIZE = 50;
@@ -159,12 +163,48 @@ public class FavoriteService {
 
         Set<String> noteIds = stringRedisTemplate.opsForZSet().reverseRange(key, start, end);
         if (noteIds == null || noteIds.isEmpty()) {
-            return Collections.emptyList();
+            // C-009 D2-B：空结果可能是 ZSet 丢失（对齐 follow 重建先例）——DB 有行则重建后重读
+            int rebuilt = rebuildFavoriteList(userId);
+            if (rebuilt > 0) {
+                noteIds = stringRedisTemplate.opsForZSet().reverseRange(key, start, end);
+            }
+            if (noteIds == null || noteIds.isEmpty()) {
+                return Collections.emptyList();
+            }
         }
 
         return noteIds.stream()
                 .map(Long::valueOf)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * C-009 D2-B：从 t_favorite 重建收藏列表 ZSet（score=收藏时间）。
+     *
+     * @return 重建条数（0=DB 无行；-1=超上限跳过）
+     */
+    public int rebuildFavoriteList(Long userId) {
+        java.util.List<com.myxhs.analytics.entity.Favorite> rows = favoriteMapper.selectByUserId(userId);
+        if (rows == null || rows.isEmpty()) {
+            return 0;
+        }
+        if (rows.size() > REBUILD_MAX) {
+            log.warn("[收藏] 列表重建超上限跳过: userId={}, rows={}, limit={}", userId, rows.size(), REBUILD_MAX);
+            return -1;
+        }
+        String key = RedisKeyConstants.FAVORITE_SET + userId;
+        for (com.myxhs.analytics.entity.Favorite row : rows) {
+            if (row.getNoteId() == null) {
+                continue;
+            }
+            double score = row.getCreatedAt() != null
+                    ? row.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+                    : System.currentTimeMillis();
+            stringRedisTemplate.opsForZSet().add(key, String.valueOf(row.getNoteId()), score);
+        }
+        stringRedisTemplate.expire(key, java.time.Duration.ofDays(30)); // 对齐 09-19 review TTL 治理
+        log.warn("[收藏] 列表重建完成: userId={}, rebuilt={}", userId, rows.size());
+        return rows.size();
     }
 
     /**

@@ -584,8 +584,19 @@ public class FollowService {
     }
 
     /**
-     * 粉丝侧关系对账（修复 FOLLOW_FANS 一致性）
-     * <p>Step B 失败时粉丝 ZSet 成员可能缺失——以 ZSet 为准补/删 MySQL</p>
+     * 粉丝侧关系对账（修复 FOLLOW_FANS 一致性；C-009 D1：另一侧证据判别根治"删↔插颤振"）
+     * <p>
+     * 为什么需要证据判别？"MySQL-only/Redis-only"两种差异各自有两种成因（Step B 失败的真实关系 /
+     * 真取关残留），原实现固定"以 Redis 为准"→ 与关注侧对账（同样以 Redis 为准）互相打架：
+     * W1（follow+Step B 失败）粉丝侧删行↔关注侧插回、U1（unfollow+Step B 失败）粉丝侧插行↔关注侧删行
+     * ——每轮对账来回翻转，永不收敛。
+     * </p>
+     * <p>
+     * 判别依据：follower 的关注列表（FOLLOW_LIST，Step A 原子且失败即抛 → 关系事实源）是否含本用户：
+     * - 真实关系（含）→ **修 Redis**（ZADD 补员 / ZREM 清残留），不动 MySQL 关系行；
+     * - 确定残留（不含）→ MySQL-only 删行（真取关+删库失败）/ Redis-only 不插行（unfollow+Step B 失败）；
+     * - 不可判（对侧列表疑似丢失）→ 保守跳过。
+     * </p>
      */
     public String repairFollowerRelationships(Long userId) {
         String followerKey = RedisKeyConstants.FOLLOW_FANS + userId;
@@ -601,8 +612,15 @@ public class FollowService {
             }
         }
 
-        java.util.List<Long> mysqlIds = followMapper.selectFollowerUserIdsByUserId(userId);
-        java.util.Set<Long> mysqlSet = new java.util.HashSet<>(mysqlIds);
+        // 行数据（含 created_at——ZADD 补员需要 score）
+        java.util.List<Follow> mysqlRows = followMapper.selectFollowerRowsByUserId(userId);
+        java.util.Map<Long, Follow> mysqlRowMap = new java.util.LinkedHashMap<>();
+        for (Follow row : mysqlRows) {
+            if (row.getUserId() != null) {
+                mysqlRowMap.put(row.getUserId(), row);
+            }
+        }
+        java.util.Set<Long> mysqlSet = mysqlRowMap.keySet();
 
         // 双源保护：同关注侧——完全缺失按 MySQL 重建，部分缺失只跳过删除（不做重建，避免复活陈旧关系）
         if (isRedisSideMissing(redisScoreMap.size(), mysqlSet.size())) {
@@ -618,10 +636,52 @@ public class FollowService {
                     redisScoreMap.size(), mysqlSet.size());
         }
 
-        int inserted = 0, deleted = 0;
+        int inserted = 0, deleted = 0, redisRepaired = 0;
+
+        // ① MySQL 有行、Redis 无成员：证据判别（真实→ZADD 补员；残留→删行）
+        for (java.util.Map.Entry<Long, Follow> entry : mysqlRowMap.entrySet()) {
+            Long followerId = entry.getKey();
+            if (redisScoreMap.containsKey(followerId)) {
+                continue;
+            }
+            Boolean stillFollows = followerListContains(followerId, userId);
+            if (stillFollows == null) {
+                log.warn("[关注对账] 粉丝侧证据不可判(对侧列表疑似丢失), 保守跳过: userId={}, followerId={}",
+                        userId, followerId);
+                continue;
+            }
+            if (stillFollows) {
+                // 真实关系（follow 的 Step B 失败）→ 修 Redis：ZADD 回粉丝 ZSet（score=行内关注时间）
+                Follow row = entry.getValue();
+                double score = row.getCreatedAt() != null
+                        ? row.getCreatedAt().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                        : System.currentTimeMillis();
+                stringRedisTemplate.opsForZSet().add(followerKey, String.valueOf(followerId), score);
+                redisRepaired++;
+                log.warn("[关注对账] 粉丝侧补员(证据=仍关注, Step B 失败修复): userId={}, followerId={}",
+                        userId, followerId);
+            } else {
+                // 确定残留（真取关 + 删库失败）→ 删 MySQL 行（现状语义保留）
+                followMapper.deleteByUserIdAndFollowUserId(followerId, userId);
+                deleted++;
+                log.info("[关注对账] 粉丝侧清孤儿行: userId={}, followerId={}", userId, followerId);
+            }
+        }
+
+        // ② Redis 有成员、MySQL 无行：证据判别（真实→插行；残留→ZREM 清残留）
         for (java.util.Map.Entry<Long, Double> entry : redisScoreMap.entrySet()) {
             Long followerId = entry.getKey();
-            if (!mysqlSet.contains(followerId)) {
+            if (mysqlSet.contains(followerId)) {
+                continue;
+            }
+            Boolean stillFollows = followerListContains(followerId, userId);
+            if (stillFollows == null) {
+                log.warn("[关注对账] 粉丝侧证据不可判(对侧列表疑似丢失), 保守跳过: userId={}, followerId={}",
+                        userId, followerId);
+                continue;
+            }
+            if (stillFollows) {
+                // 真实关系（follow 落库失败）→ 补插 MySQL（现状语义保留）
                 Follow follow = new Follow();
                 follow.setUserId(followerId);
                 follow.setFollowUserId(userId);
@@ -633,17 +693,40 @@ public class FollowService {
                 }
                 followMapper.insert(follow);
                 inserted++;
+            } else {
+                // 确定残留（unfollow 的 Step B 失败）→ 修 Redis：ZREM 粉丝 ZSet（防"删↔插颤振"）
+                stringRedisTemplate.opsForZSet().remove(followerKey, String.valueOf(followerId));
+                redisRepaired++;
+                log.warn("[关注对账] 粉丝侧残留清理(证据=未关注, Step B 失败修复): userId={}, followerId={}",
+                        userId, followerId);
             }
         }
-        for (Long followerId : mysqlSet) {
-            if (!redisScoreMap.containsKey(followerId)) {
-                followMapper.deleteByUserIdAndFollowUserId(followerId, userId);
-                deleted++;
-            }
-        }
-        return inserted > 0 || deleted > 0
-                ? String.format("粉丝侧修复: 补插入%d条, 清孤儿行%d条", inserted, deleted)
+
+        return inserted > 0 || deleted > 0 || redisRepaired > 0
+                ? String.format("粉丝侧修复: 补插入%d条, 清孤儿行%d条, Redis修复%d条", inserted, deleted, redisRepaired)
                 : "粉丝侧一致，无需修复";
+    }
+
+    /**
+     * C-009 D1：另一侧证据——follower 的关注列表（FOLLOW_LIST，Step A 事实源）是否含本用户。
+     *
+     * @return true=仍关注（真实关系）；false=确定未关注（残留）；null=不可判（对侧列表疑似丢失，保守跳过）
+     */
+    private Boolean followerListContains(Long followerId, Long targetUserId) {
+        String followingKey = RedisKeyConstants.FOLLOW_LIST + followerId;
+        Double score = stringRedisTemplate.opsForZSet().score(followingKey, String.valueOf(targetUserId));
+        if (score != null) {
+            return true;
+        }
+        if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(followingKey))) {
+            return false; // 列表在、成员不在 → 确定未关注
+        }
+        // 列表整体缺失：空列表（ZSet 空自动删除）还是 Redis 丢数据？→ 以该用户 MySQL 关注行数判别
+        java.util.List<Long> rows = followMapper.selectFollowUserIdsByUserId(followerId);
+        if (rows != null && !rows.isEmpty()) {
+            return null; // 有行但 Redis 无 key → 疑似丢失，不可判
+        }
+        return false; // 无行且无 key → 真实空列表 → 未关注
     }
 
     // ==================== 双源保护与重建 ====================

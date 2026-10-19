@@ -17,4 +17,8 @@ public interface FavoriteMapper extends BaseMapper<Favorite> {
      */
     @Delete("DELETE FROM t_favorite WHERE user_id = #{userId} AND note_id = #{noteId}")
     int deleteByUserAndNote(@Param("userId") Long userId, @Param("noteId") Long noteId);
+
+    /** C-009 D2-B：收藏列表重建——取用户全部收藏行（含 note_id/created_at） */
+    @org.apache.ibatis.annotations.Select("SELECT id, user_id, note_id, created_at FROM t_favorite WHERE user_id = #{userId}")
+    java.util.List<Favorite> selectByUserId(@Param("userId") Long userId);
 }

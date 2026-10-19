@@ -49,6 +49,8 @@ class FavoriteServiceTest {
     private ZSetOperations<String, String> zSetOperations;
     @Mock
     private com.myxhs.analytics.feign.ContentFeignClient contentFeignClient;
+    @Mock
+    private com.myxhs.analytics.mapper.FavoriteMapper favoriteMapper;
 
     private ObjectMapper objectMapper;
     private FavoriteService favoriteService;
@@ -62,7 +64,7 @@ class FavoriteServiceTest {
         objectMapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
         favoriteService = new FavoriteService(
                 stringRedisTemplate, rocketMQTemplate, objectMapper,
-                favoriteAtomicScript, unfavoriteAtomicScript, contentFeignClient);
+                favoriteAtomicScript, unfavoriteAtomicScript, contentFeignClient, favoriteMapper);
         when(contentFeignClient.batchGetNoteDetail(anyList()))
                 .thenReturn(com.myxhs.common.response.R.ok(
                         java.util.Map.of(String.valueOf(NOTE_ID), java.util.Map.of())));
@@ -149,5 +151,41 @@ class FavoriteServiceTest {
         boolean result = favoriteService.isFavorited(USER_ID, NOTE_ID);
 
         assertThat(result).isFalse();
+    }
+
+    // ==================== C-009 D2-B：收藏列表重建 ====================
+
+    @Test
+    @DisplayName("C-009 D2-B：空结果 + DB 有行 → 从 t_favorite 重建 ZSet 后重读")
+    void getFavoriteList_rebuildsWhenZSetLost() {
+        when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
+        // 第一次读空（ZSet 丢失）→ 重建后重读有值
+        when(zSetOperations.reverseRange(eq("myxhs:favorite:1001"), eq(0L), eq(9L)))
+                .thenReturn(java.util.Collections.emptySet())
+                .thenReturn(new java.util.LinkedHashSet<>(java.util.List.of("200")));
+        com.myxhs.analytics.entity.Favorite row = new com.myxhs.analytics.entity.Favorite();
+        row.setNoteId(200L);
+        row.setCreatedAt(java.time.LocalDateTime.now());
+        when(favoriteMapper.selectByUserId(1001L)).thenReturn(java.util.List.of(row));
+
+        java.util.List<Long> result = favoriteService.getFavoriteList(1001L, 1, 10);
+
+        assertThat(result).containsExactly(200L);
+        verify(zSetOperations).add(eq("myxhs:favorite:1001"), eq("200"), anyDouble());
+        verify(stringRedisTemplate).expire(eq("myxhs:favorite:1001"), any(java.time.Duration.class));
+    }
+
+    @Test
+    @DisplayName("C-009 D2-B：空结果 + DB 无行 → 真 0（不重建）")
+    void getFavoriteList_emptyDb_noRebuild() {
+        when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
+        when(zSetOperations.reverseRange(eq("myxhs:favorite:1001"), eq(0L), eq(9L)))
+                .thenReturn(java.util.Collections.emptySet());
+        when(favoriteMapper.selectByUserId(1001L)).thenReturn(java.util.List.of());
+
+        java.util.List<Long> result = favoriteService.getFavoriteList(1001L, 1, 10);
+
+        assertThat(result).isEmpty();
+        verify(zSetOperations, never()).add(anyString(), anyString(), anyDouble());
     }
 }

@@ -7,6 +7,7 @@ import com.myxhs.counter.entity.Counter;
 import com.myxhs.counter.enums.CountType;
 import com.myxhs.counter.mapper.CounterBatchQuery;
 import com.myxhs.counter.mapper.CounterMapper;
+import com.myxhs.counter.mapper.LikeAuthorityMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -38,6 +39,7 @@ public class CounterService {
     private final StringRedisTemplate stringRedisTemplate;
     private final CounterBuffer counterBuffer;
     private final CounterMapper counterMapper;
+    private final LikeAuthorityMapper likeAuthorityMapper; // C-009 D2-B：like 权威重建（跨库读 t_like）
 
     /** 【修复m11】归零保护 Lua 脚本（静态常量，复用 SHA1 缓存） */
     private static final org.springframework.data.redis.core.script.DefaultRedisScript<Long> DECREMENT_SCRIPT;
@@ -347,7 +349,8 @@ public class CounterService {
      */
     public int reconcileLikeFromAnalytics() {
         int fixed = 0;
-        int skippedMissingSet = 0; // 防清零守卫跳过条数（2026-10-12）
+        int skippedMissingSet = 0; // 真 0 跳过条数（DB 无行——保守不覆盖）
+        int rebuiltCount = 0;      // C-009 D2-B：权威集重建条数
         // 覆盖笔记和评论两种 like 计数：targetType=1(note) targetType=3(comment)
         for (int targetType : new int[]{1, 3}) {
             String typeName = targetType == 1 ? "note" : "comment";
@@ -370,16 +373,34 @@ public class CounterService {
                     // 读 analytics 权威 Set SCARD
                     String analyticsKey = RedisKeyConstants.LIKE_SET + typeName + ":" + targetId;
                     Long analyticsCount = stringRedisTemplate.opsForSet().size(analyticsKey);
-                    // 【防清零守卫 2026-10-12】SCARD 对不存在的 key 返回 0，而 Redis Set 删空会自动删 key：
-                    // "集合缺失（30d TTL 过期/数据丢失/从未写入）"与"真 0 赞"不可区分。原逻辑会把
-                    // 过期老目标的 like 计数以 0 覆盖（Redis + DB 双写且无重建路径）——缺失时跳过修正。
+                    // 【防清零守卫 2026-10-12 → C-009 D2-B 升级】SCARD 对不存在的 key 返回 0，与"真 0 赞"不可区分：
+                    // 旧守卫"缺失即跳过等人工"；现改为**从 t_like 重建权威集**（对齐 follow 重建先例）——
+                    // 仅 DB 也无行时才是真 0（保守不覆盖）
                     if (analyticsCount == null || analyticsCount == 0L) {
-                        skippedMissingSet++;
-                        continue;
+                        int bizType = targetType == 1 ? 1 : 2; // t_like.biz_type: 1-笔记 2-评论
+                        java.util.List<Long> dbLikers = likeAuthorityMapper.selectUserIdsByBiz(bizType, Long.parseLong(targetId));
+                        if (dbLikers == null || dbLikers.isEmpty()) {
+                            skippedMissingSet++;
+                            continue; // 真 0（DB 无行）：不覆盖（维持原守卫语义）
+                        }
+                        // 重建 analytics 权威集（SADD 批量 + TTL）——重建后与 counter 值比对修正
+                        String[] members = dbLikers.stream().map(String::valueOf).toArray(String[]::new);
+                        stringRedisTemplate.opsForSet().add(analyticsKey, members);
+                        stringRedisTemplate.expire(analyticsKey, java.time.Duration.ofDays(30));
+                        analyticsCount = (long) dbLikers.size();
+                        rebuiltCount++;
+                        log.warn("[计数-对账] analytics权威集缺失, 已从 t_like 重建: key={}, rebuilt={}",
+                                analyticsKey, analyticsCount);
                     }
                     if (analyticsCount != counterValue) {
                         stringRedisTemplate.opsForValue().set(counterKey, String.valueOf(analyticsCount));
                         stringRedisTemplate.expire(counterKey, java.time.Duration.ofDays(30));
+                        // C-009 D2②：同时重建 counter 内部 like:set（SUNIONSTORE 单命令复制权威集）——
+                        // 修复"只修值不修集合"：否则下一次事件用旧集合 SCARD 会把修正值覆盖回去（两套权威分叉）
+                        String counterSetKey = LIKE_SET_PREFIX + targetType + ":" + targetId;
+                        stringRedisTemplate.opsForSet().unionAndStore(analyticsKey,
+                                java.util.Collections.emptyList(), counterSetKey);
+                        stringRedisTemplate.expire(counterSetKey, java.time.Duration.ofDays(30));
                         // T-113（2026-08-15）：analytics 权威修正后同步 DB——修复前只改 Redis，
                         // DB 残留漂移值（对账后 DB 与权威永久不一致）
                         try {
@@ -406,6 +427,9 @@ public class CounterService {
         }
         if (skippedMissingSet > 0) {
             log.info("[计数-对账] analytics Set 缺失/为空，跳过修正 {} 条（防清零守卫）", skippedMissingSet);
+        }
+        if (rebuiltCount > 0) {
+            log.warn("[计数-对账] like 权威对账: 修正={}, 权威重建={}, 真0跳过={}", fixed, rebuiltCount, skippedMissingSet);
         }
         return fixed;
     }
