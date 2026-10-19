@@ -175,6 +175,8 @@ public class NotificationAggregator {
             mainId = Long.parseLong(result);
         } catch (NumberFormatException e) {
             log.warn("[聚合] Redis脏值: result={}", result, e);
+            // C-012 F4（同族）：脏值键同样删键自愈（否则后续事件持续命中脏值 → 本窗口聚合永久失效）
+            safeDeleteAggregateKey(aggregateKey);
             notification.setAggregateCount(1);
             notification.setIsRead(0);
             notificationMapper.insert(notification);

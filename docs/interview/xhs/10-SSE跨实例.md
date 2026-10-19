@@ -1,7 +1,7 @@
 # 第10题 | SSE 跨实例与断线处理
 
 > 难度：★★★☆☆｜频率：★★★☆☆｜区分度：中
-> 关键词：SseEmitter、ticket 两步法、心跳 10s、Redis 路由 30s TTL、共享 Channel 广播、连接替换守卫、落库拉取
+> 关键词：SseEmitter、ticket 两步法、心跳 10s、Redis 路由 30s TTL、**定向 Channel（每实例专属）**、连接替换守卫、落库拉取
 
 ## 问题
 问题：站内通知用 SSE 推送，多实例下用户连在别的实例上怎么推？断了怎么办？
@@ -12,7 +12,7 @@
 服务端推送三条路：WebSocket（双向、重）、SSE（单向、基于 HTTP、浏览器自动重连、企业通知首选）、长轮询（最兼容、最费）。SSE 的工程难点有两个：多实例路由（连接在哪个实例）与断线恢复（重连后不丢消息）；还有一个常被忽略的：**EventSource 不能自定义 Header，token 只能放 URL**——URL 会进日志/Referer，属安全反模式。
 
 **② 项目选择**
-`SseEmitterManager`：**ticket 两步法**解决鉴权——`POST /sse/ticket` 发 30s 一次性 ticket，`GET /sse?ticket=` 建立连接（token 不进 URL）；连接注册本地 emitter map + Redis 路由 `myxhs:notification:sse:{userId}` → serverId（host:port，**30s TTL，`@Scheduled` 每 10s 批量续期**）；推送先查路由——本实例直推，否则发**共享 Channel** `myxhs:notification:sse:channel`（所有实例都收，持有该用户连接的实例命中处理）；emitter 超时 30 分钟兜底。
+`SseEmitterManager`：**ticket 两步法**解决鉴权——`POST /sse/ticket` 发 30s 一次性 ticket，`GET /sse?ticket=` 建立连接（token 不进 URL）；连接注册本地 emitter map + Redis 路由 `myxhs:notification:sse:{userId}` → serverId（host:port，**30s TTL，`@Scheduled` 每 10s 批量续期**）；推送先查路由——本实例直推，否则按路由值**定向发布**到目标实例专属 Channel `myxhs:notification:sse:channel:{serverId}`（C-012 口径：原共享 Channel 广播所有实例都收、N-1 次无效投递；改定向后与 IM 路由模式一致）；emitter 超时 30 分钟兜底。
 
 **③ 坑**
 - **连接替换竞态**：新连接进来时先 complete 旧 emitter，但旧连接的 complete 回调可能把**新连接**的 Redis 路由删掉——用删除守卫（先比对 emitter 身份再删）+ 推送失败清理用 `emitters.remove(key, value)` 双参数防误删；
@@ -27,22 +27,22 @@
 - 服务重启后所有连接断，客户端重连到任意实例，未读以 DB 为准。
 
 **⑤ 话术**
-> "SSE 推送是尽力而为，可靠性在'落库 + 拉取'：跨实例用路由表定位、共享 channel 转发；连接替换必须用守卫，否则旧连接的 close 回调会把新连接的路由删掉。鉴权用 ticket 两步法，不把 token 放进 URL。"
+> "SSE 推送是尽力而为，可靠性在'落库 + 拉取'：跨实例用路由表定位、按 serverId 定向 Channel 转发（避免共享广播的 N-1 无效投递）；连接替换必须用守卫，否则旧连接的 close 回调会把新连接的路由删掉。鉴权用 ticket 两步法，不把 token 放进 URL。"
 
 ## 追问与参考回答
 **追问1：SSE 和 WebSocket 怎么选？** 单向通知 SSE 足够且实现便宜（HTTP 语义/自动重连）；双向聊天还是要 WebSocket（IM 模块就是）。
 **追问2：路由表怎么知道连接还活着？** 10s 心跳批量续期 30s TTL；过期即视为不可达，走离线/拉取路径。
-**追问3：为什么用共享 channel，不用 IM 那种实例专属 channel？** SSE 推送前已经查过路由，只有"跨实例"时才发；共享 channel 所有实例都收、本地命中者处理，实现更简单。IM 是每条消息都要定向，所以用 `im:route:{serverId}` 专属 channel。
+**追问3：为什么用实例专属 channel，不用共享广播？** 推送前已经查过路由（知道目标 serverId），共享广播会让 N-1 个非目标实例白收一条（N-1 次无效投递）；定向发布只投目标实例，与 IM 路由模式一致。演进：原实现为共享 Channel，多实例实测后改为定向（`myxhs:notification:sse:channel:{serverId}`）。
 **追问4：为什么不用 Last-Event-ID 补推？** SSE 标准支持 `Last-Event-ID`，但我们的补偿走"通知落库 + 拉取列表"，不依赖事件 ID 重放——更简单也更可靠（拉取天然幂等）。这是明确的设计取舍，不是遗漏。
 **追问5：新连接替换旧连接怎么防双推？** 新连接注册时 complete 旧 emitter（旧连接收到终止），删除守卫保证旧回调不误删新路由；推送目标始终以本地 map 当前值为准。
 
 ## 面试官评分点
 **高级开发级**：能说清路由表+转发的链路；知道三处回调清理与替换竞态；会用 ticket 解决 SSE 鉴权。
-**架构师加分**：长连接容量与网关超时、离线补拉 model（落库拉取 vs Last-Event-ID）、共享 channel vs 定向 channel 的取舍、SSE/WS/长轮询选型。
+**架构师加分**：长连接容量与网关超时、离线补拉 model（落库拉取 vs Last-Event-ID）、共享广播 vs 定向 channel 的演进取舍（N-1 无效投递）、SSE/WS/长轮询选型。
 **危险信号**：无路由直接本地推；连接替换无守卫；断线无补拉；token 放 URL 且无 ticket。
 
 ## 本项目真实证据
-- `SseEmitterManager`：`SSE_KEY_PREFIX=myxhs:notification:sse:`、`SSE_TTL=30s`(:56-57)、`NOTIFY_SSE_CHANNEL=myxhs:notification:sse:channel`(:60)、心跳 `@Scheduled(fixedRate=10000)` 批量续期(:255-269)、emitter `30 分钟超时`(:73)、serverId=host:port(:311-317)、发布 `convertAndSend`(:239)、推送失败 `emitters.remove(userId, emitter)` 双参数守卫(:217-223)、旧连接 complete + 删除守卫(:80-103)。
+- `SseEmitterManager`：`SSE_KEY_PREFIX=myxhs:notification:sse:`、`SSE_TTL=30s`、`NOTIFY_SSE_CHANNEL_PREFIX=myxhs:notification:sse:channel:` + serverId（定向）、心跳 `@Scheduled(fixedRate=10000)` 批量续期、emitter `30 分钟超时`、serverId=host:port#PID（同主机多实例可区分）、发布 `convertAndSend`、推送失败 `emitters.remove(userId, emitter)` 双参数守卫、旧连接 complete + 删除守卫。
 - `NotificationController`：`/sse/ticket`(:46)、`/sse`(:59)、`/list`(:73)、`/unread-count`(:88)、`/read-by-type`(:109)、`/read-all`(:120)、`/sse/online-count`(:132)。
 - 实测：test-4 双实例（19013/19023）SSE 连 inst1、两实例共同消费，客户端收聚合事件。
 
@@ -66,4 +66,4 @@ ticket 两步法、双键/TTL/心跳/守卫/超时均为代码事实；"网关�
   ① `processEvent` 用 `isOnline()`（仅本地 map）做前置判断 → 跨实例分支被短路（`pushNotification` 的 Redis 路由成死代码）；
   ② 订阅者 `toLong` 对 Jackson `TextNode` 解析失败（项目 Jackson 把 Long 序列化为字符串、`toString()` 带引号）→ **所有**跨实例消息判"格式异常"。
 - 修复：新增 `isOnlineAnywhere`（本地或 Redis 路由键）+ `toLong` 支持 `JsonNode`；**修复后实测推送成功**。
-- 口径：跨实例推送三件套＝路由键（TTL 续期）、pub/sub 广播、目标实例本地投递；**单实例跑绿 ≠ 多实例正确**（两个 Bug 只在双实例暴露）。
+- 口径：跨实例推送三件套＝路由键（TTL 续期）、**定向 pub/sub（按 serverId）**、目标实例本地投递；**单实例跑绿 ≠ 多实例正确**（两个 Bug 只在双实例暴露）。

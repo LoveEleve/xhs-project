@@ -1,7 +1,7 @@
 ---
 id: C-012
 slug: 通知模块生产化改造
-status: confirmed
+status: done
 created: 2026-10-19
 updated: 2026-10-19
 iteration: ITER-012     # 机器可读迭代协议：.harness/iterations/ITER-012-通知模块生产化改造/
