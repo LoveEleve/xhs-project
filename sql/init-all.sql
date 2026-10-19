@@ -545,7 +545,7 @@ CREATE TABLE IF NOT EXISTS t_note_event (
     id            BIGINT       NOT NULL COMMENT 'ID',
     note_id       BIGINT       NOT NULL COMMENT '笔记ID',
     user_id       BIGINT       NOT NULL COMMENT '用户ID',
-    event_type    VARCHAR(32)  NOT NULL COMMENT '事件类型：PUBLISH/DELETE/UPDATE/COMMENT/LIKE',
+    event_type    VARCHAR(32)  NOT NULL COMMENT '事件类型：PUBLISH/DELETE/UPDATE/COMMENT/LIKE/AUDIT（C-010：审核轨迹）',
     status        TINYINT      DEFAULT 0 COMMENT '笔记状态',
     audit_status  TINYINT      DEFAULT 0 COMMENT '审核状态',
     event_time    DATETIME     DEFAULT NULL COMMENT '事件时间',

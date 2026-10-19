@@ -40,6 +40,12 @@ updated: 2026-10-18
 | 规划 | `docs(harness): C-010/ITER-010 ...` | 五件套（6 线索裁决含 §7-3 翻案） |
 | ①②③ | 见提交链 | 基线修复 + LocalMessageHelper + 删除链路迁移 + 补发泛化 + FEED 过滤防御 + 死信指标 + 指标口径 + JPA 移除 |
 
+## 深审查（清单先行 17 项）
+
+- **R1 对称性补齐**：createComment 的 COMMENT 事件未随删除链路本地消息化（同类永久漂移属性）→ 已修（enqueue + 死方法清理）——**事务内写事件（COMMENT/UNCOMMENT/NOTE_DELETE）全部 at-least-once**；
+- **R2**：t_note_event 注释 /AUDIT 同步 init-all ×2；
+- ✅ 事件链全核（wire format/载荷逐字段/回滚语义/乱序兜底）+ 跨模块字段对齐（home FeedPushConsumer）；通知事件 fire-and-forget 口径记录。
+
 ## 深审查（实施期要点）
 
 - **实施期关键防御（代码审查发现）**：推送补偿扫描必须加 `topic='FEED_TOPIC'` 过滤——否则计数事件行（push_status 恒 0）会被误扫入 Feed 推送补偿（readValue NotePublishEvent 失败 → 永久重扫 → 误置终态）；已在 SQL 落位。

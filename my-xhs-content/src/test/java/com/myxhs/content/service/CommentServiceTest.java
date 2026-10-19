@@ -107,6 +107,8 @@ class CommentServiceTest {
 
             assertThat(result).isEqualTo(COMMENT_ID);
             verify(commentMapper).insert(any(Comment.class));
+            // C-010 审查补齐：COMMENT 事件本地消息化（与删除链路对称）
+            verify(localMessageHelper).enqueue(eq("SOCIAL_TOPIC:COMMENT"), any());
         }
     }
 

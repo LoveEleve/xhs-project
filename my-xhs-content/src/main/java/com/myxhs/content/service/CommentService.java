@@ -160,6 +160,17 @@ public class CommentService {
         Comment replyTarget = (replyTargetId != null) ? commentMapper.selectById(replyTargetId) : null;
         final Long replyTargetUserId = replyTarget != null ? replyTarget.getUserId() : null;
         final Long newCommentId = comment.getId();
+        // C-010 审查补齐：COMMENT 事件与删除链路对称——本地消息化（同事务入队 + 补发兜底；
+        // 丢失即计数永久偏低且无对账可愈，与 UNCOMMENT 同属性）
+        localMessageHelper.enqueue("SOCIAL_TOPIC:COMMENT", localMsgId -> {
+            Map<String, Object> event = new HashMap<>();
+            event.put("noteId", noteId);
+            event.put("commentId", newCommentId); // 乱序治理：commentId 版本锚点
+            event.put("actionTime", System.currentTimeMillis());
+            event.put("count", 1L);
+            return event;
+        });
+
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
@@ -167,8 +178,6 @@ public class CommentService {
                 // delayDoubleDelete 纯开销（P2-13 同模式），移除；COMMENT_COUNT 有读缓存保留
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.COMMENT_COUNT + noteId);
 
-                // 【修复R1】评论计数增量：发送 MQ 事件让 counter 服务更新笔记评论数
-                sendCommentCounterEvent(noteId, newCommentId, "COMMENT", 1);
 
                 // 通知目标：回复→被回复者；一级评论→笔记作者（O-Comment-5）
                 final Long targetUserId = replyTargetUserId != null ? replyTargetUserId : noteAuthorUserId;
@@ -465,43 +474,7 @@ public class CommentService {
         return "某用户";
     }
 
-    /**
-     * 【修复R1】发送评论计数事件到 MQ（SOCIAL_TOPIC:COMMENT/UNCOMMENT）
-     * <p>
-     * CounterEventConsumer 消费此事件，更新 counter 服务的笔记评论计数 (countType=3)。
-     * 使用 asyncSend 避免阻塞评论发表事务的 afterCommit 回调。
-     * </p>
-     */
-    private void sendCommentCounterEvent(Long noteId, Long commentId, String action, long count) {
-        try {
-            Map<String, Object> event = new HashMap<>();
-            event.put("noteId", noteId);
-            // 乱序治理：commentId 作为版本锚点（单条增删），actionTime 供版本门收敛
-            if (commentId != null) {
-                event.put("commentId", commentId);
-            }
-            event.put("actionTime", System.currentTimeMillis());
-            if (count > 0) {
-                event.put("count", count);
-            }
-            rocketMQTemplate.asyncSend(
-                    "SOCIAL_TOPIC:" + action,
-                    MqTraceHelper.wrapWithTraceContext(MessageBuilder.withPayload(event).build()),
-                    new org.apache.rocketmq.client.producer.SendCallback() {
-                        @Override
-                        public void onSuccess(org.apache.rocketmq.client.producer.SendResult sendResult) {
-                            log.debug("[评论计数] MQ发送成功: noteId={}, action={}, count={}", noteId, action, count);
-                        }
-                        @Override
-                        public void onException(Throwable e) {
-                            log.warn("[评论计数] MQ发送失败: noteId={}, action={}, count={}", noteId, action, count, e);
-                        }
-                    });
-        } catch (Exception e) {
-            // asyncSend 时序列化失败是代码级错误
-            log.error("[评论计数] 事件序列化失败: noteId={}, action={}", noteId, action, e);
-        }
-    }
+    // 【C-010 审查删除】原 sendCommentCounterEvent：COMMENT/UNCOMMENT 均已本地消息化，零调用
 
     /**
      * O-Like-3/4：内部端点用——评论查询（存在性/作者/所属笔记）
