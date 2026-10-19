@@ -49,6 +49,7 @@ import java.util.stream.Collectors;
 public class CommentService {
 
     private final CommentMapper commentMapper;
+    private final LocalMessageHelper localMessageHelper; // C-010：本地消息统一入队
     private final NoteMapper noteMapper;
     private final DFAFilter dfaFilter;
     private final IdGeneratorUtil idGeneratorUtil;
@@ -80,6 +81,11 @@ public class CommentService {
         Note note = noteMapper.selectById(request.getNoteId());
         if (note == null || note.getStatus() != NoteStatus.PUBLISHED.getCode()) {
             throw new BizException(ResultCode.NOTE_NOT_FOUND, "笔记不存在或未发布");
+        }
+        // C-010 N2：与详情/分享口径一致——PUBLISHED 但审核非 APPROVED 的异常数据不可评论（防计数污染）
+        if (note.getAuditStatus() == null
+                || note.getAuditStatus() != com.myxhs.content.enums.AuditStatus.APPROVED.getCode()) {
+            throw new BizException(ResultCode.NOTE_STATUS_ERROR, "笔记未通过审核，不可评论");
         }
 
         // 2. DFA 敏感词检测
@@ -251,13 +257,26 @@ public class CommentService {
         final long totalDeleted = 1 + childDeleted;
         final Long noteId = comment.getNoteId();
         final Long deletedCommentId = commentId;
+        // C-010 N1：UNCOMMENT 事件走本地消息（同事务入队 + 提交后发送 + 补发兜底——原 fire-and-forget 丢失即静默）
+        final Long eventCommentId = totalDeleted == 1 ? deletedCommentId : null;
+        localMessageHelper.enqueue("SOCIAL_TOPIC:UNCOMMENT", localMsgId -> {
+            Map<String, Object> event = new HashMap<>();
+            event.put("noteId", noteId);
+            if (eventCommentId != null) {
+                event.put("commentId", eventCommentId); // 乱序治理：commentId 版本锚点（级联删除为 null）
+            }
+            event.put("actionTime", System.currentTimeMillis());
+            if (totalDeleted > 0) {
+                event.put("count", totalDeleted);
+            }
+            return event;
+        });
+
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
                 // O-Comment-1：COMMENT_LIST 死缓存已移除，保留 COMMENT_COUNT
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.COMMENT_COUNT + noteId);
-                // 发送单条 UNCOMMENT 事件（带计数），避免循环发送 N 条独立 MQ
-                sendCommentCounterEvent(noteId, totalDeleted == 1 ? deletedCommentId : null, "UNCOMMENT", totalDeleted);
             }
         });
     }

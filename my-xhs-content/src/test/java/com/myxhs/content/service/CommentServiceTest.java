@@ -67,6 +67,8 @@ class CommentServiceTest {
     private RocketMQTemplate rocketMQTemplate;
     @Mock
     private UserFeignClient userFeignClient;
+    @Mock
+    private LocalMessageHelper localMessageHelper;
 
     private CommentService commentService;
 
@@ -79,7 +81,7 @@ class CommentServiceTest {
     @BeforeEach
     void setUp() {
         commentService = new CommentService(
-                commentMapper, noteMapper, dfaFilter,
+                commentMapper, localMessageHelper, noteMapper, dfaFilter,
                 idGeneratorUtil, cacheHelper, rocketMQTemplate, userFeignClient);
     }
 
@@ -164,6 +166,8 @@ class CommentServiceTest {
                     .doesNotThrowAnyException();
 
             verify(commentMapper).deleteById(COMMENT_ID);
+            // C-010 N1：UNCOMMENT 事件经 helper 本地消息化
+            verify(localMessageHelper).enqueue(eq("SOCIAL_TOPIC:UNCOMMENT"), any());
         }
     }
 
@@ -176,6 +180,8 @@ class CommentServiceTest {
         note.setTitle("测试笔记标题");
         note.setContent("测试笔记内容");
         note.setStatus(NoteStatus.PUBLISHED.getCode());
+        // C-010 N2：评论入口要求"已发布且审核通过"
+        note.setAuditStatus(com.myxhs.content.enums.AuditStatus.APPROVED.getCode());
         note.setCreatedAt(LocalDateTime.now());
         return note;
     }
@@ -199,5 +205,19 @@ class CommentServiceTest {
         request.setParentId(0L);
         request.setContent(TEST_CONTENT);
         return request;
+    }
+
+    @Test
+    @DisplayName("C-010 N2：已驳回笔记（PUBLISHED+REJECTED）不可评论")
+    void addComment_rejectedNote_forbidden() {
+        Note note = buildNote();
+        note.setAuditStatus(com.myxhs.content.enums.AuditStatus.REJECTED.getCode());
+        CommentCreateRequest request = buildCreateRequest();
+        when(noteMapper.selectById(NOTE_ID)).thenReturn(note);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> commentService.createComment(USER_ID, request))
+                .isInstanceOf(com.myxhs.common.exception.BizException.class)
+                .hasMessageContaining("未通过审核");
     }
 }

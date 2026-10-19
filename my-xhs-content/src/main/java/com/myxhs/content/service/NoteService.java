@@ -67,6 +67,7 @@ public class NoteService {
     private final RocketMQTemplate rocketMQTemplate;
     private final BusinessMetrics businessMetrics;
     private final com.myxhs.content.mapper.NoteEventMapper noteEventMapper;
+    private final LocalMessageHelper localMessageHelper; // C-010：本地消息统一入队
 
     /** 每页最大条数限制 */
     private static final int MAX_PAGE_SIZE = 50;
@@ -102,57 +103,17 @@ public class NoteService {
         recordNoteEvent(note.getId(), userId, "PUBLISH",
                 NoteStatus.PUBLISHED.getCode(), AuditStatus.APPROVED.getCode());
 
-        businessMetrics.recordFeedPush("publish");
+        businessMetrics.recordAction("content", "publish"); // C-010 N4：指标口径（原混入 feed.push.total）
 
-        // 4.【M2】写入本地消息表（与笔记入库同一事务，保证不丢消息）
+        // 4.【M2/C-010】本地消息入队（与笔记入库同一事务；helper 统一三段式——提交后发送 + 成功标记 + 失败留表补发）
         NotePublishEvent event = new NotePublishEvent();
         event.setNoteId(note.getId());
         event.setAuthorId(userId);
         event.setPublishTime(System.currentTimeMillis());
         event.setNoteType(note.getNoteType() != null ? note.getNoteType().toString() : "0");
-
-        LocalMessage localMsg = new LocalMessage();
-        localMsg.setTopic("FEED_TOPIC");
-        localMsg.setBody("{}");
-        localMsg.setStatus(0); // 待发送
-        localMsg.setRetryCount(0);
-        localMsg.setCreatedAt(java.time.LocalDateTime.now());
-        localMessageMapper.insert(localMsg);
-
-        event.setLocalMsgId(localMsg.getId());
-        localMsg.setBody(toJson(event));
-        localMessageMapper.updateById(localMsg);
-
-        final Long localMsgId = localMsg.getId();
-
-        // 5. 事务提交后：清除缓存 + 异步推送 Feed
-        final Long finalNoteId = note.getId();
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                // 异步通知 Feed 服务
-                try {
-                    rocketMQTemplate.asyncSend("FEED_TOPIC", 
-                        MqTraceHelper.wrapWithTraceContext(
-                            org.springframework.messaging.support.MessageBuilder.withPayload(event).build()
-                        ), 
-                        new org.apache.rocketmq.client.producer.SendCallback() {
-                        @Override
-                        public void onSuccess(org.apache.rocketmq.client.producer.SendResult sendResult) {
-                            log.info("[NoteService] Feed推送成功, noteId={}", finalNoteId);
-                            // 【M2】发送成功 → 标记本地消息已发送
-                            localMessageMapper.markSent(localMsgId);
-                        }
-
-                        @Override
-                        public void onException(Throwable e) {
-                            log.error("[NoteService] Feed推送失败(补偿任务重试), noteId={}", finalNoteId, e);
-                        }
-                    });
-                } catch (Exception e) {
-                    log.error("[NoteService] Feed推送发送异常, noteId={}", finalNoteId, e);
-                }
-            }
+        localMessageHelper.enqueue("FEED_TOPIC", localMsgId -> {
+            event.setLocalMsgId(localMsgId);
+            return event;
         });
 
         return note.getId();
@@ -272,24 +233,37 @@ public class NoteService {
         noteMapper.deleteById(noteId);
         log.info("[笔记] 删除成功: noteId={}, userId={}, 级联删除{}条评论", noteId, userId, commentCount);
 
-        // 5. 事务提交后清除缓存 + 补偿 counter 服务 + 通知 Feed 清理
+        // 5.【C-010 N1】删除链路事件走本地消息（同事务入队 + 提交后发送 + 补发兜底——原 fire-and-forget 丢失即静默）
         final Long finalNoteId = noteId;
         final Long finalUserId = userId;
         final long finalCommentCount = commentCount;
+        // 补偿 counter：单条 UNCOMMENT 事件（带计数），避免循环发送 N 条独立 MQ
+        localMessageHelper.enqueue("SOCIAL_TOPIC:UNCOMMENT",
+                localMsgId -> buildCounterEventPayload(finalNoteId, finalUserId, finalCommentCount));
+        // 通知 Feed 流清理已删除的笔记
+        localMessageHelper.enqueue("SOCIAL_TOPIC:NOTE_DELETE",
+                localMsgId -> buildCounterEventPayload(finalNoteId, finalUserId, 0));
+
+        // 6. 事务提交后清除缓存
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
                 // 级联删除评论后同步失效评论数缓存（原实现只失效笔记缓存 → 评论数最长 5min 仍返回旧值）
-
                 cacheHelper.delayDoubleDelete(com.myxhs.common.constants.RedisKeyConstants.COMMENT_COUNT + noteId);
-
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.NOTE_DETAIL + finalNoteId);
-                // 补偿 counter：发送单条 UNCOMMENT 事件（带计数），避免循环发送 N 条独立 MQ
-                sendCounterEvent(finalNoteId, finalUserId, "UNCOMMENT", finalCommentCount);
-                // 通知 Feed 流清理已删除的笔记
-                sendCounterEvent(finalNoteId, finalUserId, "NOTE_DELETE", 0);
             }
         });
+    }
+
+    /** C-010：计数事件载荷（与 sendCounterEvent 同格式——consumer 兼容） */
+    private Map<String, Object> buildCounterEventPayload(Long noteId, Long userId, long count) {
+        Map<String, Object> event = new HashMap<>();
+        event.put("noteId", noteId);
+        event.put("userId", userId);
+        if (count > 0) {
+            event.put("count", count);
+        }
+        return event;
     }
 
     // ==================== 查询笔记详情 ====================
@@ -350,14 +324,14 @@ public class NoteService {
             if (dbNote != null && dbNote.getStatus() == NoteStatus.PUBLISHED.getCode()
                     && dbNote.getAuditStatus() != null
                     && dbNote.getAuditStatus() == com.myxhs.content.enums.AuditStatus.APPROVED.getCode()) {
-                businessMetrics.recordFeedPush("cache_miss");
+                businessMetrics.recordAction("content", "cache_miss"); // C-010 N4
                 return dbNote;
             }
             return null;
         }, 30, TimeUnit.MINUTES);
 
         if (note != null && !cacheMiss.get()) {
-            businessMetrics.recordFeedPush("cache_hit");
+            businessMetrics.recordAction("content", "cache_hit"); // C-010 N4
         }
 
         if (note == null) {
@@ -446,53 +420,22 @@ public class NoteService {
         recordNoteEvent(noteId, userId, "PUBLISH",
                 NoteStatus.PUBLISHED.getCode(), AuditStatus.APPROVED.getCode());
 
-        // 【M2修复】草稿发布后通知 Feed 服务
+        // 【M2修复/C-010】草稿发布后通知 Feed 服务（helper 统一入队）
         NotePublishEvent draftEvent = new NotePublishEvent();
         draftEvent.setNoteId(noteId);
         draftEvent.setAuthorId(userId);
         draftEvent.setPublishTime(System.currentTimeMillis());
         draftEvent.setNoteType(note.getNoteType() != null ? note.getNoteType().toString() : "0");
+        localMessageHelper.enqueue("FEED_TOPIC", localMsgId -> {
+            draftEvent.setLocalMsgId(localMsgId);
+            return draftEvent;
+        });
 
-        LocalMessage localMsg = new LocalMessage();
-        localMsg.setTopic("FEED_TOPIC");
-        localMsg.setBody("{}");
-        localMsg.setStatus(0);
-        localMsg.setRetryCount(0);
-        localMsg.setCreatedAt(java.time.LocalDateTime.now());
-        localMessageMapper.insert(localMsg);
-
-        draftEvent.setLocalMsgId(localMsg.getId());
-        localMsg.setBody(toJson(draftEvent));
-        localMessageMapper.updateById(localMsg);
-
-        final Long draftLocalMsgId = localMsg.getId();
-
-        // 事务提交后：清除缓存 + 推送 Feed
+        // 事务提交后：清除笔记详情缓存（避免草稿时的空值占位符导致发布后 404）
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
-                // 清除笔记详情缓存（避免草稿时的空值占位符导致发布后 404）
                 cacheHelper.delayDoubleDelete(RedisKeyConstants.NOTE_DETAIL + noteId);
-                try {
-                    rocketMQTemplate.asyncSend("FEED_TOPIC", 
-                        MqTraceHelper.wrapWithTraceContext(
-                            org.springframework.messaging.support.MessageBuilder.withPayload(draftEvent).build()
-                        ), 
-                        new org.apache.rocketmq.client.producer.SendCallback() {
-                        @Override
-                        public void onSuccess(org.apache.rocketmq.client.producer.SendResult sendResult) {
-                            log.info("[NoteService] 草稿发布Feed推送成功, noteId={}", noteId);
-                            localMessageMapper.markSent(draftLocalMsgId);
-                        }
-
-                        @Override
-                        public void onException(Throwable e) {
-                            log.error("[NoteService] 草稿发布Feed推送失败(补偿任务重试), noteId={}", noteId, e);
-                        }
-                    });
-                } catch (Exception e) {
-                    log.error("[NoteService] 草稿发布Feed推送异常, noteId={}", noteId, e);
-                }
             }
         });
     }
@@ -694,7 +637,7 @@ public class NoteService {
             return objectMapper.readValue(json, typeRef);
         } catch (JsonProcessingException e) {
             log.error("[JSON] 反序列化失败: {}", json, e);
-            businessMetrics.recordFeedPush("json_deser_fail");
+            businessMetrics.recordAction("content", "json_deser_fail"); // C-010 N4
             return null;
         }
     }
@@ -707,6 +650,7 @@ public class NoteService {
      *
      * @param status 1=通过 2=驳回
      */
+    @Transactional(rollbackFor = Exception.class)
     public void auditNote(Long noteId, int status) {
         if (status != AuditStatus.APPROVED.getCode() && status != AuditStatus.REJECTED.getCode()) {
             throw new BizException(ResultCode.PARAM_INVALID, "审核状态仅支持 1(通过)/2(驳回)");
@@ -719,7 +663,9 @@ public class NoteService {
                 .eq(Note::getId, noteId)
                 .set(Note::getAuditStatus, status)
                 .set(Note::getUpdatedAt, java.time.LocalDateTime.now()));
-        // 详情缓存失效（列表无缓存，直接查 DB 即生效）
+        // C-010 N7：审核轨迹入事件流水（同事务；失败不阻塞——recordNoteEvent catch-log 语义保留）
+        recordNoteEvent(noteId, note.getUserId(), "AUDIT", note.getStatus(), status);
+        // 详情缓存失效（列表无缓存，直接查 DB 即生效；delayDoubleDelete 第二次删除覆盖"失效→提交"间回填竞态）
         cacheHelper.delayDoubleDelete(RedisKeyConstants.NOTE_DETAIL + noteId);
         log.info("[笔记审核] noteId={}, auditStatus={}（原 {}）", noteId, status, note.getAuditStatus());
     }

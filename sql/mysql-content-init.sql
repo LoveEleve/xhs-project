@@ -237,3 +237,18 @@ CREATE TABLE IF NOT EXISTS t_local_message (
     INDEX idx_status_retry (status, retry_count, created_at),
     INDEX idx_push_status (push_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='本地消息表(Feed可靠性保障)';
+
+-- C-010：t_note_event 补入基线（原仅 init-all 有——基线初始化环境事件流水静默丢失）
+CREATE TABLE IF NOT EXISTS t_note_event (
+    id            BIGINT       NOT NULL COMMENT 'ID',
+    note_id       BIGINT       NOT NULL COMMENT '笔记ID',
+    user_id       BIGINT       NOT NULL COMMENT '用户ID',
+    event_type    VARCHAR(32)  NOT NULL COMMENT '事件类型：PUBLISH/DELETE/UPDATE/COMMENT/LIKE/AUDIT',
+    status        TINYINT      DEFAULT 0 COMMENT '笔记状态',
+    audit_status  TINYINT      DEFAULT 0 COMMENT '审核状态',
+    event_time    DATETIME     DEFAULT NULL COMMENT '事件时间',
+    created_at    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (id),
+    INDEX idx_note_id (note_id),
+    INDEX idx_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='笔记事件流水(append-only)';

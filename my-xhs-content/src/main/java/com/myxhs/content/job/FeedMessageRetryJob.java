@@ -80,13 +80,19 @@ public class FeedMessageRetryJob {
             for (LocalMessage msg : messages) {
                 final Long msgId = msg.getId();
                 try {
-                    NotePublishEvent event = objectMapper.readValue(msg.getBody(), NotePublishEvent.class);
-                    // 补丁 localMsgId：body 序列化时 localMsgId 为 null，对齐 compensateIncompletePush
-                    if (event.getLocalMsgId() == null) {
-                        event.setLocalMsgId(msgId);
+                    // C-010 泛化：按**原始 body** 重投（不再强类型 NotePublishEvent——支持计数事件等任意 JSON 载荷）；
+                    // FEED_TOPIC 行保留 localMsgId 补丁（legacy 行 localMsgId 为 null，FeedPushConsumer 断点续推需要）
+                    String body = msg.getBody();
+                    if ("FEED_TOPIC".equals(msg.getTopic())) {
+                        NotePublishEvent event = objectMapper.readValue(body, NotePublishEvent.class);
+                        if (event.getLocalMsgId() == null) {
+                            event.setLocalMsgId(msgId);
+                            body = objectMapper.writeValueAsString(event);
+                        }
                     }
+                    final String sendBody = body;
                     // asyncSend + 回调
-                    rocketMQTemplate.asyncSend(msg.getTopic(), event,
+                    rocketMQTemplate.asyncSend(msg.getTopic(), sendBody,
                             new org.apache.rocketmq.client.producer.SendCallback() {
                                 @Override
                                 public void onSuccess(org.apache.rocketmq.client.producer.SendResult result) {
@@ -96,12 +102,14 @@ public class FeedMessageRetryJob {
                                 @Override
                                 public void onException(Throwable e) {
                                     localMessageMapper.incrementRetry(msgId, MAX_RETRY);
+                                    recordDeadLetterIfExceeded(msg);
                                     log.warn("[Feed补偿] 补发失败: localMsgId={}, retryCount={}", msgId, msg.getRetryCount() + 1);
                                 }
                             });
                     sent++;
                 } catch (Exception e) {
                     localMessageMapper.incrementRetry(msg.getId(), MAX_RETRY);
+                    recordDeadLetterIfExceeded(msg);
                     failed++;
                     log.warn("[Feed补偿] 补发异常: localMsgId={}", msgId, e);
                 }
@@ -225,6 +233,15 @@ public class FeedMessageRetryJob {
             log.error("[Feed推送补偿] 执行异常", e);
         } finally {
             releaseLock(COMPENSATE_LOCK_KEY, lockValue);
+        }
+    }
+
+    /** C-010 N3：发送侧死信指标（retry_count+1 达上限 → incrementRetry 已置 status=3） */
+    private void recordDeadLetterIfExceeded(LocalMessage msg) {
+        int next = (msg.getRetryCount() != null ? msg.getRetryCount() : 0) + 1;
+        if (next >= MAX_RETRY) {
+            businessMetrics.recordFeedPushTerminal("send_retry_exceeded");
+            log.error("[Feed补偿] 发送侧死信(status=3)待人工: localMsgId={}, retryCount={}", msg.getId(), next);
         }
     }
 

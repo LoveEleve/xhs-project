@@ -43,14 +43,6 @@ public interface LocalMessageMapper extends BaseMapper<LocalMessage> {
     int incrementRetry(@Param("id") Long id, @Param("maxRetry") int maxRetry);
 
     /**
-     * 查询待推送的消息（已发送 MQ 但 Feed 推送未完成）
-     */
-    @Select("SELECT * FROM t_local_message " +
-            "WHERE status = 1 AND push_status IN (0, 1) " +
-            "ORDER BY id ASC LIMIT #{limit}")
-    List<LocalMessage> selectPendingPush(@Param("limit") int limit);
-
-    /**
      * 查询待推送的消息（已发送 MQ 但 Feed 推送未完成，带延迟过滤）
      * <p>
      * 与 selectPendingPush 的区别：增加 created_at 延迟过滤，避免刚发布的消息立即被补偿。
@@ -58,6 +50,7 @@ public interface LocalMessageMapper extends BaseMapper<LocalMessage> {
      */
     @Select("SELECT * FROM t_local_message " +
             "WHERE status = 1 AND push_status IN (0, 1) " +
+            "AND topic = 'FEED_TOPIC' " + // C-010：仅 Feed 行参与推送补偿（计数事件行 push_status 恒 0，会被误扫）
             "AND created_at < #{cutoffTime} " +
             "AND (push_next_retry_time IS NULL OR push_next_retry_time <= NOW()) " +
             "ORDER BY id ASC LIMIT #{limit}")

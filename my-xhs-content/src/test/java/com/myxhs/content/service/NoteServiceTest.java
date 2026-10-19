@@ -77,6 +77,8 @@ class NoteServiceTest {
     private CommentMapper commentMapper;
     @Mock
     private NoteEventMapper noteEventMapper;
+    @Mock
+    private LocalMessageHelper localMessageHelper;
 
     private ObjectMapper objectMapper;
     private NoteService noteService;
@@ -86,11 +88,17 @@ class NoteServiceTest {
 
     @BeforeEach
     void setUp() {
+        // C-010：初始化 MP TableInfo（auditNote 等 lambda wrapper 的列解析需要）
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
+                new org.apache.ibatis.builder.MapperBuilderAssistant(
+                        new com.baomidou.mybatisplus.core.MybatisConfiguration(), ""),
+                Note.class);
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
         noteService = new NoteService(
                 noteMapper, commentMapper, localMessageMapper, dfaFilter, idGeneratorUtil,
-                cacheHelper, objectMapper, rocketMQTemplate, businessMetrics, noteEventMapper
+                cacheHelper, objectMapper, rocketMQTemplate, businessMetrics, noteEventMapper,
+                localMessageHelper
         );
     }
 
@@ -116,6 +124,8 @@ class NoteServiceTest {
             Long noteId = noteService.publishNote(USER_ID, request);
 
             assertThat(noteId).isEqualTo(NOTE_ID);
+            // C-010：Feed 事件经 helper 统一入队
+            verify(localMessageHelper).enqueue(eq("FEED_TOPIC"), any());
         }
     }
 
@@ -209,7 +219,31 @@ class NoteServiceTest {
 
             verify(noteMapper).selectById(NOTE_ID);
             verify(noteMapper).deleteById(NOTE_ID);
+            // C-010 N1：删除链路两条事件（UNCOMMENT 带计数 + NOTE_DELETE）经 helper 入队
+            verify(localMessageHelper).enqueue(eq("SOCIAL_TOPIC:UNCOMMENT"), any());
+            verify(localMessageHelper).enqueue(eq("SOCIAL_TOPIC:NOTE_DELETE"), any());
         }
+    }
+
+    // ==================== 审核（C-010 N7） ====================
+
+    @Test
+    @DisplayName("C-010 N7：审核笔记 → 状态更新 + 记录 AUDIT 事件 + 缓存失效")
+    void auditNoteRecordsEvent() {
+        Note note = buildNote(NOTE_ID, USER_ID, "待审", "内容", NoteStatus.PUBLISHED.getCode());
+        note.setAuditStatus(com.myxhs.content.enums.AuditStatus.PENDING.getCode());
+        when(noteMapper.selectById(NOTE_ID)).thenReturn(note);
+
+        noteService.auditNote(NOTE_ID, com.myxhs.content.enums.AuditStatus.APPROVED.getCode());
+
+        verify(noteMapper).update(isNull(), any());
+        ArgumentCaptor<com.myxhs.content.entity.NoteEvent> evCaptor =
+                ArgumentCaptor.forClass(com.myxhs.content.entity.NoteEvent.class);
+        verify(noteEventMapper).insert(evCaptor.capture());
+        assertThat(evCaptor.getValue().getEventType()).isEqualTo("AUDIT");
+        assertThat(evCaptor.getValue().getAuditStatus())
+                .isEqualTo(com.myxhs.content.enums.AuditStatus.APPROVED.getCode());
+        verify(cacheHelper).delayDoubleDelete(contains("note:detail"));
     }
 
     // ==================== 辅助方法 ====================
