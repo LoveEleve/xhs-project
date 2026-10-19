@@ -24,7 +24,7 @@ public class ChatMessage {
     @TableId
     private Long id;
 
-    /** 会话ID = min(A,B) << 32 | max(A,B) */
+    /** 会话ID（C-013 F4 修正：首条消息分配雪花 ID 并写入 t_chat_user_relation，双方复用；勿用哈希拼接） */
     private Long conversationId;
 
     private Long senderId;
@@ -39,8 +39,8 @@ public class ChatMessage {
     /** 会话内消息序列号（Redis INCR 生成，保证同会话消息严格有序） */
     private Long seqNo;
 
-    /** 是否已读：0-未读 1-已读 */
-    private Integer isRead;
+    // C-013 F5：原 is_read 字段（0-未读 1-已读）零读写（已读态以 t_chat_user_relation.unread_count 表达）
+    // → 实体字段移除（DDL 列保留兼容，勿新增引用）
 
     private LocalDateTime createdAt;
 }

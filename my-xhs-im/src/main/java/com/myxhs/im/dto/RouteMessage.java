@@ -9,8 +9,8 @@ import lombok.NoArgsConstructor;
  * 跨实例消息路由对象（通过 Redis Pub/Sub 传递）
  * <p>
  * 【M4 改造】传输方式从 RocketMQ BROADCASTING 改为 Redis Pub/Sub 定向投递。
- * msgType 约定：0=普通聊天 98=TYPING 99=已读回执
- * msgType ∈ {98, 99} 时 content 字段为完整 JSON 字符串，直接透传。
+ * msgType 约定：0=普通聊天 **97=跨实例踢线（KICK）** 98=TYPING 99=已读回执
+ * msgType ∈ {98, 99} 时 content 字段为完整 JSON 字符串，直接透传；97 仅用 receiverId 触发本地关闭。
  * </p>
  */
 @Data

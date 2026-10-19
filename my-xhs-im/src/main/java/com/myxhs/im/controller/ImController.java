@@ -47,7 +47,9 @@ public class ImController {
     private final AccessTokenGuard accessTokenGuard;
     private final org.springframework.data.redis.core.StringRedisTemplate stringRedisTemplate;
 
-    @org.springframework.beans.factory.annotation.Value("${jwt.secret:${IM_JWT_SECRET:}}")
+    // C-013 F4 修正：原写法 ${jwt.secret:${IM_JWT_SECRET:}} 提及 IM_JWT_SECRET——该环境变量并不存在
+    // （yml 的实际链路是 jwt.secret ← ${JWT_SECRET:demo}）；统一读 jwt.secret（yml 保证非空，启动自检 fail-closed）
+    @org.springframework.beans.factory.annotation.Value("${jwt.secret:}")
     private String jwtSecret;
 
     @PostConstruct
@@ -68,6 +70,7 @@ public class ImController {
      * </p>
      */
     @PostMapping("/ws/ticket")
+    @RateLimit(prefix = "im:ws:ticket", maxRequests = 10, windowSeconds = 60, perUser = true)
     public R<Map<String, String>> createTicket(@RequestHeader("X-User-Id") Long userId) {
         // 生成短期 JWT ticket（5 分钟有效期）
         String ticket = JwtUtil.generateToken(String.valueOf(userId), "ws_ticket", 5 * 60 * 1000L, jwtSecret);
@@ -83,6 +86,7 @@ public class ImController {
      * 获取会话列表
      */
     @GetMapping("/conversations")
+    @RateLimit(prefix = "im:conversations", maxRequests = 30, windowSeconds = 60, perUser = true)
     public R<Map<String, Object>> getConversations(
             @RequestHeader("X-User-Id") Long userId,
             @RequestParam(defaultValue = "1") int page,
@@ -114,6 +118,7 @@ public class ImController {
      * 获取与某人的聊天记录（分页）
      */
     @GetMapping("/messages/{peerId}")
+    @RateLimit(prefix = "im:messages", maxRequests = 60, windowSeconds = 60, perUser = true)
     public R<Map<String, Object>> getMessages(
             @RequestHeader("X-User-Id") Long userId,
             @PathVariable Long peerId,
@@ -170,6 +175,7 @@ public class ImController {
      * 获取总未读消息数
      */
     @GetMapping("/unread-count")
+    @RateLimit(prefix = "im:unreadCount", maxRequests = 60, windowSeconds = 60, perUser = true)
     public R<Map<String, Integer>> getUnreadCount(@RequestHeader("X-User-Id") Long userId) {
         int total = chatService.getTotalUnreadCount(userId);
         return R.ok(Map.of("total", total));

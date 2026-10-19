@@ -38,9 +38,10 @@ import java.util.stream.Collectors;
  * 4. 会话列表查询 + 历史消息查询
  * </p>
  * <p>
- * 写扩散一致性保证：
- * - A 和 B 的消息使用同一个 conversation_id 做分片键
- * - 同分片下可用本地事务保证 4 个操作（2 条消息 + 2 条会话更新）的原子性
+ * 写扩散一致性保证（C-013 F4 修正：原文"2 条消息 + 2 条会话"与实现不符——实际为
+ * **共享存储 1 条消息 + 双方会话各 1 次 upsert**（见 MessagePersistService 类注释））：
+ * - A 和 B 的消息共享同一个 conversation_id（首条分配雪花 ID、双方复用；预留分片键）
+ * - 同一事务保证"消息 INSERT + 发送者会话 upsert + 接收者会话 upsert"的原子性
  * - 事务失败则回滚，发送 NACK 给发送者
  * </p>
  */
@@ -67,6 +68,16 @@ public class ChatService {
     private static final String UNREAD_KEY_PREFIX = "myxhs:im:unread:";
     private static final String OFFLINE_KEY_PREFIX = "myxhs:im:offline:";
     private static final int MAX_OFFLINE_MESSAGES = 1000;
+
+    /** C-013 §7-4：未读 hash 30d 滑动 TTL（活跃续期；miss 由连接时重建/DB fallback 收敛） */
+    private static final long UNREAD_TTL_SECONDS = Duration.ofDays(30).getSeconds();
+
+    /** C-013 T1.4：未读 +1 单脚本（HINCRBY + EXPIRE 原子——单键无跨 slot 问题） */
+    private static final org.springframework.data.redis.core.script.DefaultRedisScript<Long> UNREAD_INCR_SCRIPT =
+            new org.springframework.data.redis.core.script.DefaultRedisScript<>(
+                    "redis.call('HINCRBY', KEYS[1], ARGV[1], 1) " +
+                    "redis.call('EXPIRE', KEYS[1], ARGV[2]) " +
+                    "return 1", Long.class);
 
     /** 【M25】离线消息原子存储 Lua 脚本 */
     private static final org.springframework.data.redis.core.script.DefaultRedisScript<Long> STORE_OFFLINE_SCRIPT =
@@ -126,14 +137,39 @@ public class ChatService {
         LocalDateTime now = LocalDateTime.now();
         org.redisson.api.RLock convLock = redissonClient.getLock(
                 "myxhs:im:conv:lock:" + Math.min(senderId, receiverId) + ":" + Math.max(senderId, receiverId));
+        // C-013 F6：clientMsgId 幂等（可选字段；不传=旧行为）——锁内 SETNX 映射（值=msgId，TTL 5min），
+        // 重放（ACK 丢失后的客户端重发）直接 ACK 原 msgId 不重复落库/路由；失败路径删标记（家族 removeMark 契约）
+        String clientMsgId = imMsg.getClientMsgId();
+        String dedupKey = (clientMsgId != null && !clientMsgId.isBlank())
+                ? "myxhs:im:msgdedup:" + senderId + ":" + clientMsgId : null;
+        boolean dedupMarked = false;
         try {
             if (!convLock.tryLock(3, 10, java.util.concurrent.TimeUnit.SECONDS)) {
                 sendJson(senderSession, Map.of("ver", 1, "type", "NACK", "msgId", msgId, "reason", "发送过于频繁，请重试"));
                 return;
             }
             try {
+                if (dedupKey != null) {
+                    Boolean first = stringRedisTemplate.opsForValue()
+                            .setIfAbsent(dedupKey, String.valueOf(msgId), Duration.ofMinutes(5));
+                    if (!Boolean.TRUE.equals(first)) {
+                        String existing = stringRedisTemplate.opsForValue().get(dedupKey);
+                        long ackMsgId = msgId;
+                        if (existing != null) {
+                            try { ackMsgId = Long.parseLong(existing); } catch (NumberFormatException ignored) { }
+                        }
+                        sendJson(senderSession, Map.of("ver", 1, "type", "ACK", "msgId", ackMsgId,
+                                "timestamp", System.currentTimeMillis(), "traceId", currentTraceId(senderSession)));
+                        log.info("[IM] clientMsgId 重放去重: senderId={}, clientMsgId={}, ackMsgId={}",
+                                senderId, clientMsgId, ackMsgId);
+                        return;
+                    }
+                    dedupMarked = true;
+                }
                 conversationId = resolveConversationId(senderId, receiverId);
                 // 【M8】会话级序列号（Redis INCR 原子递增，保证同会话消息严格有序）
+                // C-013 §7-4：seq 键**有意不设 TTL**——过期重置会让新消息 seq 从 1 重来、破坏历史排序；
+                // 正确演进=锁内以 DB max(seq_no)+1 播种（记录不做）
                 seqNo = stringRedisTemplate.opsForValue().increment("myxhs:im:seq:" + conversationId);
                 // 1. 持久化消息 + 更新会话（通过独立 Bean 调用，确保 @Transactional 生效）
                 messagePersistService.saveMessageWithTransaction(msgId, conversationId, senderId, receiverId, content, msgType, seqNo, now);
@@ -148,11 +184,25 @@ public class ChatService {
             return;
         } catch (Exception e) {
             log.error("[IM] 写扩散双写失败: senderId={}, receiverId={}", senderId, receiverId, e);
+            // C-013 F6：失败删幂等标记（重试可真正重处理）
+            if (dedupMarked && dedupKey != null) {
+                try { stringRedisTemplate.delete(dedupKey); } catch (Exception ignored) { }
+            }
             sendJson(senderSession, Map.of("ver", 1, "type", "NACK", "msgId", msgId, "reason", "发送失败，请重试"));
             return;
         }
 
-        // 2. 路由投递
+        // 2. 未读计数前移（C-013 F1/D3）：必须在推送之前——接收方 READ 清零必然晚于 +1
+        //    （原实现在路由推送之后：在线接收方快速 READ 清零后 +1 才落地 → 幽灵未读 DB=0/Redis=1）
+        try {
+            stringRedisTemplate.execute(UNREAD_INCR_SCRIPT,
+                    Collections.singletonList(UNREAD_KEY_PREFIX + receiverId),
+                    String.valueOf(senderId), String.valueOf(UNREAD_TTL_SECONDS));
+        } catch (Exception e) {
+            log.warn("[IM] 未读计数更新失败(降级：连接时重建收敛): receiverId={}, senderId={}", receiverId, senderId, e);
+        }
+
+        // 3. 路由投递
         long timestamp = System.currentTimeMillis();
         String traceId = currentTraceId(senderSession);
         String chatJson = JSON.toJSONString(Map.of(
@@ -165,45 +215,49 @@ public class ChatService {
         // 目标实例进程挂掉/pod 重建时 publish 成功但无人消费 → 消息永久丢失（发送者已收到 ACK）。
         // 现在离线集合充当持久副本，客户端收消息后 ACK(ZREM) 才删除；在线路径多一次 ZADD（幂等），
         // 未 ACK 的重连会有重复投递（客户端按 msgId 去重）。
-        storeOfflineMessage(receiverId, msgId);
-
-        String targetServerId = onlineRouteService.getRoute(receiverId);
-        if (targetServerId != null && targetServerId.equals(onlineRouteService.getServerId())) {
-            // 同实例直推：成功即删离线副本（失败则保留，上线补发）
-            if (webSocketHandler.pushToUser(receiverId, chatJson)) {
-                removeOfflineMessage(receiverId, msgId);
-            }
-        } else if (targetServerId != null) {
-            // 【M4】跨实例通过 Redis Pub/Sub 定向投递，取代 RocketMQ 广播模式
-            RouteMessage routeMsg = RouteMessage.builder()
-                    .receiverId(receiverId)
-                    .targetServerId(targetServerId)
-                    .msgId(msgId)
-                    .seqNo(seqNo)
-                    .senderId(senderId)
-                    .content(content)
-                    .msgType(msgType)
-                    .timestamp(timestamp)
-                    .traceId(traceId)
-                    .build();
-            try {
-                stringRedisTemplate.convertAndSend("myxhs:im:route:" + targetServerId,
-                        JSON.toJSONString(routeMsg));
-            } catch (Exception e) {
-                log.warn("[IM] Pub/Sub 路由失败(离线副本已存, 上线补发): receiverId={}", receiverId, e);
-            }
-        }
-        // 用户不在线：离线副本已在上面写入，无需额外处理
-
-        // 3. 更新未读计数（Redis Hash：一个 Key 管理用户所有会话的未读数）
+        // C-013 D3：异常降级——DB 已持久化，离线副本失败仍继续推送/ACK
         try {
-            stringRedisTemplate.opsForHash().increment(
-                    UNREAD_KEY_PREFIX + receiverId, String.valueOf(senderId), 1);
+            storeOfflineMessage(receiverId, msgId);
         } catch (Exception e) {
-            log.warn("[IM] 未读计数更新失败: receiverId={}, senderId={}", receiverId, senderId);
+            log.warn("[IM] 离线副本写入失败(降级：仍尝试推送与 ACK——DB 已持久化): receiverId={}, msgId={}",
+                    receiverId, msgId, e);
         }
 
-        // 4. 发送 ACK 给发送者
+        // C-013 D3：路由段整体降级——任一 Redis 异常不冒泡（ACK 必达，防发送方重发重复）
+        try {
+            String targetServerId = onlineRouteService.getRoute(receiverId);
+            if (targetServerId != null && targetServerId.equals(onlineRouteService.getServerId())) {
+                // 同实例直推：成功即删离线副本（失败则保留，上线补发）
+                if (webSocketHandler.pushToUser(receiverId, chatJson)) {
+                    removeOfflineMessage(receiverId, msgId);
+                }
+            } else if (targetServerId != null) {
+                // 【M4】跨实例通过 Redis Pub/Sub 定向投递，取代 RocketMQ 广播模式
+                RouteMessage routeMsg = RouteMessage.builder()
+                        .receiverId(receiverId)
+                        .targetServerId(targetServerId)
+                        .msgId(msgId)
+                        .seqNo(seqNo)
+                        .senderId(senderId)
+                        .content(content)
+                        .msgType(msgType)
+                        .timestamp(timestamp)
+                        .traceId(traceId)
+                        .build();
+                try {
+                    stringRedisTemplate.convertAndSend("myxhs:im:route:" + targetServerId,
+                            JSON.toJSONString(routeMsg));
+                } catch (Exception e) {
+                    log.warn("[IM] Pub/Sub 路由失败(离线副本已存, 上线补发): receiverId={}", receiverId, e);
+                }
+            }
+            // 用户不在线：离线副本已在上面写入，无需额外处理
+        } catch (Exception e) {
+            log.warn("[IM] 路由投递失败(降级：ACK 仍发——消息已持久化，接收方经离线补发/列表可见): receiverId={}, msgId={}",
+                    receiverId, msgId, e);
+        }
+
+        // 4. ACK 必达（C-013 D3）：消息已持久化（DB 权威）——路由/离线/未读任一降级也不让发送方重发
         sendJson(senderSession, Map.of("ver", 1, "type", "ACK", "msgId", msgId, "timestamp", timestamp, "traceId", traceId));
         log.info("[IM] CHAT处理完成: msgId={}, senderId={}, receiverId={}, traceId={}",
                 msgId, senderId, receiverId, traceId);
@@ -258,8 +312,12 @@ public class ChatService {
         // 1. 定向清零 DB 未读（原实现整行 updateById → 用旧快照覆盖并发新消息的 lastMessage/unread）
         chatUserRelationMapper.resetUnread(userId, peerId);
 
-        // 2. 清零 Redis 未读计数
-        stringRedisTemplate.opsForHash().put(UNREAD_KEY_PREFIX + userId, String.valueOf(peerId), "0");
+        // 2. 清零 Redis 未读计数（C-013 D4：降级——Redis 抖动不中断 READ_NOTIFY；漂移由连接时重建收敛）
+        try {
+            stringRedisTemplate.opsForHash().put(UNREAD_KEY_PREFIX + userId, String.valueOf(peerId), "0");
+        } catch (Exception e) {
+            log.warn("[IM] 已读清零 Redis 失败(降级：READ_NOTIFY 继续): userId={}, peerId={}", userId, peerId, e);
+        }
 
         // 3. 通知对方"已读"（支持跨实例路由，与聊天消息相同的路由逻辑）
         String readTraceId = currentTraceId(session);
@@ -459,8 +517,12 @@ public class ChatService {
         // 1. 定向清零 DB 未读（同 handleRead，防整行覆盖）
         chatUserRelationMapper.resetUnread(userId, peerId);
 
-        // 2. 清零 Redis 未读计数
-        stringRedisTemplate.opsForHash().put(UNREAD_KEY_PREFIX + userId, String.valueOf(peerId), "0");
+        // 2. 清零 Redis 未读计数（C-013 D4：降级——Redis 抖动不中断 READ_NOTIFY；漂移由连接时重建收敛）
+        try {
+            stringRedisTemplate.opsForHash().put(UNREAD_KEY_PREFIX + userId, String.valueOf(peerId), "0");
+        } catch (Exception e) {
+            log.warn("[IM] 已读清零 Redis 失败(降级：READ_NOTIFY 继续): userId={}, peerId={}", userId, peerId, e);
+        }
     }
 
     /**
@@ -507,6 +569,39 @@ public class ChatService {
                         .eq(ChatUserRelation::getIsDeleted, 0)
                         .gt(ChatUserRelation::getUnreadCount, 0));
         return relations.stream().mapToInt(ChatUserRelation::getUnreadCount).sum();
+    }
+
+    /**
+     * C-013 D2：连接时从 DB 重建未读缓存（轻量对账——im 无对账 Job 的收敛点）
+     * <p>
+     * 未读有两个源：会话列表读 DB（relation.unread_count）、总未读读 Redis（hash）——漂移窗口
+     * （未读前移前的幽灵竞态/读写失败/进程崩溃）无 Job 收敛。WS 连接建立时以 DB 为准刷新 Redis：
+     * 每用户每次上线一次索引查询，天然对账点；与并发新消息的竞态窗口内可能少计 1（下次连接收敛）。
+     * </p>
+     */
+    public void refreshUnreadCache(Long userId) {
+        try {
+            List<ChatUserRelation> relations = chatUserRelationMapper.selectList(
+                    new LambdaQueryWrapper<ChatUserRelation>()
+                            .eq(ChatUserRelation::getUserId, userId)
+                            .eq(ChatUserRelation::getIsDeleted, 0)
+                            .gt(ChatUserRelation::getUnreadCount, 0));
+            String key = UNREAD_KEY_PREFIX + userId;
+            if (relations.isEmpty()) {
+                stringRedisTemplate.delete(key); // 全已读/全删会话 → 清残留键（getTotalUnreadCount 将走 DB fallback=0）
+                return;
+            }
+            Map<String, String> hash = new HashMap<>();
+            for (ChatUserRelation r : relations) {
+                hash.put(String.valueOf(r.getPeerId()), String.valueOf(r.getUnreadCount()));
+            }
+            stringRedisTemplate.delete(key);
+            stringRedisTemplate.opsForHash().putAll(key, hash);
+            stringRedisTemplate.expire(key, Duration.ofDays(30));
+            log.info("[IM] 未读缓存重建: userId={}, peers={}", userId, hash.size());
+        } catch (Exception e) {
+            log.warn("[IM] 未读缓存重建失败(降级：沿用现有缓存): userId={}", userId, e);
+        }
     }
 
     // ==================== 工具方法 ====================

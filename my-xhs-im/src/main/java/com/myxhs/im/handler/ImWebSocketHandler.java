@@ -51,14 +51,15 @@ public class ImWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
-        if (sessions.size() >= MAX_CONNECTIONS) {
-            log.warn("[IM] 连接数超限: current={}, max={}", sessions.size(), MAX_CONNECTIONS);
-            closeQuietly(session, CloseStatus.SERVICE_OVERLOAD);
-            return;
-        }
         Long userId = getUserId(session);
         if (userId == null) {
             closeQuietly(session, CloseStatus.POLICY_VIOLATION);
+            return;
+        }
+        // C-013 F3：老用户重连豁免（put 会替换而非增长；与 SSE 同型——原实现满员时老用户重连也被拒）
+        if (sessions.size() >= MAX_CONNECTIONS && !sessions.containsKey(userId)) {
+            log.warn("[IM] 连接数超限: current={}, max={}, userId={}", sessions.size(), MAX_CONNECTIONS, userId);
+            closeQuietly(session, CloseStatus.SERVICE_OVERLOAD);
             return;
         }
 
@@ -79,6 +80,9 @@ public class ImWebSocketHandler extends TextWebSocketHandler {
         if (previousServerId != null && !previousServerId.equals(onlineRouteService.getServerId())) {
             onlineRouteService.kickRemote(previousServerId, userId);
         }
+
+        // C-013 D2：连接时从 DB 重建未读缓存（轻量对账——im 无对账 Job 的收敛点：DB 为准刷新 Redis）
+        chatService.refreshUnreadCache(userId);
 
         // 推送离线消息
         chatService.pushOfflineMessages(userId, session);

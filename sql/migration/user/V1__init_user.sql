@@ -206,7 +206,7 @@ USE my_xhs_im;
 
 CREATE TABLE IF NOT EXISTS t_chat_message (
     id              BIGINT        NOT NULL COMMENT 'ID',
-    conversation_id BIGINT        NOT NULL COMMENT '会话ID = min(A,B)<<32|max(A,B)',
+    conversation_id BIGINT        NOT NULL COMMENT '会话ID（首条消息分配雪花ID并写入 t_chat_user_relation，双方复用；勿用哈希拼接）',
     sender_id       BIGINT        NOT NULL COMMENT '发送者ID',
     receiver_id     BIGINT        NOT NULL COMMENT '接收者ID',
     content         VARCHAR(2048) NOT NULL COMMENT '消息内容',
@@ -238,7 +238,8 @@ CREATE TABLE IF NOT EXISTS t_chat_user_relation (
     PRIMARY KEY (id),
     UNIQUE INDEX uk_user_peer (user_id, peer_id),
     INDEX idx_user_id (user_id),
-    INDEX idx_updated_at (updated_at)
+    INDEX idx_updated_at (updated_at),
+    INDEX idx_user_updated (user_id, updated_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户聊天关系表';
 
 -- Canal 同步账号

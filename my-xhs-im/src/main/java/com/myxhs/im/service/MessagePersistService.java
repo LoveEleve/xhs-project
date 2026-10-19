@@ -22,8 +22,9 @@ import java.time.LocalDateTime;
  * 由 ChatService 通过代理调用，确保事务生效。
  * </p>
  * <p>
- * 写扩散说明：
- * 当前实现是"共享存储"模式——同一条消息只写一份，按 conversation_id 分片。
+ * 写扩散说明（C-013 §7-2 修正：原注释称"按 conversation_id 分片"——实际为单库读写分离，
+ * conversation_id 仅为**预留分片键**，尚未启用 ShardingSphere 分片）：
+ * 当前实现是"共享存储"模式——同一条消息只写一份，查询按 conversation_id（预留分片键，单库部署）。
  * 这比真正的写扩散（A 和 B 各写一份）更高效，因为私信场景下查询都是按 conversation_id，
  * 一份数据即可满足双方查询需求。如果未来需要"A 删消息不影响 B"，再引入消息删除标记表。
  * </p>
@@ -43,7 +44,7 @@ public class MessagePersistService {
     public void saveMessageWithTransaction(long msgId, long conversationId,
                                            Long senderId, Long receiverId,
                                            String content, int msgType, long seqNo, LocalDateTime now) {
-        // 1. 插入消息（按 conversation_id 分片，同一会话的消息在同一分片）
+        // 1. 插入消息（conversation_id 为预留分片键；当前单库，同一会话消息天然同库）
         ChatMessage message = ChatMessage.builder()
                 .id(msgId)
                 .conversationId(conversationId)

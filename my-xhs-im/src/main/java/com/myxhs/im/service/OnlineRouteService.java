@@ -15,18 +15,18 @@ import java.util.UUID;
 /**
  * 在线路由服务
  * <p>
- * 管理用户在线状态和路由信息（用户在哪个 IM 实例上）。
- * 多实例部署时，通过 Redis 路由表实现跨实例消息投递。
+ * 管理用户路由信息（用户在哪个 IM 实例上）。多实例部署时，通过 Redis 路由表实现跨实例消息投递。
  * </p>
  * <p>
- * Key 设计：
+ * Key 设计（C-013 F5 收敛：原 `im:online:{userId}` 标记键与 `isOnline()` 零消费者——
+ * 全仓无调用、无外部读取，属早期"在线状态查询"预留的遗留 → 评估后移除；在线判定由 route 键存在性表达）：
  * - im:route:{userId} → serverId（90s TTL，心跳续期）
- * - im:online:{userId} → "1"（90s TTL，心跳续期）
  * </p>
  * <p>
  * 分布式安全：
- * - 注销路由使用 Lua 脚本保证"检查 serverId + 删除"的原子性，
- *   防止新实例的路由被旧实例误删。
+ * - 注册/注销/续期均为单 Lua 脚本原子（同 {u:userId} hash tag 单 slot）——
+ *   注册原实现 GET+SET 两步，并发注册存在"双实例双活且互不踢线"窗口（C-013 F2）；
+ * - 注销"检查 serverId + 删除"原子，防止新实例的路由被旧实例误删。
  * </p>
  */
 @Slf4j
@@ -44,16 +44,10 @@ public class OnlineRouteService {
     private long heartbeatInterval;
 
     private static final String ROUTE_KEY_PREFIX = "myxhs:im:route:";
-    private static final String ONLINE_KEY_PREFIX = "myxhs:im:online:";
 
-    // 键加同一 hash tag（{u:userId}）：route 与 online 两键落同一 slot，
-    // 使"续期/注销"可用单脚本原子完成（Cluster 下不再 CROSSSLOT）；键 90s TTL，格式变更自愈
+    // 键加 hash tag（{u:userId}）：Cluster 下单 slot；键 90s TTL，格式变更自愈
     private static String routeKey(Long userId) {
         return ROUTE_KEY_PREFIX + "{u:" + userId + "}";
-    }
-
-    private static String onlineKey(Long userId) {
-        return ONLINE_KEY_PREFIX + "{u:" + userId + "}";
     }
 
     /**
@@ -66,12 +60,10 @@ public class OnlineRouteService {
      */
     private static final String UNREGISTER_LUA =
             "local routeKey = KEYS[1] " +
-            "local onlineKey = KEYS[2] " +
             "local expectedServerId = ARGV[1] " +
             "local currentServerId = redis.call('GET', routeKey) " +
             "if currentServerId == expectedServerId then " +
             "  redis.call('DEL', routeKey) " +
-            "  redis.call('DEL', onlineKey) " +
             "  return 1 " +
             "end " +
             "return 0";
@@ -79,17 +71,24 @@ public class OnlineRouteService {
     private static final DefaultRedisScript<Long> UNREGISTER_SCRIPT =
             new DefaultRedisScript<>(UNREGISTER_LUA, Long.class);
 
+    /** C-013 F2：注册路由单脚本原子（GET 旧值 + SET 新值 + TTL 一步完成） */
+    private static final String REGISTER_LUA =
+            "local old = redis.call('GET', KEYS[1]) " +
+            "redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2]) " +
+            "return old";
+
+    private static final DefaultRedisScript<String> REGISTER_SCRIPT =
+            new DefaultRedisScript<>(REGISTER_LUA, String.class);
+
     /**
-     * 注册用户在线路由
+     * 注册用户在线路由（C-013 F2：单脚本原子——原 GET+SET×2 两步，并发注册存在漏踢线窗口）
      *
      * @return 注册前的旧路由（用户此前所在实例的 serverId）；null=此前不在线
      */
     public String registerRoute(Long userId) {
         Duration ttl = Duration.ofMillis(heartbeatInterval * 3); // 3 倍心跳间隔作为 TTL
-        String previous = stringRedisTemplate.opsForValue().get(routeKey(userId));
-        stringRedisTemplate.opsForValue().set(routeKey(userId), serverId, ttl);
-        stringRedisTemplate.opsForValue().set(onlineKey(userId), "1", ttl);
-        return previous;
+        return stringRedisTemplate.execute(REGISTER_SCRIPT, List.of(routeKey(userId)),
+                serverId, String.valueOf(ttl.getSeconds()));
     }
 
     /**
@@ -123,8 +122,7 @@ public class OnlineRouteService {
      * </p>
      */
     public void unregisterRoute(Long userId) {
-        List<String> keys = List.of(routeKey(userId), onlineKey(userId));
-        stringRedisTemplate.execute(UNREGISTER_SCRIPT, keys, serverId);
+        stringRedisTemplate.execute(UNREGISTER_SCRIPT, List.of(routeKey(userId)), serverId);
     }
 
     /**
@@ -132,13 +130,12 @@ public class OnlineRouteService {
      */
     private static final DefaultRedisScript<Long> RENEW_SCRIPT = new DefaultRedisScript<>(
             "redis.call('EXPIRE', KEYS[1], ARGV[1]) " +
-            "redis.call('EXPIRE', KEYS[2], ARGV[1]) " +
             "return 1", Long.class);
 
     public void renewRoute(Long userId) {
         Duration ttl = Duration.ofMillis(heartbeatInterval * 3);
-        // 原子续期（原实现两次 EXPIRE：中途异常会留下一个键提前过期 → 该用户被判离线转离线消息）
-        stringRedisTemplate.execute(RENEW_SCRIPT, List.of(routeKey(userId), onlineKey(userId)),
+        // 原子续期（C-013 F5：online 键移除后为单键 EXPIRE；历史上双键时代的"两次 EXPIRE 非原子"问题随之消失）
+        stringRedisTemplate.execute(RENEW_SCRIPT, List.of(routeKey(userId)),
                 String.valueOf(ttl.getSeconds()));
     }
 
@@ -149,13 +146,6 @@ public class OnlineRouteService {
      */
     public String getRoute(Long userId) {
         return stringRedisTemplate.opsForValue().get(routeKey(userId));
-    }
-
-    /**
-     * 判断用户是否在线
-     */
-    public boolean isOnline(Long userId) {
-        return Boolean.TRUE.equals(stringRedisTemplate.hasKey(onlineKey(userId)));
     }
 
     /**

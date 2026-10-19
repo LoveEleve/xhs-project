@@ -26,7 +26,7 @@ public class ImMessageVO {
     /** 消息内容 */
     private String content;
 
-    /** 消息类型：1-文本 2-图片 3-语音 4-视频 */
+    /** 消息类型（C-013 F4 修正：对齐 DDL/ImMessage 口径——0-文本 1-图片 2-系统消息；原"1-文本…4-视频"为臆造口径） */
     private Integer msgType;
 
     /** 发送时间 */

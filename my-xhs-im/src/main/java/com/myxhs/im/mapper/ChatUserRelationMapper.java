@@ -26,9 +26,11 @@ public interface ChatUserRelationMapper extends BaseMapper<ChatUserRelation> {
                            @Param("updatedAt") java.time.LocalDateTime updatedAt);
 
     /**
-     * 删除会话（软删）：is_deleted=1；对方后续发新消息时会话自动复活（upsert 置 0）
+     * 删除会话（软删）：is_deleted=1 + **unread_count 同置 0**（C-013 D1：否则复活时"僵尸未读"回归
+     * ——删会话时用户已弃读，5 条旧未读会在对方下一条消息时变成 5+1=6 重新出现）；
+     * 对方后续发新消息时会话自动复活（upsert 置 is_deleted=0）
      */
-    @org.apache.ibatis.annotations.Update("UPDATE t_chat_user_relation SET is_deleted = 1 "
+    @org.apache.ibatis.annotations.Update("UPDATE t_chat_user_relation SET is_deleted = 1, unread_count = 0 "
             + "WHERE user_id = #{userId} AND peer_id = #{peerId} AND is_deleted = 0")
     int softDeleteConversation(@Param("userId") Long userId, @Param("peerId") Long peerId);
 

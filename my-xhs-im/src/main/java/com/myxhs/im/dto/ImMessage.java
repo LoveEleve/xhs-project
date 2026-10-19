@@ -37,4 +37,10 @@ public class ImMessage {
 
     /** 链路追踪ID（可选）：客户端可透传，缺省时使用握手阶段生成/HTTP头带入的值 */
     private String traceId;
+
+    /**
+     * 客户端消息幂等键（C-013 F6，可选）：同一 clientMsgId 重发（ACK 丢失后的客户端重试）会被去重，
+     * 直接 ACK 原 msgId 而不重复落库/路由；不传则保持旧行为（无幂等）。
+     */
+    private String clientMsgId;
 }
