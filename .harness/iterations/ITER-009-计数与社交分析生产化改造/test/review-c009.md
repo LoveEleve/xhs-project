@@ -54,3 +54,49 @@ C-009 全部落地改动：FollowService（颤振/键族/重建）、LikeService
 ## 结论
 
 跨模块影响面 + 语义保全 + 键一致性 + 工程债全部闭环；实施期抓到 1 个跨模块真问题（R1）已修复。证据：十模块 508 全绿 + 全仓编译。
+
+
+---
+
+# 第二轮深审查（查漏补缺，2026-10-18）
+
+## 审查清单（聚焦"键格式大改的波及面"与"完成态改造的崩溃语义"，5 维 16 项）
+
+> ✅ 通过 / 🟡 发现并修复 / 📝 记录
+
+### A. 完成态改造的崩溃语义再推演
+- **A1 崩溃后重投走查（3 消费者）** ✅ —— LikeUnlike/FavoriteUnlike：DB 已写+崩溃 → 重投 → 未推进 → 重处理 → DuplicateKey 幂等 ✓ → markDone；CounterEvent：set-op 后崩溃 → 重投 → 未推进 → 重处理 → **dedup 键（同 msgId 同 {targetId} 键）命中跳过** → markDone（**dedup-skip 路径也推进** ✓ 正确：事件确已应用）
+- **A2 版本门 TTL × dedup TTL 交互** ✅ —— >2h 重投（dedup 过期）：set-based/DuplicateKey/DELETE 幂等兜底 ✓
+- **A3 markDone 调用正确性** ✅ —— 操作抛异常 → 不推进（重投可重处理）；dedup-skip/条件失败 → 推进（事件已处理）
+
+### B. 键格式波及面
+- **B1 旧格式残留（🟡 R5）** —— 代码/测试零逻辑残留；**RedisKeyConstants 孤儿 javadoc**（COUNTER_BUFFER 删除后遗留"计数 Buffer"注释行）+ 注释格式未随键更新 ×4（COUNTER/DEDUP/LIKE_SET/FAVORITE）→ 已修
+- **B2 常量注释对齐** ✅（同 R5 修复）
+- **B3 部署/种子** ✅ —— 无 Redis 种子（无运行时）
+
+### C. 语义保全
+- **C1 getCommonFollowing 边界** 📝 —— 本地交集 vs 原 ZINTERSTORE：双方列表 >MAX_COMMON_FOLLOW_FETCH(5000) 时结果可能少（原服务端全量交集后截取；新读双方各截 MAX）——同 cap 语义，超大列表边界记录
+- **C2 重建顺序/score** ✅ —— created_at→score（follow/favorite 一致）；懒触发"真 0 不重建" ✓
+
+### D. 跨模块
+- **D1 search 修复覆盖** ✅ —— `LikeCountSyncConsumer`/`RecommendComputeJob`（第一轮）+ **`NoteIndexSyncConsumer.getCounterValue`（🟡 R4 本轮新发现）**——索引同步读 counter 计数的键格式未随改 → **计数静默归零** → 已修 + 注释
+- **D2 全仓读取方再扫** ✅ —— `RedisKeyConstants.COUNTER` 外部零使用；`"myxhs:counter:"` 字面量仅版本门/限流前缀（单键/无关）✓
+
+### E/F. 工程与证据
+- **E1 死代码删除完整性** ✅ —— RedisScriptConfig 注释头无 like_atomic 残留；COUNTER_BUFFER 无引用
+- **E2 限流注解** ✅ —— /batch-get @RateLimit 落位（编译+测试通过）
+- **F1 陈旧报告** ✅ —— 十模块 surefire 全新鲜
+- **F2 十模块复跑** ✅ —— **508 全绿**（修复后）
+
+## 第二轮发现（🟡 2 处，均已修复）
+
+| # | 发现 | 类型 | 修复 |
+|---|------|------|------|
+| **R4** | search `NoteIndexSyncConsumer` 读 counter 计数用旧键格式（无 {targetId} tag）→ ES 索引计数静默归零 | **真问题（跨模块·第 2 处波及）** | 键格式对齐 + 注释（C-009 D5） |
+| **R5** | RedisKeyConstants 孤儿 javadoc（删除常量遗留）+ 注释未随键格式更新 ×4 | 注释残留 | 全部修正 |
+
+## 第二轮结论
+
+16 项全部闭环：**跨模块键格式波及共 3 处（第一轮 2 处 + 本轮 R4），全部修复**——键族改造的"波及面扫描"成为两轮审查的最大价值点；崩溃语义三消费者闭环；语义边界 1 项记录。证据：十模块 **508 全绿**（复跑）+ 全仓编译。
+
+**两轮审查累计**：R1（search like:note ×2）/R2-R3（注释遗漏）/R4（search counter ×1）/R5（常量注释）——全部修复。

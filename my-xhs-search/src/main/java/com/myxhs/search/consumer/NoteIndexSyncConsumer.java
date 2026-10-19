@@ -178,13 +178,13 @@ public class NoteIndexSyncConsumer implements RocketMQListener<MessageExt> {
     }
 
     /**
-     * 读取 counter Redis 计数（T-092：key=myxhs:counter:{targetType}:{targetId}:{countType}）
+     * 读取 counter Redis 计数（T-092；C-009 D5：key=myxhs:counter:{targetType}:{targetId}:{countType}——targetId 带花括号 tag）
      * 读失败/不存在返回 0——不阻塞 canal 主流程
      */
     private long getCounterValue(int targetType, long targetId, int countType) {
         try {
             String v = stringRedisTemplate.opsForValue()
-                    .get("myxhs:counter:" + targetType + ":" + targetId + ":" + countType);
+                    .get("myxhs:counter:" + targetType + ":{" + targetId + "}:" + countType); // C-009 D5：键族补 tag
             return v != null ? Long.parseLong(v) : 0L;
         } catch (Exception e) {
             return 0L;

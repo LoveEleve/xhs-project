@@ -97,23 +97,22 @@ public final class RedisKeyConstants {
     /** 粉丝列表 myxhs:follow:fans:{userId} */
     public static final String FOLLOW_FANS = PROJECT_PREFIX + "follow:fans:";
 
-    /** 点赞集合 myxhs:like:{bizType}:{bizId} */
+    /** 点赞集合 myxhs:like:note|comment:{bizId}（C-009 D5：{bizId} 花括号 tag；单键脚本） */
     public static final String LIKE_SET = PROJECT_PREFIX + "like:";
 
-    /** 收藏集合 myxhs:favorite:{userId} */
+    /** 收藏集合 myxhs:favorite:{userId}（单键脚本，无需 hash tag——注释 {userId} 为占位符） */
     public static final String FAVORITE_SET = PROJECT_PREFIX + "favorite:";
 
     // ==================== 计数服务 ====================
 
-    /** 计数缓存 myxhs:counter:{targetType}:{targetId} */
+    /** 计数缓存 myxhs:counter:{targetType}:{targetId}:{countType}（C-009 D5：targetId 带 {targetId} 花括号 tag） */
     public static final String COUNTER = PROJECT_PREFIX + "counter:";
 
-    /** 计数 Buffer myxhs:counter:buffer */
     /** counter 内部 like Set 前缀（C-009 D7：从 CounterService 硬编码收敛；格式 myxhs:like:set:{targetId}:{targetType}） */
     public static final String COUNTER_LIKE_SET = PROJECT_PREFIX + "like:set:";
     // 【C-009 D7 删除】原 COUNTER_BUFFER：全仓零引用（死常量）
 
-    /** MQ 去重 myxhs:counter:dedup:{msgId}（2小时TTL） */
+    /** MQ 去重 myxhs:counter:dedup:{targetId}:{msgId}（2小时TTL；C-009 D5：{targetId} tag 与计数键同 slot） */
     public static final String COUNTER_DEDUP = PROJECT_PREFIX + "counter:dedup:";
 
     // ==================== 电商服务 ====================
