@@ -27,7 +27,7 @@ import java.util.concurrent.TimeoutException;
  * 第 2 层（依赖第 1 层的 skuId 列表）：各 SKU 库存 + 商品状态
  * <p>
  * 降级策略：
- * - 购物车服务不可用 → 返回空购物车
+ * - 购物车服务不可用/超时 → **503**（C-014 F3：原"返回空购物车"会误导用户以为购物车被清空）
  * - 库存服务不可用 → 库存显示"暂无数据"
  * - 优惠券服务不可用 → 可用优惠券数为 0
  * </p>
@@ -40,7 +40,7 @@ public class CartAggService {
     private final CartFeignClient cartFeignClient;
     private final InventoryFeignClient inventoryFeignClient;
     private final CouponFeignClient couponFeignClient;
-    private final ExecutorService aggregatorPool;
+    // C-014 F1：L1 内层迁 batchFeignPool（L2 库存查询已在该池——原 L1 与外层同池会饥饿）
     private final ExecutorService batchFeignPool;
 
     /**
@@ -61,7 +61,7 @@ public class CartAggService {
                         throw new DownstreamUnavailableException("购物车服务不可用");
                     }
                     return (r != null && r.isSuccess() && r.getData() != null) ? r.getData() : Collections.emptyMap();
-                }, aggregatorPool);
+                }, batchFeignPool);
 
         // 1b. 可用优惠券
         CompletableFuture<List<Map<String, Object>>> couponFuture = CompletableFuture
@@ -73,7 +73,7 @@ public class CartAggService {
                         log.warn("[购物车聚合] 获取可用优惠券失败: userId={}", userId);
                         return Collections.<Map<String, Object>>emptyList();
                     }
-                }, aggregatorPool);
+                }, batchFeignPool);
 
         // 等待第 1 层完成
         try {
@@ -84,6 +84,12 @@ public class CartAggService {
             log.warn("[购物车聚合] 第1层聚合异常", e);
         }
 
+        // C-014 F3：购物车列表超时 → 503（不伪装"空购物车"——与 503-code 分支语义自洽；
+        // 空车会误导用户以为购物车被清空）
+        if (!cartFuture.isDone()) {
+            cartFuture.cancel(true);
+            throw new DownstreamUnavailableException("购物车服务不可用");
+        }
         if (cartFuture.isCompletedExceptionally()) {
             throw new DownstreamUnavailableException("购物车服务不可用");
         }

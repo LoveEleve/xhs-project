@@ -45,6 +45,11 @@ public class NoteDeleteConsumer implements RocketMQListener<MessageExt> {
             Long noteId = event.getNoteId();
             Long authorId = event.getUserId();
 
+            // C-014 G6：已删标记**先行**（原在清理后设置——清理与设标记之间晚到的 FEED_TOPIC 重投会写回
+            // outbox，拦截窗口最小化）；TTL 7 天与 MQ/补偿窗口对齐
+            stringRedisTemplate.opsForValue().set(
+                    RedisKeyConstants.NOTE_DELETED_MARK + noteId, "1", java.time.Duration.ofDays(7));
+
             // 清理作者发件箱: 防止新关注者通过 outbox 拉取已删笔记
             String outboxKey = RedisKeyConstants.FEED_OUTBOX + authorId;
             Long removed = stringRedisTemplate.opsForZSet().remove(outboxKey, String.valueOf(noteId));
@@ -53,13 +58,8 @@ public class NoteDeleteConsumer implements RocketMQListener<MessageExt> {
             // 残留已删笔记（推模式按粉丝维度写入，作者侧无法直接定位）→ 推荐中出现已删 noteId。
             // following:latest 按 followerId 分 key，删除笔记（低频操作）时 SCAN 全量清除该 noteId。
             int followingCleaned = removeFromFollowingLatest(noteId);
-            // T-126（2026-08-16）：设置短 TTL 已删标记，防 FEED_TOPIC 推送消息晚到/重投把已删笔记写回 outbox——
-            // 修复前：NOTE_DELETE 清 outbox 后，重复投递的推送消息（MQ 重试/补偿重投）再次 ZADD 已删笔记
-            // → 大V outbox 残留已删笔记（实测 15:55/15:56 两次消费同 noteId 重新入 outbox）
-            // TTL 从 5min 提到 7 天：5min 之后晚到的重投仍能把已删笔记写回 outbox（实测过漏网），
-            // 7 天与 MQ/补偿窗口对齐（仅每个被删笔记一个小 key）
-            stringRedisTemplate.opsForValue().set(
-                    "myxhs:note:deleted:" + noteId, "1", java.time.Duration.ofDays(7));
+            // （已删标记见方法开头——C-014 G6 先行设置；TTL 7 天：5min 时代晚到的重投仍能把已删笔记
+            // 写回 outbox（实测过漏网），7 天与 MQ/补偿窗口对齐，仅每个被删笔记一个小 key）
             log.info("[NoteDelete] 清理完成: authorId={}, noteId={}, outboxRemoved={}, followingCleaned={}",
                     authorId, noteId, removed, followingCleaned);
 

@@ -192,6 +192,9 @@ public final class RedisKeyConstants {
     // ==================== Feed 流 ====================
 
     /** 用户收件箱（推模式） myxhs:feed:inbox:{userId} */
+    /** C-014 §7-1：笔记已删标记（NoteDeleteConsumer 写 / FeedPushConsumer 读；TTL 7 天，防"删后晚到的推送"复活） */
+    public static final String NOTE_DELETED_MARK = PROJECT_PREFIX + "note:deleted:";
+
     public static final String FEED_INBOX = PROJECT_PREFIX + "feed:inbox:";
 
     /** 用户发件箱（拉模式） myxhs:feed:outbox:{userId} */

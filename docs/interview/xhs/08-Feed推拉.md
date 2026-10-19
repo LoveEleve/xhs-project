@@ -12,25 +12,25 @@
 Twitter/微博的经典之争。纯推（写扩散）：发一条动态写所有粉丝收件箱，读极快但大 V 写放大爆炸；纯拉（读扩散）：读时合并关注列表，写便宜但读慢。业界最终都走**推拉结合**——普通用户推，大 V 拉。
 
 **② 项目选择**
-作者粉丝 ≤5 万走推（粉丝 Pipeline 批量写收件箱，500/批 + Redis 进度 cursor 断点续推）；粉丝 >5 万自动降级写发件箱走拉模式（大 V 阈值 10 万）；读侧合并收件箱 + 大 V 发件箱。收件箱 ZSet 保留 500 条/7 天，清理 Job 每天裁剪。
+作者粉丝 **< 10 万**走推（粉丝 Pipeline 批量写收件箱，500/批 + Redis 进度 cursor 断点续推）；**≥ 10 万**自动降级写发件箱走拉模式（阈值统一配置 `home.feed.big-v-threshold`，C-014 把边界 `>` 对齐为 `>=`）；读侧合并收件箱 + 大 V 发件箱。收件箱 ZSet 保留 500 条/7 天，清理 Job 每天裁剪。
 
 **③ 坑**
 - 进度 key TTL 只有 1h，太长任务会丢进度（重推靠 ZADD 幂等）；
-- 已删笔记标记只保留 5 分钟，超窗的晚到推送可能把已删内容写回去；
+- 已删笔记标记原只保留 5 分钟，超窗的晚到推送会把已删内容写回去（实测漏网）→ 已提到 **7 天**（与 MQ/补偿窗口对齐）；命中标记早退时必须 markPushCompleted（否则补偿 Job 每 60s 重投）；
 - **大 V 标记缓存 10 分钟**：粉丝数刚过阈值时缓存仍显示"非大 V"，可能继续按推模式给百万粉丝写入——代码注释直接警告"Redis 写入风暴"，靠 10min 过期 + 粉丝变更事件刷新缓解（有界不一致窗口）；
 - 收件箱会膨胀（靠异步裁剪）；推送给大 V 时容易把写扩散放大。
 
 **④ 兜底**
-ZADD 幂等可重推；content 侧 30s 本地消息补发 + 60s 推送未完成补偿（MySQL `push_status` 兜底）；一次 Pipeline 同时写收件箱与推荐 FOLLOWING 召回源（修复召回恒空）；已删笔记删除同步清理收件箱/推荐 ZSet。
+ZADD 幂等可重推；content 侧 30s 本地消息补发 + 60s 推送未完成补偿（MySQL `push_status` 兜底）；一次 Pipeline 同时写收件箱与推荐 FOLLOWING 召回源（修复召回恒空）；已删笔记删除同步清理 outbox/推荐 ZSet；**DLQ 重放 ×2（C-014：feed-push / note-delete 死信自动重投，tag 保留）**。
 
 **⑤ 话术**
 > "推拉结合是为了控制写扩散成本。大 V 一条动态推十万粉丝，写放大不可接受，所以走拉；代价是读侧要合并两个来源，复杂度换成本。"
 
 ## 追问与参考回答
-**追问1：阈值怎么定？** 按写放大与读延迟的平衡：粉丝 5 万时一条动态写 5 万次 ZADD（Pipeline 后约 100 次往返）；超过则改为发件箱。阈值是配置项，压测后可调。
+**追问1：阈值怎么定？** 按写放大与读延迟的平衡：粉丝 10 万时一条动态写 10 万次 ZADD（Pipeline 500/批 ≈ 200 次往返）；超过则改为发件箱。阈值是配置项，压测后可调。
 **追问2：推送过程中挂了怎么办？** 进度 cursor 写在 Redis（TTL 1h），MQ 重试从 cursor 续推，ZADD 幂等不会重复；仍失败由本地消息补发与 push_status 补偿。
 **追问3：读侧合并的成本？** 普通用户读一次收件箱 ZSet；关注的大 V 不多时逐个拉发件箱合并；大 V 关注列表有缓存（5min）。规模上来后可以加"大 V 发件箱本地缓存"，但目前够用。
-**追问4：已删笔记怎么处理？** 删除事件写 `myxhs:note:deleted:{id}` 5min 标记，推送/入库前检查；同时 NoteDeleteConsumer 清理收件箱与推荐 ZSet。
+**追问4：已删笔记怎么处理？** 删除事件**先**写 `myxhs:note:deleted:{id}` 7 天标记（C-014：标记先行，拦截窗口最小化），推送/入库前检查；同时 NoteDeleteConsumer 清理 outbox 与 recommend:following:latest（SCAN）。
 
 ## 面试官评分点
 **高级开发级**：能讲清推/拉的成本模型与阈值依据；能说清断点续推与幂等重推；知道已删标记的窗口问题。
@@ -38,7 +38,7 @@ ZADD 幂等可重推；content 侧 30s 本地消息补发 + 60s 推送未完成�
 **危险信号**：说"全推"或"全拉"；断点进度不落 Redis；推送失败直接丢。
 
 ## 本项目真实证据
-- `FeedPushConsumer.java`：`big-v-threshold:100000`(:53-54)、粉丝 `>50000` 降级发件箱(:150)、批 500(:145)、cursor key `myxhs:feed:push:progress:{localMsgId}` TTL 1h(:134)、一次 Pipeline 批量 ZADD(:187)、**同一批同时写 `recommend:following:latest:{followerId}`（:196-197 注释：原实现无任何写入方导致 FOLLOWING 召回恒空）**、大 V 标记缓存 10min + 写入风暴注释(:239-248)。
+- `FeedPushConsumer.java`：`big-v-threshold:100000`、粉丝 `>=100000` 降级发件箱（C-014 F7：原 `>` 边界 + 漏 markPushCompleted）、批 500、cursor key `myxhs:feed:push:progress:{localMsgId}` TTL 1h、一次 Pipeline 批量 ZADD、**同一批同时写 `myxhs:recommend:following:latest:{followerId}`（原实现无写入方导致 FOLLOWING 召回恒空；键含 myxhs 前缀）**、大 V 标记缓存 10min。
 - 实测：500 粉丝推送压缩到一次往返（约 100x）；断点续推预置 cursor=2 只推剩余（终态 cursor=502/completed）。
 - `FeedCleanupJob.java`：`inbox-max-days:7`/`inbox-max-size:500`(:34-37)、ZREMRANGEBYRANK 裁剪(:69)；`NoteDeleteConsumer.java:52,84` 删除时同清 outbox 与 FOLLOWING 召回键；`FeedService.java:64` 大 V 关注列表缓存 5min。
 

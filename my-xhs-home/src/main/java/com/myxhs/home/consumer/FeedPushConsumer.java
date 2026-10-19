@@ -86,8 +86,9 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
 
             // T-126（2026-08-16）：已删标记检查——NOTE_DELETE 与 FEED_TOPIC 消息乱序/重复投递时，
             // 笔记已删除但推送消息晚到（MQ 重试/补偿重投）会把已删笔记重新写入 outbox/收件箱；
-            // NoteDeleteConsumer 清理时设置 5min 标记（myxhs:note:deleted:{noteId}），此处拦截跳过
-            if (Boolean.TRUE.equals(stringRedisTemplate.hasKey("myxhs:note:deleted:" + noteId))) {
+            // NoteDeleteConsumer 清理时设置 7 天标记（C-014 §7-1：原注释"5min"与实际 TTL 差 2000 倍——
+            // 5min 之后晚到的重投仍能写回，已提到 7 天与 MQ/补偿窗口对齐），此处拦截跳过
+            if (Boolean.TRUE.equals(stringRedisTemplate.hasKey(RedisKeyConstants.NOTE_DELETED_MARK + noteId))) {
                 log.warn("[Feed推送] 笔记已删除，跳过推送: noteId={}, authorId={}", noteId, authorId);
                 // 必须标记完成：否则 content 的补偿 Job 读到"Redis 无 completed + MySQL push_status≠2"会每 60s 重投
                 markPushCompleted(localMsgId);
@@ -141,20 +142,24 @@ public class FeedPushConsumer implements RocketMQListener<MessageExt> {
     private void pushToFollowers(Long authorId, Long noteId, Long publishTime, Long localMsgId) {
         String followerKey = RedisKeyConstants.FOLLOW_FANS + authorId;
 
-        long totalFollowers = stringRedisTemplate.opsForZSet().zCard(followerKey) != null
-                ? stringRedisTemplate.opsForZSet().zCard(followerKey) : 0;
+        // C-014 G6：zCard 单调用（原 ternary 调两次 → 两次网络往返）
+        Long followerCard = stringRedisTemplate.opsForZSet().zCard(followerKey);
+        long totalFollowers = followerCard != null ? followerCard : 0;
         int batchSize = 500;
         int pushed = 0;
         int expireSeconds = inboxMaxDays * 24 * 3600;
 
         // 超大粉丝量保护：超过阈值写发件箱走拉模式，避免阻塞 MQ 消费线程
         // 阈值统一取配置（home.feed.big-v-threshold，默认 10 万）——此前硬编码 5 万，与配置双口径冲突
-        if (totalFollowers > bigVThreshold) {
+        // C-014 F7：`>` 改 `>=`（对齐 checkBigV 的 >=——恰在阈值且缓存陈旧为"0"时原保护失效，10 万粉丝全量推）
+        if (totalFollowers >= bigVThreshold) {
             log.warn("[Feed推送] 粉丝量过大({}), 写入发件箱走拉模式: authorId={}, noteId={}",
                     totalFollowers, authorId, noteId);
             String outboxKey = RedisKeyConstants.FEED_OUTBOX + authorId;
             stringRedisTemplate.opsForZSet().add(outboxKey, String.valueOf(noteId), publishTime);
             stringRedisTemplate.expire(outboxKey, Duration.ofDays(inboxMaxDays));
+            // C-014 F7：补 markPushCompleted——类注释称"三路径统一"，实为四路径，此路径漏标会让补偿 Job 重投
+            markPushCompleted(localMsgId);
             return;
         }
 

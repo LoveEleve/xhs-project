@@ -52,7 +52,8 @@ public class FeedService {
     private final AnalyticsFeignClient analyticsFeignClient;
     private final CounterFeignClient counterFeignClient;
     private final NotificationFeignClient notificationFeignClient;
-    private final ExecutorService aggregatorPool;
+    // C-014 F1：内层 future 全部迁 batchFeignPool（A3 模式）——原 aggregatorPool 内层提交与外层
+    // （HomeController 也在 aggregatorPool）同池 → 外层占满线程等内层、内层排队饿死（A3 修复未覆盖本类）
     private final ExecutorService batchFeignPool;
 
     @Value("${home.feed.big-v-threshold:100000}")
@@ -80,7 +81,10 @@ public class FeedService {
 
         // ========== 第 1 步：从 Redis 获取笔记 ID 列表 ==========
 
-        // 1a. 从收件箱拉取（推模式笔记）— Redis 7 开区间 (lastScore 避免跳过同分记录
+        // 1a. 从收件箱拉取（推模式笔记）——游标为 1-ULP 开区间 (lastScore)
+        //     C-014 F6 勘误：原注释称"避免跳过同分记录"，实际相反——开区间的真实目的是保证翻页进度
+        //     （闭区间在同分组大于页宽时每页返回同一批 → 死循环）；代价=同分组跨页边界的剩余记录被跳过
+        //     （罕见：同毫秒发布；正确演进=复合游标 (score,member)）
         String inboxKey = RedisKeyConstants.FEED_INBOX + userId;
         double minScore = lastScore > 0 ? Double.longBitsToDouble(Double.doubleToLongBits(lastScore) - 1) : 0;
         // 【P0-C 修复】reverseRangeByScoreWithScores(key, min, max,...) 参数 min/max 颠倒：
@@ -97,10 +101,11 @@ public class FeedService {
         List<ZSetOperations.TypedTuple<String>> merged = mergeAndSort(inboxTuples, bigVTuples, size);
 
         if (merged.isEmpty()) {
+            // C-014 G2：空 Feed 也应返回真实未读数（原写死 0——"有未读但 feed 空"时红点显示 0）
             return FeedVO.builder()
                     .notes(Collections.emptyList())
                     .hasMore(false)
-                    .unreadCount(0)
+                    .unreadCount(fetchUnreadCount(userId))
                     .build();
         }
 
@@ -121,16 +126,26 @@ public class FeedService {
             }
         }
         if (noteIds.isEmpty()) {
+            // C-014 G2：同空路径——返回真实未读数
             return FeedVO.builder()
                     .notes(Collections.emptyList())
                     .hasMore(false)
-                    .unreadCount(0)
+                    .unreadCount(fetchUnreadCount(userId))
                     .build();
         }
         Double nextScore = merged.get(merged.size() - 1).getScore();
 
+        // C-014 G1：noteId → score 映射（卡片 score 字段填充——原"用于游标分页"的字段从未被赋值）
+        Map<Long, Double> scoreByNoteId = new HashMap<>();
+        for (ZSetOperations.TypedTuple<String> t : merged) {
+            try {
+                scoreByNoteId.put(Long.valueOf(t.getValue()), t.getScore());
+            } catch (NumberFormatException ignored) {
+            }
+        }
+
         // ========== 第 2 步：CompletableFuture 并行聚合 ==========
-        return aggregateFeed(userId, noteIds, nextScore, size, hasMoreFromRedis);
+        return aggregateFeed(userId, noteIds, nextScore, size, hasMoreFromRedis, scoreByNoteId);
     }
 
     /**
@@ -141,12 +156,13 @@ public class FeedService {
      * 第 2 层（依赖第 1 层的 noteIds → authorIds）：作者信息 + 计数
      * </p>
      */
-    private FeedVO aggregateFeed(Long userId, List<Long> noteIds, Double minScore, int requestSize, boolean hasMoreFromRedis) {
+    private FeedVO aggregateFeed(Long userId, List<Long> noteIds, Double minScore, int requestSize,
+                                 boolean hasMoreFromRedis, Map<Long, Double> scoreByNoteId) {
         // ---- 第 1 层并行 ----
 
-        // 1a. 批量获取笔记详情（逐个调用，后续可优化为批量接口）
+        // 1a. 批量获取笔记详情（content /batch-detail 批量接口——P2-3 已迁移，原"逐个调用"注释已过时）
         CompletableFuture<Map<Long, Map<String, Object>>> notesFuture = CompletableFuture
-                .supplyAsync(() -> batchGetNoteDetails(noteIds), aggregatorPool);
+                .supplyAsync(() -> batchGetNoteDetails(noteIds), batchFeignPool);
 
         // 1b. 批量查询点赞状态
         // 限制单次查询 ID 数防止 URL 超长
@@ -161,22 +177,11 @@ public class FeedService {
                         log.warn("[Feed] 批量查询点赞状态失败", e);
                         return Collections.emptyMap();
                     }
-                }, aggregatorPool);
+                }, batchFeignPool);
 
-        // 1c. 获取未读通知数
+        // 1c. 获取未读通知数（C-014 G2：抽取 fetchUnreadCount——正常路径与空路径共用）
         CompletableFuture<Integer> unreadFuture = CompletableFuture
-                .supplyAsync(() -> {
-                    try {
-                        R<Map<String, Object>> r = notificationFeignClient.getUnreadCount(userId);
-                        if (r != null && r.isSuccess() && r.getData() != null) {
-                            Object total = r.getData().get("total");
-                            return toIntValue(total, 0);
-                        }
-                    } catch (Exception e) {
-                        log.warn("[Feed] 获取未读通知数失败", e);
-                    }
-                    return 0;
-                }, aggregatorPool);
+                .supplyAsync(() -> fetchUnreadCount(userId), batchFeignPool);
 
         // 等待第 1 层完成（总超时 3 秒，防止下游卡死拖垮线程池）
         try {
@@ -188,6 +193,12 @@ public class FeedService {
             log.warn("[Feed] 第1层聚合异常", e);
         }
 
+        // C-014 F3：关键依赖（笔记详情）超时不能伪装成"空 Feed"——未完成即视为依赖降级
+        // （对齐 Product/Note/UserProfile 的 2026-09-20 修复模式）
+        if (!notesFuture.isDone()) {
+            notesFuture.cancel(true);
+            throw new DownstreamUnavailableException("内容服务不可用");
+        }
         if (notesFuture.isCompletedExceptionally()) {
             throw new DownstreamUnavailableException("内容服务不可用");
         }
@@ -209,11 +220,11 @@ public class FeedService {
 
         // 2a. 批量获取作者信息
         CompletableFuture<Map<Long, Map<String, Object>>> usersFuture = CompletableFuture
-                .supplyAsync(() -> batchGetUserInfos(authorIds), aggregatorPool);
+                .supplyAsync(() -> batchGetUserInfos(authorIds), batchFeignPool);
 
         // 2b. 批量获取计数
         CompletableFuture<Map<String, Map<String, Long>>> countersFuture = CompletableFuture
-                .supplyAsync(() -> batchGetCounters(noteIds), aggregatorPool);
+                .supplyAsync(() -> batchGetCounters(noteIds), batchFeignPool);
 
         // 等待第 2 层完成（总超时 2 秒）
         try {
@@ -255,6 +266,8 @@ public class FeedService {
                     .isLiked(likesMap.getOrDefault(noteId, false))
                     .isCollected(false) // 收藏状态需要额外接口，暂不聚合
                     .isFollowed(true) // Feed 流中的笔记都是关注的人发的
+                    .createdAt(parseDateTime(note.get("createdAt"))) // C-014 G1：原从未填充
+                    .score(scoreByNoteId.get(noteId)) // C-014 G1：原从未填充
                     .build();
 
             cards.add(card);
@@ -297,6 +310,30 @@ public class FeedService {
             return Integer.parseInt(o.toString());
         } catch (Exception e) {
             return def;
+        }
+    }
+
+    /** C-014 G2：未读通知数（降级返 0）——正常路径（并行 future）与空 Feed 早退路径共用 */
+    private int fetchUnreadCount(Long userId) {
+        try {
+            R<Map<String, Object>> r = notificationFeignClient.getUnreadCount(userId);
+            if (r != null && r.isSuccess() && r.getData() != null) {
+                return toIntValue(r.getData().get("total"), 0);
+            }
+        } catch (Exception e) {
+            log.warn("[Feed] 获取未读通知数失败", e);
+        }
+        return 0;
+    }
+
+    /** C-014 G1：安全解析时间（对齐 NoteAggService.parseDateTime——ISO 字符串 / LocalDateTime 双兼容） */
+    private java.time.LocalDateTime parseDateTime(Object value) {
+        if (value == null) return null;
+        if (value instanceof java.time.LocalDateTime) return (java.time.LocalDateTime) value;
+        try {
+            return java.time.LocalDateTime.parse(value.toString(), java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+        } catch (Exception e) {
+            return null;
         }
     }
 
@@ -358,7 +395,9 @@ public class FeedService {
         String cacheKey = "myxhs:feed:following:bigv:" + userId;
         Set<String> cached = stringRedisTemplate.opsForSet().members(cacheKey);
         if (cached != null && !cached.isEmpty()) {
-            return cached.stream().map(Long::valueOf).collect(Collectors.toList());
+            // C-014 F5：sentinel "-1" = 空结果缓存（Redis 空 Set 会被自动删除，无法缓存空；
+            // 原实现空结果不写缓存 → 无大V关注的用户每次 feed 都全量重扫 FOLLOW_LIST + MGET）
+            return cached.stream().filter(v -> !"-1".equals(v)).map(Long::valueOf).collect(Collectors.toList());
         }
 
         String followingKey = RedisKeyConstants.FOLLOW_LIST + userId;
@@ -401,9 +440,26 @@ public class FeedService {
                 }
             }
         }
-        if (!bigVIds.isEmpty()) {
-            stringRedisTemplate.opsForSet().add(cacheKey, bigVIds.stream().map(String::valueOf).toArray(String[]::new));
-            stringRedisTemplate.expire(cacheKey, BIG_V_FOLLOWING_CACHE_TTL);
+        // C-014 F5/G3：写缓存——空结果写 sentinel "-1"；SADD+EXPIRE 走 Pipeline（原两步非原子：
+        // add 成功 + expire 失败（客户端崩溃窗口）→ Set 无 TTL 永不过期 → 新关注的大V永久漏判）
+        try {
+            List<byte[]> members = (bigVIds.isEmpty()
+                    ? List.of("-1")
+                    : bigVIds.stream().map(String::valueOf).collect(Collectors.toList()))
+                    .stream()
+                    .map(v -> v.getBytes(java.nio.charset.StandardCharsets.UTF_8))
+                    .collect(Collectors.toList());
+            stringRedisTemplate.executePipelined(
+                    (org.springframework.data.redis.core.RedisCallback<Object>) connection -> {
+                        byte[] key = cacheKey.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                        for (byte[] member : members) {
+                            connection.setCommands().sAdd(key, member);
+                        }
+                        connection.keyCommands().expire(key, BIG_V_FOLLOWING_CACHE_TTL.getSeconds());
+                        return null;
+                    });
+        } catch (Exception e) {
+            log.warn("[Feed] 大V关注缓存写入失败(不影响本次判定): userId={}", userId, e);
         }
         return bigVIds;
     }

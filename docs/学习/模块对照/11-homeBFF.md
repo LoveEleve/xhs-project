@@ -101,3 +101,47 @@ T-126：`note:deleted:{noteId}` 存在 → 跳过并**必须标记完成**（否
 4. **断点续推进度 1h TTL vs MQ 重试窗口**：若 MQ 重试晚于 1h，进度丢失从头推（ZADD 幂等仅浪费）；markPushCompleted 失败容忍依赖 content 补偿 Job 双源兜底；
 5. **公开聚合端点零限流**：`/api/home/*` 全部无 `@RateLimit`（对比 counter/search 的"部分有"）——首页/详情是最高频公开面（爬虫放大：一次 feed 请求扇出 9 个下游 Feign）；**网关侧是否兜底待 12 梳理确认**；
 6. 小项：`recommend:following:latest` 无 myxhs 前缀（跨域键命名不一）；home 无自有库（BFF 正确姿势，面试可讲"该不该给 BFF 建库"）；7 个 Feign 客户端 fallback 语义分档（503/空值）值得作为降级模板。
+
+## 8. 阶段二讨论结论（2026-10-19 · C-014 home BFF 生产化改造）
+
+> 阶段二（讨论）：§7 六条线索逐条核实（三轮深探：38 文件全读 + 跨模块契约核验 + 线程池/降级链推演）。
+
+### 8.1 线索裁决（§7 六条）
+
+| # | 线索 | 裁决 | 落地 |
+|---|------|------|------|
+| 1 | T-126 注释漂移（5min vs 7d） | **修** | 注释对齐 7 天 + `note:deleted` 提常量（`NOTE_DELETED_MARK`，原裸字符串重复 ×2） |
+| 2 | 大V判定双处同构 | **修（边界）** | `>` 改 `>=`（对齐 checkBigV）；保护路径补 markPushCompleted（"三路径"注释→实为四路径） |
+| 3 | Feed 卡片硬编码 | 讲（保留） | isCollected/isFollowed/onSale/relatedNotes 半成品——记录（关注流成立，推荐流复用会失真） |
+| 4 | 断点续推 1h TTL | 记录（讲） | 范围校正：**索引游标在粉丝集合变更时可能跳过**（ZADD 幂等只掩盖重复，掩盖不了跳过；演进=值游标） |
+| 5 | 公开聚合端点零限流 | **修** | feed 30/min、note/product/user 60/min、cart 30/min（perUser）——一次 feed 扇出 9 个 Feign 的放大面 |
+| 6 | 小项 | **§7-6 勘误** | `recommend:following:latest` **有 myxhs 前缀**（原梳理结论错——评论文字误导）；其余（无库/BFF 正确/fallback 分档）成立 |
+
+### 8.2 三轮深探新增（F1~F9 + G1~G7）
+
+| # | 发现 | 裁决 | 落地 |
+|---|------|------|------|
+| **F1** | **A3 池隔离回旋镖**：NoteAgg 全迁 batchFeignPool；FeedService（字段注入未用）/UserProfileAgg（无池）/Product·Cart L1 仍在 aggregatorPool → 外层占满线程等内层、内层饿死 | **修** | 15 处内层 future 全迁 batchFeignPool（A3 模式补全） |
+| **F2** | **likeAndCollectCount 恒 0（真 bug，T-119 修复不彻底）**：① id 只认 Number（R4 String → 恒空）；② >100 篇超 counter 校验上限 | **修** | String-aware 提取 + 分批 ≤100 + 部分成功累计 + 页 ≤10（≈500 篇近似） |
+| **F3** | 关键依赖超时语义不一致（Feed 空流/Cart 空车 vs Product/Note/UserProfile 的 503） | **修** | `!isDone` → DownstreamUnavailable（不把"依赖超时"伪装成"没有数据"） |
+| **F4** | DLQ 缺口 ×2 组 | **修** | 重放 ×2（feed-push → FEED_TOPIC；note-delete → SOCIAL_TOPIC:NOTE_DELETE，tag 保留必须） |
+| **F5** | 大V空缓存不缓存（无大V关注时每次全量重扫 FOLLOW_LIST+MGET） | **修** | sentinel "-1" + pipeline 写入 |
+| **F7** | 阈值边界 `>` + 保护路径漏 markPushCompleted | **修** | `>=` + 补标 |
+| **G1** | 卡片 createdAt/score 从未填充 | **修** | createdAt 解析 + score 映射（noteId→score） |
+| **G2** | 空 Feed unreadCount 恒 0（两处 early-return 写死） | **修** | 抽 fetchUnreadCount 共用（降级返 0） |
+| **G3** | 大V缓存 add+expire 非原子（崩溃窗口 → 无 TTL 永不过期） | **修** | SADD+EXPIRE pipeline |
+| **G4** | "逐个调用，后续可优化为批量接口"注释陈旧（P2-3 已批量） | 修 | 注释对齐 |
+| **G6** | NoteDelete 标记在清理后设置；zCard 双调用 | 修 | 标记先行 + 单调用 |
+| F6 | 分页开区间**注释与行为相反**（开区间保翻页进度，代价=同分组跨页剩余跳过） | **注释勘误 + 讲** | 演进=复合游标 (score,member) |
+| G5/G7 | 索引分页跳过 / noteCountHolder 可见性 / 主页卡片无计数 | 记录（讲） | — |
+
+### 8.3 核心设计（学习要点）
+
+- **线程池隔离完整模式（A3 补全）**：外层编排 = aggregatorPool，**所有内层 future = batchFeignPool**——同池嵌套在高并发下必然"外层占满线程等内层、内层排队饿死"；配套 MdcAware（任务级 MDC）+ CallerRuns（队列满不丢）；
+- **超时语义 = 降级语义的一部分**：关键依赖超时必须是 503（"服务繁忙"），不能落成空数据（"没有笔记/空购物车"会误导用户）——与 404（真实不存在）严格区分；
+- **统计聚合的两道坎**：R4 全局 Long→String（id/total 都要 String-aware）+ 下游批量接口的校验上限（>100 要分批）——修复要修全（T-119 只修了 total）；
+- **DLQ 家族收官**：14 模块 2+2+3+5+5+2+2 组重放覆盖；tag 保留是 selector 路由消息的生命线。
+
+### 8.4 记录不做（讲）
+
+BFF 建库（无库是正确姿势）；卡片半成品字段补全；索引分页跳过（值游标演进）；复合游标；SCAN 全量清理（低频删除可接受）；断点 1h TTL；大V双缓存双 TTL（10min/5min，有界不一致）。

@@ -41,7 +41,7 @@ public class ProductAggService {
     private final ProductFeignClient productFeignClient;
     private final InventoryFeignClient inventoryFeignClient;
     private final CounterFeignClient counterFeignClient;
-    private final ExecutorService aggregatorPool;
+    // C-014 F1：L1 内层迁 batchFeignPool（L2 库存查询已在该池——原 L1 与外层同池会饥饿）
     private final ExecutorService batchFeignPool;
 
     /**
@@ -76,7 +76,7 @@ public class ProductAggService {
                          log.warn("[商品详情] 获取SPU异常(按依赖降级处理): spuId={}", spuId, e);
                          throw new DownstreamUnavailableException("商品服务繁忙，请稍后重试");
                      }
-                }, aggregatorPool);
+                }, batchFeignPool);
 
         // 1b. 商品计数（收藏数、浏览数）
         CompletableFuture<Map<String, Long>> counterFuture = CompletableFuture
@@ -96,7 +96,7 @@ public class ProductAggService {
                         log.warn("[商品详情] 获取计数失败: spuId={}", spuId);
                     }
                     return Collections.<String, Long>emptyMap();
-                }, aggregatorPool);
+                }, batchFeignPool);
 
         // 等待第 1 层完成
         try {

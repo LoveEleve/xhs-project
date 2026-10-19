@@ -1,7 +1,7 @@
 ---
 id: C-014
 slug: home-BFF生产化改造
-status: confirmed
+status: done
 created: 2026-10-19
 updated: 2026-10-19
 iteration: ITER-014     # 机器可读迭代协议：.harness/iterations/ITER-014-home-BFF生产化改造/

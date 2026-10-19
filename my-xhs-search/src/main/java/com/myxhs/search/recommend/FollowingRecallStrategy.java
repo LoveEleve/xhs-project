@@ -15,7 +15,7 @@ import java.util.stream.Collectors;
  * 关注召回
  * <p>
  * 从用户关注的人的最新内容中召回。
- * 数据来源：recommend:following:latest:{userId} → ZSet(noteId, timestamp)
+ * 数据来源：myxhs:recommend:following:latest:{userId} → ZSet(noteId, timestamp)（C-014 勘误：键含 myxhs 前缀）
  * 该 ZSet 由 Feed 流推送时同步写入（或定时任务聚合）。
  * </p>
  * <p>

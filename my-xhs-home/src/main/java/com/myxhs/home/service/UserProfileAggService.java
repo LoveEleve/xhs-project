@@ -40,7 +40,8 @@ public class UserProfileAggService {
     private final AnalyticsFeignClient analyticsFeignClient;
     private final ContentFeignClient contentFeignClient;
     private final CounterFeignClient counterFeignClient;
-    private final ExecutorService aggregatorPool;
+    // C-014 F1：内层 future 迁 batchFeignPool（A3 模式——原 aggregatorPool 与外层同池会饥饿）
+    private final ExecutorService batchFeignPool;
 
     /**
      * 聚合用户主页
@@ -68,7 +69,7 @@ public class UserProfileAggService {
                          log.warn("[用户主页] 获取用户信息失败: userId={}", targetUserId, e);
                          return Collections.emptyMap();
                      }
-                }, aggregatorPool);
+                }, batchFeignPool);
 
         // 2. 计数（粉丝数/关注数 — 从 analytics 直接取，不绕 counter）
         CompletableFuture<Map<String, Long>> counterFuture = CompletableFuture
@@ -83,7 +84,7 @@ public class UserProfileAggService {
                         log.warn("[用户主页] 获取计数失败: userId={}", targetUserId, e);
                     }
                     return result;
-                }, aggregatorPool);
+                }, batchFeignPool);
 
         // 3. 关注关系
         CompletableFuture<Map<String, Boolean>> relationFuture = CompletableFuture
@@ -98,7 +99,7 @@ public class UserProfileAggService {
                         log.warn("[用户主页] 查询关注关系失败: currentUser={}, targetUser={}", currentUserId, targetUserId);
                         return Collections.<String, Boolean>emptyMap();
                     }
-                }, aggregatorPool);
+                }, batchFeignPool);
 
         // 4. 用户笔记列表（前 10 条）+ 已发布笔记总数（用于 noteCount）
         long[] noteCountHolder = {0};
@@ -123,58 +124,74 @@ public class UserProfileAggService {
                         log.warn("[用户主页] 获取用户笔记失败: userId={}", targetUserId);
                     }
                     return Collections.<NoteCardVO>emptyList();
-                }, aggregatorPool);
+                }, batchFeignPool);
 
-        // 5. 获赞+收藏数：拉取用户全部已发布笔记，sum 其 like(1)+collect(2) 计数
+        // 5. 获赞+收藏数：拉取用户已发布笔记（页数上限 10 ≈500 篇近似统计），分批（≤100/批）sum like(1)+collect(2)
+        //    C-014 F2 修复两处：① id 提取 String-aware（R4 全局 Long→String 下 instanceof Number 恒 false
+        //    → noteIds 恒空 → 统计恒 0——T-119 修了 total 漏了 id）；② 单请求 >100 项会被
+        //    CounterBatchRequest @Size(max=100) 校验拒绝 → 分批查询 + 部分成功累计（不因单批失败归零）
         CompletableFuture<Long> likeCollectFuture = CompletableFuture
                 .supplyAsync(() -> {
                     try {
                         List<Long> noteIds = new ArrayList<>();
                         int page = 1;
                         final int size = 50;
+                        final int maxPages = 10; // 页数上限（同时避开 counter batch-get 10/s 限流：≤5 批请求）
                         long total = Long.MAX_VALUE;
-                        while (noteIds.size() < total && page <= 20) { // 上限保护，避免过多分页
+                        while (noteIds.size() < total && page <= maxPages) {
                             R<Map<String, Object>> r = contentFeignClient.getUserNotes(targetUserId, page, size);
                             if (r == null || !r.isSuccess() || r.getData() == null) break;
-                            // total 可能是 Number 或 String（全局 Long→String 序列化配置），原先只认 Number → 上限保护失效
                             Object totalObj = r.getData().get("total");
                             if (totalObj != null) {
                                 try {
                                     total = Long.parseLong(String.valueOf(totalObj));
                                 } catch (NumberFormatException ignored) {
-                                    // 解析失败保持 Long.MAX_VALUE，仅靠 page<=20 上限保护
+                                    // 解析失败保持 Long.MAX_VALUE，仅靠 maxPages 上限保护
                                 }
                             }
                             Object records = r.getData().get("records");
                             if (!(records instanceof List)) break;
                             List<?> recs = (List<?>) records;
                             for (Object o : recs) {
-                                Object id = ((Map<?, ?>) o).get("id");
-                                if (id instanceof Number) noteIds.add(((Number) id).longValue());
+                                // C-014 F2①：String-aware 提取（原 instanceof Number 恒 false）
+                                Long id = toLongValue(((Map<?, ?>) o).get("id"));
+                                if (id != null) noteIds.add(id);
                             }
                             if (recs.size() < size) break;
                             page++;
                         }
                         if (noteIds.isEmpty()) return 0L;
 
-                        List<Map<String, Object>> queries = new ArrayList<>();
-                        for (Long id : noteIds) {
-                            queries.add(Map.of("targetType", 1, "targetId", id, "countTypes", List.of(1, 2)));
-                        }
-                        R<Map<String, Map<String, Long>>> cr = counterFeignClient.batchGetCounts(Map.of("queries", queries));
-                        if (cr == null || !cr.isSuccess() || cr.getData() == null) return 0L;
+                        // C-014 F2②：分批（counter 校验上限 100）+ 部分成功累计
                         long sum = 0L;
-                        for (Long id : noteIds) {
-                            Map<String, Long> m = cr.getData().get("1:" + id);
-                            if (m == null) continue;
-                            sum += m.getOrDefault("like", 0L) + m.getOrDefault("collect", 0L);
+                        final int chunk = 100;
+                        for (int from = 0; from < noteIds.size(); from += chunk) {
+                            List<Long> part = noteIds.subList(from, Math.min(from + chunk, noteIds.size()));
+                            try {
+                                List<Map<String, Object>> queries = new ArrayList<>();
+                                for (Long id : part) {
+                                    queries.add(Map.of("targetType", 1, "targetId", id, "countTypes", List.of(1, 2)));
+                                }
+                                R<Map<String, Map<String, Long>>> cr = counterFeignClient.batchGetCounts(Map.of("queries", queries));
+                                if (cr == null || !cr.isSuccess() || cr.getData() == null) {
+                                    log.warn("[用户主页] 计数分批查询失败(跳过该批): from={}, sum={}", from, sum);
+                                    continue;
+                                }
+                                for (Long id : part) {
+                                    Map<String, Long> m = cr.getData().get("1:" + id);
+                                    if (m == null) continue;
+                                    sum += m.getOrDefault("like", 0L) + m.getOrDefault("collect", 0L);
+                                }
+                            } catch (Exception e) {
+                                log.warn("[用户主页] 计数分批异常(跳过该批): from={}, sum={}", from, sum, e);
+                            }
                         }
                         return sum;
                     } catch (Exception e) {
                         log.warn("[用户主页] 获取获赞收藏数失败: userId={}", targetUserId);
                         return 0L;
                     }
-                }, aggregatorPool);
+                }, batchFeignPool);
 
         // 等待所有并行任务完成（总超时 3 秒）
         try {

@@ -1,5 +1,6 @@
 package com.myxhs.home.controller;
 
+import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
 import com.myxhs.common.response.ResultCode;
 import com.myxhs.home.dto.*;
@@ -51,6 +52,7 @@ public class HomeController {
      * </p>
      */
     @GetMapping("/feed")
+    @RateLimit(prefix = "myxhs:home:feed", maxRequests = 30, windowSeconds = 60, perUser = true)
     public CompletableFuture<R<FeedVO>> getFollowFeed(
             @RequestHeader("X-User-Id") Long userId,
             @RequestParam(required = false) Double lastScore,
@@ -74,6 +76,7 @@ public class HomeController {
      * </p>
      */
     @GetMapping("/note/{noteId}")
+    @RateLimit(prefix = "myxhs:home:note", maxRequests = 60, windowSeconds = 60, perUser = true)
     public CompletableFuture<R<NoteDetailAggVO>> getNoteDetail(
             @PathVariable Long noteId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
@@ -100,6 +103,7 @@ public class HomeController {
      * </p>
      */
     @GetMapping("/product/{spuId}")
+    @RateLimit(prefix = "myxhs:home:product", maxRequests = 60, windowSeconds = 60, perUser = true)
     public CompletableFuture<R<ProductDetailAggVO>> getProductDetail(@PathVariable Long spuId) {
         return CompletableFuture.supplyAsync(() -> {
             try {
@@ -124,6 +128,7 @@ public class HomeController {
      * </p>
      */
     @GetMapping("/user/{targetUserId}")
+    @RateLimit(prefix = "myxhs:home:user", maxRequests = 60, windowSeconds = 60, perUser = true)
     public CompletableFuture<R<UserProfileAggVO>> getUserProfile(
             @PathVariable Long targetUserId,
             @RequestHeader(value = "X-User-Id", required = false) Long userId) {
@@ -150,6 +155,7 @@ public class HomeController {
      * </p>
      */
     @GetMapping("/cart")
+    @RateLimit(prefix = "myxhs:home:cart", maxRequests = 30, windowSeconds = 60, perUser = true)
     public CompletableFuture<R<CartAggVO>> getCartAgg(@RequestHeader("X-User-Id") Long userId) {
         return CompletableFuture.supplyAsync(() -> {
             try {
