@@ -1059,8 +1059,9 @@ CREATE TABLE IF NOT EXISTS t_inventory_l2_event (
     order_id   BIGINT      NOT NULL COMMENT '订单ID(pseudoOrderId)',
     sku_id     BIGINT      NOT NULL COMMENT 'SKU ID',
     action     VARCHAR(32) NOT NULL COMMENT '事件类型: PRE_DEDUCT/CONFIRM/RELEASE/REFUND_RESTORE',
+    event_time BIGINT      NOT NULL COMMENT '事件时间戳ms（幂等键一部分：分次退款为不同事件；重发同 eventTime 去重）',
     created_at DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '处理完成时间',
-    PRIMARY KEY (order_id, sku_id, action)
+    PRIMARY KEY (order_id, sku_id, action, event_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='L2落账幂等表(C-008)';
 
 -- =====================================================================

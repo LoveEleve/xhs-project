@@ -89,8 +89,9 @@ public class InventoryDeductConsumer implements RocketMQListener<MessageExt> {
             }
 
             // C-008 F4：事务内幂等——INSERT IGNORE 与库存变更同事务（补发/重投/崩溃重投不双扣不丢）
+            // 幂等键含 eventTime：分次退款（同 order+sku 不同事件）各自应用；重发（同 eventTime）去重
             boolean applied = inboxService.applyOnce(event.getOrderId(), event.getSkuId(), event.getAction(),
-                    () -> dispatch(event));
+                    event.getEventTime(), () -> dispatch(event));
             if (!applied) {
                 log.warn("[库存L2] 逻辑事件幂等拦截(已应用过): orderId={}, skuId={}, action={}",
                         event.getOrderId(), event.getSkuId(), event.getAction());

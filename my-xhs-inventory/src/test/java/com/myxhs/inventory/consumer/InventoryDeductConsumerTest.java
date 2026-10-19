@@ -52,7 +52,7 @@ class InventoryDeductConsumerTest {
 
         consumer.onMessage(message("{\"orderId\":123,\"skuId\":456,\"quantity\":2,\"action\":\"PRE_DEDUCT\",\"eventTime\":1000}"));
 
-        verify(inventoryMapper, never()).insertL2Event(anyLong(), anyLong(), anyString());
+        verify(inventoryMapper, never()).insertL2Event(anyLong(), anyLong(), anyString(), anyLong());
         verify(inventoryMapper, never()).deductStock(anyLong(), anyInt());
     }
 
@@ -61,12 +61,12 @@ class InventoryDeductConsumerTest {
     void firstApplicationApplies() {
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(VERSION_KEY)).thenReturn(null);
-        when(inventoryMapper.insertL2Event(123L, 456L, "PRE_DEDUCT")).thenReturn(1);
+        when(inventoryMapper.insertL2Event(123L, 456L, "PRE_DEDUCT", 1000L)).thenReturn(1);
         when(inventoryMapper.deductStock(456L, 2)).thenReturn(1);
 
         consumer.onMessage(message("{\"orderId\":123,\"skuId\":456,\"quantity\":2,\"action\":\"PRE_DEDUCT\",\"eventTime\":1000}"));
 
-        verify(inventoryMapper).insertL2Event(123L, 456L, "PRE_DEDUCT");
+        verify(inventoryMapper).insertL2Event(123L, 456L, "PRE_DEDUCT", 1000L);
         verify(inventoryMapper).deductStock(456L, 2);
         verify(businessMetrics).recordInventoryAction("l2_prededuct_ok");
     }
@@ -76,7 +76,7 @@ class InventoryDeductConsumerTest {
     void duplicateApplicationSkipped() {
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(VERSION_KEY)).thenReturn(null);
-        when(inventoryMapper.insertL2Event(123L, 456L, "PRE_DEDUCT")).thenReturn(0);
+        when(inventoryMapper.insertL2Event(123L, 456L, "PRE_DEDUCT", 1000L)).thenReturn(0);
 
         consumer.onMessage(message("{\"orderId\":123,\"skuId\":456,\"quantity\":2,\"action\":\"PRE_DEDUCT\",\"eventTime\":1000}"));
 
@@ -88,13 +88,28 @@ class InventoryDeductConsumerTest {
     void releaseConditionFailureMarkedDone() {
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(VERSION_KEY)).thenReturn(null);
-        when(inventoryMapper.insertL2Event(123L, 456L, "RELEASE")).thenReturn(1);
+        when(inventoryMapper.insertL2Event(123L, 456L, "RELEASE", 1000L)).thenReturn(1);
         when(inventoryMapper.releaseStock(456L, 2)).thenReturn(0);
 
         consumer.onMessage(message("{\"orderId\":123,\"skuId\":456,\"quantity\":2,\"action\":\"RELEASE\",\"eventTime\":1000}"));
 
-        verify(inventoryMapper).insertL2Event(123L, 456L, "RELEASE");
+        verify(inventoryMapper).insertL2Event(123L, 456L, "RELEASE", 1000L);
         verify(inventoryMapper).releaseStock(456L, 2);
+    }
+
+    @Test
+    @DisplayName("C-008：分次退款（同 order+sku 不同 eventTime）→ 两个事件各自应用（inbox 不误杀）")
+    void multiRefundEventsAppliedIndependently() {
+        when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
+        when(valueOperations.get(VERSION_KEY)).thenReturn(null);
+        when(inventoryMapper.insertL2Event(123L, 456L, "REFUND_RESTORE", 2000L)).thenReturn(1);
+        when(inventoryMapper.refundRestoreStock(456L, 1)).thenReturn(1);
+
+        // 第二次退款：新 eventTime=2000（首次退款 eventTime=1000 已应用过）→ inbox 为新键 → 应用
+        consumer.onMessage(message("{\"orderId\":123,\"skuId\":456,\"quantity\":1,\"action\":\"REFUND_RESTORE\",\"eventTime\":2000}"));
+
+        verify(inventoryMapper).insertL2Event(123L, 456L, "REFUND_RESTORE", 2000L);
+        verify(inventoryMapper).refundRestoreStock(456L, 1);
     }
 
     private MessageExt message(String body) {

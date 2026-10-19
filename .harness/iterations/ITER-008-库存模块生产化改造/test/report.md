@@ -16,7 +16,7 @@ updated: 2026-10-18
 - 执行时间: 2026-10-18（三阶段：① 可靠性 → ② 键模型 → ③ 工程；收口并入）
 - 环境 profile: JDK 17（`/env/javaEnv/jdk17`）+ Maven 3.9 离线（`-o`）；**无运行时环境**（项目规则：单测口径；删 `target/test-classes` 强制全量重编防增量假绿）
 - 命令: `mvn -o -pl my-xhs-common,my-xhs-product,my-xhs-coupon,my-xhs-order,my-xhs-inventory,my-xhs-payment,my-xhs-search,my-xhs-cart -am test` + 全仓 `mvn -o -q compile`
-- 结果: ✅ 通过（BUILD SUCCESS；**457 全绿**：common 93 / product 35 / coupon 24 / order 124 / **inventory 32**（基线 20，+12）/ cart 33 / search 43 / payment 73——零回归）
+- 结果: ✅ 通过（BUILD SUCCESS；**458 全绿**：common 93 / product 35 / coupon 24 / order 124 / **inventory 33**（基线 20，+13）/ cart 33 / search 43 / payment 73——零回归）
 
 ## 用例执行结果
 
@@ -59,15 +59,16 @@ updated: 2026-10-18
 | ② | `feat(inventory): C-008② ...` | 去桶单键 + per-(sku,order) 记录 + 单 slot + items 契约 + F12 + 退款原子脚本 + 对账 CAS + 删分桶全链（+2 测） |
 | ③ | `feat(inventory): C-008③ ...` | 指标补齐 + 锁前缀统一 + Sender 文案 + reconcileLockedStock 单键化 |
 
-## 深审查（实施期，证据链）
+## 深审查（两轮，证据链）
 
 - 审查清单五维（幂等三场景/键一致性/语义保全/跨模块/证据）逐项闭环——详见 `test/review-c008.md`；
 - **实施期抓到 1 个真 bug（R1：TimeoutJob 索引键格式与 Service 不一致 → 超时释放整体失效，测试抓到）+ 4 处遗漏（R2-R5）已修**；
-- 语义保全：F-037/N10/T-073/T-124 随分桶消亡（等价成立）；04B 墓碑/标记/N7 保留并锁定。
+- 语义保全：F-037/N10/T-073/T-124 随分桶消亡（等价成立）；04B 墓碑/标记/N7 保留并锁定；
+- **第二轮深审查（查漏补缺，18 项）**：抓到 **R6 语义误杀**——inbox 幂等键 `(order,sku,action)` 对分次退款太粗（第二个合法事件被误杀 → MySQL 少补）→ **PK 加入 event_time**（事件级幂等）+ 回归测试；其余 17 项通过/记录（详见 review-c008.md 第二轮）。
 
 ## 收口清单
 
-- [x] 八模块全量回归 457 全绿（零回归）+ 全仓编译
+- [x] 八模块全量回归 458 全绿（零回归）+ 全仓编译（第二轮深审查后复核）
 - [x] 深审查（review-c008.md：5 处发现全部修复）
 - [x] 台账回写（问题 1/2/3 → 已修复；4/5 补标已修复）
 - [x] 库存对照文档（模块对照系列补项）

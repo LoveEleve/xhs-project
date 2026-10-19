@@ -65,3 +65,51 @@ C-008 全部落地改动：4 消费者（Deduct/OrderTransaction/OrderTerminatio
 ## 结论
 
 幂等三场景 + 键模型一致性 + 语义保全 + 跨模块契约全部闭环；实施期抓到 1 个真 bug（R1）+ 4 处遗漏（R2-R5）已全部修复。证据：八模块 457 全绿 + 全仓编译。
+
+
+---
+
+# 第二轮深审查（查漏补缺，2026-10-18）
+
+## 审查清单（5 维 18 项，逐项结论）
+
+> 结论标记：✅ 通过 / 🟡 发现并修复 / 📝 记录（边界）
+
+### A. 幂等/一致性语义再推演（4 场景走查）
+
+- **A1 DLQ 重放 × 版本门 × inbox** ✅ —— 失败消息进 DLQ 时版本未推进（"完成后推进"语义）→ 重放（旧 eventTime）不被误杀；版本已被更新事件推进 → 重放被 stale 拦截（正确）；>24h 版本 key 过期 → inbox（7 天）兜底
+- **A2 完成态标记并发投递** ✅ —— 双投递同处理（无标记）→ 业务操作天然幂等（Lua 逐 SKU / 墓碑）→ 双 markProcessed 无副作用
+- **A3 outbox ON DUPLICATE 重置已 sent 行** ✅ —— 同 action 再入（cancel 失败重试等）→ 行重置 pending → Job 重发 → **消费端幂等三重拦截**（inbox 同 eventTime / 完成态 / Lua）；markSent 按业务键（F2）保证标记命中
+- **A4 F12 标记与 confirm 重试/补偿交叉** ✅ —— confirm 重试对已确认订单（记录已删）→ anyMissing 写标记（无害——无遗留记录）；超时任务仅对遗留记录生效
+
+### B. 键模型/集群正确性
+
+- **B1 旧格式残留全仓扫描** 🟡 —— 代码/测试零残留；OrderService 注释 1 处旧格式（`inventory:prededuct:{id}`）→ 已修正
+- **B2 脚本 × 调用方矩阵** ✅ —— preDeduct(4K/4A)/confirm(2K/1A)/markTerminated(2K/1A)/release(3K/1A)×4 调用方/refund(2K/2A) 逐一对齐
+- **B3 非脚本多键操作** 📝 —— 仅 SCAN 模式（reconcile/超时 Job），Cluster 单节点扫描边界已注释（既有口径）
+
+### C. 语义保全（历史修复等价性）
+
+- **C1 T-066 自愈触发等价** ✅ —— canal DELETE 删 stock 键（CacheEvict 已改）→ doPreDeduct stock 缺失检查 → rebuild（与旧 bucketCount-null 触发等价）
+- **C2 getStock initialized 语义变化** ✅ —— product 侧不消费 getStock/initialized（仅 init 调用）——零影响
+- **C3 超时"补确认失败不释放"** ✅ —— catch 后 return true（本轮不释放，下轮重试）保留
+
+### D. 跨模块契约边界
+
+- **D1 order items 空列表防御** ✅ —— inventory 侧 confirm 写标记（保守不释放）/ release 仅告警；单测锁定
+- **D2 product init/reinit 契约** ✅ —— InitRequest 去 bucketCount 后字段对齐；reinit 单参
+
+### E. 证据
+
+- **E1 陈旧报告假绿排查** ✅ —— 8 个回归模块 surefire 均为本次运行；非回归模块（analytics/content 等）陈旧报告不影响
+- **E2 断言一致性抽查** ✅ —— 幂等键/指标名/CAS 参数逐条对照实现
+
+## 第二轮发现（🟡 1 处真问题，已修复）
+
+| # | 发现 | 类型 | 修复 |
+|---|------|------|------|
+| **R6** | **inbox 幂等键 `(order,sku,action)` 对 REFUND_RESTORE 太粗**：分次退款（先退 1 件再退 2 件）产生**同 (order,sku) 的第二个合法事件**（delta 增量），被 inbox 误杀 → MySQL 少补（Redis/MySQL 分歧直到对账） | **真问题（语义误杀）** | PK 加入 `event_time`：重发（同 eventTime）去重 ✓；分次退款（不同 eventTime）各自应用 ✓；回归测试 `multiRefundEventsAppliedIndependently`（+1 测） |
+
+## 第二轮结论
+
+18 项全部闭环：**抓到 1 个语义误杀问题（R6）并修复**（幂等键粒度：事件级而非动作级——分次退款是唯一"同 (order,sku) 多事件"合法场景，已推演穷尽）；其余 17 项通过或记录。证据：八模块 **458 全绿**（inventory 33，+1）+ 全仓编译。

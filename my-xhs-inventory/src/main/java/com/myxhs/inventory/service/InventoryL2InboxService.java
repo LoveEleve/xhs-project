@@ -28,10 +28,14 @@ public class InventoryL2InboxService {
     /**
      * 事务内应用一次：INSERT IGNORE 命中（0 行）→ 返回 false（此前已应用，跳过）；
      * 首次（1 行）→ 执行 operation（库存变更）→ 一并提交。
+     * <p>
+     * 幂等键 = (orderId, skuId, action, **eventTime**)：重发/重投（同 eventTime）去重；
+     * 分次退款等**同 (order,sku) 的多个合法事件**（不同 eventTime）各自独立应用（不误杀）。
+     * </p>
      */
     @Transactional(rollbackFor = Exception.class)
-    public boolean applyOnce(Long orderId, Long skuId, String action, Runnable operation) {
-        if (inventoryMapper.insertL2Event(orderId, skuId, action) == 0) {
+    public boolean applyOnce(Long orderId, Long skuId, String action, Long eventTime, Runnable operation) {
+        if (inventoryMapper.insertL2Event(orderId, skuId, action, eventTime != null ? eventTime : 0L) == 0) {
             return false;
         }
         operation.run();

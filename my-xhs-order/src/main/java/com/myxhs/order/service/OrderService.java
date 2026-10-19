@@ -773,7 +773,7 @@ public class OrderService {
     private static long derivePseudoOrderId(String orderNo) {
         // ⚠️ 与 inventory 侧 PseudoOrderIdUtil.derive 必须保持一致（预扣/释放/确认幂等键；改一侧必须同步另一侧）
         // P2-12: 原 fold-hash（*31+char）在 ~24 字符 orderNo 上必然 long 溢出环绕，跨单碰撞概率高
-        //        （碰撞 → 两个订单共用 inventory:prededuct:{id} 预扣记录 → 库存扣减/释放错乱）
+        //        （碰撞 → 两个订单共用 inventory:{skuId}:prededuct:{id} 预扣记录 → 库存扣减/释放错乱）
         // 改为 SHA-256 截取前 8 字节（64bit），分布均匀，生日碰撞概率 ~2^-32，可忽略。
         // 注意：算法变更只影响新订单；跨版本"预扣旧算法/确认新算法"的进行中订单需人工核对（30min 窗口内）。
         try {

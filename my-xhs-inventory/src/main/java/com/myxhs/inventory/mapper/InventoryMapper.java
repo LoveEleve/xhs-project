@@ -60,10 +60,12 @@ public interface InventoryMapper extends BaseMapper<Inventory> {
             "VALUES (#{orderId}, #{skuId})")
     int insertPredeductIdem(@Param("orderId") Long orderId, @Param("skuId") Long skuId);
 
-    /** C-008 F4：L2 事务内幂等——INSERT IGNORE（冲突返回 0=此前已应用） */
-    @org.apache.ibatis.annotations.Insert("INSERT IGNORE INTO t_inventory_l2_event (order_id, sku_id, action) " +
-            "VALUES (#{orderId}, #{skuId}, #{action})")
-    int insertL2Event(@Param("orderId") Long orderId, @Param("skuId") Long skuId, @Param("action") String action);
+    /** C-008 F4：L2 事务内幂等——INSERT IGNORE（冲突返回 0=此前已应用）。
+     *  PK 含 event_time：重发（同 eventTime）去重；分次退款（不同 eventTime）为独立事件正常应用 */
+    @org.apache.ibatis.annotations.Insert("INSERT IGNORE INTO t_inventory_l2_event (order_id, sku_id, action, event_time) " +
+            "VALUES (#{orderId}, #{skuId}, #{action}, #{eventTime})")
+    int insertL2Event(@Param("orderId") Long orderId, @Param("skuId") Long skuId,
+            @Param("action") String action, @Param("eventTime") Long eventTime);
 
     /** C-008：L2 幂等表 7 天清理（覆盖 MQ 重投 + DLQ 重放窗口） */
     @org.apache.ibatis.annotations.Delete("DELETE FROM t_inventory_l2_event WHERE created_at < #{before} LIMIT #{limit}")
