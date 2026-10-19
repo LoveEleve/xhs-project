@@ -144,20 +144,20 @@ public final class RedisKeyConstants {
     /** 热搜实时榜（带 {realtime} hash tag：与 ":tmp" 同 slot，RENAME 集群合法） */
     public static final String SEARCH_HOT_REALTIME = PROJECT_PREFIX + "search:hot:{realtime}";
 
-    /** 热搜滑动窗口分钟桶 myxhs:search:window:{yyyyMMddHHmm} */
-    public static final String SEARCH_WINDOW = PROJECT_PREFIX + "search:window:";
+    /** 热搜滑动窗口分钟桶 myxhs:search:{hot}:window:{yyyyMMddHHmm}（{hot} tag：与反作弊/屏蔽同 slot，RECORD_SCRIPT 单 slot——C-011 补遗） */
+    public static final String SEARCH_WINDOW = PROJECT_PREFIX + "search:{hot}:window:";
 
-    /** 热搜人工置顶 myxhs:search:hot:pinned */
-    public static final String SEARCH_HOT_PINNED = PROJECT_PREFIX + "search:hot:pinned";
+    /** 热搜人工置顶 myxhs:search:{hot}:pinned（同 {hot} 族：防后续脚本混用踩跨 slot） */
+    public static final String SEARCH_HOT_PINNED = PROJECT_PREFIX + "search:{hot}:pinned";
 
-    /** 热搜人工屏蔽 myxhs:search:hot:blocked */
-    public static final String SEARCH_HOT_BLOCKED = PROJECT_PREFIX + "search:hot:blocked";
+    /** 热搜人工屏蔽 myxhs:search:{hot}:blocked（RECORD_SCRIPT KEYS[4]） */
+    public static final String SEARCH_HOT_BLOCKED = PROJECT_PREFIX + "search:{hot}:blocked";
 
-    /** 热搜反作弊-用户限频 myxhs:search:antispam:user:{userId}:{keywordHash} */
-    public static final String SEARCH_ANTISPAM_USER = PROJECT_PREFIX + "search:antispam:user:";
+    /** 热搜反作弊-用户限频 myxhs:search:{hot}:antispam:user:{userId}:{keyword}（RECORD_SCRIPT KEYS[1]） */
+    public static final String SEARCH_ANTISPAM_USER = PROJECT_PREFIX + "search:{hot}:antispam:user:";
 
-    /** 热搜反作弊-IP限频 myxhs:search:antispam:ip:{ip} */
-    public static final String SEARCH_ANTISPAM_IP = PROJECT_PREFIX + "search:antispam:ip:";
+    /** 热搜反作弊-IP限频 myxhs:search:{hot}:antispam:ip:{ip}（RECORD_SCRIPT KEYS[2]） */
+    public static final String SEARCH_ANTISPAM_IP = PROJECT_PREFIX + "search:{hot}:antispam:ip:";
 
     /** 搜索建议 myxhs:search:suggest:{prefix} */
     public static final String SEARCH_SUGGEST = PROJECT_PREFIX + "search:suggest:";

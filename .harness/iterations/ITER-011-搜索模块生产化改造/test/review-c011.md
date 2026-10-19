@@ -44,7 +44,18 @@ updated: 2026-10-19
 - **E1 测试新增 20** ✅ —— 收敛矩阵 5 + 别名管理 8 + 重建决策 3 + DLQ 5（含超限/失败传播）
 - **E2 十一模块复跑** ✅ —— **546 全绿**（search 63）
 
-## 发现汇总（🟡 3 处，均已修复）
+## 补遗（2026-10-19 晚 · 集群基线复核）
+
+> 触发：用户重申"按集群部署"为设计基线 → 对已重构 10 模块做 Lua/多键命令 cluster 安全全量复核。
+
+- **🟡 R4（补遗）**：`HotSearchService.RECORD_SCRIPT` 4 个 KEYS 全无 hash tag（CRC16 实算跨 4 slot）——真 Cluster 下
+  **EVAL 被 CROSSSLOT 直接拒绝**（非"原子性弱化"），catch 静默降级 → 热搜记录全挂；C-011 深探漏网（聚焦 R1-R8+别名）。
+  修复：键族补 `{hot}` tag + `HotSearchKeySlotTest` ×3（CRC16 实算 slot 锁定）；search 66 / 十一模块 **549 全绿**。
+- **复核结论（其余 9 模块全绿）**：inventory 4 键同 slot（CRC16 实算 15391）；coupon `{templateId}`；cart `{userId}`；
+  analytics `{userId}`/`{targetId}`；counter 三键同 `{targetId}`；order/payment/content/common 全单键脚本；
+  counter reconcile `multiGet` 经 Lettuce 6.3.2 字节码验证按 slot 自动拆分（安全，非问题）。
+
+## 发现汇总（🟡 4 处，均已修复）
 
 | # | 发现 | 类型 | 修复 |
 |---|------|------|------|
@@ -54,4 +65,4 @@ updated: 2026-10-19
 
 ## 结论
 
-20 项全部闭环：补偿收敛矩阵（conflict 豁免/确定性失败/整批保守）与四路版本域一致性经单测锁定；别名切换（resolve/原子切换/窗口重放/legacy/续传）全矩阵覆盖，**调用序走查确认失败安全**；墓碑统一（防复活 + 防泄漏双闭环）；DLQ ×5 与限流补齐。审查期抓获 resolve 探测缺陷 1 处 + 注释漂移 2 处。证据：十一模块 **546 全绿**。
+（补遗后）21 项全部闭环：补偿收敛矩阵（conflict 豁免/确定性失败/整批保守）与四路版本域一致性经单测锁定；别名切换（resolve/原子切换/窗口重放/legacy/续传）全矩阵覆盖，**调用序走查确认失败安全**；墓碑统一（防复活 + 防泄漏双闭环）；DLQ ×5 与限流补齐。审查期抓获 resolve 探测缺陷 1 处 + 注释漂移 2 处。证据：十一模块 **546 全绿**。

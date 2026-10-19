@@ -38,7 +38,7 @@ import java.util.stream.Collectors;
  * </p>
  * <p>
  * 滑动窗口设计：
- * - 每分钟一个 Hash 桶：search:window:{yyyyMMddHHmm} → { keyword: count }
+ * - 每分钟一个 Hash 桶：search:{hot}:window:{yyyyMMddHHmm} → { keyword: count }
  * - TTL=2h，过期自然淘汰
  * - 定时任务（默认每 1 分钟，`search.hot.recompute-interval-ms` 可配）遍历最近 60 个桶，用指数衰减公式计算热度
  * </p>
@@ -79,6 +79,10 @@ public class HotSearchService {
 
     /**
      * 反作弊 + 写入分钟桶的 Lua 脚本（原子操作）
+     * <p>
+     * <b>C-011 补遗</b>：4 个 KEYS（antispam:user / antispam:ip / window / blocked）统一 {@code {hot}} hash tag
+     * → 真 Redis Cluster 单 slot（修复前 4 键跨 4 slot，EVAL 直接被 CROSSSLOT 拒绝 → catch 静默降级、热搜记录全挂）。
+     * </p>
      * <p>
      * 修复点：
      * 1. 先检查 IP 限频，再写入用户 Key（避免 IP 超限时用户 Key 已写入导致误拦截）

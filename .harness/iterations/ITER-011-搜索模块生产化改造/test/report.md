@@ -59,3 +59,9 @@ updated: 2026-10-19
 - [x] 部署说明（DEPLOY-NOTES：legacy 别名迁移三步）
 - [x] change 卡 → done
 - [x] 运行时验证按项目规则后置
+
+## 补遗（2026-10-19 晚 · 热搜键族集群安全修复）
+
+- **R4（补遗）**：热搜 RECORD_SCRIPT 4 键无 tag → 真 Cluster CROSSSLOT 拒绝执行（热搜记录静默全挂）——已修复（键族补 `{hot}` tag + slot 实算单测 ×3）；
+- 已重构 10 模块 Lua/多键命令 cluster 复核：其余全绿（counter multiGet 经 Lettuce 6.3.2 字节码确认自动按 slot 拆分）；
+- **复跑：search 66 / 十一模块 549 全绿**。
