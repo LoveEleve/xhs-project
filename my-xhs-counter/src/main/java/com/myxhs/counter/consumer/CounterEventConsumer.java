@@ -43,7 +43,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 @RocketMQMessageListener(
         topic = "SOCIAL_TOPIC",
-        selectorExpression = "LIKE||UNLIKE||FAVORITE||UNFAVORITE||COMMENT||UNCOMMENT||SHARE||VIEW||FOLLOW||UNFOLLOW",
+        selectorExpression = "LIKE||UNLIKE||FAVORITE||UNFAVORITE||COMMENT||UNCOMMENT||SHARE||VIEW",
         consumerGroup = "counter-consumer-group",
         maxReconsumeTimes = 3
 )
@@ -114,10 +114,8 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
                 case "VIEW":
                     handleViewEvent(msgId, eventMap);
                     break;
-                case "FOLLOW":
-                case "UNFOLLOW":
-                    handleFollowEvent(msgId, eventMap, tag);
-                    break;
+                // 【C-009 T2.3 评估后移除】原 FOLLOW/UNFOLLOW → handleFollowEvent（镜像键 2:{uid}:6/7）：
+                // 无读取方（核验记录见 ITER-009），三代计数收敛；事件保留生产（供禁用的 DB-sync 消费者路径）
                 default:
                     log.warn("[计数Consumer] 未知Tag: {}, 忽略消息", tag);
             }
@@ -339,68 +337,6 @@ public class CounterEventConsumer implements RocketMQListener<MessageExt> {
                 executed ? "更新" : "去重跳过", msgId, targetType, noteId);
     }
 
-    /**
-     * 处理关注/取关事件【修复R10】
-     * <p>
-     * 关注事件字段：followerUserId, followeeUserId, action(FOLLOW/UNFOLLOW)
-     * 双向更新：
-     *   - follower 的 FOLLOWING 计数 (targetType=2, countType=7)
-     *   - followee 的 FOLLOWER 计数 (targetType=2, countType=6)
-     * </p>
-     */
-    private void handleFollowEvent(String msgId, Map<String, Object> eventMap, String tag) {
-        Long followerUserId = toLong(eventMap.get("followerUserId"));
-        Long followeeUserId = toLong(eventMap.get("followeeUserId"));
-
-        if (followerUserId == null || followeeUserId == null) {
-            log.warn("[计数Consumer] 关注事件缺少必填字段: follower={}, followee={}",
-                    followerUserId, followeeUserId);
-            return;
-        }
-
-        // 版本门：同一对关注关系的事件按 actionTime 收敛，防"后到的旧 UNFOLLOW"改写双方计数
-        Long actionTime = toLong(eventMap.get("actionTime"));
-        String versionKey = null;
-        if (actionTime != null && actionTime > 0) {
-            versionKey = EVENT_VERSION_PREFIX + "follow:" + followerUserId + ":" + followeeUserId;
-            if (versionGate.isStale(versionKey, actionTime)) {
-                log.warn("[计数Consumer] 旧关注事件被版本门拒绝: msgId={}, follower={}, followee={}, actionTime={}",
-                        msgId, followerUserId, followeeUserId, actionTime);
-                return;
-            }
-        }
-
-        boolean isFollow = "FOLLOW".equals(tag);
-
-        // 1. follower 的关注数 (countType=7)
-        boolean f1 = isFollow
-                ? counterService.incrementWithDedup(msgId, TARGET_TYPE_USER, followerUserId, COUNT_TYPE_FOLLOWING)
-                : counterService.decrementWithDedup(msgId, TARGET_TYPE_USER, followerUserId, COUNT_TYPE_FOLLOWING);
-
-        // 2. followee 的粉丝数 (countType=6) — 使用 msgId+"_2" 避免 dedup 冲突
-        String msgId2 = msgId + "_2";
-        boolean f2 = isFollow
-                ? counterService.incrementWithDedup(msgId2, TARGET_TYPE_USER, followeeUserId, COUNT_TYPE_FOLLOWER)
-                : counterService.decrementWithDedup(msgId2, TARGET_TYPE_USER, followeeUserId, COUNT_TYPE_FOLLOWER);
-
-        // 部分成功回滚：followee 更新失败时回滚 follower
-        if (!f2 && f1) {
-            String rollbackMsgId = msgId + "_rollback";
-            if (isFollow) {
-                counterService.decrementWithDedup(rollbackMsgId, TARGET_TYPE_USER, followerUserId, COUNT_TYPE_FOLLOWING);
-            } else {
-                counterService.incrementWithDedup(rollbackMsgId, TARGET_TYPE_USER, followerUserId, COUNT_TYPE_FOLLOWING);
-            }
-            throw new RuntimeException("关注事件 followee 更新失败，已回滚 follower");
-        }
-
-        log.info("[计数Consumer] 关注计数更新: msgId={}, follower={}({}), followee={}({}), action={}",
-                msgId, followerUserId, f1 ? "更新" : "去重", followeeUserId, f2 ? "更新" : "去重", tag);
-        // C-009：完成后单调推进（f2 失败已抛出 → 不推进 → 重投重处理）
-        if (versionKey != null) {
-            versionGate.markDone(versionKey, actionTime, VERSION_TTL_SECONDS);
-        }
-    }
 
     private static Integer toInt(Object value) {
         if (value == null) return null;

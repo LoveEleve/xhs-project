@@ -485,16 +485,9 @@ public class FollowService {
         return "计数一致，无需修复";
     }
 
-    public void syncCountersToCounterModule(Long userId) {
-        long follow = getFollowingCount(userId);
-        long follower = getFollowerCount(userId);
-        // 必须带 TTL：SET 会清除既有 TTL，原实现把 counter 模块维护的 30 天续期键改成永久 key（内存泄漏面）。
-        // 口径提示：这里仍是"绝对覆盖"（绕过 counter 的增量/去重语义），已登记为待改造项。
-        stringRedisTemplate.opsForValue().set(RedisKeyConstants.COUNTER + "2:" + userId + ":7",
-                String.valueOf(follow), java.time.Duration.ofDays(30));
-        stringRedisTemplate.opsForValue().set(RedisKeyConstants.COUNTER + "2:" + userId + ":6",
-                String.valueOf(follower), java.time.Duration.ofDays(30));
-    }
+    // 【C-009 T2.3 评估后移除】原 syncCountersToCounterModule（绝对覆盖写 counter 镜像键 2:{uid}:6/7）：
+    // 全仓核验无读取方（home 只读 1/4 类型；前端/网关无直调）——镜像属旧 R10 设计残留，
+    // 三代计数收敛为两代（analytics 权威键 + t_follow 基准）。counter 侧 FOLLOW/UNFOLLOW 事件处理同步移除。
 
     /**
      * Redis ↔ MySQL 关系全量对账修复

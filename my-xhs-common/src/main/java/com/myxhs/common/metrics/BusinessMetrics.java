@@ -121,6 +121,13 @@ public class BusinessMetrics {
     }
 
     /**
+     * 通用业务动作打点（C-009：计数/分析域复用——domain 前缀区分，action 为具体动作名）
+     */
+    public void recordAction(String domain, String action) {
+        counter(domain + ".action.total", "action", action).increment();
+    }
+
+    /**
      * 记录 Feed 推送补偿"终态"（重投超上限，已停止重投，需人工介入）
      */
     public void recordFeedPushTerminal(String reason) {

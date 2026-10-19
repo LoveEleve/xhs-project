@@ -71,9 +71,6 @@ public class FollowCounterRepairJob {
 
                     String counterResult = followService.repairUserCounters(userId);
                     if (!counterResult.contains("无需修复")) counterFixed++;
-
-                    // 同步到 counter 模块 key（双计数体系一致性）
-                    followService.syncCountersToCounterModule(userId);
                 } catch (Exception e) {
                     log.error("[关注对账] 修复失败: userId={}", userId, e);
                 }
