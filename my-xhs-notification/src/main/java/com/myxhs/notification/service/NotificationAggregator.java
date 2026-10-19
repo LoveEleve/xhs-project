@@ -120,10 +120,22 @@ public class NotificationAggregator {
             // 窗口内第一条通知 → INSERT DB 获取 ID → 用真实 ID 替换 Redis 临时值
             notification.setAggregateCount(1);
             notification.setIsRead(0);
-            notificationMapper.insert(notification);
+            try {
+                notificationMapper.insert(notification);
+            } catch (Exception e) {
+                // C-012 F4①：INSERT 失败 → 删键自愈（事务回滚后 MQ 重试可重选窗口，而非卡 PENDING）
+                safeDeleteAggregateKey(aggregateKey);
+                throw e;
+            }
 
-            stringRedisTemplate.opsForValue().set(aggregateKey,
-                    String.valueOf(notification.getId()), getAggregateWindow());
+            try {
+                stringRedisTemplate.opsForValue().set(aggregateKey,
+                        String.valueOf(notification.getId()), getAggregateWindow());
+            } catch (Exception e) {
+                // C-012 F4①（同族）：回填真实 ID 失败 → 键残留 PENDING 会拖死本窗口 → 删键自愈后重抛（事务回滚）
+                safeDeleteAggregateKey(aggregateKey);
+                throw e;
+            }
 
             log.debug("[聚合] 新建通知: userId={}, type={}, targetId={}, id={}",
                     notification.getUserId(), notification.getType(),
@@ -149,6 +161,8 @@ public class NotificationAggregator {
                 if (result != null && !"PENDING".equals(result)) break;
             }
             if (result == null || "PENDING".equals(result)) {
+                // C-012 F4②：PENDING 超时（写入方已崩溃/卡死）→ 删键自愈（后续事件重选窗口，当天聚合恢复）
+                safeDeleteAggregateKey(aggregateKey);
                 notification.setAggregateCount(1);
                 notification.setIsRead(0);
                 notificationMapper.insert(notification);
@@ -170,7 +184,9 @@ public class NotificationAggregator {
         // 原子递增聚合计数 + 查询新值
         int affected = notificationMapper.incrementAggregateCount(mainId);
         if (affected <= 0) {
-            // 主通知不存在（异常），将当前通知作为独立通知写入
+            // 主通知不存在（异常——如键指向已回滚/已删行），将当前通知作为独立通知写入
+            // C-012 F4③：删键自愈（键已失效 → 后续事件重选窗口，而非永久撞空行）
+            safeDeleteAggregateKey(aggregateKey);
             notification.setAggregateCount(1);
             notification.setIsRead(0);
             notificationMapper.insert(notification);
@@ -249,5 +265,21 @@ public class NotificationAggregator {
         PushTemplate template = pushTemplateMapper.selectByType(typeStr);
         templateCache.put(typeStr, new CachedTemplate(template, now + TEMPLATE_CACHE_TTL_MS));
         return template;
+    }
+
+    /**
+     * C-012 F4：窗口键自愈删除（best-effort）——Redis 异常仅告警，不阻断主流程。
+     * <p>
+     * 三处调用：INSERT 失败 / 回填 ID 失败（键将残留 PENDING）/ PENDING 超时 / increment 撞空行。
+     * 删键后：重试（MQ）或后续事件会重新 SETNX 选举窗口，聚合自愈（最坏窗口产生 2 条独立行，不丢事件）。
+     * </p>
+     */
+    private void safeDeleteAggregateKey(String aggregateKey) {
+        try {
+            stringRedisTemplate.delete(aggregateKey);
+            log.info("[聚合] 窗口键自愈删除: key={}", aggregateKey);
+        } catch (Exception e) {
+            log.warn("[聚合] 窗口键删除失败(自愈降级，后续事件/对账仍可收敛): key={}", aggregateKey, e);
+        }
     }
 }

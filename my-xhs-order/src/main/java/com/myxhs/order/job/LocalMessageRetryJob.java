@@ -3,6 +3,7 @@ package com.myxhs.order.job;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.myxhs.order.entity.LocalMessage;
 import com.myxhs.order.mapper.LocalMessageMapper;
+import com.myxhs.order.service.OrderNotificationPublisher;
 import com.myxhs.order.service.OrderService;
 import com.myxhs.order.service.OrderTerminationService;
 import com.xxl.job.core.context.XxlJobHelper;
@@ -178,6 +179,8 @@ public class LocalMessageRetryJob {
             case "ORDER_CREATED" -> OrderService.ORDER_TRANSACTION_TOPIC;
             // 04B：订单终结事件（Outbox 补发；inventory/coupon/notification 订阅）
             case OrderTerminationService.OPERATION_TYPE_ORDER_TERMINATED -> OrderService.ORDER_TERMINATION_TOPIC;
+            // C-012 F6：订单状态变更通知（Outbox 补发；notification 订阅）
+            case OrderNotificationPublisher.OPERATION_TYPE_ORDER_STATUS_NOTIFICATION -> OrderNotificationPublisher.NOTIFICATION_TOPIC;
             // 2026-09-19 review：原 default 投递到无消费者的 DEFAULT_RETRY_TOPIC，且 SEND_OK 后
             // markSuccess → 消息静默丢失。未知类型改为拒绝，交由 catch 走退避重试/死信，人工可查。
             default -> throw new IllegalStateException(

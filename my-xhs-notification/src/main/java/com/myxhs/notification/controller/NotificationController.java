@@ -44,6 +44,7 @@ public class NotificationController {
      * </p>
      */
     @PostMapping("/sse/ticket")
+    @RateLimit(prefix = "myxhs:notification:sseTicket", maxRequests = 10, windowSeconds = 60, perUser = true)
     public R<Map<String, Object>> getSseTicket(@RequestHeader("X-User-Id") Long userId) {
         String ticket = sseTicketService.generateTicket(userId);
         return R.ok(Map.of("ticket", ticket, "expiresIn", 30));
@@ -56,6 +57,8 @@ public class NotificationController {
      * 超时设为 0（永不超时），由心跳保活。
      * </p>
      */
+    // C-012 F5：/sse 建连不加 @RateLimit——由"票据一次性（30s getAndDelete 原子消费）+ 单实例 50k 连接帽"门禁；
+    // 建连洪泛受票据签发限流（sse/ticket 10/min）约束，且 SSE 限流 key 依赖 X-User-Id（本端点无此 Header，会退化为 IP 限流误伤 NAT 用户）
     @GetMapping(value = "/sse", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter sseConnect(@RequestParam String ticket) {
         Long userId = sseTicketService.validateAndConsume(ticket);
@@ -71,6 +74,7 @@ public class NotificationController {
      * 通知列表（分页 + 类型筛选）
      */
     @GetMapping("/list")
+    @RateLimit(prefix = "myxhs:notification:list", maxRequests = 30, windowSeconds = 60, perUser = true)
     public R<Page<NotificationVO>> getNotificationList(
             @RequestHeader("X-User-Id") Long userId,
             @RequestParam(required = false) Integer type,
@@ -88,6 +92,7 @@ public class NotificationController {
      * 获取未读通知数（总 + 分类）
      */
     @GetMapping("/unread-count")
+    @RateLimit(prefix = "myxhs:notification:unreadCount", maxRequests = 60, windowSeconds = 60, perUser = true)
     public R<UnreadCountVO> getUnreadCount(@RequestHeader("X-User-Id") Long userId) {
         return R.ok(notificationService.getUnreadCount(userId));
     }

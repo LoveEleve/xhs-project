@@ -81,7 +81,7 @@ public class UnreadCountService {
      * Lua 保证"读取类型计数 → 减去总未读 → 归零类型计数"是原子的。
      * </p>
      */
-    private static final String RESET_BY_TYPE_SCRIPT =
+    private static final String RESET_BY_TYPE_SCRIPT_TEXT =
             "local typeCount = redis.call('HGET', KEYS[2], ARGV[1]) " +
                     "if typeCount == false or tonumber(typeCount) <= 0 then return 0 end " +
                     "local total = redis.call('GET', KEYS[1]) " +
@@ -91,6 +91,10 @@ public class UnreadCountService {
                     "redis.call('SET', KEYS[1], tostring(newTotal)) " +
                     "redis.call('HSET', KEYS[2], ARGV[1], '0') " +
                     "return tonumber(typeCount)";
+
+    /** C-012 §7-7：静态复用（原实现每次 new DefaultRedisScript → 每次重算 SHA1） */
+    private static final DefaultRedisScript<Long> RESET_BY_TYPE_REDIS_SCRIPT =
+            new DefaultRedisScript<>(RESET_BY_TYPE_SCRIPT_TEXT, Long.class);
 
     /**
      * 增加未读计数（新通知到达时调用）
@@ -128,8 +132,7 @@ public class UnreadCountService {
      * 按类型重置未读计数（Lua 原子操作）
      */
     public void resetUnreadByType(Long userId, Integer type) {
-        DefaultRedisScript<Long> script = new DefaultRedisScript<>(RESET_BY_TYPE_SCRIPT, Long.class);
-        stringRedisTemplate.execute(script,
+        stringRedisTemplate.execute(RESET_BY_TYPE_REDIS_SCRIPT,
                 java.util.List.of(totalKey(userId), typeKey(userId)),
                 String.valueOf(type));
     }
@@ -179,5 +182,9 @@ public class UnreadCountService {
             typeCountMap.forEach((type, count) -> hashMap.put(String.valueOf(type), String.valueOf(count)));
             stringRedisTemplate.opsForHash().putAll(typeHashKey, hashMap);
         }
+        // C-012 §7-3：补 30d TTL——与 ATOMIC_INCR 的"30 天不活跃回收"设计对齐
+        // （原实现：对账修复后的键永不过期，与回收设计不一致；键缺失时 expire 为 no-op）
+        stringRedisTemplate.expire(totalKey(userId), java.time.Duration.ofDays(30));
+        stringRedisTemplate.expire(typeHashKey, java.time.Duration.ofDays(30));
     }
 }

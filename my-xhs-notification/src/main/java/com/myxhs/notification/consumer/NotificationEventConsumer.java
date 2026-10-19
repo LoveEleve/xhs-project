@@ -49,11 +49,14 @@ public class NotificationEventConsumer implements RocketMQListener<MessageExt> {
     public void onMessage(MessageExt msg) {
         MqTraceHelper.restoreTraceId(msg);
         String msgId = msg.getMsgId();
+        // C-012 F2：幂等键优先取"原 msgId"属性——DLQ 重投换新 broker msgId，
+        // 若用新 msgId 去重，已处理消息被重放会绕过去重（聚合计数双计）
+        String dedupId = resolveDedupId(msg);
         try {
             String body = new String(msg.getBody(), StandardCharsets.UTF_8);
 
             // 一级幂等：统一幂等检查
-            if (!idempotentHelper.isFirstProcess(BIZ_TYPE, msgId, IDEMPOTENT_TTL_SECONDS)) {
+            if (!idempotentHelper.isFirstProcess(BIZ_TYPE, dedupId, IDEMPOTENT_TTL_SECONDS)) {
                 return;
             }
 
@@ -76,12 +79,18 @@ public class NotificationEventConsumer implements RocketMQListener<MessageExt> {
         } catch (Exception e) {
             log.error("[通知消费] 处理失败: msgId={}", msg.getMsgId(), e);
             // 删除幂等标记，让 MQ 重试时能真正重新处理（而非被 isFirstProcess 拦截）
-            try { idempotentHelper.removeMark(BIZ_TYPE, msgId); } catch (Exception markEx) {
+            try { idempotentHelper.removeMark(BIZ_TYPE, dedupId); } catch (Exception markEx) {
                 log.error("[通知消费] 清除幂等标记失败: msgId={}", msgId, markEx);
             }
             throw new RuntimeException("通知消费失败", e); // 触发 RocketMQ 重试
         } finally {
             MqTraceHelper.clearTraceId();
         }
+    }
+
+    /** C-012 F2：重放消息带原 msgId 属性 → 幂等键取原值（重放已处理消息被去重）；正常消息取 broker msgId */
+    private static String resolveDedupId(MessageExt msg) {
+        String original = msg.getProperty(NotificationDlqReplayConsumer.ORIGINAL_MSG_ID_PROPERTY);
+        return (original != null && !original.isBlank()) ? original : msg.getMsgId();
     }
 }

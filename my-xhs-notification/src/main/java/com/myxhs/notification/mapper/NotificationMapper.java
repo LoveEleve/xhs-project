@@ -32,17 +32,10 @@ public interface NotificationMapper extends BaseMapper<Notification> {
     int markAllAsRead(@Param("userId") Long userId);
 
     /**
-     * 更新聚合计数和标题
-     */
-    @Update("UPDATE t_notification SET aggregate_count = #{count}, title = #{title}, updated_at = NOW() " +
-            "WHERE id = #{id} AND deleted = 0")
-    int updateAggregateInfo(@Param("id") Long id, @Param("count") int count, @Param("title") String title);
-
-    /**
      * 原子递增聚合计数（解决并发竞态：aggregate_count = aggregate_count + 1）
      * <p>
-     * 返回更新后的 aggregate_count 值。
-     * 如果记录不存在返回 0。
+     * 返回**受影响行数**（1=成功；0=记录不存在）——不是新计数值！
+     * 新计数值用 {@link #getAggregateCount} 查询（C-012 修正原 javadoc 的返回值漂移）。
      * </p>
      */
     @Update("UPDATE t_notification SET aggregate_count = aggregate_count + 1, updated_at = NOW() " +

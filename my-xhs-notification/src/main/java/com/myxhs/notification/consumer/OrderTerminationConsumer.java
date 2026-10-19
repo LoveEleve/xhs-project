@@ -121,9 +121,13 @@ public class OrderTerminationConsumer implements RocketMQListener<MessageExt> {
         return extra.toJSONString();
     }
 
-    /** 幂等键：优先消息 KEYS（=orderNo，跨重投稳定）；无 KEYS 时退化为 msgId */
+    /** 幂等键：优先消息 KEYS（=orderNo，跨重投稳定）；无 KEYS 时退化为"原 msgId 属性"（C-012 F2）→ broker msgId */
     private String resolveDedupKey(MessageExt msg) {
         String keys = msg.getKeys();
-        return (keys != null && !keys.isBlank()) ? keys : msg.getMsgId();
+        if (keys != null && !keys.isBlank()) {
+            return keys;
+        }
+        String original = msg.getProperty(NotificationDlqReplayConsumer.ORIGINAL_MSG_ID_PROPERTY);
+        return (original != null && !original.isBlank()) ? original : msg.getMsgId();
     }
 }

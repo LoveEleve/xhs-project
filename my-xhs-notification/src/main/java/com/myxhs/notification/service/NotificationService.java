@@ -49,34 +49,49 @@ public class NotificationService {
      * <p>
      * 流程：
      * 1. 构建通知实体（模板渲染标题/内容）
-     * 2. 聚合处理（5 分钟窗口内合并同类通知）
+     * 2. 聚合处理（**自然日窗口**内合并同类通知——对齐 uk_aggregate；C-012 修正原"5 分钟"过时注释）
      * 3. 更新未读计数（Redis INCR）
      * 4. SSE 实时推送（如果用户在线）
+     * </p>
+     * <p>
+     * C-012 F3：第 2 步（聚合，事务内）异常照旧抛出 → 事务回滚干净、重试安全；
+     * 第 3/4 步是 **post-commit** 步骤——失败**不抛出**（降级 + 告警）：
+     * 重试会重跑聚合（aggregate_count 双计），而未读计数由 10 分钟对账以 DB 为准收敛
+     * （红点最多滞后一个对账周期，口径可接受）。
      * </p>
      */
     public void processEvent(NotificationEventDTO event) {
         // 1. 构建通知实体
         Notification notification = buildNotification(event);
 
-        // 2. 聚合处理
+        // 2. 聚合处理（异常抛出：事务回滚 → MQ 重试安全）
         Notification result = aggregator.processWithAggregate(notification);
 
         // 3. 更新未读计数（只有新建通知才增加计数，聚合更新不增加）
+        //    C-012 F3：post-commit 降级——失败不抛出（重试重跑聚合会双计；对账 10min 收敛）
         if (Objects.equals(result.getId(), notification.getId())) {
-            // 新建的通知 → 未读 +1
-            unreadCountService.incrementUnread(event.getTargetUserId(), event.getType());
+            try {
+                unreadCountService.incrementUnread(event.getTargetUserId(), event.getType());
+            } catch (Exception e) {
+                log.warn("[通知] 未读计数更新失败(降级：由 10 分钟对账以 DB 为准收敛): targetUserId={}, type={}",
+                        event.getTargetUserId(), event.getType(), e);
+            }
         }
         // 聚合更新的通知 → 不增加未读计数（用户已经看到了红点）
 
-        // 4. SSE 实时推送
+        // 4. SSE 实时推送（isOnlineAnywhere/push* 内部已吞异常——SSE 即发即忘）
         // 2026-09-20 review：改用 isOnlineAnywhere 以支持跨实例（多实例下事件可能由其他实例消费）
         if (sseEmitterManager.isOnlineAnywhere(event.getTargetUserId())) {
             NotificationVO vo = toVO(result);
             sseEmitterManager.pushNotification(event.getTargetUserId(), vo);
 
-            // 推送未读计数变更
-            UnreadCountVO countVO = unreadCountService.getUnreadCount(event.getTargetUserId());
-            sseEmitterManager.pushUnreadCount(event.getTargetUserId(), countVO);
+            // 推送未读计数变更（读计数失败同样降级：跳过本次计数推送，连接仍保活）
+            try {
+                UnreadCountVO countVO = unreadCountService.getUnreadCount(event.getTargetUserId());
+                sseEmitterManager.pushUnreadCount(event.getTargetUserId(), countVO);
+            } catch (Exception e) {
+                log.warn("[通知] 推送未读计数失败(降级：跳过本次计数推送): targetUserId={}", event.getTargetUserId(), e);
+            }
         }
 
         log.info("[通知] 处理完成: targetUserId={}, type={}, senderId={}",

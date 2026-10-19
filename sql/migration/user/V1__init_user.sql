@@ -165,6 +165,7 @@ CREATE TABLE IF NOT EXISTS t_push_template (
     UNIQUE INDEX uk_type (type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='推送模板表';
 
+-- [C-012] 死表（全仓零引用；推送任务模型未落地）——保留兼容，勿新增引用
 CREATE TABLE IF NOT EXISTS t_push_task (
     id               BIGINT       NOT NULL COMMENT 'ID',
     task_name        VARCHAR(64)  NOT NULL COMMENT '任务名称',
@@ -187,6 +188,7 @@ CREATE TABLE IF NOT EXISTS t_push_task (
     INDEX idx_execute_time (execute_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='推送任务表';
 
+-- [C-012] 死表（同 t_push_task，零引用）——保留兼容，勿新增引用
 CREATE TABLE IF NOT EXISTS t_push_task_fail (
     id           BIGINT       NOT NULL COMMENT 'ID',
     task_id      BIGINT       NOT NULL COMMENT '任务ID',

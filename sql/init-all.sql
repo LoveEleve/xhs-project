@@ -131,7 +131,7 @@ CREATE TABLE IF NOT EXISTS t_notification (
     sender_id       BIGINT       DEFAULT NULL COMMENT '发送者ID',
     sender_name     VARCHAR(32)  DEFAULT NULL COMMENT '发送者昵称(冗余，避免查用户表)',
     target_id       BIGINT       DEFAULT NULL COMMENT '关联目标ID(笔记/商品/订单)',
-    target_type     TINYINT      DEFAULT NULL COMMENT '目标类型：1-笔记 2-用户 3-评论 4-商品（C-009 修正注释）',
+    target_type     TINYINT      DEFAULT NULL COMMENT '目标类型：1-笔记 2-商品 3-订单（C-012 回正：对齐 NotificationEventDTO/生产方/其余 SQL 副本）',
     sender_avatar   VARCHAR(512) DEFAULT NULL COMMENT '发送者头像URL（冗余）',
     is_read         TINYINT      NOT NULL DEFAULT 0 COMMENT '是否已读：0-未读 1-已读',
     extra_data      TEXT         DEFAULT NULL COMMENT '扩展数据JSON',
@@ -162,6 +162,7 @@ CREATE TABLE IF NOT EXISTS t_push_template (
     UNIQUE INDEX uk_type (type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='推送模板表';
 
+-- [C-012] 死表（全仓零引用；推送任务模型未落地）——保留兼容，勿新增引用
 CREATE TABLE IF NOT EXISTS t_push_task (
     id               BIGINT       NOT NULL COMMENT 'ID',
     task_name        VARCHAR(64)  NOT NULL COMMENT '任务名称',
@@ -184,6 +185,7 @@ CREATE TABLE IF NOT EXISTS t_push_task (
     INDEX idx_execute_time (execute_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='推送任务表';
 
+-- [C-012] 死表（同 t_push_task，零引用）——保留兼容，勿新增引用
 CREATE TABLE IF NOT EXISTS t_push_task_fail (
     id           BIGINT       NOT NULL COMMENT 'ID',
     task_id      BIGINT       NOT NULL COMMENT '任务ID',
