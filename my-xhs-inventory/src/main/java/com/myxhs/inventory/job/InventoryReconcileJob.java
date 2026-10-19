@@ -15,8 +15,9 @@ import java.util.List;
 /**
  * 库存对账修复任务（L3）（XXL-Job 分布式调度）
  * <p>
- * 每天凌晨 3 点执行，对比 Redis 总库存与 MySQL 可用库存。
+ * 每小时执行，对比 Redis 库存与 MySQL 可用库存。
  * 以 Redis 为准修复 MySQL（因为 Redis 是实时扣减的权威数据源）。
+ * 【C-008 修正】原注释"每天凌晨 3 点"与部署漂移（基准 init-xxljob.sql:112 = 每小时）。
  * </p>
  * <p>
  * XXL-Job 调度保证：Admin 只调度一个 Executor 实例执行，无需 Redisson 分布式锁。
@@ -47,13 +48,11 @@ public class InventoryReconcileJob {
 
     private static String totalKey(Long skuId) { return String.format(TOTAL_KEY_TPL, skuId); }
 
-    /** 分桶对账 Lua 脚本（原子求和+对比设置） */
-    private final org.springframework.data.redis.core.script.DefaultRedisScript<Long> reconcileBucketsScript;
-
     /**
      * 库存对账修复（XXL-Job Handler）
      * <p>
-     * Admin 配置：Cron = 0 0 3 * * ?（每天凌晨 3 点）
+     * Admin 配置：Cron = 0 0 * * * ?（每小时）。
+     * 部署基准：deploy/docker/my-xhs-deploy-zip/config/deploy-cloud/init-xxljob.sql:112。
      */
     @XxlJob("inventoryReconcileJob")
     public void reconcile() {
@@ -109,14 +108,18 @@ public class InventoryReconcileJob {
                 int oldAvailable = mysqlAvailable;
                 // 目标 UPDATE 只更新 available_stock：不用 updateById 全字段盲写
                 // （selectList 快照的 locked_stock 可能是旧值，盲写会回滚并发 L2 的 locked 变更 → 幻影锁复活）
-                inventoryMapper.updateAvailableStockOnly(inventory.getSkuId(), redisTotal);
-                repairCount++;
-                log.info("[库存对账] 修复: skuId={}, mysql: {}→{} (以Redis为准)",
-                        inventory.getSkuId(), oldAvailable, redisTotal);
+                // C-008 F6：CAS 条件更新——仅当 available_stock 仍为快照值才写（并发变更时 0 行，下轮收敛，
+                // 消除"读快照→写库"窗口内在线写被旧快照覆盖的丢更新）
+                int casAffected = inventoryMapper.updateAvailableStockCas(
+                        inventory.getSkuId(), redisTotal, oldAvailable);
+                if (casAffected > 0) {
+                    repairCount++;
+                    log.info("[库存对账] 修复: skuId={}, mysql: {}→{} (以Redis为准, CAS)",
+                            inventory.getSkuId(), oldAvailable, redisTotal);
+                } else {
+                    log.info("[库存对账] 跳过(快照期间已被在线写变更, 下轮收敛): skuId={}", inventory.getSkuId());
+                }
             }
-
-            // 【M9】分桶完整性检查：各桶之和 == 总库存
-            reconcileBuckets(inventory.getSkuId());
         }
 
         // 【新增】locked_stock 对账：以 Redis 在途预扣（inventory:prededuct:* Hash）为权威重算。
@@ -162,10 +165,10 @@ public class InventoryReconcileJob {
     }
 
     /**
-     * locked_stock 对账：扫描在途预扣记录（按 orderId 的 Hash，TTL 内即"未决"），
+     * locked_stock 对账：扫描在途预扣记录（C-008 单键：inventory:{skuId}:prededuct:{orderId}，String=数量），
      * 按 SKU 汇总后与 MySQL locked_stock 比对并修正。
      * <p>
-     * 扫描量有界：预扣 Hash 的 TTL=预扣有效期（1800s），因此 key 数 ≈ 在途订单数；
+     * 扫描量有界：预扣记录 TTL=预扣有效期（1800s）+缓冲，因此 key 数 ≈ 在途订单 SKU 数；
      * 每小时一轮，成本可控。方向保守：预扣记录缺失即视为 0（宁可少算 locked，不会多卖）；
      * 注意：SCAN 在 Redis Cluster 下只覆盖单个节点，若未来上 Cluster 需改为逐节点扫描（当前单实例+Sentinel 无影响）；
      * 若 L2 事件滞后于本次扫描，locked 会在事件到达后被再次抬高，最多一个事件的量，下轮对账收敛。
@@ -175,22 +178,22 @@ public class InventoryReconcileJob {
     private int reconcileLockedStock(List<Inventory> all) {
         java.util.Map<Long, Integer> lockedBySku = new java.util.HashMap<>();
         try (var cursor = stringRedisTemplate.scan(org.springframework.data.redis.core.ScanOptions.scanOptions()
-                .match("inventory:prededuct:*").count(500).build())) {
+                .match("inventory:*:prededuct:*").count(500).build())) {
             cursor.forEachRemaining(key -> {
                 if (key.endsWith(":index")) {
-                    return;   // inventory:prededuct:index 是 ZSet 索引，不是预扣 Hash
+                    return;   // per-sku 索引（ZSet），不是预扣记录
                 }
                 try {
-                    java.util.Map<Object, Object> entries = stringRedisTemplate.opsForHash().entries(key);
-                    for (java.util.Map.Entry<Object, Object> e : entries.entrySet()) {
-                        String field = String.valueOf(e.getKey());
-                        if (field.endsWith(":bucket")) {
-                            continue;   // 桶号字段不是数量
-                        }
-                        Long skuId = Long.valueOf(field);
-                        int qty = Integer.parseInt(String.valueOf(e.getValue()));
-                        lockedBySku.merge(skuId, qty, Integer::sum);
+                    Long skuId = parseSkuIdFromKey(key);
+                    if (skuId == null) {
+                        return;
                     }
+                    String v = stringRedisTemplate.opsForValue().get(key);
+                    if (v == null) {
+                        return;
+                    }
+                    int qty = Integer.parseInt(v);
+                    lockedBySku.merge(skuId, qty, Integer::sum);
                 } catch (Exception ex) {
                     log.warn("[库存对账] 预扣记录解析失败(跳过): key={}", key, ex);
                 }
@@ -205,49 +208,33 @@ public class InventoryReconcileJob {
             int expected = lockedBySku.getOrDefault(inventory.getSkuId(), 0);
             int current = inventory.getLockedStock() == null ? 0 : inventory.getLockedStock();
             if (current != expected) {
-                inventoryMapper.updateLockedStockOnly(inventory.getSkuId(), expected);
-                repaired++;
-                log.info("[库存对账] locked 修复: skuId={}, {}→{}（以在途预扣为准）",
-                        inventory.getSkuId(), current, expected);
+                // C-008 F6：CAS 条件更新（同 available——并发变更时 0 行，下轮收敛）
+                int casAffected = inventoryMapper.updateLockedStockCas(inventory.getSkuId(), expected, current);
+                if (casAffected > 0) {
+                    repaired++;
+                    log.info("[库存对账] locked 修复: skuId={}, {}→{}（以在途预扣为准, CAS）",
+                            inventory.getSkuId(), current, expected);
+                }
             }
         }
         log.info("[库存对账] locked 对账完成: 在途SKU数={}, 修复={}", lockedBySku.size(), repaired);
         return repaired;
     }
 
-    /**
-     * 【M9】分桶完整性对账：各桶库存之和 == 总库存
-     * 不一致时以分桶之和为准修正总库存。
-     * <p>
-     * 【原子化修复】使用 Lua 脚本在单个原子执行单位内完成求和+对比+设置，
-     * 替代 Java 侧"读 total → 循环 GET 各桶 → SET"的非原子序列——
-     * 读后发生的 preDeduct/release 会被盲 SET 覆盖（幻影回滚在途预扣）。
-     * </p>
-     */
-    private void reconcileBuckets(Long skuId) {
-        String countStr = stringRedisTemplate.opsForValue()
-                .get(String.format("inventory:bucket:count:{%d}", skuId));
-        if (countStr == null) return;
-        int bucketCount;
+    /** 从预扣记录键 inventory:{skuId}:prededuct:{orderId} 解析 skuId */
+    private static Long parseSkuIdFromKey(String key) {
         try {
-            bucketCount = Integer.parseInt(countStr);
+            int l = key.indexOf('{');
+            int r = key.indexOf('}');
+            if (l < 0 || r < 0) {
+                return null;
+            }
+            return Long.valueOf(key.substring(l + 1, r));
         } catch (NumberFormatException e) {
-            log.warn("[库存对账] 跳过脏数据(bucketCount非数字): skuId={}, value={}", skuId, countStr);
-            return;
-        }
-
-        // 构建 KEYS：[totalKey, bucket:0, bucket:1, ..., bucket:N-1]
-        List<String> keys = new java.util.ArrayList<>(1 + bucketCount);
-        keys.add(String.format("inventory:{%d}:total", skuId));
-        for (int i = 0; i < bucketCount; i++) {
-            keys.add(String.format("inventory:{%d}:bucket:", skuId) + i);
-        }
-
-        Long fixed = stringRedisTemplate.execute(reconcileBucketsScript, keys);
-        if (fixed != null && fixed == 1) {
-            log.warn("[库存对账] 分桶总量不一致已修正(原子Lua): skuId={}", skuId);
+            return null;
         }
     }
+
     /**
      * 库存 outbox / 补偿表保留策略（日切一次，有界排空）
      */

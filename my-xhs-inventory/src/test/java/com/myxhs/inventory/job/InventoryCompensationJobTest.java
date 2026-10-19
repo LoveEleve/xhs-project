@@ -11,7 +11,6 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
-import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 
@@ -26,10 +25,9 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * InventoryCompensationJob 单元测试
+ * InventoryCompensationJob 单元测试（C-008：单键家族补偿）
  * <p>
- * F-037：验证补偿任务从 prededuct hash 读取实际 bucket 号，
- * 而非固定写死 bucket 0。
+ * 补偿按 (sku, orderId) 原子回退（原 F-037"来源桶读取"随分桶移除——单键下不存在扣错桶问题）。
  * </p>
  */
 @ExtendWith(MockitoExtension.class)
@@ -49,8 +47,6 @@ class InventoryCompensationJobTest {
     private com.myxhs.inventory.service.InventoryService inventoryService;
     @Mock
     private RLock lock;
-    @Mock
-    private HashOperations<String, Object, Object> hashOperations;
 
     private InventoryCompensationJob job;
 
@@ -60,10 +56,8 @@ class InventoryCompensationJobTest {
         when(redissonClient.getLock(anyString())).thenReturn(lock);
         when(lock.tryLock(0L, 25, TimeUnit.SECONDS)).thenReturn(true);
         when(lock.isHeldByCurrentThread()).thenReturn(true);
-        when(stringRedisTemplate.opsForHash()).thenReturn(hashOperations);
     }
 
-    @SuppressWarnings("unchecked")
     private Map<String, Object> compensationRow(Long id, Long orderId, Long skuId) {
         Map<String, Object> row = new HashMap<>();
         row.put("id", id);
@@ -73,57 +67,30 @@ class InventoryCompensationJobTest {
     }
 
     @Test
-    @DisplayName("F-037: 预扣 bucket=2 时补偿应恢复到 bucket 2 而非 bucket 0")
-    void shouldReleaseToActualBucketNotBucketZero() {
+    @DisplayName("C-008：补偿按 (sku, orderId) 单键原子回退（KEYS 同 {skuId} tag）")
+    void shouldReleaseBySkuOrderKey() {
         Long orderId = 200L;
         Long skuId = 30001L;
 
         Map<String, Object> row = compensationRow(1L, orderId, skuId);
         when(inventoryMapper.selectPendingCompensation(any(LocalDateTime.class), eq(3), eq(50)))
                 .thenReturn(List.of(row));
-
-        when(hashOperations.get(eq("inventory:prededuct:" + orderId), eq(skuId + ":bucket")))
-                .thenReturn("2");
-        when(stringRedisTemplate.execute(
-                eq(releaseScript), anyList(), eq(String.valueOf(skuId)), eq(String.valueOf(orderId))))
+        when(stringRedisTemplate.execute(eq(releaseScript), anyList(), eq(String.valueOf(orderId))))
                 .thenReturn(1L);
 
         assertThatCode(() -> job.retryCompensations()).doesNotThrowAnyException();
 
         verify(stringRedisTemplate).execute(
                 eq(releaseScript),
-                argThat(keys -> keys.get(2).equals("inventory:{30001}:bucket:2")),
-                eq(String.valueOf(skuId)), eq(String.valueOf(orderId)));
+                argThat(keys -> keys.get(0).equals("inventory:{30001}:stock")
+                        && keys.get(1).equals("inventory:{30001}:prededuct:200")
+                        && keys.get(2).equals("inventory:{30001}:prededuct:index")),
+                eq(String.valueOf(orderId)));
         verify(inventoryMapper).markCompensationResolved(1L);
     }
 
     @Test
-    @DisplayName("F-037: prededuct hash 无 bucket 字段时回退到 bucket 0（兼容旧数据）")
-    void shouldFallbackToBucketZeroWhenBucketFieldMissing() {
-        Long orderId = 201L;
-        Long skuId = 30002L;
-
-        Map<String, Object> row = compensationRow(2L, orderId, skuId);
-        when(inventoryMapper.selectPendingCompensation(any(LocalDateTime.class), eq(3), eq(50)))
-                .thenReturn(List.of(row));
-
-        when(hashOperations.get(eq("inventory:prededuct:" + orderId), eq(skuId + ":bucket")))
-                .thenReturn(null);
-        when(stringRedisTemplate.execute(
-                eq(releaseScript), anyList(), eq(String.valueOf(skuId)), eq(String.valueOf(orderId))))
-                .thenReturn(1L);
-
-        assertThatCode(() -> job.retryCompensations()).doesNotThrowAnyException();
-
-        verify(stringRedisTemplate).execute(
-                eq(releaseScript),
-                argThat(keys -> keys.get(2).equals("inventory:{30002}:bucket:0")),
-                eq(String.valueOf(skuId)), eq(String.valueOf(orderId)));
-        verify(inventoryMapper).markCompensationResolved(2L);
-    }
-
-    @Test
-    @DisplayName("F-037: release.lua 返回 0 时增加重试次数不标记完成")
+    @DisplayName("C-008：release.lua 返回 0（记录不存在）时增加重试次数不标记完成")
     void shouldIncrementRetryWhenReleaseReturnsZero() {
         Long orderId = 202L;
         Long skuId = 30003L;
@@ -131,11 +98,7 @@ class InventoryCompensationJobTest {
         Map<String, Object> row = compensationRow(3L, orderId, skuId);
         when(inventoryMapper.selectPendingCompensation(any(LocalDateTime.class), eq(3), eq(50)))
                 .thenReturn(List.of(row));
-
-        when(hashOperations.get(eq("inventory:prededuct:" + orderId), eq(skuId + ":bucket")))
-                .thenReturn("1");
-        when(stringRedisTemplate.execute(
-                eq(releaseScript), anyList(), eq(String.valueOf(skuId)), eq(String.valueOf(orderId))))
+        when(stringRedisTemplate.execute(eq(releaseScript), anyList(), eq(String.valueOf(orderId))))
                 .thenReturn(0L);
 
         assertThatCode(() -> job.retryCompensations()).doesNotThrowAnyException();

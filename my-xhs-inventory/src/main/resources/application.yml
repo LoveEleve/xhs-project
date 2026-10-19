@@ -160,11 +160,8 @@ management:
     readinessState:
       enabled: true
 
-# 库存分桶配置
+# 库存配置（C-008：分桶已移除，单库存键）
 inventory:
-  bucket:
-    default-count: 2    # 普通 SKU 默认分桶数
-    hot-count: 8         # 热点 SKU 分桶数
   prededuct:
     expire-seconds: 1800 # 预扣记录过期时间（30分钟）
 

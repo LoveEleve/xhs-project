@@ -15,8 +15,4 @@ public class ReinitRequest {
     @NotNull(message = "skuId不能为空")
     private Long skuId;
 
-    /** 分桶数（可选，默认使用配置值；范围 1-32） */
-    @Min(value = 1, message = "分桶数至少为1")
-    @Max(value = 32, message = "分桶数不能超过32")
-    private Integer bucketCount;
 }

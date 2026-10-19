@@ -41,13 +41,14 @@ public class InventoryCompensationJob {
     private static final int MAX_RETRY = 3;
     private static final int BATCH_SIZE = 50;
 
-    private static final String TOTAL_KEY_TPL = "inventory:{%d}:total";
-    private static final String BUCKET_KEY_TPL = "inventory:{%d}:bucket:";
-    /** T-063（2026-08-14）：release.lua 需要 KEYS[4]=index——原补偿调用缺省，预扣 Hash 清空时 ZREM nil 脚本错 */
-    private static final String PREDEDUCT_INDEX_KEY = "inventory:prededuct:index";
+    /** C-008：单键家族（KEYS 同 {skuId} tag） */
+    private static final String STOCK_KEY_TPL = "inventory:{%d}:stock";
+    private static final String PREDEDUCT_KEY_TPL = "inventory:{%d}:prededuct:%d";
+    private static final String INDEX_KEY_TPL = "inventory:{%d}:prededuct:index";
 
-    private static String totalKey(Long skuId) { return String.format(TOTAL_KEY_TPL, skuId); }
-    private static String bucketKey(Long skuId, int bucketNo) { return String.format(BUCKET_KEY_TPL, skuId) + bucketNo; }
+    private static String stockKey(Long skuId) { return String.format(STOCK_KEY_TPL, skuId); }
+    private static String predeductKey(Long skuId, Long orderId) { return String.format(PREDEDUCT_KEY_TPL, skuId, orderId); }
+    private static String indexKey(Long skuId) { return String.format(INDEX_KEY_TPL, skuId); }
 
     @Scheduled(fixedRate = 30000)
     public void retryCompensations() {
@@ -91,16 +92,12 @@ public class InventoryCompensationJob {
                     log.info("[库存补偿] 退款回补重试成功: orderId={}, skuId={}, qty={}", orderId, skuId, quantity);
                     continue;
                 }
-                String predeductKey = "inventory:prededuct:" + orderId;
-                // 【F-037】从预扣 hash 读取实际来源桶号，而非固定 bucket 0
-                Object bucketNoObj = stringRedisTemplate.opsForHash().get(predeductKey, skuId + ":bucket");
-                int bucketNo = bucketNoObj != null ? Integer.parseInt(bucketNoObj.toString()) : 0;
-                // 使用 release.lua 重试回退（T-063：补齐 KEYS[4]=index；T-065：补齐 ARGV[2]=orderId——
-                // 原实现仅传 skuId，ZREM index 时 ARGV[2]=nil 脚本错 → total 已回退但标记失败 → 下周期重复回退超发）
+                // C-008：单键家族——按 (sku, orderId) 原子回退（原 F-037 来源桶读取随分桶移除；
+                // release.lua 原子完成：回退库存 + 删记录 + 索引移除）
                 Long result = stringRedisTemplate.execute(
                         releaseScript,
-                        List.of(totalKey(skuId), predeductKey, bucketKey(skuId, bucketNo), PREDEDUCT_INDEX_KEY),
-                        String.valueOf(skuId), String.valueOf(orderId));
+                        List.of(stockKey(skuId), predeductKey(skuId, orderId), indexKey(skuId)),
+                        String.valueOf(orderId));
 
                 if (result != null && result > 0) {
                     inventoryMapper.markCompensationResolved(id);

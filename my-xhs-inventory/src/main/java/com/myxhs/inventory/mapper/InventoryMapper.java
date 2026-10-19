@@ -118,17 +118,23 @@ public interface InventoryMapper extends BaseMapper<Inventory> {
 
     /**
      * 对账专用：仅更新 locked_stock（以 Redis 在途预扣为权威重算）
+     * <p>C-008 F6：CAS 条件更新——仅当 locked_stock 仍为快照值才写（并发变更时 0 行，下轮收敛）</p>
      */
     @Update("UPDATE t_inventory SET locked_stock = #{lockedStock}, updated_at = NOW() "
-            + "WHERE sku_id = #{skuId} AND deleted = 0")
-    int updateLockedStockOnly(@Param("skuId") Long skuId, @Param("lockedStock") int lockedStock);
+            + "WHERE sku_id = #{skuId} AND locked_stock = #{snapshot} AND deleted = 0")
+    int updateLockedStockCas(@Param("skuId") Long skuId, @Param("lockedStock") int lockedStock,
+            @Param("snapshot") int snapshot);
 
     /**
      * 对账专用：仅更新 available_stock（不触碰 locked_stock/freezing_stock），
      * 避免 updateById 全字段盲写把并发 L2 的 locked_stock 变更回滚（幻影锁复活）
+     * <p>C-008 F6：CAS 条件更新——仅当 available_stock 仍为快照值才写（并发变更时 0 行，下轮收敛），
+     * 消除"读快照 → 写库"窗口内在线写被旧快照覆盖的丢更新</p>
      */
-    @Update("UPDATE t_inventory SET available_stock = #{available} WHERE sku_id = #{skuId} AND deleted = 0")
-    int updateAvailableStockOnly(@Param("skuId") Long skuId, @Param("available") int available);
+    @Update("UPDATE t_inventory SET available_stock = #{available} "
+            + "WHERE sku_id = #{skuId} AND available_stock = #{snapshot} AND deleted = 0")
+    int updateAvailableStockCas(@Param("skuId") Long skuId, @Param("available") int available,
+            @Param("snapshot") int snapshot);
 
     // ==================== TCC 冻结明细（xid 维度） ====================
 

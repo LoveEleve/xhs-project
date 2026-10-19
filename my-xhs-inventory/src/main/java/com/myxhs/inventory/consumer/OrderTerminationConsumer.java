@@ -78,6 +78,8 @@ public class OrderTerminationConsumer implements RocketMQListener<MessageExt> {
             long pseudoOrderId = PseudoOrderIdUtil.derive(orderNo);
             ReleaseStockRequest request = new ReleaseStockRequest();
             request.setOrderId(pseudoOrderId);
+            // C-008：解析 items（订单明细事实源；inventory 侧按 per-(sku,order) 记录释放）
+            request.setItems(parseItems(payload));
 
             // releaseStock 内在幂等（终结墓碑 + 无记录即返回），重复消费安全
             inventoryService.releaseStock(request);
@@ -98,5 +100,43 @@ public class OrderTerminationConsumer implements RocketMQListener<MessageExt> {
     private String resolveDedupKey(MessageExt msg) {
         String keys = msg.getKeys();
         return (keys != null && !keys.isBlank()) ? keys : msg.getMsgId();
+    }
+
+    /** C-008：解析载荷 items（兼容数字/字符串形态的 Long——全局 JacksonConfig 把 Long 序列化为 String） */
+    private java.util.List<com.myxhs.inventory.dto.request.StockItem> parseItems(JsonNode payload) {
+        java.util.List<com.myxhs.inventory.dto.request.StockItem> items = new java.util.ArrayList<>();
+        JsonNode itemsNode = payload.get("items");
+        if (itemsNode == null || !itemsNode.isArray()) {
+            return items;
+        }
+        for (JsonNode itemNode : itemsNode) {
+            Long skuId = parseLongNode(itemNode.get("skuId"));
+            if (skuId == null) {
+                continue;
+            }
+            com.myxhs.inventory.dto.request.StockItem item = new com.myxhs.inventory.dto.request.StockItem();
+            item.setSkuId(skuId);
+            JsonNode qtyNode = itemNode.get("quantity");
+            item.setQuantity(qtyNode == null || qtyNode.isNull() ? null : qtyNode.asInt());
+            items.add(item);
+        }
+        return items;
+    }
+
+    private static Long parseLongNode(JsonNode node) {
+        if (node == null || node.isNull() || node.isMissingNode()) {
+            return null;
+        }
+        if (node.isNumber()) {
+            return node.asLong();
+        }
+        if (node.isTextual()) {
+            try {
+                return Long.parseLong(node.asText().trim());
+            } catch (NumberFormatException e) {
+                return null;
+            }
+        }
+        return null;
     }
 }

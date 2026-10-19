@@ -37,9 +37,6 @@ public class InventoryController {
     private final InventoryReconcileJob inventoryReconcileJob;
     private final AccessTokenGuard accessTokenGuard;
 
-    @Value("${inventory.bucket.default-count:2}")
-    private int defaultBucketCount;
-
     @PostConstruct
     public void validateTokens() {
         accessTokenGuard.requireInternalTokenConfigured("inventory");
@@ -47,9 +44,9 @@ public class InventoryController {
     }
 
     /**
-     * 库存初始化（DB → Redis 分桶）
+     * 库存初始化（DB → Redis 单键；C-008 键模型收敛）
      * <p>
-     * 管理后台调用，将 SKU 库存初始化到 Redis 分桶中。
+     * 管理后台调用，将 SKU 库存初始化到 Redis 库存键中。
      * </p>
      */
     @PostMapping("/init")
@@ -116,10 +113,10 @@ public class InventoryController {
     }
 
     /**
-     * 【M9】重新初始化库存（管理后台调用）
+     * 重新初始化库存（管理后台调用）
      * <p>
-     * 清除 Redis Key → 从 MySQL 恢复真实库存 → 按新桶数重新分桶。
-     * 用于分桶数调整或 Redis 数据异常修复。
+     * 清除 Redis 库存键 → 从 MySQL 恢复真实库存（total = available + locked）。
+     * 用于 Redis 数据异常修复。
      * </p>
      */
     @PostMapping("/reinit")
@@ -128,8 +125,7 @@ public class InventoryController {
             @Valid @RequestBody ReinitRequest request,
             @RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
         if (!accessTokenGuard.isAdminCall(adminCall)) return R.fail(403, "无权访问管理接口");
-        int bucketCount = request.getBucketCount() != null ? request.getBucketCount() : defaultBucketCount;
-        inventoryService.reinitStock(request.getSkuId(), bucketCount);
+        inventoryService.reinitStock(request.getSkuId());
         return R.ok();
     }
 

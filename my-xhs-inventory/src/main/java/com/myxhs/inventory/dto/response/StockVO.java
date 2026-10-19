@@ -19,8 +19,6 @@ public class StockVO {
     /** 锁定库存 */
     private Integer lockedStock;
 
-    /** 分桶数 */
-    private Integer bucketCount;
 
     /** 是否已初始化到 Redis */
     private Boolean initialized;

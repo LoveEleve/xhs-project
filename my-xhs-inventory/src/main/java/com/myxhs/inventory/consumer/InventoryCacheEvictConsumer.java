@@ -75,10 +75,8 @@ public class InventoryCacheEvictConsumer implements RocketMQListener<MessageExt>
 
     private final StringRedisTemplate stringRedisTemplate;
 
-    /** Redis Key 前缀（与 InventoryService 保持一致，使用 {skuId} hash tag） */
-    private static final String BUCKET_KEY_PREFIX = "inventory:{%d}:bucket:";
-    private static final String TOTAL_KEY_PREFIX = "inventory:{%d}:total";
-    private static final String BUCKET_COUNT_KEY_PREFIX = "inventory:bucket:count:{%d}";
+    /** Redis Key 模板（与 InventoryService 保持一致；C-008：单库存键，{skuId} tag） */
+    private static final String STOCK_KEY_TPL = "inventory:{%d}:stock";
     /** Canal 版本号 Key 前缀（用于防乱序） */
     private static final String CANAL_VERSION_PREFIX = "inventory:canal:version:";
     /** Canal 版本号 Key 的过期时间（7天，防止无限增长） */
@@ -99,7 +97,6 @@ public class InventoryCacheEvictConsumer implements RocketMQListener<MessageExt>
                 Long.class);
     }
 
-    private static String totalKey(Long skuId) { return String.format(TOTAL_KEY_PREFIX, skuId); }
 
     @Override
     public void onMessage(MessageExt msg) {
@@ -283,44 +280,11 @@ public class InventoryCacheEvictConsumer implements RocketMQListener<MessageExt>
     private int doEvictCache(Long skuId) {
         int deletedCount = 0;
 
-        // 1. 删除总库存 Key
-        String totalKey = totalKey(skuId);
-        Boolean totalDeleted = stringRedisTemplate.delete(totalKey);
-        if (Boolean.TRUE.equals(totalDeleted)) {
+        // C-008：单库存键（原 total + 分桶 + 分桶数量三组键已收敛为一键）
+        String stockKey = String.format(STOCK_KEY_TPL, skuId);
+        Boolean deleted = stringRedisTemplate.delete(stockKey);
+        if (Boolean.TRUE.equals(deleted)) {
             deletedCount++;
-        }
-
-        // 2. 删除分桶数量 Key
-        String bucketCountKey = String.format(BUCKET_COUNT_KEY_PREFIX, skuId);
-        Boolean bucketCountDeleted = stringRedisTemplate.delete(bucketCountKey);
-        if (Boolean.TRUE.equals(bucketCountDeleted)) {
-            deletedCount++;
-        }
-
-        // 3. 删除所有分桶 Key（SCAN 增量遍历，不阻塞 Redis）
-        String bucketPattern = String.format("inventory:{%d}:bucket:*", skuId);
-        org.springframework.data.redis.core.Cursor<String> cursor = null;
-        try {
-            cursor = stringRedisTemplate.scan(
-                    org.springframework.data.redis.core.ScanOptions.scanOptions()
-                            .match(bucketPattern)
-                            .count(64)  // 每次 SCAN 建议返回 64 条
-                            .build());
-            while (cursor.hasNext()) {
-                String key = cursor.next();
-                Boolean deleted = stringRedisTemplate.delete(key);
-                if (Boolean.TRUE.equals(deleted)) {
-                    deletedCount++;
-                }
-            }
-        } finally {
-            if (cursor != null) {
-                try {
-                    cursor.close();
-                } catch (Exception e) {
-                    log.warn("[库存缓存失效] SCAN cursor 关闭异常(不影响业务): skuId={}", skuId, e);
-                }
-            }
         }
 
         return deletedCount;

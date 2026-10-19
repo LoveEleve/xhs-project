@@ -11,8 +11,8 @@ import com.myxhs.inventory.dto.request.InventoryInitRequest;
 import com.myxhs.inventory.dto.request.PreDeductRequest;
 import com.myxhs.inventory.dto.request.RefundRestoreRequest;
 import com.myxhs.inventory.dto.request.ReleaseStockRequest;
+import com.myxhs.inventory.dto.request.StockItem;
 import com.myxhs.inventory.entity.Inventory;
-import com.myxhs.inventory.hot.HotSkuDetector;
 import com.myxhs.inventory.mapper.InventoryMapper;
 import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.client.producer.SendStatus;
@@ -26,7 +26,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
-import org.springframework.data.redis.core.HashOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
@@ -34,20 +33,16 @@ import org.redisson.api.RedissonClient;
 import org.springframework.messaging.Message;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * InventoryService 单元测试
+ * InventoryService 单元测试（C-008 键模型：单库存键 + per-(sku,order) 记录 + items 契约）
  * <p>
  * 测试策略：纯 Mockito Mock，不连接任何外部服务。
- * Mock 对象：StringRedisTemplate, RocketMQTemplate, InventoryMapper,
- * DefaultRedisScript, BusinessMetrics, HotSkuDetector
  * </p>
  */
 @ExtendWith(MockitoExtension.class)
@@ -65,19 +60,17 @@ class InventoryServiceTest {
     @Mock
     private DefaultRedisScript<Long> releaseScript;
     @Mock
+    private DefaultRedisScript<Long> refundRestoreScript;
+    @Mock
     private DefaultRedisScript<Long> confirmScript;
     @Mock
     private DefaultRedisScript<Long> markTerminatedScript;
     @Mock
     private BusinessMetrics businessMetrics;
     @Mock
-    private HotSkuDetector hotSkuDetector;
-    @Mock
     private RedissonClient redissonClient;
     @Mock
     private ValueOperations<String, String> valueOperations;
-    @Mock
-    private HashOperations<String, Object, Object> hashOperations;
 
     private ObjectMapper objectMapper;
     private InventoryService inventoryService;
@@ -92,31 +85,33 @@ class InventoryServiceTest {
         objectMapper.registerModule(new JavaTimeModule());
         inventoryService = new InventoryService(
                 stringRedisTemplate, rocketMQTemplate, inventoryMapper, objectMapper,
-                preDeductScript, releaseScript, confirmScript, markTerminatedScript, businessMetrics, redissonClient, hotSkuDetector,
+                preDeductScript, releaseScript, refundRestoreScript, confirmScript, markTerminatedScript,
+                businessMetrics, redissonClient,
                 mock(com.myxhs.inventory.feign.ProductFeignClient.class)
         );
         // 注入 @Value 字段（非 final，不在 Lombok 构造函数中）
-        ReflectionTestUtils.setField(inventoryService, "defaultBucketCount", 2);
-        ReflectionTestUtils.setField(inventoryService, "hotBucketCount", 8);
         ReflectionTestUtils.setField(inventoryService, "preDeductExpireSeconds", 1800);
         ReflectionTestUtils.setField(inventoryService, "terminatedTombstoneTtlSeconds", 86400L);
         ReflectionTestUtils.setField(inventoryService, "confirmedMarkerTtlSeconds", 86400L);
 
-        // 默认 mock stringRedisTemplate 返回操作接口
         when(stringRedisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(stringRedisTemplate.opsForHash()).thenReturn(hashOperations);
+    }
+
+    private static StockItem item(Long skuId, Integer quantity) {
+        StockItem item = new StockItem();
+        item.setSkuId(skuId);
+        item.setQuantity(quantity);
+        return item;
     }
 
     // ==================== initStock ====================
 
     @Test
-    @DisplayName("库存初始化 - 正常初始化设置可用库存正确")
+    @DisplayName("库存初始化 - 单键写入可用库存（C-008 去分桶）")
     void initStockSuccess() {
-        // SETNX 幂等检查成功
         when(valueOperations.setIfAbsent(
                 eq("inventory:init:lock:10001"), eq("1"), any(java.time.Duration.class)))
                 .thenReturn(true);
-        // MySQL 中无已有记录
         when(inventoryMapper.selectOne(any(LambdaQueryWrapper.class))).thenReturn(null);
         when(inventoryMapper.insert(any(Inventory.class))).thenReturn(1);
 
@@ -126,27 +121,19 @@ class InventoryServiceTest {
 
         inventoryService.initStock(request);
 
-        // 验证初始化锁被调用
         verify(valueOperations).setIfAbsent(eq("inventory:init:lock:10001"), eq("1"), any(java.time.Duration.class));
-        // 验证分桶写入：100 / 2 = 50
-        verify(valueOperations).set(eq("inventory:{10001}:bucket:0"), eq("50"));
-        verify(valueOperations).set(eq("inventory:{10001}:bucket:1"), eq("50"));
-        // 验证 totalKey 和 bucketCount 写入
-        verify(valueOperations).set(eq("inventory:{10001}:total"), eq("100"));
-        verify(valueOperations).set(eq("inventory:bucket:count:{10001}"), eq("2"));
-        // 验证 MySQL 记录创建
+        // C-008：单库存键（原 total + bucket* + bucket:count 收敛为一键）
+        verify(valueOperations).set(eq("inventory:{10001}:stock"), eq("100"));
         verify(inventoryMapper).insert(any(Inventory.class));
     }
 
     @Test
     @DisplayName("库存初始化 - 重复初始化不会加倍库存，应抛出异常")
     void initStockDuplicatePrevention() {
-        // 获得初始化锁后，两个完整初始化标记均存在
         when(valueOperations.setIfAbsent(
                 eq("inventory:init:lock:10001"), eq("1"), any(java.time.Duration.class)))
                 .thenReturn(true);
-        when(stringRedisTemplate.hasKey("inventory:{10001}:total")).thenReturn(true);
-        when(stringRedisTemplate.hasKey("inventory:bucket:count:{10001}")).thenReturn(true);
+        when(stringRedisTemplate.hasKey("inventory:{10001}:stock")).thenReturn(true);
 
         InventoryInitRequest request = new InventoryInitRequest();
         request.setSkuId(SKU_ID);
@@ -156,30 +143,21 @@ class InventoryServiceTest {
                 .isInstanceOf(BizException.class)
                 .hasMessageContaining("库存已初始化");
 
-        // 验证已初始化标记阻止重复初始化
-        verify(valueOperations).setIfAbsent(eq("inventory:init:lock:10001"), eq("1"), any(java.time.Duration.class));
-        // 不应进入后续的 MySQL 和分桶操作
         verify(inventoryMapper, never()).selectOne(any(LambdaQueryWrapper.class));
     }
 
     // ==================== preDeduct ====================
 
     @Test
-    @DisplayName("预扣减 - 正常扣减库存成功")
+    @DisplayName("预扣减 - 正常扣减库存成功（单键脚本）")
     void preDeductSuccess() {
         when(inventoryMapper.insertPredeductIdem(ORDER_ID, SKU_ID)).thenReturn(1);
-        // 未在扩容暂停中
-        when(stringRedisTemplate.hasKey(eq("inventory:paused:10001"))).thenReturn(false);
-        // 分桶计数 Key 存在，值为 2
-        when(valueOperations.get(eq("inventory:bucket:count:{10001}"))).thenReturn("2");
-        // 非热点 SKU
-        when(hotSkuDetector.recordAndCheck(SKU_ID)).thenReturn(false);
-        // Lua 预扣脚本返回 1（成功）
+        when(stringRedisTemplate.hasKey(eq("inventory:{10001}:stock"))).thenReturn(true);
+        // Lua 预扣脚本返回 1（成功）；C-008：4 个 ARGV（orderId/qty/expire/ttl）
         when(stringRedisTemplate.execute(
                 eq(preDeductScript), anyList(),
-                anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(1L);
-        // MQ 发送成功（ObjectMapper 使用真实实例序列化，只 mock syncSend）
         SendResult sendResult = new SendResult();
         sendResult.setSendStatus(SendStatus.SEND_OK);
         when(rocketMQTemplate.syncSend(
@@ -195,21 +173,48 @@ class InventoryServiceTest {
         assertThatCode(() -> inventoryService.preDeduct(request))
                 .doesNotThrowAnyException();
 
-        // 验证 MQ 消息已发送
         verify(inventoryMapper).insertPredeductIdem(ORDER_ID, SKU_ID);
+    }
+
+    @Test
+    @DisplayName("C-008：prededuct 脚本全部 KEYS 同 {skuId} tag（Cluster 单 slot）")
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void preDeductAllKeysSameSlot() {
+        when(inventoryMapper.insertPredeductIdem(ORDER_ID, SKU_ID)).thenReturn(1);
+        when(stringRedisTemplate.hasKey(eq("inventory:{10001}:stock"))).thenReturn(true);
+        when(stringRedisTemplate.execute(
+                eq(preDeductScript), anyList(),
+                anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(1L);
+        SendResult sendResult = new SendResult();
+        sendResult.setSendStatus(SendStatus.SEND_OK);
+        when(rocketMQTemplate.syncSend(
+                eq("INVENTORY_TOPIC:PRE_DEDUCT"), any(Message.class), eq(3000L)))
+                .thenReturn(sendResult);
+
+        PreDeductRequest request = new PreDeductRequest();
+        request.setSkuId(SKU_ID);
+        request.setOrderId(ORDER_ID);
+        request.setQuantity(2);
+        request.setUserId(USER_ID);
+        inventoryService.preDeduct(request);
+
+        ArgumentCaptor<List<String>> keysCaptor = ArgumentCaptor.forClass((Class) List.class);
+        verify(stringRedisTemplate).execute(
+                eq(preDeductScript), keysCaptor.capture(),
+                anyString(), anyString(), anyString(), anyString());
+        assertThat(keysCaptor.getValue()).allMatch(k -> k.startsWith("inventory:{10001}"));
     }
 
     @Test
     @DisplayName("预扣减 - 订单已终结（墓碑命中）: 跳过视为处理完成")
     void preDeduct_terminatedTombstone_skip() {
         when(inventoryMapper.insertPredeductIdem(ORDER_ID, SKU_ID)).thenReturn(1);
-        when(stringRedisTemplate.hasKey(eq("inventory:paused:10001"))).thenReturn(false);
-        when(valueOperations.get(eq("inventory:bucket:count:{10001}"))).thenReturn("2");
-        when(hotSkuDetector.recordAndCheck(SKU_ID)).thenReturn(false);
+        when(stringRedisTemplate.hasKey(eq("inventory:{10001}:stock"))).thenReturn(true);
         // 04B：Lua 返回 -3（终结墓碑命中）→ 跳过预扣，视为处理完成（不抛异常、不删幂等占位）
         when(stringRedisTemplate.execute(
                 eq(preDeductScript), anyList(),
-                anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(-3L);
 
         PreDeductRequest request = new PreDeductRequest();
@@ -221,7 +226,6 @@ class InventoryServiceTest {
         assertThatCode(() -> inventoryService.preDeduct(request))
                 .doesNotThrowAnyException();
 
-        // 幂等占位保留（后续重投在 MySQL 幂等检查处拦截），不发生占位删除
         verify(inventoryMapper, never()).deletePredeductIdem(ORDER_ID, SKU_ID);
     }
 
@@ -229,16 +233,10 @@ class InventoryServiceTest {
     @DisplayName("预扣减 - 库存不足时抛出业务异常")
     void preDeductInsufficientStock() {
         when(inventoryMapper.insertPredeductIdem(ORDER_ID, SKU_ID)).thenReturn(1);
-        // 未在扩容暂停中
-        when(stringRedisTemplate.hasKey(eq("inventory:paused:10001"))).thenReturn(false);
-        // 分桶计数 Key 存在
-        when(valueOperations.get(eq("inventory:bucket:count:{10001}"))).thenReturn("2");
-        // 非热点 SKU
-        when(hotSkuDetector.recordAndCheck(SKU_ID)).thenReturn(false);
-        // Lua 预扣脚本返回 0（库存不足）
+        when(stringRedisTemplate.hasKey(eq("inventory:{10001}:stock"))).thenReturn(true);
         when(stringRedisTemplate.execute(
                 eq(preDeductScript), anyList(),
-                anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(0L);
 
         PreDeductRequest request = new PreDeductRequest();
@@ -251,58 +249,22 @@ class InventoryServiceTest {
                 .isInstanceOf(BizException.class)
                 .hasMessageContaining(ResultCode.STOCK_NOT_ENOUGH.getMessage());
 
-        // 库存不足时不应发送 MQ
         verify(rocketMQTemplate, never()).syncSend(anyString(), any(Message.class), anyLong());
-    }
-
-    // ==================== confirmDeduct ====================
-
-    @Test
-    @DisplayName("确认扣减 - MQ发送失败时保留 outbox 待补发")
-    void confirmDeduct_keepsOutboxWhenMqSendFails() {
-        Map<Object, Object> entries = new HashMap<>();
-        entries.put("10001", "3");
-        when(hashOperations.entries(eq("inventory:prededuct:123456"))).thenReturn(entries);
-        when(stringRedisTemplate.hasKey(eq("inventory:paused:10001"))).thenReturn(false);
-        when(stringRedisTemplate.execute(eq(confirmScript), anyList(), anyString(), anyString())).thenReturn(1L);
-        when(rocketMQTemplate.syncSend(eq("INVENTORY_TOPIC:CONFIRM"), any(Message.class), eq(3000L)))
-                .thenThrow(new RuntimeException("mq down"));
-
-        ConfirmDeductRequest request = new ConfirmDeductRequest();
-        request.setOrderId(ORDER_ID);
-
-        assertThatCode(() -> inventoryService.confirmDeduct(request)).doesNotThrowAnyException();
-
-        verify(inventoryMapper).insertOutboxEvent(anyLong(), eq(ORDER_ID), eq(SKU_ID), eq(3), eq("CONFIRM"));
-        verify(inventoryMapper, never()).cancelOutboxEvent(anyLong(), anyLong(), anyString());
-    }
-
-    @Test
-    @DisplayName("确认扣减 - 记录不存在（支付确认早于预扣落）：写确认标记")
-    void confirmDeduct_missingRecord_writesConfirmedMarker() {
-        when(hashOperations.entries(eq("inventory:prededuct:123456"))).thenReturn(new HashMap<>());
-
-        ConfirmDeductRequest request = new ConfirmDeductRequest();
-        request.setOrderId(ORDER_ID);
-
-        assertThatCode(() -> inventoryService.confirmDeduct(request)).doesNotThrowAnyException();
-
-        verify(valueOperations).set(eq("inventory:confirmed:123456"), eq("1"),
-                eq(86400L), eq(java.util.concurrent.TimeUnit.SECONDS));
     }
 
     @Test
     @DisplayName("预扣减 - MQ发送失败时取消 outbox 避免补发已回滚事件")
     void preDeduct_cancelsOutboxWhenMqSendFails() {
         when(inventoryMapper.insertPredeductIdem(ORDER_ID, SKU_ID)).thenReturn(1);
-        when(stringRedisTemplate.hasKey(eq("inventory:paused:10001"))).thenReturn(false);
-        when(valueOperations.get(eq("inventory:bucket:count:{10001}"))).thenReturn("2");
-        when(hotSkuDetector.recordAndCheck(SKU_ID)).thenReturn(false);
-        when(stringRedisTemplate.execute(eq(preDeductScript), anyList(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString()))
+        when(stringRedisTemplate.hasKey(eq("inventory:{10001}:stock"))).thenReturn(true);
+        when(stringRedisTemplate.execute(
+                eq(preDeductScript), anyList(),
+                anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(1L);
         when(rocketMQTemplate.syncSend(eq("INVENTORY_TOPIC:PRE_DEDUCT"), any(Message.class), eq(3000L)))
                 .thenThrow(new RuntimeException("mq down"));
-        when(stringRedisTemplate.execute(any(DefaultRedisScript.class), anyList(), anyString())).thenReturn(1L);
+        // 回滚脚本（releaseScript，1 个 ARGV=orderId）
+        when(stringRedisTemplate.execute(eq(releaseScript), anyList(), anyString())).thenReturn(1L);
 
         PreDeductRequest request = new PreDeductRequest();
         request.setSkuId(SKU_ID);
@@ -316,24 +278,73 @@ class InventoryServiceTest {
         verify(inventoryMapper).cancelOutboxEvent(anyLong(), anyLong(), anyString());
     }
 
+    // ==================== confirmDeduct ====================
+
+    @Test
+    @DisplayName("确认扣减 - MQ发送失败时保留 outbox 待补发（items 驱动）")
+    void confirmDeduct_keepsOutboxWhenMqSendFails() {
+        when(stringRedisTemplate.execute(eq(confirmScript), anyList(), anyString())).thenReturn(3L);
+        when(rocketMQTemplate.syncSend(eq("INVENTORY_TOPIC:CONFIRM"), any(Message.class), eq(3000L)))
+                .thenThrow(new RuntimeException("mq down"));
+
+        ConfirmDeductRequest request = new ConfirmDeductRequest();
+        request.setOrderId(ORDER_ID);
+        request.setItems(List.of(item(SKU_ID, 3)));
+
+        assertThatCode(() -> inventoryService.confirmDeduct(request)).doesNotThrowAnyException();
+
+        // C-008：数量以预扣记录为准（脚本返回 3）
+        verify(inventoryMapper).insertOutboxEvent(anyLong(), eq(ORDER_ID), eq(SKU_ID), eq(3), eq("CONFIRM"));
+        verify(inventoryMapper, never()).cancelOutboxEvent(anyLong(), anyLong(), anyString());
+    }
+
+    @Test
+    @DisplayName("确认扣减 - 全部记录不存在（支付确认早于预扣落）：写确认标记")
+    void confirmDeduct_missingRecord_writesConfirmedMarker() {
+        when(stringRedisTemplate.execute(eq(confirmScript), anyList(), anyString())).thenReturn(0L);
+
+        ConfirmDeductRequest request = new ConfirmDeductRequest();
+        request.setOrderId(ORDER_ID);
+        request.setItems(List.of(item(SKU_ID, 3)));
+
+        assertThatCode(() -> inventoryService.confirmDeduct(request)).doesNotThrowAnyException();
+
+        verify(valueOperations).set(eq("inventory:confirmed:123456"), eq("1"),
+                eq(86400L), eq(java.util.concurrent.TimeUnit.SECONDS));
+    }
+
+    @Test
+    @DisplayName("C-008 F12：部分 SKU 记录缺失 → 也写确认标记（迟到记录不被释放）")
+    void confirmDeduct_partialMissing_writesConfirmedMarker() {
+        // sku1 存在（返回数量），sku2 缺失（返回 0）
+        when(stringRedisTemplate.execute(eq(confirmScript), anyList(), anyString()))
+                .thenReturn(5L)
+                .thenReturn(0L);
+        SendResult sendResult = new SendResult();
+        sendResult.setSendStatus(SendStatus.SEND_OK);
+        when(rocketMQTemplate.syncSend(eq("INVENTORY_TOPIC:CONFIRM"), any(Message.class), eq(3000L)))
+                .thenReturn(sendResult);
+
+        ConfirmDeductRequest request = new ConfirmDeductRequest();
+        request.setOrderId(ORDER_ID);
+        request.setItems(List.of(item(10001L, 5), item(10002L, 2)));
+
+        assertThatCode(() -> inventoryService.confirmDeduct(request)).doesNotThrowAnyException();
+
+        verify(valueOperations).set(eq("inventory:confirmed:123456"), eq("1"),
+                eq(86400L), eq(java.util.concurrent.TimeUnit.SECONDS));
+    }
+
     // ==================== releaseStock ====================
 
     @Test
-    @DisplayName("释放库存 - 预扣后释放恢复可用库存")
+    @DisplayName("释放库存 - items 驱动释放恢复可用库存")
     void releaseStock() {
-        Map<Object, Object> entries = new HashMap<>();
-        entries.put("10001", "5");
-        when(hashOperations.entries(eq("inventory:prededuct:123456")))
-                .thenReturn(entries);
-        when(hashOperations.get(eq("inventory:prededuct:123456"), eq("10001:bucket")))
-                .thenReturn("0");
         // 04B：终结墓碑脚本（检查预扣记录 + 总是写墓碑）→ 记录存在（返回 1），继续释放
-        when(stringRedisTemplate.execute(
-                eq(markTerminatedScript), anyList(), anyString()))
+        when(stringRedisTemplate.execute(eq(markTerminatedScript), anyList(), anyString()))
                 .thenReturn(1L);
-        when(stringRedisTemplate.execute(
-                eq(releaseScript), anyList(), anyString(), anyString()))
-                .thenReturn(1L);
+        when(stringRedisTemplate.execute(eq(releaseScript), anyList(), anyString()))
+                .thenReturn(5L);
         SendResult sendResult = new SendResult();
         sendResult.setSendStatus(SendStatus.SEND_OK);
         when(rocketMQTemplate.syncSend(
@@ -342,12 +353,13 @@ class InventoryServiceTest {
 
         ReleaseStockRequest request = new ReleaseStockRequest();
         request.setOrderId(ORDER_ID);
+        request.setItems(List.of(item(SKU_ID, 5)));
 
         assertThatCode(() -> inventoryService.releaseStock(request))
                 .doesNotThrowAnyException();
 
         verify(stringRedisTemplate).execute(
-                eq(releaseScript), anyList(), eq("10001"), eq(String.valueOf(ORDER_ID)));
+                eq(releaseScript), anyList(), eq(String.valueOf(ORDER_ID)));
         verify(rocketMQTemplate).syncSend(
                 eq("INVENTORY_TOPIC:RELEASE"), any(Message.class), eq(3000L));
     }
@@ -355,36 +367,44 @@ class InventoryServiceTest {
     @Test
     @DisplayName("释放库存 - 无预扣记录（已释放/从未预扣）：写终结墓碑并幂等跳过")
     void releaseStock_noRecord_writesTombstone() {
-        // 04B：终结墓碑脚本返回 0（无预扣记录）→ 仅写墓碑，不进入释放流程
-        when(stringRedisTemplate.execute(
-                eq(markTerminatedScript), anyList(), anyString()))
+        when(stringRedisTemplate.execute(eq(markTerminatedScript), anyList(), anyString()))
                 .thenReturn(0L);
 
         ReleaseStockRequest request = new ReleaseStockRequest();
         request.setOrderId(ORDER_ID);
+        request.setItems(List.of(item(SKU_ID, 5)));
 
         assertThatCode(() -> inventoryService.releaseStock(request))
                 .doesNotThrowAnyException();
 
         verify(stringRedisTemplate).execute(eq(markTerminatedScript), anyList(), anyString());
         verify(stringRedisTemplate, never()).execute(
-                eq(releaseScript), anyList(), anyString(), anyString());
+                eq(releaseScript), anyList(), anyString());
     }
 
     @Test
-    @DisplayName("退款回补 - 多 SKU 使用独立幂等键（累计 delta 脚本）")
+    @DisplayName("释放库存 - items 缺失：保守不释放（仅告警）")
+    void releaseStock_missingItems_conservativeSkip() {
+        ReleaseStockRequest request = new ReleaseStockRequest();
+        request.setOrderId(ORDER_ID);
+
+        assertThatCode(() -> inventoryService.releaseStock(request))
+                .doesNotThrowAnyException();
+
+        verify(stringRedisTemplate, never()).execute(eq(markTerminatedScript), anyList(), anyString());
+    }
+
+    // ==================== refundRestore ====================
+
+    @Test
+    @DisplayName("退款回补 - 多 SKU 独立累计键 + 同槽原子脚本（C-008）")
     @SuppressWarnings({"unchecked", "rawtypes"})
     void refundRestore_multiSkuUsesIndependentIdempotentKeys() {
-        // 累计幂等脚本（KEYS[1]=inventory:refund:{orderId}:{skuId}，2 个 ARGV：目标数量+TTL）→ 返回正增量
+        // C-008：累计幂等 + 库存 INCRBY 单脚本原子（KEYS[1]=inventory:{skuId}:refund:{orderId}，2 ARGV）
         when(stringRedisTemplate.execute(any(DefaultRedisScript.class), anyList(), anyString(), anyString()))
                 .thenReturn(2L);
-        // Redis 回补脚本（total+桶，1 个 ARGV）
-        when(stringRedisTemplate.execute(any(DefaultRedisScript.class), anyList(), anyString()))
-                .thenReturn(2L);
-        when(stringRedisTemplate.hasKey(eq("inventory:{10001}:total"))).thenReturn(true);
-        when(stringRedisTemplate.hasKey(eq("inventory:{10002}:total"))).thenReturn(true);
-        when(valueOperations.get(eq("inventory:bucket:count:{10001}"))).thenReturn("2");
-        when(valueOperations.get(eq("inventory:bucket:count:{10002}"))).thenReturn("2");
+        when(stringRedisTemplate.hasKey(eq("inventory:{10001}:stock"))).thenReturn(true);
+        when(stringRedisTemplate.hasKey(eq("inventory:{10002}:stock"))).thenReturn(true);
         SendResult sendResult = new SendResult();
         sendResult.setSendStatus(SendStatus.SEND_OK);
         when(rocketMQTemplate.syncSend(eq("INVENTORY_TOPIC:REFUND_RESTORE"), any(Message.class), eq(3000L)))
@@ -404,16 +424,15 @@ class InventoryServiceTest {
         inventoryService.refundRestore(sku1);
         inventoryService.refundRestore(sku2);
 
-        // 幂等键按 SKU 独立：累计脚本每个 SKU 各执行一次（KEYS[1] 分别为各自 refund:{orderId}:{skuId}）
+        // 幂等键按 SKU 独立：原子脚本每个 SKU 各执行一次（KEYS=[refundKey, stockKey]，同 {skuId} tag）
         ArgumentCaptor<List<String>> keysCaptor = ArgumentCaptor.forClass((Class) List.class);
         verify(stringRedisTemplate, times(2)).execute(
-                any(DefaultRedisScript.class), keysCaptor.capture(), anyString(), anyString());
+                eq(refundRestoreScript), keysCaptor.capture(), anyString(), anyString());
         assertThat(keysCaptor.getAllValues().stream().map(List::toString))
                 .containsExactlyInAnyOrder(
-                        "[inventory:refund:123456:10001]",
-                        "[inventory:refund:123456:10002]");
+                        "[inventory:{10001}:refund:123456, inventory:{10001}:stock]",
+                        "[inventory:{10002}:refund:123456, inventory:{10002}:stock]");
         verify(rocketMQTemplate, times(2)).syncSend(
                 eq("INVENTORY_TOPIC:REFUND_RESTORE"), any(Message.class), eq(3000L));
     }
 }
-

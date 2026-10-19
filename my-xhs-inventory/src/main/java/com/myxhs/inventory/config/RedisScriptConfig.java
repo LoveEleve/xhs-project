@@ -13,19 +13,19 @@ import org.springframework.scripting.support.ResourceScriptSource;
  * Redis 会缓存脚本的 SHA1，后续执行走 EVALSHA 而非 EVAL，性能更优。
  * </p>
  * <p>
- * 库存模块 Lua 脚本：
- * 1. prededuct.lua：分桶预扣减（终结墓碑检查 + 路由桶 + 桶间均衡 + 写预扣记录）
- * 2. release.lua：释放库存（预扣回退 + 删除预扣记录）
- * 3. confirm.lua：确认扣减（删除预扣记录）
- * 4. reconcile_buckets.lua：分桶完整性对账（原子求和+对比设置）
- * 5. mark_terminated.lua：订单终结墓碑（04B：原子「检查预扣记录 + 总是写墓碑」）
+ * 库存模块 Lua 脚本（C-008 键模型收敛：单库存键 + per-(sku,order) 记录，全部同 {skuId} tag 单 slot）：
+ * 1. prededuct.lua：预扣减（终结墓碑检查 + 幂等 + 扣减 + 记账 + 索引）
+ * 2. release.lua：释放库存（预扣回退 + 删除预扣记录 + 索引移除）
+ * 3. confirm.lua：确认扣减（删除预扣记录 + 索引移除）
+ * 4. mark_terminated.lua：订单终结墓碑（04B：原子「检查预扣记录 + 总是写墓碑」）
+ * 5. refund_restore.lua：退款回补（累计幂等 + 库存 INCRBY 单脚本原子）
  * </p>
  */
 @Configuration
 public class RedisScriptConfig {
 
     /**
-     * 分桶预扣减 Lua 脚本
+     * 预扣减 Lua 脚本（单键家族）
      */
     @Bean
     public DefaultRedisScript<Long> preDeductScript() {
@@ -58,12 +58,12 @@ public class RedisScriptConfig {
     }
 
     /**
-     * 分桶完整性对账 Lua 脚本（原子求和+对比设置，替代 Java 非原子 GET 循环+SET）
+     * 退款回补 Lua 脚本（C-008：累计幂等 + 库存 INCRBY 单脚本原子——消除"推进了但没补"崩溃窗口）
      */
     @Bean
-    public DefaultRedisScript<Long> reconcileBucketsScript() {
+    public DefaultRedisScript<Long> refundRestoreScript() {
         DefaultRedisScript<Long> script = new DefaultRedisScript<>();
-        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/reconcile_buckets.lua")));
+        script.setScriptSource(new ResourceScriptSource(new ClassPathResource("lua/refund_restore.lua")));
         script.setResultType(Long.class);
         return script;
     }

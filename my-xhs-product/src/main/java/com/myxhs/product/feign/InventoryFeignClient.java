@@ -22,17 +22,14 @@ public interface InventoryFeignClient {
     @PostMapping("/api/inventory/init")
     R<Void> initStock(@RequestBody InitRequest request);
 
-    /** 初始化请求（与 inventory 域 InventoryInitRequest 字段对齐，避免跨服务依赖 DTO） */
+    /** 初始化请求（与 inventory 域 InventoryInitRequest 字段对齐，避免跨服务依赖 DTO；C-008 去分桶） */
     class InitRequest {
         private Long skuId;
         private Integer totalStock;
-        private Integer bucketCount;
 
         public Long getSkuId() { return skuId; }
         public void setSkuId(Long skuId) { this.skuId = skuId; }
         public Integer getTotalStock() { return totalStock; }
         public void setTotalStock(Integer totalStock) { this.totalStock = totalStock; }
-        public Integer getBucketCount() { return bucketCount; }
-        public void setBucketCount(Integer bucketCount) { this.bucketCount = bucketCount; }
     }
 }

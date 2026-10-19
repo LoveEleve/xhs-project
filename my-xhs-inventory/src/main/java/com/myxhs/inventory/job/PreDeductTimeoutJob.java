@@ -1,6 +1,7 @@
 package com.myxhs.inventory.job;
 
 import com.myxhs.inventory.dto.request.ConfirmDeductRequest;
+import com.myxhs.inventory.dto.request.StockItem;
 import com.myxhs.inventory.service.InventoryService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,29 +14,22 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
-import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 预扣超时回退任务
+ * 预扣超时回退任务（C-008：per-sku 索引扫描 + per-(sku,order) 释放/补确认）
  * <p>
- * 每 5 分钟扫描 Redis 中的预扣记录（inventory:prededuct:*），
- * 对 TTL 已过期或即将过期的记录执行库存回退。
+ * 每 1 分钟扫描 Redis 中 per-sku 预扣索引（inventory:prededuct:index:{skuId}），
+ * 对已到期的记录执行库存回退（ZSet score=到期时间戳ms，物理 TTL=到期+缓冲）。
  * </p>
  * <p>
  * 分布式安全保证：
- * 1. Redisson 分布式锁保证多实例部署时只有一个实例执行（防止重复扫描浪费资源）
-     * 2. release.lua 脚本原子回退保证与用户主动释放不会双重回退
-     * 3. Redis 回退成功后，RELEASE 事件同步发 MQ 并保留 Outbox，避免 MySQL locked_stock 永久掉队
-     * 4. 【04B 收尾】释放前检查"确认标记"（inventory:confirmed:{orderId}，confirm 找不到预扣记录时写入）：
-     *    已付款订单的迟到预扣记录改判"补确认"而非释放——防已付款订单库存被放回（超卖方向）
-     * </p>
-
- * <p>
- * 为什么需要主动扫描？
- * Redis Key 过期是惰性删除 + 定期删除，不保证精确过期。
- * 如果 Key 过期后没有被访问，可能长时间不被删除，导致库存被"幽灵锁定"。
- * 主动扫描 + 原子回退保证库存及时释放。
+ * 1. Redisson 分布式锁保证多实例部署时只有一个实例执行
+ * 2. release.lua 脚本原子回退保证与用户主动释放不会双重回退
+ * 3. Redis 回退成功后，RELEASE 事件同步发 MQ 并保留 Outbox，避免 MySQL locked_stock 永久掉队
+ * 4. 【04B 收尾】释放前检查"确认标记"（inventory:confirmed:{orderId}）：
+ *    已付款订单的迟到预扣记录改判"补确认"而非释放——防已付款订单库存被放回（超卖方向）
  * </p>
  */
 @Slf4j
@@ -51,21 +45,24 @@ public class PreDeductTimeoutJob {
     private final com.myxhs.inventory.mapper.InventoryMapper inventoryMapper;
     private final com.myxhs.inventory.service.InventoryService inventoryService;
 
-    private static final String PREDEDUCT_KEY_PREFIX = "inventory:prededuct:";
-    private static final String PREDEDUCT_INDEX_KEY = "inventory:prededuct:index";
-    private static final String TOTAL_KEY_TPL = "inventory:{%d}:total";
-    private static final String BUCKET_KEY_TPL = "inventory:{%d}:bucket:";
+    /** per-sku 索引扫描模式（C-008：全局索引 → per-sku 索引；键格式必须与 InventoryService 一致：tag-first） */
+    private static final String INDEX_SCAN_PATTERN = "inventory:*:prededuct:index";
+    private static final String STOCK_KEY_TPL = "inventory:{%d}:stock";
+    private static final String PREDEDUCT_KEY_TPL = "inventory:{%d}:prededuct:%d";
+    private static final String INDEX_KEY_TPL = "inventory:{%d}:prededuct:index";
 
-    private static String totalKey(Long skuId) { return String.format(TOTAL_KEY_TPL, skuId); }
-    private static String bucketKey(Long skuId, int bucketNo) { return String.format(BUCKET_KEY_TPL, skuId) + bucketNo; }
+    private static String stockKey(Long skuId) { return String.format(STOCK_KEY_TPL, skuId); }
+    private static String predeductKey(Long skuId, Long orderId) { return String.format(PREDEDUCT_KEY_TPL, skuId, orderId); }
+    private static String indexKey(Long skuId) { return String.format(INDEX_KEY_TPL, skuId); }
+
     private static final String LOCK_KEY = "lock:job:inventory:prededuct-timeout";
 
     /**
-     * 每 5 分钟扫描过期预扣记录，自动回退库存
+     * 每 1 分钟扫描过期预扣记录，自动回退库存
      * <p>
      * 分布式锁保证多实例只有一个执行。tryLock(0, ...) 表示不等待——
      * 如果另一个实例正在执行，当前实例直接跳过本轮。
-     * leaseTime=240s（4分钟），小于调度间隔 5 分钟，保证下一轮不会被锁阻塞。
+     * leaseTime=40s，小于调度间隔 1 分钟，保证下一轮不会被锁阻塞。
      * </p>
      */
     @Scheduled(fixedRate = 60_000) // 每 1 分钟（测试环境快速验证）
@@ -93,8 +90,8 @@ public class PreDeductTimeoutJob {
     /**
      * 实际的扫描和回退逻辑
      * <p>
-     * 使用 ZSet 二级索引（inventory:prededuct:index, score=过期时间戳ms）
-     * ZRANGEBYSCORE 直接查询即将过期的预扣记录，替代全库 SCAN（O(N) → O(logN+M)）。
+     * C-008：SCAN per-sku 索引键（键数 ≈ 在途 SKU 数，有界），对每个索引键
+     * ZRANGEBYSCORE 取真正到期的 (sku, orderId) 对，逐对回退/补确认。
      * </p>
      */
     private void doReleaseExpiredPreDeductions() {
@@ -102,28 +99,47 @@ public class PreDeductTimeoutJob {
         int releaseCount = 0;
 
         try {
-            // 只回退"已到期"的预扣记录：原实现提前 60s 释放，窗口内支付成功 confirm 会找不到记录
-            // （预扣记录物理 TTL 已加 10 分钟缓冲，到期后回调退不再依赖"抢在 TTL 前"）
+            // 只回退"已到期"的预扣记录：物理 TTL 已加 10 分钟缓冲，到期后回退不再依赖"抢在 TTL 前"
             long cutoffMs = System.currentTimeMillis();
-            java.util.Set<String> expiringOrderIds = stringRedisTemplate.opsForZSet()
-                    .rangeByScore(PREDEDUCT_INDEX_KEY, 0, cutoffMs);
 
-            if (expiringOrderIds == null || expiringOrderIds.isEmpty()) {
-                return;
+            java.util.List<String> indexKeys = new java.util.ArrayList<>();
+            try (var cursor = stringRedisTemplate.scan(
+                    org.springframework.data.redis.core.ScanOptions.scanOptions()
+                            .match(INDEX_SCAN_PATTERN).count(500).build())) {
+                cursor.forEachRemaining(indexKeys::add);
             }
 
-            for (String orderIdStr : expiringOrderIds) {
-                // 04B 收尾：已"确认"过的订单（支付确认早于预扣落）→ 迟到记录是孤儿，补确认而非释放
-                if (settleAsConfirmedIfMarked(orderIdStr)) {
+            for (String indexKeyStr : indexKeys) {
+                Long skuId = parseSkuIdFromIndexKey(indexKeyStr);
+                if (skuId == null) {
                     continue;
                 }
-                String key = PREDEDUCT_KEY_PREFIX + orderIdStr;
-                int released = releasePreDeduct(key);
-                if (released == 0) {
-                    // 预扣记录已不存在（惰性过期/已释放/已确认），清理索引中的陈旧 member
-                    stringRedisTemplate.opsForZSet().remove(PREDEDUCT_INDEX_KEY, orderIdStr);
+                Set<String> expiringOrderIds = stringRedisTemplate.opsForZSet()
+                        .rangeByScore(indexKeyStr, 0, cutoffMs);
+                if (expiringOrderIds == null || expiringOrderIds.isEmpty()) {
+                    continue;
                 }
-                releaseCount += released;
+
+                for (String orderIdStr : expiringOrderIds) {
+                    Long orderId;
+                    try {
+                        orderId = Long.parseLong(orderIdStr);
+                    } catch (NumberFormatException e) {
+                        log.warn("[预扣超时] 索引 member 非法(跳过并清理): index={}, member={}", indexKeyStr, orderIdStr);
+                        stringRedisTemplate.opsForZSet().remove(indexKeyStr, orderIdStr);
+                        continue;
+                    }
+                    // 04B 收尾：已"确认"过的订单（支付确认早于预扣落）→ 迟到记录是孤儿，补确认而非释放
+                    if (settleAsConfirmedIfMarked(skuId, orderId)) {
+                        continue;
+                    }
+                    int released = releasePreDeduct(skuId, orderId);
+                    if (released == 0) {
+                        // 预扣记录已不存在（惰性过期/已释放/已确认），清理索引中的陈旧 member
+                        stringRedisTemplate.opsForZSet().remove(indexKeyStr, orderIdStr);
+                    }
+                    releaseCount += released;
+                }
             }
 
             if (releaseCount > 0) {
@@ -134,113 +150,67 @@ public class PreDeductTimeoutJob {
         }
     }
 
+    /** 从索引键 inventory:prededuct:index:{skuId} 解析 skuId */
+    private Long parseSkuIdFromIndexKey(String indexKeyStr) {
+        try {
+            int l = indexKeyStr.indexOf('{');
+            int r = indexKeyStr.indexOf('}');
+            if (l < 0 || r < 0) {
+                return null;
+            }
+            return Long.valueOf(indexKeyStr.substring(l + 1, r));
+        } catch (NumberFormatException e) {
+            log.warn("[预扣超时] 索引键格式异常(跳过): {}", indexKeyStr);
+            return null;
+        }
+    }
+
     /**
      * 04B 收尾：若订单已"确认"过（确认标记存在——支付确认早于预扣落时由 confirmDeduct 写入），
      * 则本记录不是弃单：改判为"补确认"（删记录，库存保持扣减），绝不释放（释放即超卖方向）。
      *
      * @return true = 已按补确认处理（调用方跳过释放）
      */
-    private boolean settleAsConfirmedIfMarked(String orderIdStr) {
-        Long orderId;
-        try {
-            orderId = Long.parseLong(orderIdStr);
-        } catch (NumberFormatException e) {
-            return false;
-        }
+    private boolean settleAsConfirmedIfMarked(Long skuId, Long orderId) {
         if (!inventoryService.hasConfirmedMarker(orderId)) {
             return false;
         }
         try {
+            // C-008：per-(sku,order) 补确认——构造单项 items 请求
             ConfirmDeductRequest request = new ConfirmDeductRequest();
             request.setOrderId(orderId);
+            StockItem item = new StockItem();
+            item.setSkuId(skuId);
+            request.setItems(List.of(item));
             inventoryService.confirmDeduct(request);
-            log.warn("[预扣超时] 订单已支付确认(确认早于预扣落), 改判补确认(不释放): orderId={}", orderId);
+            log.warn("[预扣超时] 订单已支付确认(确认早于预扣落), 改判补确认(不释放): orderId={}, skuId={}", orderId, skuId);
         } catch (Exception e) {
-            // 补确认失败（如扩容暂停/Redis 抖动）：本轮不释放（释放即超卖方向），下轮重试
-            log.error("[预扣超时] 补确认失败(本轮不释放, 下轮重试): orderId={}", orderId, e);
+            // 补确认失败（如 Redis 抖动）：本轮不释放（释放即超卖方向），下轮重试
+            log.error("[预扣超时] 补确认失败(本轮不释放, 下轮重试): orderId={}, skuId={}", orderId, skuId, e);
         }
         return true;
     }
 
     /**
-     * 回退单个预扣记录（使用 Lua 脚本保证原子性）
-     * <p>
-     * 为什么必须用 Lua 脚本而不是分步操作？
-     * 如果用分步操作（先 HGETALL → 逐个 INCRBY → DEL），在 HGETALL 和 DEL 之间，
-     * 用户可能主动调用 releaseStock 也在释放同一个 orderId 的库存，
-     * 导致双重回退——库存凭空增加。
-     * Lua 脚本的 HGET + HDEL 是原子的，保证只有一方能成功回退。
-     * </p>
+     * 回退单个 (sku, orderId) 预扣记录（release.lua 原子：回退库存 + 删记录 + 索引移除）
      *
-     * @param predeductKey inventory:prededuct:{orderId}
-     * @return 回退的 SKU 数量
+     * @return 回退的数量（0=记录不存在）
      */
-    private int releasePreDeduct(String predeductKey) {
-        Map<Object, Object> entries = stringRedisTemplate.opsForHash().entries(predeductKey);
-        if (entries.isEmpty()) {
-            return 0;
+    private int releasePreDeduct(Long skuId, Long orderId) {
+        // Lua 原子回退（KEYS 同 {skuId} tag）
+        Long result = stringRedisTemplate.execute(
+                releaseScript,
+                List.of(stockKey(skuId), predeductKey(skuId, orderId), indexKey(skuId)),
+                String.valueOf(orderId)
+        );
+
+        if (result != null && result > 0) {
+            log.info("[预扣超时] 回退库存: orderId={}, skuId={}, qty={}", orderId, skuId, result);
+            // Redis 回退成功后发 RELEASE MQ 事件，解锁 MySQL locked_stock
+            sendReleaseEvent(orderId, skuId, result.intValue());
+            return 1;
         }
-
-        // 从 key 提取 orderId（inventory:prededuct:{orderId}），用于 MQ RELEASE 事件
-        Long orderId;
-        try {
-            orderId = Long.parseLong(predeductKey.substring(predeductKey.lastIndexOf(':') + 1));
-        } catch (NumberFormatException e) {
-            log.warn("[预扣超时] key 格式异常无法提取 orderId, 跳过: {}", predeductKey);
-            return 0;
-        }
-
-        int count = 0;
-
-        for (Map.Entry<Object, Object> entry : entries.entrySet()) {
-            String fieldName = entry.getKey().toString();
-            // 过滤 :bucket 辅助字段（只处理 skuId 字段）
-            if (fieldName.contains(":bucket")) {
-                continue;
-            }
-
-            Long skuId;
-            int quantity;
-            try {
-                skuId = Long.parseLong(fieldName);
-                quantity = Integer.parseInt(entry.getValue().toString());
-            } catch (NumberFormatException e) {
-                log.warn("[预扣超时] 跳过脏数据(skuId/数量非数字): key={}, field={}, value={}",
-                        predeductKey, fieldName, entry.getValue());
-                continue;
-            }
-
-            // 获取来源桶号（release.lua 需要桶 Key 作为 KEYS[3]）
-            Object bucketNoObj = stringRedisTemplate.opsForHash().get(predeductKey, fieldName + ":bucket");
-            int bucketNo = 0;
-            if (bucketNoObj != null) {
-                try {
-                    bucketNo = Integer.parseInt(bucketNoObj.toString());
-                } catch (NumberFormatException e) {
-                    log.warn("[预扣超时] 桶号脏数据按0处理: key={}, field={}", predeductKey, fieldName);
-                }
-            }
-
-            String totalKeyStr = totalKey(skuId);
-            String bucketKeyStr = bucketKey(skuId, bucketNo);
-
-            // 使用 release.lua 原子回退（传入 totalKey + predeductKey + bucketKey + indexKey）
-            Long result = stringRedisTemplate.execute(
-                    releaseScript,
-                    List.of(totalKeyStr, predeductKey, bucketKeyStr, PREDEDUCT_INDEX_KEY),
-                    fieldName, String.valueOf(orderId)
-            );
-
-            if (result != null && result > 0) {
-                log.info("[预扣超时] 回退库存: predeductKey={}, skuId={}, qty={}, bucket={}",
-                        predeductKey, skuId, result, bucketNo);
-                count++;
-                // Redis 回退成功后发 RELEASE MQ 事件，解锁 MySQL locked_stock
-                sendReleaseEvent(orderId, skuId, quantity);
-            }
-        }
-
-        return count;
+        return 0;
     }
 
     /**

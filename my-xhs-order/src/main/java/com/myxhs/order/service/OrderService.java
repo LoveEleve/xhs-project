@@ -729,7 +729,10 @@ public class OrderService {
             // （OrderTransactionConsumer 在半消息阶段只有 orderNo，订单未入库无法获得真实 orderId），
             // 释放必须用同一派生值，否则 prededuct 记录找不到 → 库存永久泄漏
             long pseudoOrderId = derivePseudoOrderId(orderNo);
-            Map<String, Object> request = Map.of("orderId", pseudoOrderId);
+            // C-008：items 契约——订单明细随请求携带（inventory 侧按 per-(sku,order) 记录释放）
+            Map<String, Object> request = Map.of(
+                    "orderId", pseudoOrderId,
+                    "items", buildInventoryItems(orderId, userId));
             R<Void> result = inventoryFeignClient.releaseStock(request);
             if (result == null || !result.isSuccess()) {
                 log.error("[订单] 释放库存失败，需补偿: orderId={}, result={}", orderId,
@@ -742,6 +745,25 @@ public class OrderService {
             log.error("[订单] 释放库存异常，需补偿: orderId={}", orderId, e);
             return false;
         }
+    }
+
+    /**
+     * C-008：构造库存 items 载荷（confirm/release 的 SKU 事实源——订单明细不可变）。
+     * inventory 侧预扣记录为 per-(sku,order) 单键，需 items 定位；Long 经全局 JacksonConfig 序列化为字符串。
+     */
+    private java.util.List<java.util.Map<String, Object>> buildInventoryItems(Long orderId, Long userId) {
+        return orderItemMapper.selectList(
+                        new LambdaQueryWrapper<OrderItem>()
+                                .eq(OrderItem::getOrderId, orderId)
+                                .eq(OrderItem::getUserId, userId))
+                .stream()
+                .map(item -> {
+                    java.util.Map<String, Object> m = new java.util.HashMap<>();
+                    m.put("skuId", item.getSkuId());
+                    m.put("quantity", item.getQuantity());
+                    return m;
+                })
+                .collect(java.util.stream.Collectors.toList());
     }
 
     /**
@@ -1080,7 +1102,10 @@ public class OrderService {
     private boolean doConfirmInventoryDeduct(Long orderId, String orderNo, Long userId) {
         try {
             long pseudoOrderId = derivePseudoOrderId(orderNo);
-            Map<String, Object> request = Map.of("orderId", pseudoOrderId);
+            // C-008：items 契约——订单明细（不可变）随请求携带（inventory 侧按 per-(sku,order) 记录确认）
+            Map<String, Object> request = Map.of(
+                    "orderId", pseudoOrderId,
+                    "items", buildInventoryItems(orderId, userId));
             R<Void> result = inventoryFeignClient.confirmDeduct(request);
             if (result == null || !result.isSuccess()) {
                 log.error("[订单] 确认库存扣减失败: orderId={}, result={}", orderId,
