@@ -27,8 +27,8 @@ public class IndexInitializer implements ApplicationRunner {
     private final ElasticsearchClient esClient;
     private final IndexAliasManager aliasManager; // C-011 T2.3：新部署直接建别名模型
 
-    /** 索引副本数（默认 0：单节点集群无法分配副本，1 会导致 yellow/告警常鸣；多节点环境可配 >0） */
-    @Value("${search.index.replicas:0}")
+    /** 索引副本数（生产集群基线默认 1——副本保 HA；单节点开发/演示环境显式设 0，避免 yellow 常鸣） */
+    @Value("${search.index.replicas:1}")
     private int indexReplicas;
 
     @Value("${search.note.index-name:note_index}")
@@ -69,7 +69,7 @@ public class IndexInitializer implements ApplicationRunner {
 
     private void createIndexIfNotExists(String indexName, String mapping) {
         try {
-            // 副本数可配（默认 0：单节点无法分配副本；多节点环境可调大）
+            // 副本数可配（默认 1=生产集群基线；单节点开发环境设 0）
             final String effectiveMapping = mapping.replace("%REPLICAS%", String.valueOf(indexReplicas));
             boolean exists = esClient.indices().exists(
                     ExistsRequest.of(e -> e.index(indexName))).value();

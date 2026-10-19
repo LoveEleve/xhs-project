@@ -50,7 +50,8 @@ public class CouponReconcileJob {
      * <p>
      * 语义：claimed 记录"已领次数"（含已使用/已过期券），因此以 t_user_coupon 的非删行数为准；
      * 在途（Outbox 已写、消费未到）的领取会让计数偏大 1，日切低峰执行风险可接受；
-     * 注意：SCAN 在 Redis Cluster 下只覆盖单节点（当前单实例+Sentinel 无影响，上 Cluster 需逐节点扫描）。
+     * 注意：scan 经 SDR 3.2 + Lettuce 6.3——Lettuce 集群命令对 scan 遍历所有 master（ClusterScanSupport），
+     * 真 Cluster 下同样覆盖全量（非只扫单节点）；SCAN 固有语义（扩容/迁移窗口可能漏或重）不变。
      * </p>
      */
     private int reconcileClaimedCounters() {

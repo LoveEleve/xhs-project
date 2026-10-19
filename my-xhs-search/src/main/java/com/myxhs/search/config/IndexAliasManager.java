@@ -30,8 +30,8 @@ public class IndexAliasManager {
 
     private final ElasticsearchClient esClient;
 
-    /** 索引副本数（默认 0：单节点无法分配副本） */
-    @Value("${search.index.replicas:0}")
+    /** 索引副本数（生产集群基线默认 1；单节点开发环境设 0） */
+    @Value("${search.index.replicas:1}")
     private int indexReplicas;
 
     /**

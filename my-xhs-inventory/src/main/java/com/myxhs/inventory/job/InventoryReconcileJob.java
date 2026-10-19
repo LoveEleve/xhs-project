@@ -174,7 +174,8 @@ public class InventoryReconcileJob {
      * <p>
      * 扫描量有界：预扣记录 TTL=预扣有效期（1800s）+缓冲，因此 key 数 ≈ 在途订单 SKU 数；
      * 每小时一轮，成本可控。方向保守：预扣记录缺失即视为 0（宁可少算 locked，不会多卖）；
-     * 注意：SCAN 在 Redis Cluster 下只覆盖单个节点，若未来上 Cluster 需改为逐节点扫描（当前单实例+Sentinel 无影响）；
+     * 注意：scan 经 SDR 3.2 + Lettuce 6.3——Lettuce 集群命令对 scan 遍历所有 master（ClusterScanSupport），
+     * 真 Cluster 下同样覆盖全量（非只扫单节点）；SCAN 固有语义（扩容/迁移窗口可能漏或重）不变；
      * 若 L2 事件滞后于本次扫描，locked 会在事件到达后被再次抬高，最多一个事件的量，下轮对账收敛。
      * @return 修复条数
      * </p>

@@ -1,6 +1,6 @@
 # my-xhs 公共配置（从生产 Nacos my-xhs 命名空间导出，2026-08-12）
 # 部署后导入 Nacos：命名空间 my-xhs / DEFAULT_GROUP / dataId=my-xhs-common.yaml
-# 注意：仅覆盖 datasource 密码与 redis 连接；IP 与业务配置见 my-xhs-redis.yaml / 各服务本地 yml
+# 注意：覆盖 datasource 密码、redis 连接与少量部署环境覆盖（如 search.index.replicas）；IP 与其余业务配置见 my-xhs-redis.yaml / 各服务本地 yml
 spring:
   datasource:
     password: Xhs@2026#MySQL
@@ -12,3 +12,9 @@ spring:
       # 避免读路径（product/counter）无界挂起；写路径由各自 catch 逻辑处理
       timeout: 1000ms
       connect-timeout: 1000ms
+
+# ES 索引副本数：本部署环境为单节点 ES（docker-compose，单节点无法分配副本）→ 显式设 0；
+# 代码默认 1 = 生产集群基线（多节点 ES，副本保 HA）——生产环境删除本段即可
+search:
+  index:
+    replicas: 0
