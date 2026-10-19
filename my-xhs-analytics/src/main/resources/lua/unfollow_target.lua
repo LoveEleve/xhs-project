@@ -3,8 +3,8 @@
 --
 -- 【修复M6】配合 unfollow_self.lua 使用。
 --
--- KEYS[1] = social:follower:{targetUserId}    (ZSet: 目标用户的粉丝列表)
--- KEYS[2] = counter:{targetUserId}:follower   (String: 目标用户的粉丝数)
+-- KEYS[1] = myxhs:follow:fans:{targetUserId}      (ZSet: 目标用户的粉丝列表；C-009 D5 真 tag)
+-- KEYS[2] = myxhs:counter:user_follower:{targetUserId} (String: 目标用户的粉丝数；同 tag)
 -- ARGV[1] = userId (粉丝列表的 member)
 --
 -- 返回值：

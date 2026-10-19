@@ -849,6 +849,8 @@ public class FollowService {
      * 使用 syncSend 确保关注操作返回前 MQ 已确认接收（不影响关注本身的 Lua 结果）。
      * </p>
      */
+    // 【C-009 T2.3】原用途"更新 counter 服务关注/粉丝计数"已移除（镜像键无读取方，评估后移除 counter 侧处理）；
+    // 事件生产保留：SOCIAL_TOPIC FOLLOW/UNFOLLOW 同时供禁用的 DB-sync 消费者（follow/unfollow-consumer-group）路径
     private void sendFollowCounterEvent(Long followerUserId, Long followeeUserId, String action) {
         try {
             Map<String, Object> event = new HashMap<>();

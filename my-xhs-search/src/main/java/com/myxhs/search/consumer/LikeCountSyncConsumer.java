@@ -55,7 +55,7 @@ public class LikeCountSyncConsumer implements RocketMQListener<MessageExt> {
             // T-092 修正（2026-08-16）：原读 counter key（myxhs:counter:1:{id}:1），但 search 与 counter
             // 并行消费同一 LIKE 消息，counter 服务写入前 search 读到旧值（实测 likeCount 更新为 0）。
             // analytics 的 SADD 在 like 接口同步完成（HTTP 响应前已写），无消费时序竞争。
-            String likeSetKey = "myxhs:like:note:" + bizId;
+            String likeSetKey = "myxhs:like:note:{" + bizId + "}"; // C-009 D5：键族补 {targetId} tag（与 analytics 写入对齐）
             Long likeSetSize = stringRedisTemplate.opsForSet().size(likeSetKey);
             final long likeCount = likeSetSize != null ? likeSetSize : 0L;
 

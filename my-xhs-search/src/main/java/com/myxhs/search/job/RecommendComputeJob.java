@@ -358,7 +358,7 @@ public class RecommendComputeJob {
             }
 
             for (Long noteId : features.keySet()) {
-                Long likeCount = stringRedisTemplate.opsForSet().size("myxhs:like:note:" + noteId);
+                Long likeCount = stringRedisTemplate.opsForSet().size("myxhs:like:note:{" + noteId + "}"); // C-009 D5
                 features.get(noteId).likeCount = likeCount != null ? likeCount : 0L;
             }
         } catch (Exception e) {

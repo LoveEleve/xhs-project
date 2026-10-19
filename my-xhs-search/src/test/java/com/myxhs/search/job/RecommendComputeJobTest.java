@@ -28,7 +28,7 @@ class RecommendComputeJobTest {
     void enrichEngagementCountsShouldNotReadTCounter() throws Exception {
         RecommendComputeJob job = new RecommendComputeJob(stringRedisTemplate, jdbcTemplate);
         when(stringRedisTemplate.opsForSet()).thenReturn(setOperations);
-        when(setOperations.size("myxhs:like:note:1")).thenReturn(5L);
+        when(setOperations.size("myxhs:like:note:{1}")).thenReturn(5L);
         when(jdbcTemplate.queryForList(contains("FROM t_comment"))).thenReturn(List.of(Map.of("note_id", 1L, "comment_count", 2L)));
         when(jdbcTemplate.queryForList(contains("FROM my_xhs_analytics.t_favorite"))).thenReturn(List.of(Map.of("note_id", 1L, "favorite_count", 3L)));
 

@@ -3,8 +3,8 @@
 --
 -- 【修复M6】拆分为 self/target 两个脚本。
 --
--- KEYS[1] = social:following:{userId}        (ZSet: 当前用户的关注列表)
--- KEYS[2] = counter:{userId}:following       (String: 当前用户的关注数)
+-- KEYS[1] = myxhs:follow:list:{userId}       (ZSet: 当前用户的关注列表；C-009 D5 真 tag)
+-- KEYS[2] = myxhs:counter:user_following:{userId} (String: 当前用户的关注数；同 tag)
 -- ARGV[1] = targetUserId (关注列表的 member)
 --
 -- 返回值：
