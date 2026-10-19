@@ -43,6 +43,7 @@ public class InventoryReconcileJob {
     private final StringRedisTemplate stringRedisTemplate;
     private final InventoryMapper inventoryMapper;
     private final org.redisson.api.RedissonClient redissonClient;
+    private final com.myxhs.common.metrics.BusinessMetrics businessMetrics; // C-008 F9：指标
 
     private static final String TOTAL_KEY_TPL = "inventory:{%d}:total";
 
@@ -153,6 +154,9 @@ public class InventoryReconcileJob {
         purgeTablesDaily();
 
         long elapsed = System.currentTimeMillis() - startTime;
+        if (repairCount > 0) {
+            businessMetrics.recordInventoryAction("reconcile_repaired"); // C-008 F9：有修复才打点
+        }
         log.info("[库存对账] 完成: 对账{}个SKU, 修复{}条, 耗时{}ms",
                 inventories.size(), repairCount, elapsed);
 

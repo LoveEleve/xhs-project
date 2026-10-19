@@ -308,6 +308,7 @@ public class InventoryService {
                 continue;
             }
             log.info("[库存] 确认扣减: orderId={}, skuId={}, qty={}", orderId, skuId, result);
+            businessMetrics.recordInventoryAction("confirm_ok"); // C-008 F9
 
             // L2: MQ 异步更新 MySQL（同步发送，失败保留 Outbox 等 Job 补发；消费端逻辑事件幂等兜底）
             if (!sendInventoryEvent(orderId, skuId, result.intValue(), "CONFIRM")) {
@@ -379,6 +380,7 @@ public class InventoryService {
                 continue; // 防御：脚本检查后被并发释放/确认
             }
             log.info("[库存] 释放库存: orderId={}, skuId={}, qty={}", orderId, skuId, result);
+            businessMetrics.recordInventoryAction("release_ok"); // C-008 F9
 
             // L2: MQ 异步更新 MySQL（同步发送，失败保留 Outbox 等 Job 补发）
             if (!sendInventoryEvent(orderId, skuId, result.intValue(), "RELEASE")) {
@@ -618,6 +620,7 @@ public class InventoryService {
             return;
         }
         log.info("[库存退款回补] Redis回补: orderId={}, skuId={}, delta={}", orderId, skuId, delta);
+        businessMetrics.recordInventoryAction("refund_ok"); // C-008 F9
 
         // MQ 同步 MySQL（available_stock +delta；失败保留 Outbox 由 Job 补发）
         if (!sendInventoryEvent(orderId, skuId, delta.intValue(), "REFUND_RESTORE")) {

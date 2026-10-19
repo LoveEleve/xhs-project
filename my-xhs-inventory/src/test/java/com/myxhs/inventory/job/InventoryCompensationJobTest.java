@@ -52,7 +52,8 @@ class InventoryCompensationJobTest {
 
     @BeforeEach
     void setUp() throws InterruptedException {
-        job = new InventoryCompensationJob(inventoryMapper, inventoryService, stringRedisTemplate, releaseScript, redissonClient);
+        job = new InventoryCompensationJob(inventoryMapper, inventoryService, stringRedisTemplate, releaseScript, redissonClient,
+                mock(com.myxhs.common.metrics.BusinessMetrics.class));
         when(redissonClient.getLock(anyString())).thenReturn(lock);
         when(lock.tryLock(0L, 25, TimeUnit.SECONDS)).thenReturn(true);
         when(lock.isHeldByCurrentThread()).thenReturn(true);

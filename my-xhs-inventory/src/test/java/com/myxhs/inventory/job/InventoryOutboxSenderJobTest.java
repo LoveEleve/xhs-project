@@ -38,7 +38,8 @@ class InventoryOutboxSenderJobTest {
     void setUp() throws InterruptedException {
         ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
-        job = new InventoryOutboxSenderJob(inventoryMapper, rocketMQTemplate, objectMapper, redissonClient);
+        job = new InventoryOutboxSenderJob(inventoryMapper, rocketMQTemplate, objectMapper, redissonClient,
+                mock(com.myxhs.common.metrics.BusinessMetrics.class));
         when(redissonClient.getLock(anyString())).thenReturn(lock);
         when(lock.tryLock(0, 4, TimeUnit.SECONDS)).thenReturn(true);
         when(lock.isHeldByCurrentThread()).thenReturn(true);

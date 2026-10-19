@@ -55,7 +55,7 @@ public class PreDeductTimeoutJob {
     private static String predeductKey(Long skuId, Long orderId) { return String.format(PREDEDUCT_KEY_TPL, skuId, orderId); }
     private static String indexKey(Long skuId) { return String.format(INDEX_KEY_TPL, skuId); }
 
-    private static final String LOCK_KEY = "lock:job:inventory:prededuct-timeout";
+    private static final String LOCK_KEY = "myxhs:lock:job:inventory:prededuct-timeout"; // C-008 F10：前缀统一
 
     /**
      * 每 1 分钟扫描过期预扣记录，自动回退库存

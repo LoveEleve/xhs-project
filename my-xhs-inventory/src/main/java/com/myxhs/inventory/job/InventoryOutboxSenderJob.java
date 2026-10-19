@@ -21,9 +21,10 @@ import java.util.concurrent.TimeUnit;
  * Outbox 兜底发送任务
  * <p>
  * 扫描 t_inventory_outbox 中未发送的事件，重新投递到 MQ。
- * 解决 syncSend 超时回滚导致的"券已入账但库存退回"双花问题：
- * Outbox 在 Redis 预扣成功后立即写入（与业务操作同步），
- * MQ 发送由此任务异步执行，失败自动重试。
+ * 职责：syncSend 异常/非 SEND_OK/未及标记的事件一律保留在表内，由本任务补发至成功
+ * （失败指数退避重试，记录不丢弃）——"Redis 已扣但 MySQL 未落"的最终送达保障。
+ * 【C-008 修正】原注释"解决 syncSend 超时回滚导致的'券已入账但库存退回'双花"为复制残留
+ * （"券"字）；且消费端已有逻辑事件幂等（L2 inbox），补发重复不双扣。
  * </p>
  */
 @Slf4j
@@ -35,8 +36,9 @@ public class InventoryOutboxSenderJob {
     private final RocketMQTemplate rocketMQTemplate;
     private final ObjectMapper objectMapper;
     private final RedissonClient redissonClient;
+    private final com.myxhs.common.metrics.BusinessMetrics businessMetrics; // C-008 F9：指标
 
-    private static final String LOCK_KEY = "lock:job:inventory:outbox";
+    private static final String LOCK_KEY = "myxhs:lock:job:inventory:outbox"; // C-008 F10：前缀统一
     private static final String INVENTORY_TOPIC = "INVENTORY_TOPIC";
     private static final int BATCH_SIZE = 200;
 
@@ -82,6 +84,7 @@ public class InventoryOutboxSenderJob {
                     // 只有真正发送成功才标记，防止发送失败却标记导致事件丢失
                     if (sendResult.getSendStatus() == org.apache.rocketmq.client.producer.SendStatus.SEND_OK) {
                         inventoryMapper.markOutboxSent(orderId, skuId, action); // C-008 F2：按业务键匹配
+                        businessMetrics.recordInventoryAction("outbox_resend_ok"); // C-008 F9
                         log.debug("[Outbox] 补发成功: eventId={}, orderId={}, skuId={}, action={}", eventId, orderId, skuId, action);
                     } else {
                         log.warn("[Outbox] 补发状态异常(延后重试): orderId={}, skuId={}, action={}, status={}",

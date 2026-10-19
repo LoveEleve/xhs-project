@@ -33,8 +33,9 @@ public class InventoryCompensationJob {
     private final StringRedisTemplate stringRedisTemplate;
     private final DefaultRedisScript<Long> releaseScript;
     private final RedissonClient redissonClient;
+    private final com.myxhs.common.metrics.BusinessMetrics businessMetrics; // C-008 F9：指标
 
-    private static final String LOCK_KEY = "lock:job:inventory:compensation";
+    private static final String LOCK_KEY = "myxhs:lock:job:inventory:compensation"; // C-008 F10：前缀统一
     /** 补偿类型：1-预扣回滚 2-退款回补 */
     private static final int COMPENSATION_TYPE_REFUND_RESTORE = 2;
 
@@ -101,6 +102,7 @@ public class InventoryCompensationJob {
 
                 if (result != null && result > 0) {
                     inventoryMapper.markCompensationResolved(id);
+                    businessMetrics.recordInventoryAction("compensation_retry_ok"); // C-008 F9
                     log.info("[库存补偿] 回退成功: orderId={}, skuId={}, qty={}", orderId, skuId, result);
                 } else {
                     inventoryMapper.incrementCompensationRetry(id, MAX_RETRY);
