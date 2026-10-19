@@ -36,7 +36,7 @@ import com.alibaba.fastjson2.JSONArray;
  * 设计考量：
  * </p>
  * <ul>
- *   <li><b>触发方式</b>：每 5 分钟定时执行，无需手动触发。</li>
+ *   <li><b>触发方式</b>：定时执行（默认每 1 分钟，见 {@code @Scheduled}），无需手动触发。</li>
  *   <li><b>数据源</b>：Redis Set（SPOP 原子弹出），避免多实例重复处理。</li>
  *   <li><b>补偿成功率</b>：失败时 SADD 回 Redis Set，等待下次重试。</li>
  *   <li><b>与全量重建互补</b>：全量重建（IndexRebuildJob）每天凌晨 4 点执行，
@@ -58,6 +58,7 @@ public class IncrementalIndexSyncJob {
     private final ElasticsearchClient esClient;
     private final JdbcTemplate jdbcTemplate;
     private final ProductIndexDocumentBuilder productIndexDocumentBuilder;
+    private final com.myxhs.common.metrics.BusinessMetrics businessMetrics; // C-011：确定性失败告警指标
 
     @Value("${search.note.index-name:note_index}")
     private String noteIndexName;
@@ -72,7 +73,7 @@ public class IncrementalIndexSyncJob {
     // 与 NoteIndexSyncConsumer 的 ts(毫秒) 统一版本域，避免补偿巨值版本永久拒绝后续 Canal 增量更新。
 
     /**
-     * 定时增量补偿（每 5 分钟）
+     * 定时增量补偿（默认每 1 分钟）
      */
     @Scheduled(fixedRate = 60_000) // 每 1 分钟（测试环境快速验证）
     public void incrementalCompensate() {
@@ -125,20 +126,18 @@ public class IncrementalIndexSyncJob {
             return 0;
         }
 
-        // 批量索引到 ES
-        int indexed = bulkIndexNotes(notes);
+        // 批量索引到 ES（C-011 R1：逐项判定——version_conflict 豁免；仅真失败回填）
+        java.util.Set<Long> failedIds = bulkIndexNotes(notes);
+        int indexed = notes.size() - failedIds.size();
 
-        // 未成功索引的 ID 放回 Redis Set
-        if (indexed < notes.size()) {
-            for (Map<String, Object> note : notes) {
-                Long noteId = ((Number) note.get("id")).longValue();
-                // 检查是否在原始 id 列表中且未成功索引
-                if (ids.contains(noteId)) {
-                    stringRedisTemplate.opsForSet().add(FAILED_NOTE_KEY, String.valueOf(noteId));
-                    stringRedisTemplate.expire(FAILED_NOTE_KEY, Duration.ofHours(1));
-                }
+        // 仅**真失败**的 ID 放回 Redis Set（原实现 ids.contains 恒真——成功项也回填 → 与冲突未豁免叠加成永久循环）
+        if (!failedIds.isEmpty()) {
+            for (Long noteId : failedIds) {
+                stringRedisTemplate.opsForSet().add(FAILED_NOTE_KEY, String.valueOf(noteId));
+                stringRedisTemplate.expire(FAILED_NOTE_KEY, Duration.ofHours(1));
             }
-            log.warn("[ES增量补偿] 笔记部分补偿失败: 成功={}/{}", indexed, notes.size());
+            log.warn("[ES增量补偿] 笔记部分补偿失败: 成功={}/{}，回填={}",
+                    indexed, notes.size(), failedIds);
         }
 
         return indexed;
@@ -174,17 +173,16 @@ public class IncrementalIndexSyncJob {
             return 0;
         }
 
-        int indexed = bulkIndexProducts(products);
+        java.util.Set<Long> failedIds = bulkIndexProducts(products);
+        int indexed = products.size() - failedIds.size();
 
-        if (indexed < products.size()) {
-            for (Map<String, Object> product : products) {
-                Long spuId = ((Number) product.get("id")).longValue();
-                if (ids.contains(spuId)) {
-                    stringRedisTemplate.opsForSet().add(FAILED_PRODUCT_KEY, String.valueOf(spuId));
-                    stringRedisTemplate.expire(FAILED_PRODUCT_KEY, Duration.ofHours(1));
-                }
+        if (!failedIds.isEmpty()) {
+            for (Long spuId : failedIds) {
+                stringRedisTemplate.opsForSet().add(FAILED_PRODUCT_KEY, String.valueOf(spuId));
+                stringRedisTemplate.expire(FAILED_PRODUCT_KEY, Duration.ofHours(1));
             }
-            log.warn("[ES增量补偿] 商品部分补偿失败: 成功={}/{}", indexed, products.size());
+            log.warn("[ES增量补偿] 商品部分补偿失败: 成功={}/{}，回填={}",
+                    indexed, products.size(), failedIds);
         }
 
         return indexed;
@@ -243,7 +241,8 @@ public class IncrementalIndexSyncJob {
      * 参考 IndexRebuildJob#bulkIndexNotes 的实现。
      * </p>
      */
-    private int bulkIndexNotes(List<Map<String, Object>> notes) {
+    private java.util.Set<Long> bulkIndexNotes(List<Map<String, Object>> notes) {
+        java.util.Set<Long> failedIds = new java.util.LinkedHashSet<>();
         try {
             BulkRequest.Builder bulkBuilder = new BulkRequest.Builder();
 
@@ -262,28 +261,36 @@ public class IncrementalIndexSyncJob {
 
             BulkResponse response = esClient.bulk(bulkBuilder.build());
             if (response.errors()) {
-                int errorCount = 0;
                 for (BulkResponseItem item : response.items()) {
-                    if (item.error() != null) {
-                        errorCount++;
-                        log.warn("[ES增量补偿] 笔记索引失败: id={}, error={}",
-                                item.id(), item.error().reason());
+                    if (item.error() == null) {
+                        continue;
                     }
+                    // C-011 R1：version_conflict 豁免（ES 已是更新版本 = 幂等已应用，对齐 IndexRebuildJob 的关键配套）——
+                    // 原实现计为失败 → 失败集永久循环（每分钟重投 + re-SADD 续期永不过期）
+                    if ("version_conflict_engine_exception".equals(item.error().type())) {
+                        log.debug("[ES增量补偿] 版本更新已存在, 跳过热数据: id={}", item.id());
+                        continue;
+                    }
+                    failedIds.add(Long.parseLong(item.id()));
+                    log.warn("[ES增量补偿] 笔记索引失败: id={}, error={}", item.id(), item.error().reason());
                 }
-                return notes.size() - errorCount;
             }
-            return notes.size();
+            return failedIds;
 
         } catch (Exception e) {
-            log.error("[ES增量补偿] 笔记批量索引异常", e);
-            return 0;
+            log.error("[ES增量补偿] 笔记批量索引异常(整批回填)", e);
+            for (Map<String, Object> note : notes) {
+                failedIds.add(((Number) note.get("id")).longValue());
+            }
+            return failedIds;
         }
     }
 
     /**
      * 批量索引商品到 ES
      */
-    private int bulkIndexProducts(List<Map<String, Object>> products) {
+    private java.util.Set<Long> bulkIndexProducts(List<Map<String, Object>> products) {
+        java.util.Set<Long> failedIds = new java.util.LinkedHashSet<>();
         try {
             BulkRequest.Builder bulkBuilder = new BulkRequest.Builder();
 
@@ -293,11 +300,11 @@ public class IncrementalIndexSyncJob {
                 try {
                     doc = productIndexDocumentBuilder.build(product, Map.of());
                 } catch (Exception e) {
-                    // 单条 SPU 数据不完整（如无 SKU 且无 min_price）不应阻塞整个批次索引：
-                    // 记录并跳过该 SPU，其余商品正常索引（脏数据不阻塞增量任务）。
-                    log.warn("[ES增量补偿] 商品文档构建失败, 跳过该SPU: spuId={}, reason={}",
+                    // C-011 R5：文档构建失败为**确定性失败**（数据不完整）——丢弃 + 告警，不回填失败集
+                    // （原实现回填 → 每分钟重试必然再失败 → 同 R1 的永久循环；数据补全后由 Canal 事件/日重建自然恢复）
+                    log.error("[ES增量补偿] 商品文档构建失败(确定性, 丢弃待数据补全/日重建): spuId={}, reason={}",
                             spuId, e.getMessage());
-                    stringRedisTemplate.opsForSet().add(FAILED_PRODUCT_KEY, String.valueOf(spuId));
+                    businessMetrics.recordAction("search", "doc_build_failed");
                     continue;
                 }
                 bulkBuilder.operations(op -> op
@@ -311,21 +318,26 @@ public class IncrementalIndexSyncJob {
 
             BulkResponse response = esClient.bulk(bulkBuilder.build());
             if (response.errors()) {
-                int errorCount = 0;
                 for (BulkResponseItem item : response.items()) {
-                    if (item.error() != null) {
-                        errorCount++;
-                        log.warn("[ES增量补偿] 商品索引失败: id={}, error={}",
-                                item.id(), item.error().reason());
+                    if (item.error() == null) {
+                        continue;
                     }
+                    if ("version_conflict_engine_exception".equals(item.error().type())) {
+                        log.debug("[ES增量补偿] 版本更新已存在, 跳过热商品: id={}", item.id());
+                        continue;
+                    }
+                    failedIds.add(Long.parseLong(item.id()));
+                    log.warn("[ES增量补偿] 商品索引失败: id={}, error={}", item.id(), item.error().reason());
                 }
-                return products.size() - errorCount;
             }
-            return products.size();
+            return failedIds;
 
         } catch (Exception e) {
-            log.error("[ES增量补偿] 商品批量索引异常", e);
-            return 0;
+            log.error("[ES增量补偿] 商品批量索引异常(整批回填)", e);
+            for (Map<String, Object> product : products) {
+                failedIds.add(((Number) product.get("id")).longValue());
+            }
+            return failedIds;
         }
     }
 

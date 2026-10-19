@@ -53,6 +53,7 @@ public class IndexRebuildJob {
     private final StringRedisTemplate stringRedisTemplate;
     private final RedissonClient redissonClient;
     private final ProductIndexDocumentBuilder productIndexDocumentBuilder;
+    private final com.myxhs.search.config.IndexAliasManager aliasManager; // C-011：别名切换重建
 
     @Value("${search.note.index-name:note_index}")
     private String noteIndexName;
@@ -152,6 +153,21 @@ public class IndexRebuildJob {
         }
 
         long startTime = System.currentTimeMillis();
+        long rebuildStart = startTime; // C-011：窗口重放起点（重建期间更新在切换后补齐）
+
+        // ===== C-011：解析重建目标（别名模式=建新实体；legacy=原地回退；续传=同一 target） =====
+        RebuildTarget noteTarget;
+        RebuildTarget productTarget;
+        try {
+            noteTarget = resolveTarget(noteIndexName, com.myxhs.search.config.IndexMappings.NOTE_INDEX_MAPPING, "targetNoteIndex");
+            productTarget = resolveTarget(productIndexName, com.myxhs.search.config.IndexMappings.PRODUCT_INDEX_MAPPING, "targetProductIndex");
+        } catch (Exception e) {
+            throw new IllegalStateException("重建目标解析失败(不动线上)", e);
+        }
+        String noteWriteIndex = noteTarget.writeIndex();
+        String productWriteIndex = productTarget.writeIndex();
+        log.info("[索引重建] 目标实体: note={}(当前 {}), product={}(当前 {})",
+                noteWriteIndex, noteTarget.currentIndex(), productWriteIndex, productTarget.currentIndex());
 
         // 读取断点
         String lastIdStr = (String) stringRedisTemplate.opsForHash().get(REBUILD_STATUS_KEY, "lastNoteId");
@@ -159,7 +175,7 @@ public class IndexRebuildJob {
 
         int totalIndexed = 0;
 
-        // ===== 重建笔记索引 =====
+        // ===== 重建笔记索引（写入目标实体） =====
         while (true) {
             List<Map<String, Object>> notes = jdbcTemplate.queryForList(
 "SELECT id, user_id, title, content, cover_url, status, created_at, updated_at FROM t_note " +
@@ -171,7 +187,7 @@ public class IndexRebuildJob {
             }
 
             // 批量写入 ES
-            int indexed = bulkIndexNotes(notes);
+            int indexed = bulkIndexNotes(notes, noteWriteIndex);
             totalIndexed += indexed;
 
             // 断点续传安全策略：只有全部成功才推进断点
@@ -222,7 +238,7 @@ public class IndexRebuildJob {
                 break;
             }
 
-            int indexed = bulkIndexProducts(products);
+            int indexed = bulkIndexProducts(products, productWriteIndex);
             totalIndexed += indexed;
 
             // 断点续传安全策略：部分失败时不推进断点
@@ -245,30 +261,158 @@ public class IndexRebuildJob {
         // 死文档清理（best-effort，不阻塞完成标记）：重建只 upsert，
         // 源表逻辑删除的行若错过 Canal 删除事件会永久残留在 ES（搜索可命中已删内容）
         try {
-            pruneDeletedDocs();
+            pruneDeletedDocs(noteWriteIndex, productWriteIndex);
         } catch (Exception e) {
             log.warn("[索引重建] 死文档清理失败(不阻塞完成标记，下轮重试)", e);
+        }
+        // C-011 R4：超龄墓碑清理（物理删墓碑 status=-1 + deletedAt 超 7 天）——防"防复活墓碑"永久残留
+        try {
+            pruneOldTombstones(noteWriteIndex);
+            pruneOldTombstones(productWriteIndex);
+        } catch (Exception e) {
+            log.warn("[索引重建] 超龄墓碑清理失败(下轮重试)", e);
+        }
+
+        // ===== C-011：原子切换 → 窗口重放 → 删旧（仅别名模式；任何一步失败在切换前都不影响线上） =====
+        if (!noteTarget.inPlace()) {
+            try {
+                aliasManager.switchAlias(noteIndexName, noteTarget.currentIndex(), noteWriteIndex);
+                replayWindowNotes(noteIndexName, rebuildStart);
+                aliasManager.deleteIndex(noteTarget.currentIndex());
+            } catch (Exception e) {
+                log.error("[索引重建] 笔记索引切换/重放失败(别名已指向新实体或保持旧实体，需人工确认): alias={}", noteIndexName, e);
+                throw new IllegalStateException("笔记索引切换/重放失败", e);
+            }
+        }
+        if (!productTarget.inPlace()) {
+            try {
+                aliasManager.switchAlias(productIndexName, productTarget.currentIndex(), productWriteIndex);
+                replayWindowProducts(productIndexName, rebuildStart);
+                aliasManager.deleteIndex(productTarget.currentIndex());
+            } catch (Exception e) {
+                log.error("[索引重建] 商品索引切换/重放失败(需人工确认): alias={}", productIndexName, e);
+                throw new IllegalStateException("商品索引切换/重放失败", e);
+            }
         }
 
         long elapsed = System.currentTimeMillis() - startTime;
         log.info("[索引重建] 完成: 共索引{}条, 耗时{}ms", totalIndexed, elapsed);
 
-        // 记录完成状态，并清零断点：
+        // 记录完成状态，并清零断点（含 C-011 的 target 键——下次重建重新建新实体）：
         // 原实现保留 lastNoteId/lastSpuId → 次日定时"全量重建"从上次末尾 id 继续（退化为增量），
         // 且 key 的 1 天 TTL 与次日 4 点调度存在竞态（有时读到陈旧断点、有时已过期，行为不稳定）
-        stringRedisTemplate.opsForHash().delete(REBUILD_STATUS_KEY, "lastNoteId", "lastSpuId");
+        stringRedisTemplate.opsForHash().delete(REBUILD_STATUS_KEY,
+                "lastNoteId", "lastSpuId", "targetNoteIndex", "targetProductIndex");
         stringRedisTemplate.opsForHash().put(REBUILD_STATUS_KEY, "status", "COMPLETED");
         stringRedisTemplate.opsForHash().put(REBUILD_STATUS_KEY, "completedAt",
                 LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
     }
 
+    /** C-011：重建目标（writeIndex=写入实体；currentIndex=别名当前实体；inPlace=legacy 原地） */
+    private record RebuildTarget(String writeIndex, String currentIndex, boolean inPlace) {
+    }
+
+    /**
+     * C-011：解析重建目标。
+     * <ul>
+     *   <li>legacy（同名实体无别名）→ 原地回退（行为与改造前一致）；</li>
+     *   <li>别名模式：上次未完成的目标实体存在（续传）→ 复用；否则建下一版本实体。</li>
+     * </ul>
+     */
+    private RebuildTarget resolveTarget(String alias, String mapping, String statusKey) throws Exception {
+        com.myxhs.search.config.IndexAliasManager.ResolvedIndex current = aliasManager.resolve(alias, mapping);
+        if (current.legacyInPlace()) {
+            return new RebuildTarget(current.concreteIndex(), current.concreteIndex(), true);
+        }
+        String resumed = (String) stringRedisTemplate.opsForHash().get(REBUILD_STATUS_KEY, statusKey);
+        if (resumed != null && !resumed.isEmpty()) {
+            log.info("[索引重建] 续传目标实体: alias={}, target={}", alias, resumed);
+            return new RebuildTarget(resumed, current.concreteIndex(), false);
+        }
+        String next = aliasManager.createNextIndex(alias, current.concreteIndex(), mapping);
+        stringRedisTemplate.opsForHash().put(REBUILD_STATUS_KEY, statusKey, next);
+        stringRedisTemplate.expire(REBUILD_STATUS_KEY, Duration.ofDays(1));
+        return new RebuildTarget(next, current.concreteIndex(), false);
+    }
+
+    /** C-011：窗口重放（笔记）——重建期间（updated_at >= rebuildStart）的更新补写别名（ExternalGte 幂等） */
+    private void replayWindowNotes(String alias, long since) {
+        long lastId = 0;
+        int replayed = 0;
+        while (true) {
+            List<Map<String, Object>> notes = jdbcTemplate.queryForList(
+                    "SELECT id, user_id, title, content, cover_url, status, created_at, updated_at FROM t_note " +
+                            "WHERE id > ? AND deleted = 0 AND updated_at >= ? ORDER BY id ASC LIMIT ?",
+                    lastId, new java.sql.Timestamp(since), batchSize);
+            if (notes.isEmpty()) {
+                break;
+            }
+            replayed += bulkIndexNotes(notes, alias);
+            lastId = ((Number) notes.get(notes.size() - 1).get("id")).longValue();
+            if (notes.size() < batchSize) {
+                break;
+            }
+        }
+        if (replayed > 0) {
+            log.info("[索引重建] 窗口重放完成(笔记): alias={}, replayed={}", alias, replayed);
+        }
+    }
+
+    /** C-011：窗口重放（商品） */
+    private void replayWindowProducts(String alias, long since) {
+        long lastId = 0;
+        int replayed = 0;
+        while (true) {
+            List<Map<String, Object>> products = jdbcTemplate.queryForList(
+                    "SELECT s.id, s.name, s.category_id, s.brand_id, s.description, s.images, s.status, s.created_at, s.updated_at, " +
+                            "c.name AS category_name, MIN(k.price) AS min_price " +
+                            "FROM my_xhs_product.t_spu s " +
+                            "LEFT JOIN my_xhs_product.t_category c ON c.id = s.category_id AND c.deleted = 0 " +
+                            "LEFT JOIN my_xhs_product.t_sku k ON k.spu_id = s.id AND k.deleted = 0 AND k.status = 1 " +
+                            "WHERE s.id > ? AND s.deleted = 0 AND s.updated_at >= ? GROUP BY s.id ORDER BY s.id ASC LIMIT ?",
+                    lastId, new java.sql.Timestamp(since), batchSize);
+            if (products.isEmpty()) {
+                break;
+            }
+            replayed += bulkIndexProducts(products, alias);
+            lastId = ((Number) products.get(products.size() - 1).get("id")).longValue();
+            if (products.size() < batchSize) {
+                break;
+            }
+        }
+        if (replayed > 0) {
+            log.info("[索引重建] 窗口重放完成(商品): alias={}, replayed={}", alias, replayed);
+        }
+    }
+
+    /** C-011：超龄墓碑清理（status=-1 且 deletedAt < now-7d——逻辑删墓碑无 deletedAt 不受影响，由 DB 驱动清理覆盖） */
+    private int pruneOldTombstones(String indexName) {
+        try {
+            long cutoff = System.currentTimeMillis() - Duration.ofDays(7).toMillis();
+            var resp = esClient.deleteByQuery(d -> d
+                    .index(indexName)
+                    .query(q -> q.bool(b -> b
+                            .filter(f -> f.term(t -> t.field("status").value(-1)))
+                            .filter(f -> f.range(r -> r.field("deletedAt")
+                                    .lt(co.elastic.clients.json.JsonData.of(cutoff)))))));
+            int deleted = resp.deleted() != null ? resp.deleted().intValue() : 0;
+            if (deleted > 0) {
+                log.info("[索引重建] 超龄墓碑清理: index={}, deleted={}", indexName, deleted);
+            }
+            return deleted;
+        } catch (Exception e) {
+            log.warn("[索引重建] 超龄墓碑清理失败(下轮重试): index={}", indexName, e);
+            return 0;
+        }
+    }
+
     /**
      * 清理源表已逻辑删除的 ES 死文档（笔记/商品/建议索引）
      */
-    private void pruneDeletedDocs() {
+    private void pruneDeletedDocs(String noteTargetIndex, String productTargetIndex) {
         int pruned = 0;
-        pruned += pruneByDeletedFlag("t_note", noteIndexName);
-        pruned += pruneByDeletedFlag("my_xhs_product.t_spu", productIndexName);
+        pruned += pruneByDeletedFlag("t_note", noteTargetIndex);
+        pruned += pruneByDeletedFlag("my_xhs_product.t_spu", productTargetIndex);
         pruned += pruneSuggestForUnavailableNotes();
         if (pruned > 0) {
             log.info("[索引重建] 死文档清理完成: 共处理 {} 条", pruned);
@@ -364,7 +508,7 @@ public class IndexRebuildJob {
     /**
      * 批量索引笔记（BulkRequest）
      */
-    private int bulkIndexNotes(List<Map<String, Object>> notes) {
+    private int bulkIndexNotes(List<Map<String, Object>> notes, String targetIndex) {
         try {
             BulkRequest.Builder bulkBuilder = new BulkRequest.Builder();
             Map<Long, Map<Integer, Long>> countsByNote = loadNoteCounts(notes);
@@ -378,7 +522,7 @@ public class IndexRebuildJob {
 
                 bulkBuilder.operations(op -> op
                         .index(idx -> idx
-                                .index(noteIndexName)
+                                .index(targetIndex)
                                 .id(String.valueOf(noteId))
                                 .version(version)
                                 .versionType(co.elastic.clients.elasticsearch._types.VersionType.ExternalGte)
@@ -414,7 +558,7 @@ public class IndexRebuildJob {
     /**
      * 批量索引商品
      */
-    private int bulkIndexProducts(List<Map<String, Object>> products) {
+    private int bulkIndexProducts(List<Map<String, Object>> products, String targetIndex) {
         try {
             BulkRequest.Builder bulkBuilder = new BulkRequest.Builder();
 
@@ -432,7 +576,7 @@ public class IndexRebuildJob {
                 long version = toEpochMillis(product.get("updated_at"));
                 bulkBuilder.operations(op -> op
                         .index(idx -> idx
-                                .index(productIndexName)
+                                .index(targetIndex)
                                 .id(String.valueOf(spuId))
                                 .version(version)
                                 .versionType(co.elastic.clients.elasticsearch._types.VersionType.ExternalGte)

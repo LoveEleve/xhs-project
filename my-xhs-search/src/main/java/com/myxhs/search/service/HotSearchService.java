@@ -40,7 +40,7 @@ import java.util.stream.Collectors;
  * 滑动窗口设计：
  * - 每分钟一个 Hash 桶：search:window:{yyyyMMddHHmm} → { keyword: count }
  * - TTL=2h，过期自然淘汰
- * - 每 5 分钟定时任务遍历最近 60 个桶，用指数衰减公式计算热度
+ * - 定时任务（默认每 1 分钟，`search.hot.recompute-interval-ms` 可配）遍历最近 60 个桶，用指数衰减公式计算热度
  * </p>
  */
 @Slf4j
@@ -179,7 +179,7 @@ public class HotSearchService {
     // ==================== 热度计算（定时任务） ====================
 
     /**
-     * 每 5 分钟重算热度值
+     * 定时重算热度值（默认每 1 分钟，可配）
      * <p>
      * 公式：Score = Σ(count × e^(-λ×Δt))
      * λ = 0.1，Δt = 分钟差

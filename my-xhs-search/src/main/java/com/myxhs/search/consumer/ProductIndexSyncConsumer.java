@@ -117,6 +117,9 @@ public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
             throw new IllegalStateException("商品索引同步失败", e);
         } finally {
             MqTraceHelper.clearTraceId();
+            // C-011 R2：必须在 finally 清理（对齐 note 侧）——否则线程复用（消费线程池）时残留上一个 spuId，
+            // 后续消息在 set 之前异常会把这个陈旧 id 记入失败补偿集合（污染 + 无意义补偿）
+            currentSpuId.remove();
         }
     }
 
@@ -368,6 +371,7 @@ public class ProductIndexSyncConsumer implements RocketMQListener<MessageExt> {
         Map<String, Object> doc = new HashMap<>();
         doc.put("spuId", spuId);
         doc.put("status", -1); // -1 表示已删除，搜索时过滤
+        doc.put("deletedAt", System.currentTimeMillis()); // C-011 R4：超龄墓碑清理兜底
 
         String jsonDoc = JSON.toJSONString(doc);
 

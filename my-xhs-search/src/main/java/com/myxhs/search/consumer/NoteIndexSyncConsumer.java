@@ -170,7 +170,7 @@ public class NoteIndexSyncConsumer implements RocketMQListener<MessageExt> {
                 }
                 case "DELETE" -> {
                     currentNoteId.set(noteId);
-                    physicallyDeleteNote(noteId);
+                    physicallyDeleteNote(noteId, version); // C-011 R4：版本化墓碑
                 }
                 default -> log.debug("[笔记索引同步] 忽略事件类型: type={}", type);
             }
@@ -209,7 +209,7 @@ public class NoteIndexSyncConsumer implements RocketMQListener<MessageExt> {
             }
             case "DELETE" -> {
                 currentNoteId.set(noteId);
-                physicallyDeleteNote(noteId);
+                physicallyDeleteNote(noteId, extractVersion(event)); // C-011 R4：版本化墓碑
             }
             default -> log.warn("[笔记索引同步] 未知事件类型: type={}, noteId={}", type, noteId);
         }
@@ -219,13 +219,9 @@ public class NoteIndexSyncConsumer implements RocketMQListener<MessageExt> {
      * 从 Canal 行数据构建 ES 文档并索引
      * <p>
      * Canal 的字段名是 MySQL 列名（下划线风格），需要转换为 ES 文档字段名（驼峰风格）。
-     * 使用 Canal 消息的 es（event sequence）字段作为 external version 防乱序。
-     * </p>
-     * <p>
-     * 为什么用 es 而不是 ts？
-     * ts 是毫秒级时间戳，同一毫秒内多次变更会导致 version 相同被 ES 拒绝。
-     * es 是 Canal 内部的事件序列号，严格递增，不会重复。
-     * 如果 es 不可用，降级使用 ts（兼容旧版本 Canal）。
+     * 版本域 = **ts 毫秒**（P1-4；C-011 R3 把 flat 路径也对齐到 ts 域）——与增量补偿（updated_at 毫秒）
+     * 同域，避免"小整数 es 被毫秒版本永久拒绝 → 文档冻结"；ES 侧 ExternalGte（重投同版本幂等）。
+     * 同毫秒重复变更被 ExternalGte 接受（幂等覆盖），不再依赖 es 严格递增。
      * </p>
      */
     private void indexNoteFromCanal(Long noteId, JSONObject row, long version) throws Exception {
@@ -279,7 +275,7 @@ public class NoteIndexSyncConsumer implements RocketMQListener<MessageExt> {
         esClient.index(IndexRequest.of(idx -> idx
                 .index(noteIndexName)
                 .id(String.valueOf(noteId))
-                .versionType(co.elastic.clients.elasticsearch._types.VersionType.External)
+                .versionType(co.elastic.clients.elasticsearch._types.VersionType.ExternalGte) // C-011 R3：Gte（重投同版本幂等，原 External 严格模式重投即冲突→DLQ）
                 .version(version)
                 .withJson(new StringReader(jsonDoc))));
 
@@ -287,12 +283,15 @@ public class NoteIndexSyncConsumer implements RocketMQListener<MessageExt> {
     }
 
     private long extractVersion(JSONObject event) {
-        Long es = event.getLong("es"); // Canal 全局序列号（小整数，严格递增—防版本冲突）
-        if (es != null && es > 0) return es;
-        Long ts = event.getLong("binlogTimestamp"); // 兼容旧格式
-        if (ts != null) return ts;
+        // C-011 R3：与 product flat/canal 路径统一 **ts 毫秒域**（P1-4 修复补齐）——
+        // 原实现 es-优先（Canal 小整数）：补偿链路（updated_at 毫秒 ~1.7e12）写过文档后，
+        // 后续 flat 的 es(小整数) 被 ExternalGte 永久拒绝 → 文档冻结；且严格 External 下重投即冲突。
+        Long ts = event.getLong("binlogTimestamp");
+        if (ts != null && ts > 0) return ts;
         ts = event.getLong("eventTimestamp");
-        if (ts != null) return ts;
+        if (ts != null && ts > 0) return ts;
+        ts = event.getLong("ts");
+        if (ts != null && ts > 0) return ts;
         return System.currentTimeMillis();
     }
 
@@ -316,6 +315,7 @@ public class NoteIndexSyncConsumer implements RocketMQListener<MessageExt> {
         Map<String, Object> doc = new HashMap<>();
         doc.put("noteId", noteId);
         doc.put("status", -1); // -1 表示已删除，搜索时过滤
+        doc.put("deletedAt", System.currentTimeMillis()); // C-011：超龄墓碑清理兜底（主清理仍为 DB 驱动 pruneByDeletedFlag）
 
         String jsonDoc = JSON.toJSONString(doc);
 
@@ -338,23 +338,31 @@ public class NoteIndexSyncConsumer implements RocketMQListener<MessageExt> {
     }
 
     /**
-     * 物理删除笔记（DB 行已 DELETE）→ ES 文档物理删除（T-118）
+     * 物理删除笔记（DB 行已 DELETE）→ **版本化墓碑**（C-011 R4）
      * <p>
-     * 原实现 DELETE 事件也走标记删除（status=-1），导致 DB 无记录但 ES 死文档永久残留
-     * （全量重建只 upsert 不删多余文档，无任何任务清理）→ 存储泄漏 + DB/ES 语义不一致。
-     * 物理删除事件与逻辑删除（UPDATE deleted=1 → 标记 -1）分开处理。
+     * 策略统一（对齐 product 侧）：不再直接物理删文档——
+     * ① 防复活：迟到旧 UPDATE（version &lt; 墓碑版本）被 ExternalGte 拒绝（原直接删除后旧消息可复活文档）；
+     * ② 防泄漏：墓碑带 deletedAt，由全量重建的超龄墓碑清理（delete_by_query，7 天）物理清除——
+     *    替代 T-118"直接物理删"的防泄漏手段（其代价正是无墓碑可复活）。
      * </p>
      */
-    private void physicallyDeleteNote(Long noteId) throws Exception {
+    private void physicallyDeleteNote(Long noteId, long version) throws Exception {
+        Map<String, Object> doc = new HashMap<>();
+        doc.put("noteId", noteId);
+        doc.put("status", -1);
+        doc.put("deletedAt", System.currentTimeMillis()); // C-011：供超龄墓碑清理
         try {
-            esClient.delete(del -> del
+            esClient.index(IndexRequest.of(idx -> idx
                     .index(noteIndexName)
-                    .id(String.valueOf(noteId)));
-            log.info("[笔记索引同步] 物理删除成功: noteId={}", noteId);
+                    .id(String.valueOf(noteId))
+                    .versionType(co.elastic.clients.elasticsearch._types.VersionType.ExternalGte)
+                    .version(version)
+                    .withJson(new StringReader(JSON.toJSONString(doc)))));
+            log.info("[笔记索引同步] 物理删墓碑成功: noteId={}, version={}", noteId, version);
         } catch (co.elastic.clients.elasticsearch._types.ElasticsearchException e) {
-            // 文档不存在时忽略（可能从未被索引过或已删）
-            if (e.getMessage() != null && e.getMessage().contains("not_found")) {
-                log.debug("[笔记索引同步] 物理删除文档不存在，跳过: noteId={}", noteId);
+            if (e.getMessage() != null && (e.getMessage().contains("version_conflict")
+                    || e.getMessage().contains("not_found"))) {
+                log.debug("[笔记索引同步] 墓碑写入被版本拒绝/无需写入: noteId={}, version={}", noteId, version);
             } else {
                 throw e;
             }

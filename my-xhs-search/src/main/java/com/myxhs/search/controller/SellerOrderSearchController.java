@@ -1,5 +1,6 @@
 package com.myxhs.search.controller;
 
+import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
 import com.myxhs.common.response.ResultCode;
 import com.myxhs.common.web.AccessTokenGuard;
@@ -50,6 +51,7 @@ public class SellerOrderSearchController {
      * @param size      每页大小（默认 20，上限 100）
      */
     @GetMapping("/list")
+    @RateLimit(windowSeconds = 1, maxRequests = 10, perUser = true, prefix = "myxhs:search:seller-order:list")
     public R<SellerOrderPageVO> list(
             @RequestParam(value = "sellerId", required = false) Long sellerId,
             @RequestParam(value = "status", required = false) Integer status,
@@ -72,6 +74,7 @@ public class SellerOrderSearchController {
      * 手动触发存量回填（管理员；canal 只捕增量——存量必须回填，部署顺序：先回填后切流量）。
      */
     @PostMapping("/backfill")
+    @RateLimit(windowSeconds = 60, maxRequests = 1, perUser = true, prefix = "myxhs:search:seller-order:backfill")
     public R<String> triggerBackfill(@RequestHeader(value = "X-Admin-Call", required = false) String adminCall) {
         if (!accessTokenGuard.isAdminCall(adminCall)) {
             return R.fail(403, "无权访问管理接口");

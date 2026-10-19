@@ -20,7 +20,7 @@ import java.util.Map;
  * 消费 RECOMMEND_BEHAVIOR_TOPIC 中的行为事件，批量写入 MySQL。
  * 从 MQ 异步写入的好处：
  * 1. 削峰填谷：行为上报 QPS 可能上万，MQ 缓冲后平滑写入 DB
- * 2. 批量插入：消费者可以攒批后一次 INSERT，比逐条插入快 5~10 倍
+ * 2. 幂等落库：INSERT IGNORE（eventId 主键）——重投/重复消费跳过，不产生毒丸（攒批插入为演进项，当前逐条）
  * 3. 降级兜底：MQ 发送失败时，生产端降级为同步写 DB
  * </p>
  */

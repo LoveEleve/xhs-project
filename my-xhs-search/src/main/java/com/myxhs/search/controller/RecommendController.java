@@ -1,5 +1,6 @@
 package com.myxhs.search.controller;
 
+import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
 import com.myxhs.common.web.AccessTokenGuard;
 import com.myxhs.search.dto.BehaviorRequest;
@@ -47,6 +48,7 @@ public class RecommendController {
      * </p>
      */
     @GetMapping("/feed")
+    @RateLimit(windowSeconds = 1, maxRequests = 10, perUser = true, prefix = "myxhs:recommend:feed")
     public CompletableFuture<R<List<RecommendFeedVO>>> getRecommendFeed(
             @RequestHeader("X-User-Id") Long userId) {
         return CompletableFuture
@@ -60,6 +62,7 @@ public class RecommendController {
      * </p>
      */
     @GetMapping("/similar/{noteId}")
+    @RateLimit(windowSeconds = 1, maxRequests = 20, perUser = true, prefix = "myxhs:recommend:similar")
     public R<List<RecommendFeedVO>> getSimilarNotes(
             @PathVariable Long noteId,
             @RequestParam(defaultValue = "10") int size) {

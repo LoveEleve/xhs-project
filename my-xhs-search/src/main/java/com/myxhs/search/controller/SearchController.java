@@ -1,5 +1,6 @@
 package com.myxhs.search.controller;
 
+import com.myxhs.common.annotation.RateLimit;
 import com.myxhs.common.response.R;
 import com.myxhs.common.web.AccessTokenGuard;
 import com.myxhs.search.dto.*;
@@ -47,6 +48,7 @@ public class SearchController {
      * </p>
      */
     @GetMapping("/note")
+    @RateLimit(windowSeconds = 1, maxRequests = 30, perUser = true, prefix = "myxhs:search:note", message = "搜索过于频繁，请稍后重试")
     public CompletableFuture<R<SearchResultVO<NoteSearchVO>>> searchNotes(
             @Valid NoteSearchRequest request,
             @RequestHeader(value = "X-User-Id", required = false) Long userId,
@@ -72,6 +74,7 @@ public class SearchController {
      * </p>
      */
     @GetMapping("/product")
+    @RateLimit(windowSeconds = 1, maxRequests = 30, perUser = true, prefix = "myxhs:search:product", message = "搜索过于频繁，请稍后重试")
     public CompletableFuture<R<SearchResultVO<ProductSearchVO>>> searchProducts(
             @Valid ProductSearchRequest request,
             @RequestHeader(value = "X-User-Id", required = false) Long userId,
@@ -93,6 +96,7 @@ public class SearchController {
      * 搜索建议（自动补全，基于 ES Completion Suggester）
      */
     @GetMapping("/suggest")
+    @RateLimit(windowSeconds = 1, maxRequests = 20, perUser = true, prefix = "myxhs:search:suggest")
     public R<List<String>> suggest(@RequestParam String prefix) {
         return R.ok(suggestService.suggest(prefix));
     }
@@ -145,6 +149,7 @@ public class SearchController {
      * 获取热搜榜 Top 50（置顶词优先展示）
      */
     @GetMapping("/hot")
+    @RateLimit(windowSeconds = 1, maxRequests = 20, perUser = true, prefix = "myxhs:search:hot")
     public R<List<HotSearchVO>> getHotSearch() {
         return R.ok(hotSearchService.getHotSearchList());
     }

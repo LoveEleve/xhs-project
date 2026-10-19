@@ -9,7 +9,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,6 +44,10 @@ class CacheHelperTest {
     @Mock
     private RLock rLock;
 
+    /** 延迟双删调度器（mock：第二次删除由测试手动触发，消除 500ms 真实定时的时序竞态） */
+    @Mock
+    private ScheduledExecutorService delayScheduler;
+
     private CacheHelper cacheHelper;
 
     /** 空值占位符（与 CacheHelper 内部一致） */
@@ -50,6 +56,7 @@ class CacheHelperTest {
     @BeforeEach
     void setUp() {
         cacheHelper = new CacheHelper(redisOperator, redissonClient);
+        ReflectionTestUtils.setField(cacheHelper, "delayScheduler", delayScheduler);
     }
 
     @Test
@@ -115,10 +122,14 @@ class CacheHelperTest {
     }
 
     @Test
-    @DisplayName("延迟双删 - 第二次延迟删除")
-    void testDelayDoubleDeleteSecondDelete() throws Exception {
+    @DisplayName("延迟双删 - 第二次延迟删除（手动触发调度任务，确定性）")
+    void testDelayDoubleDeleteSecondDelete() {
+        ArgumentCaptor<Runnable> taskCaptor = ArgumentCaptor.forClass(Runnable.class);
+
         cacheHelper.delayDoubleDelete("user:info:1");
-        Thread.sleep(800);
+        verify(delayScheduler).schedule(taskCaptor.capture(), anyLong(), any(TimeUnit.class));
+        taskCaptor.getValue().run(); // 手动执行"第二次删除"任务（等价于延迟到期）
+
         verify(redisOperator, times(2)).delete("user:info:1");
     }
 
