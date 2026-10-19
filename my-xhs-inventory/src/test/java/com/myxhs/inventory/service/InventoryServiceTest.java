@@ -293,8 +293,8 @@ class InventoryServiceTest {
 
         assertThatCode(() -> inventoryService.confirmDeduct(request)).doesNotThrowAnyException();
 
-        // C-008：数量以预扣记录为准（脚本返回 3）
-        verify(inventoryMapper).insertOutboxEvent(anyLong(), eq(ORDER_ID), eq(SKU_ID), eq(3), eq("CONFIRM"));
+        // C-008：数量以预扣记录为准（脚本返回 3）；R7：eventTime 随行存储（anyLong）
+        verify(inventoryMapper).insertOutboxEvent(anyLong(), eq(ORDER_ID), eq(SKU_ID), eq(3), eq("CONFIRM"), anyLong());
         verify(inventoryMapper, never()).cancelOutboxEvent(anyLong(), anyLong(), anyString());
     }
 

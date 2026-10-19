@@ -58,10 +58,16 @@ public class InventoryOutboxSenderJob {
                 Long skuId = ((Number) row.get("sku_id")).longValue();
                 String action = (String) row.get("action");
                 int quantity = ((Number) row.get("quantity")).intValue();
-                // 用 outbox 行创建时间作为 eventTime（保持原始业务时序，供消费者乱序版本检查）
-                long eventTime = row.get("created_at") instanceof java.sql.Timestamp
-                        ? ((java.sql.Timestamp) row.get("created_at")).getTime()
-                        : System.currentTimeMillis();
+                // C-008 R7：优先用行内原始 eventTime（与首次发送 payload 完全一致 → 事件级幂等键命中）；
+                // 存量 pending 行为 NULL（迁移前遗留）→ 回退 created_at（旧行为，仅过渡期）
+                long eventTime;
+                if (row.get("event_time") instanceof Number) {
+                    eventTime = ((Number) row.get("event_time")).longValue();
+                } else {
+                    eventTime = row.get("created_at") instanceof java.sql.Timestamp
+                            ? ((java.sql.Timestamp) row.get("created_at")).getTime()
+                            : System.currentTimeMillis();
+                }
 
                 // 构造与消费者反序列化格式一致的 InventoryDeductEvent（camelCase），
                 // 不能直接序列化 DB 行 Map（snake_case 导致 Consumer 字段全 null → NPE → DLQ）

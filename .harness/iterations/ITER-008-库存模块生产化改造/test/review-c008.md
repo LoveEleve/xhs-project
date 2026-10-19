@@ -113,3 +113,30 @@ C-008 全部落地改动：4 消费者（Deduct/OrderTransaction/OrderTerminatio
 ## 第二轮结论
 
 18 项全部闭环：**抓到 1 个语义误杀问题（R6）并修复**（幂等键粒度：事件级而非动作级——分次退款是唯一"同 (order,sku) 多事件"合法场景，已推演穷尽）；其余 17 项通过或记录。证据：八模块 **458 全绿**（inventory 33，+1）+ 全仓编译。
+
+
+---
+
+# 第三轮深审查（修复交互回归，2026-10-18）
+
+## 审查清单（聚焦"前两轮修复之间是否互相破坏"，5 项）
+
+> 结论标记：✅ 通过 / 🟡 发现并修复 / 📝 记录（边界）
+
+- **F1 补发链再推演（🟡 真问题 R7）** —— 原始 payload `eventTime=T0`（应用时钟，ms）；Job 补发用 `created_at`（DB NOW()，秒级截断）——**两者不等** → 第二轮 R6 把 eventTime 加进 inbox 主键后，补发被 inbox 视为"新事件"（MISS）→ **F1 双扣洞回归**（仅剩版本门"跨秒运气"兜底）
+- **F2 重发 vs 新事件判定** ✅ —— 单事件型（PRE_DEDUCT/CONFIRM/RELEASE）：同 (order,sku) 唯一事件；REFUND_RESTORE：多事件型（分次退款）。R7 修复后：重发=同 eventTime（精确复用）→ 去重；分次退款=不同 eventTime → 各自应用 ✓
+- **F3 双保险** ✅ —— R7 后补发 eventTime 与原始完全一致：版本门 stale-skip（version >= T0）+ inbox 命中双保险；>24h 版本 key 过期由 inbox（7 天）兜底
+- **G1 负/零 quantity 链路** ✅ —— `PreDeductRequest` `@Min(1)`；order 事务消费端 `quantity <= 0 → throw`；refundRestore 负数 target → 脚本 `target <= cur` 跳过（安全方向）
+- **G2 DTO 校验完整性** ✅ —— orderId/skuId/quantity `@NotNull`（preDeduct 另含 `@Min(1)`）
+
+## 第三轮发现（🟡 1 处真问题，已修复）
+
+| # | 发现 | 类型 | 修复 |
+|---|------|------|------|
+| **R7** | **R6 修复的交互回归**：eventTime 进 inbox PK 后，Job 补发（eventTime=created_at≠原始 T0）被 inbox 视为新事件 → 补发重复应用窗口回归（F1 洞） | **真问题（交互回归）** | **`t_inventory_outbox` 增 `event_time` 列**（原始 T0 随行存储；迁移文件 `sql/migration/inventory/V1__outbox_event_time.sql` + init-all ×2）；Job 补发**精确复用**（NULL 存量行回退 created_at）；`InventoryOutboxSenderJobTest` 加断言锁定（payload eventTime == 行内原始值） |
+
+## 第三轮结论
+
+5 项全部闭环：**抓到 1 个交互回归（R7：前两轮修复互相破坏——R6 的 eventTime 键 + F1 的补发时钟错位）并根治**（outbox 存原始 eventTime，补发精确复用——版本门与 inbox 双保险恢复确定性）。证据：八模块 **458 全绿**（inventory 33）+ 全仓编译。
+
+**三轮审查累计**：R1（索引键不一致，实施期）/R2-R5（重构遗漏）/R6（inbox 粒度误杀分次退款）/R7（R6 与 F1 的交互回归）——全部修复并测试锁定。

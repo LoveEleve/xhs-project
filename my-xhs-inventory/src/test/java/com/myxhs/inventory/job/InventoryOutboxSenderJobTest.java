@@ -53,6 +53,7 @@ class InventoryOutboxSenderJobTest {
         row.put("sku_id", 456L);
         row.put("action", "CONFIRM");
         row.put("quantity", 2);
+        row.put("event_time", 1729000000000L); // C-008 R7：原始 eventTime（补发必须精确复用）
         row.put("created_at", Timestamp.valueOf(LocalDateTime.now()));
         when(inventoryMapper.selectPendingOutbox(any(LocalDateTime.class), eq(200))).thenReturn(List.of(row));
 
@@ -66,5 +67,12 @@ class InventoryOutboxSenderJobTest {
 
         // C-008 F2：按 (order,sku,action) 匹配（消除 eventId 失配 0 行静默失效）
         verify(inventoryMapper).markOutboxSent(123L, 456L, "CONFIRM");
+        // C-008 R7：补发 payload 的 eventTime 精确复用行内原始值（事件级幂等键一致）
+        @SuppressWarnings("unchecked")
+        org.mockito.ArgumentCaptor<org.springframework.messaging.Message<String>> captor =
+                org.mockito.ArgumentCaptor.forClass(org.springframework.messaging.Message.class);
+        verify(rocketMQTemplate).syncSend(eq("INVENTORY_TOPIC:CONFIRM"), captor.capture(), eq(3000L));
+        org.assertj.core.api.Assertions.assertThat(captor.getValue().getPayload())
+                .contains("\"eventTime\":1729000000000");
     }
 }

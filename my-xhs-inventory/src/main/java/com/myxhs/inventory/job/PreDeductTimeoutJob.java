@@ -220,7 +220,7 @@ public class PreDeductTimeoutJob {
         long eventId = com.baomidou.mybatisplus.core.toolkit.IdWorker.getId();
         long eventTime = System.currentTimeMillis();
         try {
-            inventoryMapper.insertOutboxEvent(eventId, orderId, skuId, quantity, "RELEASE");
+            inventoryMapper.insertOutboxEvent(eventId, orderId, skuId, quantity, "RELEASE", eventTime); // C-008 R7
             com.myxhs.inventory.dto.event.InventoryDeductEvent event =
                     com.myxhs.inventory.dto.event.InventoryDeductEvent.builder()
                             .outboxId(eventId)

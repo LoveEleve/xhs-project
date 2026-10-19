@@ -1020,6 +1020,7 @@ CREATE TABLE IF NOT EXISTS t_inventory_outbox (
     sku_id      BIGINT      NOT NULL COMMENT 'SKU ID',
     quantity    INT         NOT NULL COMMENT '数量',
     action      VARCHAR(32) NOT NULL COMMENT '事件类型: PRE_DEDUCT/CONFIRM/RELEASE',
+    event_time  BIGINT      NULL COMMENT '原始事件时间戳ms（C-008 R7：补发复用，保证事件级幂等键一致）',
     status      TINYINT     NOT NULL DEFAULT 0 COMMENT '0-待发送 1-已发送',
     retry_count     INT      NOT NULL DEFAULT 0 COMMENT '补发失败次数（指数退避+抖动，P2/2026-09-27）',
     next_retry_time DATETIME NULL COMMENT '下次可补发时间（NULL=立即可发）',

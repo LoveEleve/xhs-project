@@ -443,7 +443,8 @@ public class InventoryService {
         long eventId = IdWorker.getId();
         long eventTime = System.currentTimeMillis();
         try {
-            inventoryMapper.insertOutboxEvent(eventId, orderId, skuId, quantity, action);
+            // C-008 R7：eventTime 随行存储——Job 补发精确复用（事件级幂等键一致）
+            inventoryMapper.insertOutboxEvent(eventId, orderId, skuId, quantity, action, eventTime);
 
             InventoryDeductEvent event = InventoryDeductEvent.builder()
                     .outboxId(eventId)

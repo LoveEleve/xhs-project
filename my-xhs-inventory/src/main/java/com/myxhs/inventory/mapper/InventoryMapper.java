@@ -167,12 +167,14 @@ public interface InventoryMapper extends BaseMapper<Inventory> {
 
     /**
      * 存储库存事件 Outbox 记录
+     * <p>C-008 R7：记录原始 eventTime——Job 补发精确复用（事件级幂等键一致；原用 created_at 作代理会因
+     * 应用/DB 时钟差 + 秒级截断导致补发被 inbox 视为新事件）。</p>
      */
-    @org.apache.ibatis.annotations.Insert("INSERT INTO t_inventory_outbox (id, order_id, sku_id, quantity, action, status, created_at) " +
-            "VALUES (#{eventId}, #{orderId}, #{skuId}, #{quantity}, #{action}, 0, NOW()) " +
-            "ON DUPLICATE KEY UPDATE quantity = VALUES(quantity), action = VALUES(action), status = 0, created_at = NOW()")
+    @org.apache.ibatis.annotations.Insert("INSERT INTO t_inventory_outbox (id, order_id, sku_id, quantity, action, event_time, status, created_at) " +
+            "VALUES (#{eventId}, #{orderId}, #{skuId}, #{quantity}, #{action}, #{eventTime}, 0, NOW()) " +
+            "ON DUPLICATE KEY UPDATE quantity = VALUES(quantity), action = VALUES(action), event_time = VALUES(event_time), status = 0, created_at = NOW()")
     int insertOutboxEvent(@Param("eventId") Long eventId, @Param("orderId") Long orderId, @Param("skuId") Long skuId,
-            @Param("quantity") int quantity, @Param("action") String action);
+            @Param("quantity") int quantity, @Param("action") String action, @Param("eventTime") Long eventTime);
 
     /**
      * 查询待发送的 Outbox 事件
