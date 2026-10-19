@@ -22,8 +22,12 @@ import java.nio.charset.StandardCharsets;
  * exchange attribute，同时重建请求体供下游使用。限制 body 大小（1MB）防内存打爆。
  */
 @Component
+@lombok.RequiredArgsConstructor
 @lombok.extern.slf4j.Slf4j
 public class BodyCacheFilter implements GlobalFilter, Ordered {
+
+    /** C-015 F1：HMAC 关闭时 body 无任何需求方（验签跳过、下游转发走原始流）→ 短路免缓冲 */
+    private final com.myxhs.gateway.config.AuthProperties authProperties;
 
     /** 缓存 body 的 exchange attribute key */
     public static final String CACHED_BODY_ATTR = "myxhs.cached.request.body";
@@ -35,6 +39,11 @@ public class BodyCacheFilter implements GlobalFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        // C-015 F1：HMAC 关闭 → 整个 body 缓冲无需求方（原实现无条件缓冲所有写请求：
+        // ≤1MB 内存 + 所有 >1MB 写请求被 413 的副作用——纯开销）
+        if (!authProperties.isHmacEnabled()) {
+            return chain.filter(exchange);
+        }
         ServerHttpRequest request = exchange.getRequest();
 
         // 仅缓存有 body 的请求（POST/PUT/PATCH/DELETE）

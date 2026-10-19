@@ -4,4 +4,3 @@
 gateway:
   auth:
     secret: ${JWT_SECRET:MyXhs@2026#JwtSecretKey!ForTokenSign}
-    hmac-secret: myxhs-hmac-secret-key-2024

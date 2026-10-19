@@ -94,3 +94,39 @@
 5. **三条 Redis 依赖三种失败策略**（好样本）：Auth 黑名单 → 503 fail-closed；HMAC secret → 403 fail-closed；HMAC nonce → fail-open——均带注释自证；但 **Redis 是认证单点**（注释自述"生产建议本地缓存+变更广播或多副本"）；
 6. **T-106 兼容性脆点**：Sentinel 1.8.8（编译于 Spring 5）与 WebFlux 6.1 的 NoSuchMethodError → 限流时请求悬挂 30s——必须双 BlockHandler 注册（Gateway + WebFlux）才平稳；
 7. 小项：白名单 ~81 条（清单治理观察）；40+ 行路由注释带实测 RPS 与余量（"性能基线文化"的正面样本）；BodyCache 抢在鉴权后读 body 的 order 修复（攻击面收敛）。
+
+## 8. 阶段二讨论结论（2026-10-19 · C-015 gateway 生产化收尾 · 轻扫）
+
+> 口径：按章程"只讲核心，权限一嘴带过"——本轮只做收口级修正（§7 七条逐条裁决）。
+
+### 8.1 线索裁决（§7 七条）
+
+| # | 线索 | 裁决 | 落地 |
+|---|------|------|------|
+| 1 | 灰度/版本路由半成品（LB 未实现） | **评估后移除** | 删 GrayRouteFilter/ApiVersionFilter（exchange 属性无消费者 + 自动灰度 10% 只产生日志噪音——与 im 死 LB 同族）；TrafficColoring 的 X-Gray-Tag/X-Api-Version **头透传保留**（与过滤器无关） |
+| 2 | 用户级限流失效位 | 记录（讲） | 演进=Sentinel GatewayParamFlowRule（paramItem 从 X-User-Id 提取）+ Token Server 集群限流；当前路由级单机 QPS（16 路由实测余量） |
+| 3 | HMAC 默认关闭 | 记录（讲） | 链路完整未启用（需前端 per-session secret 协议配合）；开启口径见 HMAC 白名单/签名串/失败策略 |
+| 4 | 黑名单键硬编码 | 记录 | WebFlux 不能引 common 的代价；同步要求已在注释明示 |
+| 5 | 三条 Redis 依赖三种失败策略 | 讲（好样本） | Auth 黑名单 fail-closed 503 / HMAC secret fail-closed 403 / nonce fail-open——均注释自证 |
+| 6 | T-106 双 BlockHandler | 讲（已修） | Sentinel 1.8.8 × WebFlux 6.1 NoSuchMethodError → 双适配器注册（Gateway + WebFlux） |
+| 7 | 小项（81 条白名单/路由注释/body 顺序） | 讲 | 白名单治理观察；"性能基线文化"正面样本 |
+
+### 8.2 收口级修正（F1~F4）
+
+| # | 发现 | 裁决 | 落地 |
+|---|------|------|------|
+| F1 | **BodyCache 无条件缓冲**：HMAC 关闭时 body 无任何需求方（验签跳过、下游转发走原始流）→ 所有写请求 ≤1MB 内存 + >1MB 写请求被 413 的副作用 | **修** | 按 `hmac-enabled` 短路（关闭时零成本） |
+| F2 | 灰度/版本死路径（=§7-1） | 修 | 两过滤器移除 |
+| F3 | **JWT 密钥缺 fail-closed**：空/演示密钥仍可启动 → 全站 Token 可用公开已知密钥伪造（im 早已 fail-closed，网关作为鉴权边界反而更松） | **修** | 启动校验（空/演示密钥 → IllegalStateException） |
+| F4 | `hmacSecret` 死配置（per-session secret 已取代全局密钥，字段无引用） | 修 | AuthProperties + yml + 部署 nacos 副本同步移除 |
+
+### 8.3 核心设计（学习要点）
+
+- **顺序即安全模型**：日志最前 → 鉴权（+1000）→ BodyCache（+1100，鉴权后读 body 缩小攻击面）→ HMAC（+1500）→ 限流（+2500）；
+- **失败语义分档**：黑名单查询 fail-closed(503 可重试) / HMAC 密钥 fail-closed(403) / nonce fail-open——每条都有注释自证（"安全增强 vs 核心鉴权"的边界）；
+- **事件循环纪律**：阻塞 Redis 全部移出 Netty EventLoop（boundedElastic，RV33/RV34）；
+- **密钥生命周期**：per-session secret（登录下发 + Redis 存）取代全局硬编码；JWT 密钥 fail-closed（C-015）。
+
+### 8.4 记录不做（讲）
+
+灰度/版本实例级 LB（VersionLoadBalancer 演进）；用户级限流 + 集群限流（Token Server 演进）；HMAC 启用（前端协议）；白名单治理（~81 条）；黑名单键同步要求（WebFlux 边界）。

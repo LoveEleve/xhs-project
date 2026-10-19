@@ -209,9 +209,17 @@ public class GatewayAuthFilter implements GlobalFilter, Ordered {
      * 避免双重检查锁（DCL）在响应式多线程环境下的可见性风险。
      * </p>
      */
+    /** 演示密钥（yml 兜底值）——C-015 F3：出现即拒绝启动（对齐 im 的 validateJwtSecret） */
+    private static final String INSECURE_DEFAULT_SECRET = "MyXhs@2026#JwtSecretKey!ForTokenSign";
+
     @jakarta.annotation.PostConstruct
     public void initSecretKey() {
         String secret = authProperties.getSecret();
+        // C-015 F3：fail-closed——空/演示密钥下启动 = 全站 Token 可用公开已知密钥伪造
+        // （im 早已 fail-closed；网关是鉴权边界，不能反而更松）
+        if (secret == null || secret.isBlank() || INSECURE_DEFAULT_SECRET.equals(secret)) {
+            throw new IllegalStateException("gateway.auth.secret 未安全配置（空或演示密钥），拒绝启动 gateway");
+        }
         this.secretKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         log.info("[Gateway] JWT签名密钥初始化完成");
     }

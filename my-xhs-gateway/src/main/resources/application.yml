@@ -289,9 +289,6 @@ gateway:
     secret: ${JWT_SECRET:MyXhs@2026#JwtSecretKey!ForTokenSign}
     # HMAC 总开关：默认关闭，JWT 为外部用户唯一主路径；如需高敏接口增强可显式开启
     hmac-enabled: false
-    # HMAC-SHA256 签名密钥（用于防篡改+防重放校验，与 JWT 密钥分离）
-    # 优先从 Nacos 读取，本地值为 fallback
-    hmac-secret: myxhs-hmac-secret-key-2024
     # 白名单路径（不需要鉴权，支持 Ant 风格匹配）
     white-list:
       # ===== 认证相关（注册/登录/验证码/Token刷新/注销） =====

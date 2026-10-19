@@ -32,15 +32,6 @@ public class AuthProperties {
     private boolean hmacEnabled = false;
 
     /**
-     * HMAC-SHA256 签名密钥（用于防篡改+防重放校验）
-     * <p>
-     * 与 JWT 密钥分离，职责不同：
-     * - JWT 密钥：身份认证（谁在请求）
-     * - HMAC 密钥：请求完整性（请求是否被篡改/重放）
-     */
-    private String hmacSecret;
-
-    /**
      * 不需要鉴权的路径列表（支持 Ant 风格匹配）
      */
     private List<String> whiteList = new ArrayList<>();
