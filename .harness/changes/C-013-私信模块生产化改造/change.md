@@ -1,7 +1,7 @@
 ---
 id: C-013
 slug: 私信模块生产化改造
-status: confirmed
+status: done
 created: 2026-10-19
 updated: 2026-10-19
 iteration: ITER-013     # 机器可读迭代协议：.harness/iterations/ITER-013-私信模块生产化改造/
