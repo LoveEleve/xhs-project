@@ -176,6 +176,20 @@ class FavoriteServiceTest {
     }
 
     @Test
+    @DisplayName("C-009 R6：非首页空（翻页越界）→ 不触发重建（不白耗 DB 查询）")
+    void getFavoriteList_outOfRangePage_noRebuild() {
+        when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);
+        // 第 5 页（start=40）为空
+        when(zSetOperations.reverseRange(eq("myxhs:favorite:1001"), eq(40L), eq(49L)))
+                .thenReturn(java.util.Collections.emptySet());
+
+        java.util.List<Long> result = favoriteService.getFavoriteList(1001L, 5, 10);
+
+        assertThat(result).isEmpty();
+        verify(favoriteMapper, never()).selectByUserId(anyLong());
+    }
+
+    @Test
     @DisplayName("C-009 D2-B：空结果 + DB 无行 → 真 0（不重建）")
     void getFavoriteList_emptyDb_noRebuild() {
         when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOperations);

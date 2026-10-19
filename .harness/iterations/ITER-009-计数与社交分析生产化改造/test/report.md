@@ -13,7 +13,7 @@ updated: 2026-10-18
 - 执行时间: 2026-10-18（三阶段：① 一致性根治 → ② 机制统一 → ③ 键模型/工程；收口并入）
 - 环境 profile: JDK 17 + Maven 3.9 离线；无运行时（单测口径；删 target/test-classes 强制全量重编）
 - 命令: `mvn -o -pl my-xhs-common,my-xhs-product,my-xhs-coupon,my-xhs-order,my-xhs-inventory,my-xhs-payment,my-xhs-search,my-xhs-cart,my-xhs-counter,my-xhs-analytics -am test` + 全仓 `mvn -o -q compile`
-- 结果: ✅ **十模块 508 全绿**（common 100 / product 35 / coupon 24 / order 124 / inventory 33 / payment 73 / search 43 / cart 33 / **counter 15** / **analytics 28**——counter/analytics 首次纳入回归集）
+- 结果: ✅ **十模块 509 全绿**（common 100 / product 35 / coupon 24 / order 124 / inventory 33 / payment 73 / search 43 / cart 33 / **counter 15** / **analytics 29**——counter/analytics 首次纳入回归集）
 
 ## 用例执行结果（要点）
 
@@ -41,7 +41,8 @@ updated: 2026-10-18
 ## 深审查（两轮）
 
 - 第一轮（实施期）：跨模块影响面扫描抓到 **R1（search 读旧键格式静默失效）**——键族变更波及的真实问题，已修复；R2/R3 注释遗漏已修；
-- 第二轮（查漏补缺）：**R4（search NoteIndexSyncConsumer 读 counter 计数旧键格式——第 2 处跨模块波及）** 已修；R5（常量注释残留）已修；崩溃语义三消费者闭环（含 dedup-skip 路径推进正确性）；getCommonFollowing 截断边界记录。十模块 508 复跑全绿。
+- 第二轮（查漏补缺）：**R4（search NoteIndexSyncConsumer 读 counter 计数旧键格式——第 2 处跨模块波及）** 已修；R5（常量注释残留）已修；崩溃语义三消费者闭环（含 dedup-skip 路径推进正确性）；getCommonFollowing 截断边界记录。十模块 508 复跑全绿；
+- 第三轮（修复的修复 × 新代码细节）：交互再核通过（键族 tag × 颤振/三环修复无互相破坏）；**R6（favorite 懒重建对任意空页触发——越界页白耗 DB）** 已修（仅首页触发）+ 越界页测试；2 项边界记录（like Set→DB 无修复方向 / SUNIONSTORE 空源竞态自愈）。十模块 509 复跑全绿。
 
 ## 收口清单
 

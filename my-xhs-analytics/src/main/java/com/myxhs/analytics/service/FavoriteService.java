@@ -162,15 +162,16 @@ public class FavoriteService {
         long end = start + size - 1;
 
         Set<String> noteIds = stringRedisTemplate.opsForZSet().reverseRange(key, start, end);
-        if (noteIds == null || noteIds.isEmpty()) {
-            // C-009 D2-B：空结果可能是 ZSet 丢失（对齐 follow 重建先例）——DB 有行则重建后重读
+        // C-009 D2-B/R6：**仅首页**（start==0）空结果可能是 ZSet 丢失（对齐 follow 重建先例）——DB 有行则重建后重读；
+        // 非首页空（翻页越界）不触发（ZSet 存在时越界页天然为空，重建只会白耗 DB 查询）
+        if ((noteIds == null || noteIds.isEmpty()) && start == 0) {
             int rebuilt = rebuildFavoriteList(userId);
             if (rebuilt > 0) {
                 noteIds = stringRedisTemplate.opsForZSet().reverseRange(key, start, end);
             }
-            if (noteIds == null || noteIds.isEmpty()) {
-                return Collections.emptyList();
-            }
+        }
+        if (noteIds == null || noteIds.isEmpty()) {
+            return Collections.emptyList();
         }
 
         return noteIds.stream()
