@@ -617,6 +617,7 @@ CREATE TABLE IF NOT EXISTS t_payment (
     order_id        BIGINT        NOT NULL COMMENT '订单ID',
     user_id         BIGINT        NOT NULL COMMENT '用户ID',
     payment_no      VARCHAR(64)   NOT NULL COMMENT '支付流水号',
+    trade_no        VARCHAR(64)   DEFAULT NULL COMMENT '渠道交易号（支付宝 trade_no；Mock=paymentNo；C-016）',
     amount          DECIMAL(10,2) NOT NULL COMMENT '支付金额',
     pay_type        TINYINT       NOT NULL COMMENT '支付方式：1-支付宝(Mock) 2-微信(Mock)',
     status          TINYINT       NOT NULL DEFAULT 0 COMMENT '状态：0-待支付 1-支付成功 2-支付失败 3-已退款',

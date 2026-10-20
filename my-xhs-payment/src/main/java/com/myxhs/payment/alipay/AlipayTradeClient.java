@@ -63,6 +63,22 @@ public interface AlipayTradeClient {
     RefundTradeResult tradeRefund(String outTradeNo, String outRequestNo, BigDecimal amount, String reason);
 
     /**
+     * 构建 APP 支付拉起参数（alipay.trade.app.pay 的 orderStr）。
+     * <p>
+     * 官方契约：商户本地组装参数（app_id / method / timestamp / notify_url / biz_content...）
+     * 用<b>应用私钥</b>签名，orderStr 直接交给支付宝客户端 SDK 拉起收银台。
+     * 与 tradeCreate（统一收单交易创建）互补：orderStr 是"给客户端"的部分。
+     * </p>
+     *
+     * @param orderId    业务订单号（biz_content 回传）
+     * @param amount     订单金额
+     * @param subject    订单标题
+     * @param outTradeNo 商户订单号（本项目 = paymentNo）
+     * @return URL 编码后的 orderStr（含 sign）
+     */
+    String buildAppPayOrderStr(Long orderId, BigDecimal amount, String subject, String outTradeNo);
+
+    /**
      * 异步通知验签（RSA2，使用支付宝公钥）。
      *
      * @param params 通知原始参数（必须原样，不得增删）

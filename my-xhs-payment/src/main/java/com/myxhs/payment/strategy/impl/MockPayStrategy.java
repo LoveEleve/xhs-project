@@ -33,6 +33,12 @@ public class MockPayStrategy implements PayChannelStrategy {
     }
 
     @Override
+    public String buildPayParams(Long orderId, BigDecimal amount, String paymentNo) {
+        // C-016：真实客户端用 orderStr 拉起 SDK；Mock 渠道无 SDK——给可解析的等价 JSON 载荷
+        return "{\"channel\":\"MOCK\",\"paymentNo\":\"" + paymentNo + "\"}";
+    }
+
+    @Override
     public RefundTradeResult refund(String paymentNo, String outRequestNo, BigDecimal refundAmount, String reason) {
         log.info("[Mock退款] 同步退款成功: paymentNo={}, outRequestNo={}, amount={}, reason={}",
                 paymentNo, outRequestNo, refundAmount, reason);

@@ -72,6 +72,46 @@ public class AlipayTradeClientImpl implements AlipayTradeClient {
     }
 
     @Override
+    public String buildAppPayOrderStr(Long orderId, BigDecimal amount, String subject, String outTradeNo) {
+        // C-016：官方 app.pay 契约——本地组参 + 应用私钥签名（与线上一致；接真渠道时同样可用）
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("app_id", properties.getAppId());
+        params.put("method", "alipay.trade.app.pay");
+        params.put("charset", "utf-8");
+        params.put("sign_type", "RSA2");
+        params.put("timestamp", java.time.LocalDateTime.now()
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        params.put("version", "1.0");
+        params.put("notify_url", properties.getNotifyUrl());
+        // biz_content（APP 支付固定 product_code=QUICK_MSECURITY_PAY；subject 由本方法固定为"订单支付"，无转义风险）
+        String bizContent = "{\"out_trade_no\":\"" + outTradeNo + "\","
+                + "\"total_amount\":\"" + amount.toPlainString() + "\","
+                + "\"subject\":\"" + (subject == null || subject.isBlank() ? "订单支付" : subject) + "\","
+                + "\"product_code\":\"QUICK_MSECURITY_PAY\","
+                + "\"timeout_express\":\"30m\","
+                + "\"passback_params\":\"" + orderId + "\"}";
+        params.put("biz_content", bizContent);
+
+        // 签名用原始值（官方规则），输出 URL 编码串（sign 末尾追加）
+        String sign = AlipaySignatureUtil.sign(params, properties.getMerchantPrivateKey());
+        java.util.TreeMap<String, String> sorted = new java.util.TreeMap<>(params);
+        StringBuilder orderStr = new StringBuilder();
+        for (Map.Entry<String, String> entry : sorted.entrySet()) {
+            if (orderStr.length() > 0) {
+                orderStr.append('&');
+            }
+            orderStr.append(entry.getKey()).append('=').append(urlEncode(entry.getValue()));
+        }
+        return orderStr.append("&sign=").append(urlEncode(sign)).toString();
+    }
+
+    /** 官方 orderStr 为 URL 编码串（空格统一 %20） */
+    private static String urlEncode(String value) {
+        return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8)
+                .replace("+", "%20");
+    }
+
+    @Override
     public boolean verifyNotify(Map<String, String> params) {
         return AlipaySignatureUtil.verify(params, properties.getAlipayPublicKey());
     }

@@ -42,6 +42,12 @@ public class AlipayPayStrategy implements PayChannelStrategy {
     }
 
     @Override
+    public String buildPayParams(Long orderId, BigDecimal amount, String paymentNo) {
+        // C-016：客户端拉起支付参数（alipay.trade.app.pay orderStr，本地应用私钥签名）
+        return alipayTradeClient.buildAppPayOrderStr(orderId, amount, "订单支付", paymentNo);
+    }
+
+    @Override
     public RefundTradeResult refund(String paymentNo, String outRequestNo, BigDecimal refundAmount, String reason) {
         RefundTradeResult result = alipayTradeClient.tradeRefund(paymentNo, outRequestNo, refundAmount, reason);
         log.info("[支付宝] 同步退款: paymentNo={}, outRequestNo={}, fundChange={}, errorCode={}",

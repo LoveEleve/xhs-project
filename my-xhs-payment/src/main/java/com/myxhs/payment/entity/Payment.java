@@ -42,6 +42,9 @@ public class Payment implements Serializable {
     /** 支付流水号（格式：PAY_日期_流水号 (如 PAY20260516000001，Redis INCR)） */
     private String paymentNo;
 
+    /** 渠道交易号（支付宝 trade_no；Mock=paymentNo）——C-016：原只打日志未落库 */
+    private String tradeNo;
+
     /** 支付金额 */
     private BigDecimal amount;
 

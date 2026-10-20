@@ -49,6 +49,23 @@ public interface PayChannelStrategy {
     RefundTradeResult refund(String paymentNo, String outRequestNo, BigDecimal refundAmount, String reason);
 
     /**
+     * 构建客户端拉起支付所需参数（C-016）。
+     * <p>
+     * 真实契约：支付宝 APP 支付返回 {@code alipay.trade.app.pay} 的 orderStr（本地用应用私钥签名，
+     * 客户端直接交给支付宝 SDK）；Mock 返回等价载荷（JSON）。
+     * 复用既有支付单时同样重建（orderStr 带 timestamp，时间敏感——不能长期缓存）。
+     * </p>
+     *
+     * @param orderId   订单 ID
+     * @param amount    支付金额
+     * @param paymentNo 支付流水号（= 渠道侧 out_trade_no）
+     * @return 支付参数；null=该渠道不需要（如零元单）
+     */
+    default String buildPayParams(Long orderId, BigDecimal amount, String paymentNo) {
+        return null;
+    }
+
+    /**
      * 查询支付状态（补偿/对账/超时处置/换渠道"先查"）。
      *
      * @param paymentNo 支付流水号

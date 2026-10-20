@@ -212,7 +212,11 @@ public class PaymentService {
                 recordPaymentEvent(pending.getPaymentNo(), orderId, userId, "REUSE", null, null);
                 log.info("[支付] 复用既有支付单: orderId={}, paymentNo={}, payType={}",
                         orderId, pending.getPaymentNo(), payType);
-                return R.ok(buildPaymentVO(pending));
+                // C-016：复用支付单同时重建客户端支付参数（orderStr 带 timestamp，不能缓存）
+                PaymentVO reuseVo = buildPaymentVO(pending);
+                reuseVo.setPayParams(buildPayParamsSafely(payChannelStrategyMap.get(payType),
+                        orderId, pending.getAmount(), pending.getPaymentNo()));
+                return R.ok(reuseVo);
             }
             if (pending != null) {
                 // 换渠道"先查后决"（C-003，官方指引）：先查前一个交易——
@@ -296,6 +300,10 @@ public class PaymentService {
 
             String tradeNo = strategy.pay(orderId, amount, paymentNo);
             log.info("[支付] 支付请求已发送: paymentNo={}, tradeNo={}, payType={}", paymentNo, tradeNo, payType);
+            // C-016：渠道交易号落库（原只打日志——响应/对账/排查都拿不到渠道句柄）
+            persistTradeNo(payment, tradeNo);
+            // C-016：客户端拉起支付参数（支付宝=alipay.trade.app.pay orderStr；Mock=等价载荷）
+            String payParams = buildPayParamsSafely(strategy, orderId, amount, paymentNo);
 
             // 6. Mock 模式：同步标记成功；异步渠道（支付宝）：交易已在契约层创建（模拟服务器台账就绪），
             //    状态推进由渠道异步通知驱动（签名 → HTTP 端点 → 验签 → 处理 → ACK）
@@ -306,7 +314,7 @@ public class PaymentService {
                 payment.setPaidAt(LocalDateTime.now());
             }
 
-            return R.ok(buildPaymentVO(payment));
+            return R.ok(withPayParams(buildPaymentVO(payment), payParams));
 
         } catch (BizException e) {
             // 业务异常：清理本次新建的支付记录（复用/冲突分支未产生新记录，paymentRecordId 为 null，天然不误删既有 pending）
@@ -455,6 +463,19 @@ public class PaymentService {
         if (payment == null) {
             log.warn("[支付回调] 支付单不存在: paymentNo={}", paymentNo);
             return; // 幂等：不抛异常，静默返回
+        }
+
+        // C-016：渠道交易号回填（创建时未落库的历史单 / 落库失败窗口）
+        if (tradeNo != null && !tradeNo.isBlank()
+                && (payment.getTradeNo() == null || payment.getTradeNo().isBlank())) {
+            try {
+                paymentJdbcTemplate.update(
+                        "UPDATE t_payment SET trade_no = ? WHERE id = ? AND trade_no IS NULL",
+                        tradeNo, payment.getId());
+                payment.setTradeNo(tradeNo);
+            } catch (Exception e) {
+                log.warn("[支付回调] 渠道交易号回填失败(不阻断): paymentNo={}", paymentNo, e);
+            }
         }
 
         // 2. 幂等校验：只有"待支付"状态才能处理回调
@@ -1245,14 +1266,20 @@ public class PaymentService {
         if (payment == null) {
             return R.fail(ResultCode.PAYMENT_FAIL, "支付单不存在");
         }
-        return R.ok(buildPaymentVO(payment));
+        PaymentVO vo = buildPaymentVO(payment);
+        // C-016：待支付单返回可拉起支付的参数（客户端丢失参数时可重新获取；已支付/关闭单无意义）
+        if (payment.getStatus() != null && payment.getStatus() == STATUS_PENDING) {
+            vo.setPayParams(buildPayParamsSafely(payChannelStrategyMap.get(payment.getPayType()),
+                    payment.getOrderId(), payment.getAmount(), payment.getPaymentNo()));
+        }
+        return R.ok(vo);
     }
 
     // ==================== 私有辅助方法 ====================
 
     private Payment findById(Long id) {
         return paymentJdbcTemplate.query(
-                "SELECT id, order_id, user_id, payment_no, amount, pay_type, status, paid_at, deleted, created_at, updated_at " +
+                "SELECT id, order_id, user_id, payment_no, trade_no, amount, pay_type, status, paid_at, deleted, created_at, updated_at " +
                         "FROM t_payment WHERE id = ? AND deleted = 0",
                 rs -> {
                     if (rs.next()) {
@@ -1261,6 +1288,7 @@ public class PaymentService {
                         p.setOrderId(rs.getLong("order_id"));
                         p.setUserId(rs.getLong("user_id"));
                         p.setPaymentNo(rs.getString("payment_no"));
+                        p.setTradeNo(rs.getString("trade_no"));
                         p.setAmount(rs.getBigDecimal("amount"));
                         p.setPayType(rs.getInt("pay_type"));
                         p.setStatus(rs.getInt("status"));
@@ -1278,7 +1306,7 @@ public class PaymentService {
 
     private Payment findByOrderId(Long orderId) {
         return paymentJdbcTemplate.query(
-                "SELECT id, order_id, user_id, payment_no, amount, pay_type, status, paid_at, deleted, created_at, updated_at " +
+                "SELECT id, order_id, user_id, payment_no, trade_no, amount, pay_type, status, paid_at, deleted, created_at, updated_at " +
                         "FROM t_payment WHERE order_id = ? AND deleted = 0 ORDER BY created_at DESC LIMIT 1",
                 rs -> {
                     if (rs.next()) {
@@ -1287,6 +1315,7 @@ public class PaymentService {
                         p.setOrderId(rs.getLong("order_id"));
                         p.setUserId(rs.getLong("user_id"));
                         p.setPaymentNo(rs.getString("payment_no"));
+                        p.setTradeNo(rs.getString("trade_no"));
                         p.setAmount(rs.getBigDecimal("amount"));
                         p.setPayType(rs.getInt("pay_type"));
                         p.setStatus(rs.getInt("status"));
@@ -1307,7 +1336,7 @@ public class PaymentService {
      */
     private Payment findPendingByOrderId(Long orderId) {
         return paymentJdbcTemplate.query(
-                "SELECT id, order_id, user_id, payment_no, amount, pay_type, status, paid_at, deleted, created_at, updated_at " +
+                "SELECT id, order_id, user_id, payment_no, trade_no, amount, pay_type, status, paid_at, deleted, created_at, updated_at " +
                         "FROM t_payment WHERE order_id = ? AND status = 0 AND deleted = 0 ORDER BY created_at DESC LIMIT 1",
                 rs -> {
                     if (rs.next()) {
@@ -1316,6 +1345,7 @@ public class PaymentService {
                         p.setOrderId(rs.getLong("order_id"));
                         p.setUserId(rs.getLong("user_id"));
                         p.setPaymentNo(rs.getString("payment_no"));
+                        p.setTradeNo(rs.getString("trade_no"));
                         p.setAmount(rs.getBigDecimal("amount"));
                         p.setPayType(rs.getInt("pay_type"));
                         p.setStatus(rs.getInt("status"));
@@ -1343,7 +1373,7 @@ public class PaymentService {
 
     private Payment findByPaymentNo(String paymentNo) {
         return paymentJdbcTemplate.query(
-                "SELECT id, order_id, user_id, payment_no, amount, pay_type, status, paid_at, deleted, created_at, updated_at " +
+                "SELECT id, order_id, user_id, payment_no, trade_no, amount, pay_type, status, paid_at, deleted, created_at, updated_at " +
                         "FROM t_payment WHERE payment_no = ? AND deleted = 0",
                 rs -> {
                     if (rs.next()) {
@@ -1352,6 +1382,7 @@ public class PaymentService {
                         p.setOrderId(rs.getLong("order_id"));
                         p.setUserId(rs.getLong("user_id"));
                         p.setPaymentNo(rs.getString("payment_no"));
+                        p.setTradeNo(rs.getString("trade_no"));
                         p.setAmount(rs.getBigDecimal("amount"));
                         p.setPayType(rs.getInt("pay_type"));
                         p.setStatus(rs.getInt("status"));
@@ -1487,6 +1518,42 @@ public class PaymentService {
         return payType != null && payType == 99;
     }
 
+    /** C-016：渠道交易号落库（best-effort——失败不阻断支付主流程，回调可回填） */
+    private void persistTradeNo(Payment payment, String tradeNo) {
+        if (tradeNo == null || tradeNo.isBlank()) {
+            return;
+        }
+        payment.setTradeNo(tradeNo);
+        try {
+            paymentJdbcTemplate.update(
+                    "UPDATE t_payment SET trade_no = ?, updated_at = ? WHERE id = ? AND trade_no IS NULL",
+                    tradeNo, LocalDateTime.now(), payment.getId());
+        } catch (Exception e) {
+            log.warn("[支付] 渠道交易号落库失败(不阻断; 回调可回填): paymentNo={}", payment.getPaymentNo(), e);
+        }
+    }
+
+    /** C-016：客户端支付参数构建（best-effort——失败不影响支付单创建，客户端可重新发起获取） */
+    private String buildPayParamsSafely(PayChannelStrategy strategy, Long orderId,
+                                        BigDecimal amount, String paymentNo) {
+        if (strategy == null) {
+            return null;
+        }
+        try {
+            return strategy.buildPayParams(orderId, amount, paymentNo);
+        } catch (Exception e) {
+            log.warn("[支付] 支付参数构建失败(不阻断): paymentNo={}", paymentNo, e);
+            return null;
+        }
+    }
+
+    private PaymentVO withPayParams(PaymentVO vo, String payParams) {
+        if (vo != null) {
+            vo.setPayParams(payParams);
+        }
+        return vo;
+    }
+
     private PaymentVO buildPaymentVO(Payment payment) {
         String statusDesc;
         switch (payment.getStatus()) {
@@ -1501,6 +1568,7 @@ public class PaymentService {
                 .id(payment.getId())
                 .orderId(payment.getOrderId())
                 .paymentNo(payment.getPaymentNo())
+                .tradeNo(payment.getTradeNo())
                 .amount(payment.getAmount())
                 .payType(payment.getPayType())
                 .status(payment.getStatus())

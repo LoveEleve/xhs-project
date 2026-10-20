@@ -62,6 +62,31 @@ class AlipayTradeClientImplTest {
     }
 
     @Test
+    @DisplayName("C-016：buildAppPayOrderStr——app.pay 契约形态 + 应用私钥签名可验 + URL 编码")
+    void buildAppPayOrderStrContract() {
+        AlipayMockProperties properties = new AlipayMockProperties();
+        properties.setAppId("2021000000000001");
+        properties.setMerchantPrivateKey(merchantPrivateKey);
+        properties.setMerchantPublicKey(merchantPublicKey);
+        AlipayTradeClientImpl c = new AlipayTradeClientImpl(mock(SimulatedAlipayServer.class), properties);
+
+        String orderStr = c.buildAppPayOrderStr(10001L, new BigDecimal("199.00"), "订单支付", "PAY1");
+
+        assertThat(orderStr).contains("method=alipay.trade.app.pay")
+                .contains("sign_type=RSA2").contains("sign=").contains("app_id=2021000000000001");
+        // 解码后用应用公钥验签（签名用原始值——官方规则）
+        Map<String, String> params = new LinkedHashMap<>();
+        for (String pair : orderStr.split("&")) {
+            int i = pair.indexOf('=');
+            params.put(pair.substring(0, i),
+                    java.net.URLDecoder.decode(pair.substring(i + 1), java.nio.charset.StandardCharsets.UTF_8));
+        }
+        assertThat(AlipaySignatureUtil.verify(params, merchantPublicKey)).isTrue();
+        assertThat(params.get("biz_content")).contains("\"out_trade_no\":\"PAY1\"")
+                .contains("\"total_amount\":\"199.00\"");
+    }
+
+    @Test
     @DisplayName("tradeCreate：请求参数完整 + 应用私钥签名（服务器侧可验签）")
     void tradeCreateSignsRequest() {
         when(simulatedAlipayServer.handleCreateTrade(anyMap())).thenReturn("ALIPAY_TRADE_001");

@@ -46,6 +46,16 @@ class AlipayPayStrategyTest {
     }
 
     @Test
+    @DisplayName("C-016：buildPayParams 委托契约层 app.pay orderStr")
+    void buildPayParamsDelegates() {
+        when(alipayTradeClient.buildAppPayOrderStr(eq(10001L), any(BigDecimal.class), eq("订单支付"), eq(PAYMENT_NO)))
+                .thenReturn("ORDER_STR");
+
+        assertThat(strategy.buildPayParams(10001L, new BigDecimal("199.00"), PAYMENT_NO))
+                .isEqualTo("ORDER_STR");
+    }
+
+    @Test
     @DisplayName("queryPayStatus 四态映射：WAIT→0 / SUCCESS|FINISHED→1 / CLOSED→0 / 不可达→null")
     void queryPayStatusMapping() {
         when(alipayTradeClient.tradeQuery("P-WAIT"))

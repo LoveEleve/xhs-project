@@ -170,6 +170,7 @@ class PaymentServiceTest {
         assertThat(vo.getOrderId()).isEqualTo(ORDER_ID);
         assertThat(vo.getPaymentNo()).isEqualTo(PAYMENT_NO);
         assertThat(vo.getStatus()).isEqualTo(1); // mock 同步成功后返回成功状态（原实现返回创建时状态=0，与本轮修复同步）
+        assertThat(vo.getTradeNo()).isEqualTo(TRADE_NO); // C-016：渠道交易号随响应返回
 
         // 验证支付记录已插入
         verify(paymentJdbcTemplate).update(
@@ -185,6 +186,32 @@ class PaymentServiceTest {
 
         // 验证策略被调用
         verify(mockStrategy).pay(eq(ORDER_ID), any(BigDecimal.class), eq(PAYMENT_NO));
+    }
+
+    @Test
+    @DisplayName("C-016：支付响应返回渠道交易号 + 客户端支付参数（app.pay orderStr 契约）")
+    void payReturnsTradeNoAndPayParams() {
+        PayChannelStrategy alipayStrategy = mock(PayChannelStrategy.class);
+        when(payChannelStrategyMap.get(1)).thenReturn(alipayStrategy);
+        when(alipayStrategy.pay(eq(ORDER_ID), any(BigDecimal.class), anyString())).thenReturn("ALIPAY-TRADE-1");
+        when(alipayStrategy.buildPayParams(eq(ORDER_ID), any(BigDecimal.class), anyString())).thenReturn("ORDER_STR-1");
+        when(paymentJdbcTemplate.update(
+                startsWith("INSERT INTO t_payment"),
+                any(), any(), any(), any(), any(), any(), any(), any(), any(), any()
+        )).thenReturn(1);
+        when(valueOperations.get(eq("myxhs:payment:status:" + ORDER_ID))).thenReturn(null);
+
+        PayCreateRequest request = buildPayRequest();
+        request.setPayType(1);
+        R<PaymentVO> result = paymentService.pay(request);
+
+        PaymentVO vo = result.getData();
+        assertThat(vo).isNotNull();
+        assertThat(vo.getTradeNo()).isEqualTo("ALIPAY-TRADE-1");
+        assertThat(vo.getPayParams()).isEqualTo("ORDER_STR-1");
+        // 渠道交易号落库（原只打日志）
+        verify(paymentJdbcTemplate).update(
+                startsWith("UPDATE t_payment SET trade_no"), eq("ALIPAY-TRADE-1"), any(), any());
     }
 
     @Test
