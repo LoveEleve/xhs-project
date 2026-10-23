@@ -12,6 +12,10 @@ import org.apache.ibatis.annotations.Update;
 @Mapper
 public interface CouponTemplateMapper extends BaseMapper<CouponTemplate> {
 
+    /** 已到有效期结束、仍启用的模板（过期 Job / 延时消息消费共用） */
+    @org.apache.ibatis.annotations.Select("SELECT id FROM t_coupon_template WHERE deleted = 0 AND valid_end < NOW()")
+    java.util.List<Long> selectExpiredTemplateIds();
+
     /**
      * 对账专用：仅更新 remain_count（不碰 status 等其它列，避免覆盖并发扣减）
      * <p>

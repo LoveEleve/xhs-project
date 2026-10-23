@@ -121,6 +121,24 @@ class CouponServiceTest {
         verify(templateMapper).insert(any(CouponTemplate.class));
     }
 
+    @Test
+    @DisplayName("创建模板 - 发送过期延时消息（deliverTime=validEnd，C-017）")
+    void createTemplateSendsExpireDelay() {
+        doAnswer(invocation -> {
+            CouponTemplate t = invocation.getArgument(0);
+            t.setId(TEMPLATE_ID);
+            return 1;
+        }).when(templateMapper).insert(any(CouponTemplate.class));
+
+        CreateTemplateRequest request = buildCreateTemplateRequest();
+        couponService.createTemplate(request);
+
+        long deliverAt = request.getValidEnd()
+                .atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
+        verify(rocketMQTemplate).syncSendDeliverTimeMills(
+                eq("COUPON_EXPIRE_TOPIC"), any(), eq(deliverAt));
+    }
+
     // ==================== 领券 ====================
 
     @Test
@@ -308,15 +326,15 @@ class CouponServiceTest {
     @DisplayName("退券 - 状态匹配时恢复用户券（RV30 语义：不回补库存/不发补偿消息）")
     void returnCouponSuccess() {
         UserCoupon userCoupon = buildUserCoupon();
-        when(userCouponMapper.selectById(11L)).thenReturn(userCoupon);
-        when(userCouponMapper.returnCoupon(1L, 9001L)).thenReturn(1);
+        when(userCouponMapper.selectByIdAndUserId(11L, USER_ID)).thenReturn(userCoupon);
+        when(userCouponMapper.returnCoupon(1L, 9001L, USER_ID)).thenReturn(1);
 
         ReturnCouponRequest request = new ReturnCouponRequest();
         request.setUserCouponId(11L);
         request.setOrderId(9001L);
         couponService.returnCoupon(USER_ID, request);
 
-        verify(userCouponMapper).returnCoupon(1L, 9001L);
+        verify(userCouponMapper).returnCoupon(1L, 9001L, USER_ID);
         verifyNoInteractions(rocketMQTemplate);
     }
 
@@ -324,15 +342,15 @@ class CouponServiceTest {
     @DisplayName("退券 - 状态不匹配幂等返回（不抛异常、不触发补偿）")
     void returnCouponIdempotent() {
         UserCoupon userCoupon = buildUserCoupon();
-        when(userCouponMapper.selectById(11L)).thenReturn(userCoupon);
-        when(userCouponMapper.returnCoupon(1L, 9001L)).thenReturn(0);
+        when(userCouponMapper.selectByIdAndUserId(11L, USER_ID)).thenReturn(userCoupon);
+        when(userCouponMapper.returnCoupon(1L, 9001L, USER_ID)).thenReturn(0);
 
         ReturnCouponRequest request = new ReturnCouponRequest();
         request.setUserCouponId(11L);
         request.setOrderId(9001L);
         couponService.returnCoupon(USER_ID, request);
 
-        verify(userCouponMapper).returnCoupon(1L, 9001L);
+        verify(userCouponMapper).returnCoupon(1L, 9001L, USER_ID);
         verifyNoInteractions(rocketMQTemplate);
     }
 

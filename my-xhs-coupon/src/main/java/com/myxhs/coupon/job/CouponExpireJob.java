@@ -1,5 +1,6 @@
 package com.myxhs.coupon.job;
 
+import com.myxhs.coupon.mapper.CouponTemplateMapper;
 import com.myxhs.coupon.mapper.UserCouponMapper;
 import com.xxl.job.core.context.XxlJobHelper;
 import com.xxl.job.core.handler.annotation.XxlJob;
@@ -34,6 +35,7 @@ import org.springframework.stereotype.Component;
 public class CouponExpireJob {
 
     private final UserCouponMapper userCouponMapper;
+    private final CouponTemplateMapper templateMapper;
 
     private static final int BATCH_SIZE = 1000;
 
@@ -72,16 +74,18 @@ public class CouponExpireJob {
         int batchCount = 0;
 
         try {
-            while (true) {
-                int affected = userCouponMapper.batchExpire(BATCH_SIZE);
-                totalAffected += affected;
-                batchCount++;
+            // C-017：按"已过期模板"逐个批量置过期（单表 UPDATE，分片模式下广播到 32 表也安全）
+            for (Long templateId : templateMapper.selectExpiredTemplateIds()) {
+                while (true) {
+                    int affected = userCouponMapper.batchExpireByCoupon(templateId, BATCH_SIZE);
+                    totalAffected += affected;
+                    batchCount++;
 
-                if (affected < BATCH_SIZE) {
-                    break;
+                    if (affected < BATCH_SIZE) {
+                        break;
+                    }
+                    Thread.sleep(100);
                 }
-
-                Thread.sleep(100);
             }
 
             long elapsed = System.currentTimeMillis() - startTime;

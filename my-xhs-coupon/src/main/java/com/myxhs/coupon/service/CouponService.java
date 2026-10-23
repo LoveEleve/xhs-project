@@ -8,6 +8,7 @@ import com.myxhs.common.trace.MqTraceHelper;
 import com.myxhs.coupon.dto.request.*;
 import com.myxhs.coupon.dto.response.UserCouponVO;
 import com.myxhs.coupon.entity.CouponTemplate;
+import com.myxhs.coupon.constant.CouponMqConstants;
 import com.myxhs.coupon.entity.UserCoupon;
 import com.myxhs.coupon.mapper.CouponTemplateMapper;
 import com.myxhs.coupon.mapper.CouponOutboxMapper;
@@ -20,14 +21,17 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.client.producer.SendStatus;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
+import org.apache.rocketmq.spring.support.RocketMQHeaders;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
+import org.springframework.messaging.Message;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -116,6 +120,9 @@ public class CouponService {
         // 缓存模板信息到 Redis
         cacheTemplate(template);
 
+        // C-017：模板结束时发延时消息（Job 仍兜底）
+        sendExpireDelay(template);
+
         log.info("[优惠券] 创建模板: id={}, name={}, type={}, total={}",
                 template.getId(), template.getName(), template.getType(), template.getTotalCount());
         return template;
@@ -142,6 +149,11 @@ public class CouponService {
 
         // 清除模板缓存（状态变更后必须失效）
         evictTemplateCache(templateId);
+
+        // C-017：重新上线时补发延时消息（valid_end 未到才发）
+        if (status == 1) {
+            sendExpireDelay(template);
+        }
 
         log.info("[优惠券] 模板状态变更: id={}, status={}", templateId, status);
     }
@@ -283,7 +295,7 @@ public class CouponService {
      * @return 折扣金额
      */
     public java.math.BigDecimal getCouponDiscount(Long userId, Long userCouponId, java.math.BigDecimal orderAmount) {
-        UserCoupon userCoupon = userCouponMapper.selectById(userCouponId);
+        UserCoupon userCoupon = userCouponMapper.selectByIdAndUserId(userCouponId, userId);
         if (userCoupon == null || !userCoupon.getUserId().equals(userId)) {
             throw new BizException(ResultCode.COUPON_NOT_AVAILABLE, "优惠券不属于当前用户");
         }
@@ -316,7 +328,7 @@ public class CouponService {
     public java.math.BigDecimal useCoupon(Long userId, UseCouponRequest request) {
         try {
             // 1. 查询用户券
-            UserCoupon userCoupon = userCouponMapper.selectById(request.getUserCouponId());
+            UserCoupon userCoupon = userCouponMapper.selectByIdAndUserId(request.getUserCouponId(), userId);
             if (userCoupon == null || !userCoupon.getUserId().equals(userId)) {
                 throw new BizException(ResultCode.COUPON_NOT_FOUND);
             }
@@ -343,7 +355,7 @@ public class CouponService {
             java.math.BigDecimal discount = calculateDiscount(template, request.getOrderAmount());
 
             // 5. 标记已使用（乐观锁：WHERE status = 0）
-            int affected = userCouponMapper.markUsed(userCoupon.getId(), request.getOrderId());
+            int affected = userCouponMapper.markUsed(userCoupon.getId(), request.getOrderId(), userId);
             if (affected == 0) {
                 throw new BizException(ResultCode.COUPON_NOT_AVAILABLE, "优惠券已被使用");
             }
@@ -356,6 +368,36 @@ public class CouponService {
             // C-007：业务拒绝路径统一观测（未找到/不可用/责任链拦截/并发冲突）
             businessMetrics.recordCouponAction("use_fail", false);
             throw e;
+        }
+    }
+
+    /**
+     * 发送"模板结束"延时消息（C-017）
+     * <p>
+     * deliverTime = valid_end；消费端把该模板下未使用券置过期。
+     * 发送失败只记日志——XXL-Job 过期扫描仍兜底。
+     * </p>
+     */
+    private void sendExpireDelay(CouponTemplate template) {
+        if (template == null || template.getId() == null || template.getValidEnd() == null
+                || template.getStatus() == null || template.getStatus() != 1) {
+            return;
+        }
+        long deliverAt = template.getValidEnd().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        if (deliverAt <= System.currentTimeMillis()) {
+            return;
+        }
+        try {
+            String body = objectMapper.writeValueAsString(Map.of(
+                    "templateId", template.getId(),
+                    "validEnd", template.getValidEnd().toString()));
+            Message<String> message = MessageBuilder.withPayload(body)
+                    .setHeader(RocketMQHeaders.KEYS, "COUPON_EXPIRE_" + template.getId())
+                    .build();
+            rocketMQTemplate.syncSendDeliverTimeMills(CouponMqConstants.COUPON_EXPIRE_TOPIC, message, deliverAt);
+            log.info("[优惠券] 过期延时消息已发送: templateId={}, deliverAt={}", template.getId(), template.getValidEnd());
+        } catch (Exception e) {
+            log.error("[优惠券] 过期延时消息发送失败(Job 兜底): templateId={}", template.getId(), e);
         }
     }
 
@@ -389,13 +431,13 @@ public class CouponService {
     @Transactional(rollbackFor = Exception.class)
     public void returnCoupon(Long userId, ReturnCouponRequest request) {
         // 1. 查询用户券
-        UserCoupon userCoupon = userCouponMapper.selectById(request.getUserCouponId());
+        UserCoupon userCoupon = userCouponMapper.selectByIdAndUserId(request.getUserCouponId(), userId);
         if (userCoupon == null || !userCoupon.getUserId().equals(userId)) {
             throw new BizException(ResultCode.COUPON_NOT_FOUND);
         }
 
         // 2. MySQL 恢复状态（乐观锁：WHERE status = 1 AND used_order_id = orderId）
-        int affected = userCouponMapper.returnCoupon(userCoupon.getId(), request.getOrderId());
+        int affected = userCouponMapper.returnCoupon(userCoupon.getId(), request.getOrderId(), userId);
         if (affected == 0) {
             log.warn("[优惠券] 退券失败(状态不匹配): userCouponId={}, orderId={}",
                     request.getUserCouponId(), request.getOrderId());

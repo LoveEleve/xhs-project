@@ -76,11 +76,11 @@
             <artifactId>xxl-job-core</artifactId>
         </dependency>
         
-        <!-- ShardingSphere（Phase-5 分库分表时启用） -->
-        <!-- <dependency>
+        <!-- ShardingSphere（C-017：coupon-sharding profile 启用，默认单库不加载） -->
+        <dependency>
             <groupId>org.apache.shardingsphere</groupId>
-            <artifactId>shardingsphere-jdbc-core</artifactId>
-        </dependency> -->
+            <artifactId>shardingsphere-jdbc</artifactId>
+        </dependency>
         
         <!-- Nacos Discovery -->
         <dependency>

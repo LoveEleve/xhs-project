@@ -1,0 +1,67 @@
+# ============================================================
+# 优惠券分片（C-017 / coupon-sharding profile）
+# ============================================================
+# 架构：2 库 × 16 表 = 32 分片；分片键 user_id
+# 库路由：user_id % 2            → ds_0(my_xhs_coupon_0) / ds_1(my_xhs_coupon_1)
+# 表路由：(user_id DIV 2) % 16   → t_user_coupon_0 ~ t_user_coupon_15
+#
+# 模板/Outbox 不配置分片规则 → 走默认数据源 ds_0（单表，量小）
+# 说明：user_id 为正数，直接取模（不用 hashCode），便于 SQL 迁移复刻路由。
+# ============================================================
+
+dataSources:
+  ds_0:
+    dataSourceClassName: com.zaxxer.hikari.HikariDataSource
+    driverClassName: com.mysql.cj.jdbc.Driver
+    jdbcUrl: jdbc:mysql://192.168.0.142:3306/my_xhs_coupon_0?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    username: root
+    password: "Xhs@2026#MySQL"
+    connectionTimeoutMilliseconds: 10000
+    idleTimeoutMilliseconds: 30000
+    maxLifetimeMilliseconds: 1800000
+    maxPoolSize: 20
+    minPoolSize: 5
+    keepaliveTimeMilliseconds: 30000
+    connectionTestQuery: SELECT 1
+    validationTimeoutMilliseconds: 3000
+  ds_1:
+    dataSourceClassName: com.zaxxer.hikari.HikariDataSource
+    driverClassName: com.mysql.cj.jdbc.Driver
+    jdbcUrl: jdbc:mysql://192.168.0.142:3306/my_xhs_coupon_1?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&rewriteBatchedStatements=true
+    username: root
+    password: "Xhs@2026#MySQL"
+    connectionTimeoutMilliseconds: 10000
+    idleTimeoutMilliseconds: 30000
+    maxLifetimeMilliseconds: 1800000
+    maxPoolSize: 20
+    minPoolSize: 5
+    keepaliveTimeMilliseconds: 30000
+    connectionTestQuery: SELECT 1
+    validationTimeoutMilliseconds: 3000
+
+rules:
+  - !SHARDING
+    tables:
+      t_user_coupon:
+        actualDataNodes: ds_${0..1}.t_user_coupon_${0..15}
+        databaseStrategy:
+          standard:
+            shardingColumn: user_id
+            shardingAlgorithmName: coupon-db-inline
+        tableStrategy:
+          standard:
+            shardingColumn: user_id
+            shardingAlgorithmName: coupon-table-inline
+    shardingAlgorithms:
+      coupon-db-inline:
+        type: INLINE
+        props:
+          algorithm-expression: ds_${user_id % 2}
+      coupon-table-inline:
+        type: INLINE
+        props:
+          algorithm-expression: t_user_coupon_${(user_id.intdiv(2)) % 16}
+
+props:
+  sql-show: false
+  max-connections-size-per-query: 2

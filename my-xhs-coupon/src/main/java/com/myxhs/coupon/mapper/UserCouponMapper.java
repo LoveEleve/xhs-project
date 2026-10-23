@@ -20,14 +20,20 @@ public interface UserCouponMapper extends BaseMapper<UserCoupon> {
     Long countIssued(@Param("userId") Long userId, @Param("couponId") Long couponId);
 
     /**
+     * 按 id 查券（C-017：分片后必须带 user_id，避免 32 表广播）
+     */
+    @org.apache.ibatis.annotations.Select("SELECT * FROM t_user_coupon WHERE id = #{id} AND user_id = #{userId}")
+    UserCoupon selectByIdAndUserId(@Param("id") Long id, @Param("userId") Long userId);
+
+    /**
      * 标记券已使用（乐观锁：WHERE status = 0）
      * <p>
      * 并发用券时只有一个请求能成功（status=0 → 1 是单向状态流转）。
      * </p>
      */
     @Update("UPDATE t_user_coupon SET status = 1, used_order_id = #{orderId}, used_at = NOW() " +
-            "WHERE id = #{id} AND status = 0")
-    int markUsed(@Param("id") Long id, @Param("orderId") Long orderId);
+            "WHERE id = #{id} AND user_id = #{userId} AND status = 0")
+    int markUsed(@Param("id") Long id, @Param("orderId") Long orderId, @Param("userId") Long userId);
 
     /**
      * 退回券（取消订单时恢复为未使用）
@@ -37,8 +43,8 @@ public interface UserCouponMapper extends BaseMapper<UserCoupon> {
      * </p>
      */
     @Update("UPDATE t_user_coupon SET status = 0, used_order_id = NULL, used_at = NULL " +
-            "WHERE id = #{id} AND status = 1 AND used_order_id = #{orderId}")
-    int returnCoupon(@Param("id") Long id, @Param("orderId") Long orderId);
+            "WHERE id = #{id} AND user_id = #{userId} AND status = 1 AND used_order_id = #{orderId}")
+    int returnCoupon(@Param("id") Long id, @Param("orderId") Long orderId, @Param("userId") Long userId);
 
     /**
      * 分批标记过期（每次最多处理 batchSize 条）
@@ -57,13 +63,7 @@ public interface UserCouponMapper extends BaseMapper<UserCoupon> {
      * @return 本批次实际更新的行数
      */
     @Update("UPDATE t_user_coupon SET status = 2 " +
-            "WHERE status = 0 AND id IN (" +
-            "  SELECT id FROM (" +
-            "    SELECT uc2.id FROM t_user_coupon uc2 " +
-            "    INNER JOIN t_coupon_template ct2 ON uc2.coupon_id = ct2.id AND ct2.deleted = 0 " +
-            "    WHERE uc2.status = 0 AND ct2.valid_end < NOW() " +
-            "    LIMIT #{batchSize}" +
-            "  ) tmp" +
-            ")")
-    int batchExpire(@Param("batchSize") int batchSize);
+            "WHERE coupon_id = #{couponId} AND status = 0 " +
+            "LIMIT #{batchSize}")
+    int batchExpireByCoupon(@Param("couponId") Long couponId, @Param("batchSize") int batchSize);
 }
