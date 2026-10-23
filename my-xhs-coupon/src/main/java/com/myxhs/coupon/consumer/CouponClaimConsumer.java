@@ -54,8 +54,8 @@ public class CouponClaimConsumer implements RocketMQListener<MessageExt> {
         String msgId = msg.getMsgId();
         try {
 
-            // 1. 统一幂等检查
-            if (!idempotentHelper.isFirstProcess(BIZ_TYPE, msgId, IDEMPOTENT_TTL_SECONDS)) {
+            // 1. 幂等检查（C-017 review：只读检查，处理成功后再置位——避免“前置标记 + 崩溃”丢券）
+            if (idempotentHelper.isProcessed(BIZ_TYPE, msgId)) {
                 return;
             }
 
@@ -75,6 +75,7 @@ public class CouponClaimConsumer implements RocketMQListener<MessageExt> {
                     log.warn("[优惠券MQ] 限领守卫拦截(已持有 {} 张 ≥ 限领 {}，跳过发券): userId={}, templateId={}, msgId={}",
                             issued, template.getPerUserLimit(), event.userId(), event.templateId(), msgId);
                     businessMetrics.recordCouponAction("claim_limit_guard_skip", true);
+                    idempotentHelper.markProcessed(BIZ_TYPE, msgId, IDEMPOTENT_TTL_SECONDS);
                     return;
                 }
             }
@@ -94,6 +95,7 @@ public class CouponClaimConsumer implements RocketMQListener<MessageExt> {
                 log.warn("[优惠券MQ] 重复领券记录(DB唯一索引兜底): userId={}, templateId={}, msgId={}",
                         event.userId(), event.templateId(), msgId);
                 businessMetrics.recordCouponAction("claim_persist_duplicate", true);
+                idempotentHelper.markProcessed(BIZ_TYPE, msgId, IDEMPOTENT_TTL_SECONDS);
                 return;
             }
 
@@ -112,16 +114,12 @@ public class CouponClaimConsumer implements RocketMQListener<MessageExt> {
                 businessMetrics.recordCouponAction("claim_stock_lag", false);
             }
 
-            log.info("[优惠券MQ] 领券持久化成功: userId={}, templateId={}, userCouponId={}, stockUpdated={}",
+            idempotentHelper.markProcessed(BIZ_TYPE, msgId, IDEMPOTENT_TTL_SECONDS);
+            log.info("[优惠券MQ] 领券持久化成功: userId={}, templateId={}, userCouponId={}",
                     event.userId(), event.templateId(), userCoupon.getId());
 
         } catch (Exception e) {
-            // 清除幂等标记——失败时记录告警但不吞掉原异常，让 MQ 仍可重试
-            try {
-                idempotentHelper.removeMark(BIZ_TYPE, msgId);
-            } catch (Exception markEx) {
-                log.error("[优惠券MQ] 清除幂等标记失败(msgId可能已被TTL过期或Redis不可用): msgId={}", msgId, markEx);
-            }
+            // C-017 review：处理失败不置完成标记，MQ 重试可重新处理（DB uk_claim_no 兜底重复）
             businessMetrics.recordCouponAction("claim_persist_fail", false);
             log.error("[优惠券MQ] 消费失败: msgId={}", msg.getMsgId(), e);
             throw new RuntimeException("领券消费失败", e);

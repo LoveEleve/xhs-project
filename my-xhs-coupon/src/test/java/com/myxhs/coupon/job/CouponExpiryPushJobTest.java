@@ -62,6 +62,7 @@ class CouponExpiryPushJobTest {
 
     private UserCoupon coupon(long userId) {
         UserCoupon c = new UserCoupon();
+        c.setId(userId);
         c.setUserId(userId);
         c.setCouponId(1L);
         c.setStatus(0);
@@ -72,7 +73,7 @@ class CouponExpiryPushJobTest {
     @DisplayName("推送：两个用户 → 两次发送 + 标记已发送")
     void pushTwoUsers() {
         when(templateMapper.selectList(any())).thenReturn(List.of(template()));
-        when(userCouponMapper.selectUnusedByCoupon(1L, 5000)).thenReturn(List.of(coupon(1001L), coupon(1002L)));
+        when(userCouponMapper.selectUnusedByCoupon(1L, 0L, 5000)).thenReturn(List.of(coupon(1001L), coupon(1002L)));
         when(pushRecordMapper.insertIgnore(anyLong(), eq(1L), anyLong(), any())).thenReturn(1);
         when(idGeneratorUtil.nextId()).thenReturn(1L, 2L);
         when(sender.send(any())).thenReturn(true);
@@ -87,7 +88,7 @@ class CouponExpiryPushJobTest {
     @DisplayName("幂等：已发送（status=1）→ 跳过")
     void skipAlreadySent() {
         when(templateMapper.selectList(any())).thenReturn(List.of(template()));
-        when(userCouponMapper.selectUnusedByCoupon(1L, 5000)).thenReturn(List.of(coupon(1001L)));
+        when(userCouponMapper.selectUnusedByCoupon(1L, 0L, 5000)).thenReturn(List.of(coupon(1001L)));
         when(pushRecordMapper.insertIgnore(anyLong(), eq(1L), anyLong(), any())).thenReturn(0);
         when(pushRecordMapper.selectStatus(eq(1L), eq(1001L), any())).thenReturn(1);
 

@@ -93,3 +93,23 @@ relations:
 
 - coupon：38 全绿（24 基线 + 14 新增：P1 路由 2、P2 消费者 4 + 创建发送 1、P3 7）；
 - 全仓：754 全绿（15 模块 740 + user 14）。
+
+## 第二轮 Review（2026-10-23）
+
+| 级别 | 问题 | 修复 |
+|---|---|---|
+| **高** | `sharding-config.yaml` 的 `shardingAlgorithms` 被缩进到 `!SINGLE` 下（YAML 结构错误，启动会找不到算法） | 重写 rules：`!SHARDING`（含 algorithms）与 `!SINGLE` 两个独立列表项 |
+| **高** | `CouponClaimConsumer` 用 `isFirstProcess` **前置置位**：标记后、insert 前崩溃 → 重投被拦截 → 用户丢券 | 改用 `isProcessed`（只读）+ `markProcessed`（成功后置位）；失败不置位，重投可重处理；DB `uk_claim_no` 兜底 |
+| **高** | RocketMQ 开源版延时消息窗口 **默认 24h**，超过会被**立即投递**；7 天有效期的券排 7 天 = 立即消费后忽略，等于没有延时 | `CouponExpireDelayProducer` 分段：每次最多排 `now+23h`；消费端未到期则续排下一段；Job 兜底。**不再声称"任意延时"** |
+| **中** | 推送 Job 用 `LIMIT 5000` 无游标：单模板 >5000 张券时永远只推前 5000（饥饿） | 改 `id > lastId` 游标循环（单库正确；分片模式广播查询的残余风险已记录） |
+| **低** | `mysql-content-init.sql` 缺 `t_coupon_push_record` | 已补 |
+
+### 第二轮验证
+
+- coupon：41 全绿（新增 3 个延时生产器测试：23h 分段/窗口内精确/已过期不排）；
+- 全仓：757 全绿（15 模块 743 + user 14）。
+
+### 简历口径提醒
+
+可写：32 分片（user_id 路由、模板/Outbox 单表）、Redis Lua、RocketMQ 异步落账 + Outbox、**23h 分段延时 + Job 兜底**、分桶/批分割/共享线程池推送、跨库事务拆分（remain 派生 + 对账）。
+不可写：千万级/5 万 QPS/10 万 msg/s、完整用户画像、template_id 分片映射、20% 空分片/影子库/onlineDDL、生产验证。

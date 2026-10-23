@@ -5,7 +5,7 @@
 # 库路由：user_id % 2            → ds_0(my_xhs_coupon_0) / ds_1(my_xhs_coupon_1)
 # 表路由：(user_id DIV 2) % 16   → t_user_coupon_0 ~ t_user_coupon_15
 #
-# 模板/Outbox 不配置分片规则 → 走默认数据源 ds_0（单表，量小）
+# 模板/Outbox/推送记录：!SINGLE 固定 ds_0（量小，避免分片/广播）
 # 说明：user_id 为正数，直接取模（不用 hashCode），便于 SQL 迁移复刻路由。
 # ============================================================
 
@@ -52,14 +52,6 @@ rules:
           standard:
             shardingColumn: user_id
             shardingAlgorithmName: coupon-table-inline
-  # 全局单表（模板/Outbox）：固定 ds_0，避免依赖“默认数据源”的隐式行为
-  - !SINGLE
-    tables:
-      - t_coupon_template
-      - t_coupon_outbox
-      - t_coupon_push_record
-    defaultDataSource: ds_0
-
     shardingAlgorithms:
       coupon-db-inline:
         type: INLINE
@@ -69,6 +61,14 @@ rules:
         type: INLINE
         props:
           algorithm-expression: t_user_coupon_${(user_id.intdiv(2)) % 16}
+
+  # 全局单表：固定 ds_0
+  - !SINGLE
+    tables:
+      - t_coupon_template
+      - t_coupon_outbox
+      - t_coupon_push_record
+    defaultDataSource: ds_0
 
 props:
   sql-show: false

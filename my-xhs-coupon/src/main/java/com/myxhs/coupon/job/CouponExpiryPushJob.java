@@ -78,20 +78,31 @@ public class CouponExpiryPushJob {
         List<CouponPushTarget> targets = new ArrayList<>();
         int skipped = 0;
         for (CouponTemplate template : templates) {
-            List<UserCoupon> coupons = userCouponMapper.selectUnusedByCoupon(template.getId(), SCAN_LIMIT);
-            for (UserCoupon coupon : coupons) {
-                int inserted = pushRecordMapper.insertIgnore(
-                        idGeneratorUtil.nextId(), template.getId(), coupon.getUserId(), pushDate);
-                if (inserted == 0) {
-                    Integer status = pushRecordMapper.selectStatus(
-                            template.getId(), coupon.getUserId(), pushDate);
-                    if (status != null && status == 1) {
-                        skipped++;
-                        continue; // 已推送
-                    }
+            long lastId = 0L;
+            while (true) {
+                List<UserCoupon> coupons = userCouponMapper.selectUnusedByCoupon(
+                        template.getId(), lastId, SCAN_LIMIT);
+                if (coupons.isEmpty()) {
+                    break;
                 }
-                targets.add(new CouponPushTarget(template.getId(), template.getName(),
-                        coupon.getUserId(), template.getValidEnd()));
+                for (UserCoupon coupon : coupons) {
+                    int inserted = pushRecordMapper.insertIgnore(
+                            idGeneratorUtil.nextId(), template.getId(), coupon.getUserId(), pushDate);
+                    if (inserted == 0) {
+                        Integer status = pushRecordMapper.selectStatus(
+                                template.getId(), coupon.getUserId(), pushDate);
+                        if (status != null && status == 1) {
+                            skipped++;
+                            continue; // 已推送
+                        }
+                    }
+                    targets.add(new CouponPushTarget(template.getId(), template.getName(),
+                            coupon.getUserId(), template.getValidEnd()));
+                }
+                lastId = coupons.get(coupons.size() - 1).getId();
+                if (coupons.size() < SCAN_LIMIT) {
+                    break;
+                }
             }
         }
         if (skipped > 0) {

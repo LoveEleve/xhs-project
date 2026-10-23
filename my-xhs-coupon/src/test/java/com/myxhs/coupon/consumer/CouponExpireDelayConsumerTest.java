@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.myxhs.coupon.entity.CouponTemplate;
 import com.myxhs.coupon.mapper.CouponTemplateMapper;
 import com.myxhs.coupon.mapper.UserCouponMapper;
+import com.myxhs.coupon.mq.CouponExpireDelayProducer;
 import org.apache.rocketmq.common.message.MessageExt;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -23,13 +24,15 @@ class CouponExpireDelayConsumerTest {
 
     private CouponTemplateMapper templateMapper;
     private UserCouponMapper userCouponMapper;
+    private CouponExpireDelayProducer producer;
     private CouponExpireDelayConsumer consumer;
 
     @BeforeEach
     void setUp() {
         templateMapper = mock(CouponTemplateMapper.class);
         userCouponMapper = mock(UserCouponMapper.class);
-        consumer = new CouponExpireDelayConsumer(templateMapper, userCouponMapper, new ObjectMapper());
+        producer = mock(CouponExpireDelayProducer.class);
+        consumer = new CouponExpireDelayConsumer(templateMapper, userCouponMapper, new ObjectMapper(), producer);
     }
 
     private MessageExt message(long templateId) {
@@ -66,6 +69,7 @@ class CouponExpireDelayConsumerTest {
 
         consumer.onMessage(message(1L));
 
+        verify(producer).schedule(eq(1L), any());
         verifyNoInteractions(userCouponMapper);
     }
 

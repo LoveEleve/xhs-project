@@ -13,6 +13,7 @@ import com.myxhs.coupon.entity.UserCoupon;
 import com.myxhs.coupon.mapper.CouponOutboxMapper;
 import com.myxhs.coupon.mapper.CouponTemplateMapper;
 import com.myxhs.coupon.mapper.UserCouponMapper;
+import com.myxhs.coupon.mq.CouponExpireDelayProducer;
 import com.myxhs.coupon.validator.CouponValidator;
 import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.client.producer.SendStatus;
@@ -70,6 +71,8 @@ class CouponServiceTest {
     private DefaultRedisScript<Long> returnCouponScript;
     @Mock
     private CouponValidator couponValidator;
+    @Mock
+    private CouponExpireDelayProducer expireDelayProducer;
 
     private ObjectMapper objectMapper;
     private CouponOutboxMapper couponOutboxMapper;
@@ -94,7 +97,8 @@ class CouponServiceTest {
                 objectMapper,
                 claimCouponScript, returnCouponScript,
                 validators,
-                mock(com.myxhs.common.metrics.BusinessMetrics.class)
+                mock(com.myxhs.common.metrics.BusinessMetrics.class),
+                expireDelayProducer
         );
     }
 
@@ -133,10 +137,7 @@ class CouponServiceTest {
         CreateTemplateRequest request = buildCreateTemplateRequest();
         couponService.createTemplate(request);
 
-        long deliverAt = request.getValidEnd()
-                .atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
-        verify(rocketMQTemplate).syncSendDeliverTimeMills(
-                eq("COUPON_EXPIRE_TOPIC"), any(), eq(deliverAt));
+        verify(expireDelayProducer).schedule(eq(TEMPLATE_ID), eq(request.getValidEnd()));
     }
 
     // ==================== 领券 ====================

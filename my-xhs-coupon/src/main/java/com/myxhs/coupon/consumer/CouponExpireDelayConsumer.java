@@ -7,6 +7,7 @@ import com.myxhs.coupon.constant.CouponMqConstants;
 import com.myxhs.coupon.entity.CouponTemplate;
 import com.myxhs.coupon.mapper.CouponTemplateMapper;
 import com.myxhs.coupon.mapper.UserCouponMapper;
+import com.myxhs.coupon.mq.CouponExpireDelayProducer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.common.message.MessageExt;
@@ -38,6 +39,7 @@ public class CouponExpireDelayConsumer implements RocketMQListener<MessageExt> {
     private final CouponTemplateMapper templateMapper;
     private final UserCouponMapper userCouponMapper;
     private final ObjectMapper objectMapper;
+    private final CouponExpireDelayProducer expireDelayProducer;
 
     private static final int BATCH_SIZE = 1000;
 
@@ -57,8 +59,10 @@ public class CouponExpireDelayConsumer implements RocketMQListener<MessageExt> {
                 return;
             }
             if (template.getValidEnd() != null && template.getValidEnd().isAfter(LocalDateTime.now())) {
-                log.info("[券过期延时] 消息提前到达(validEnd 未到)，忽略(Job 兜底): templateId={}, validEnd={}",
+                // RocketMQ 24h 窗口：还没到期就再排一段（分段延时；Job 仍兜底）
+                log.info("[券过期延时] 未到期，续排下一段: templateId={}, validEnd={}",
                         templateId, template.getValidEnd());
+                expireDelayProducer.schedule(templateId, template.getValidEnd());
                 return;
             }
 

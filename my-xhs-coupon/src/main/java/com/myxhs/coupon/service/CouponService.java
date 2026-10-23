@@ -8,8 +8,8 @@ import com.myxhs.common.trace.MqTraceHelper;
 import com.myxhs.coupon.dto.request.*;
 import com.myxhs.coupon.dto.response.UserCouponVO;
 import com.myxhs.coupon.entity.CouponTemplate;
-import com.myxhs.coupon.constant.CouponMqConstants;
 import com.myxhs.coupon.entity.UserCoupon;
+import com.myxhs.coupon.mq.CouponExpireDelayProducer;
 import com.myxhs.coupon.mapper.CouponTemplateMapper;
 import com.myxhs.coupon.mapper.CouponOutboxMapper;
 import com.myxhs.coupon.mapper.UserCouponMapper;
@@ -21,17 +21,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.client.producer.SendStatus;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
-import org.apache.rocketmq.spring.support.RocketMQHeaders;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
-import org.springframework.messaging.Message;
 import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -67,6 +64,7 @@ public class CouponService {
     private final DefaultRedisScript<Long> returnCouponScript;
     private final List<CouponValidator> validators; // Spring 自动注入所有校验器（按 @Order 排序）
     private final BusinessMetrics businessMetrics; // C-007：业务指标（领/用/退）
+    private final CouponExpireDelayProducer expireDelayProducer; // C-017：过期延时消息
 
     /** 【修复M15】Key 使用 {templateId} 作为 hash tag，保证 stock 和 claimed 落同 slot */
     private static final String STOCK_KEY_TPL = "myxhs:coupon:{%d}:stock";
@@ -121,7 +119,7 @@ public class CouponService {
         cacheTemplate(template);
 
         // C-017：模板结束时发延时消息（Job 仍兜底）
-        sendExpireDelay(template);
+        expireDelayProducer.schedule(template.getId(), template.getValidEnd());
 
         log.info("[优惠券] 创建模板: id={}, name={}, type={}, total={}",
                 template.getId(), template.getName(), template.getType(), template.getTotalCount());
@@ -153,7 +151,7 @@ public class CouponService {
 
         // C-017：重新上线时补发延时消息（valid_end 未到才发）
         if (status == 1) {
-            sendExpireDelay(template);
+            expireDelayProducer.schedule(template.getId(), template.getValidEnd());
         }
 
         log.info("[优惠券] 模板状态变更: id={}, status={}", templateId, status);
@@ -369,36 +367,6 @@ public class CouponService {
             // C-007：业务拒绝路径统一观测（未找到/不可用/责任链拦截/并发冲突）
             businessMetrics.recordCouponAction("use_fail", false);
             throw e;
-        }
-    }
-
-    /**
-     * 发送"模板结束"延时消息（C-017）
-     * <p>
-     * deliverTime = valid_end；消费端把该模板下未使用券置过期。
-     * 发送失败只记日志——XXL-Job 过期扫描仍兜底。
-     * </p>
-     */
-    private void sendExpireDelay(CouponTemplate template) {
-        if (template == null || template.getId() == null || template.getValidEnd() == null
-                || template.getStatus() == null || template.getStatus() != 1) {
-            return;
-        }
-        long deliverAt = template.getValidEnd().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
-        if (deliverAt <= System.currentTimeMillis()) {
-            return;
-        }
-        try {
-            String body = objectMapper.writeValueAsString(Map.of(
-                    "templateId", template.getId(),
-                    "validEnd", template.getValidEnd().toString()));
-            Message<String> message = MessageBuilder.withPayload(body)
-                    .setHeader(RocketMQHeaders.KEYS, "COUPON_EXPIRE_" + template.getId())
-                    .build();
-            rocketMQTemplate.syncSendDeliverTimeMills(CouponMqConstants.COUPON_EXPIRE_TOPIC, message, deliverAt);
-            log.info("[优惠券] 过期延时消息已发送: templateId={}, deliverAt={}", template.getId(), template.getValidEnd());
-        } catch (Exception e) {
-            log.error("[优惠券] 过期延时消息发送失败(Job 兜底): templateId={}", template.getId(), e);
         }
     }
 

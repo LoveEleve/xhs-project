@@ -216,6 +216,22 @@ CREATE TABLE IF NOT EXISTS t_coupon_outbox (
     INDEX idx_status_created (status, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='优惠券Outbox表';
 
+-- 优惠券推送记录（C-017 P3：幂等 + 失败重试）
+CREATE TABLE IF NOT EXISTS t_coupon_push_record (
+    id              BIGINT       NOT NULL COMMENT 'ID',
+    template_id     BIGINT       NOT NULL COMMENT '优惠券模板ID',
+    user_id         BIGINT       NOT NULL COMMENT '用户ID',
+    push_date       DATE         NOT NULL COMMENT '推送目标日期（券到期日）',
+    status          TINYINT      NOT NULL DEFAULT 0 COMMENT '0-待发送 1-已发送 2-失败',
+    fail_reason     VARCHAR(256) DEFAULT NULL COMMENT '失败原因',
+    created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (id),
+    UNIQUE INDEX uk_push (template_id, user_id, push_date),
+    INDEX idx_status_date (status, push_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='优惠券推送记录';
+
+
 -- Canal 同步账号
 CREATE USER IF NOT EXISTS 'canal'@'%' IDENTIFIED BY 'Canal@2026#Sync';
 GRANT SELECT, REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO 'canal'@'%';

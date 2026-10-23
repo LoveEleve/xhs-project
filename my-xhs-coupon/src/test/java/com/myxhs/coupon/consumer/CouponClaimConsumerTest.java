@@ -46,14 +46,14 @@ class CouponClaimConsumerTest {
     @DisplayName("C-017：模板 remain 扣减失败不回滚发券（派生账本，对账兜底）")
     void stockDecrementLagDoesNotFailConsumption() {
         MessageExt message = message("msg-1", "{\"userId\":1001,\"templateId\":1,\"claimNo\":\"claim-1\"}");
-        when(idempotentHelper.isFirstProcess("coupon:claim", "msg-1", 86400L)).thenReturn(true);
+        when(idempotentHelper.isProcessed("coupon:claim", "msg-1")).thenReturn(false);
         when(userCouponMapper.insert(any(UserCoupon.class))).thenReturn(1);
         when(templateMapper.decrementRemainCount(1L)).thenReturn(0);
 
         consumer.onMessage(message);
 
         verify(templateMapper).decrementRemainCount(1L);
-        verify(idempotentHelper, never()).removeMark("coupon:claim", "msg-1");
+        verify(idempotentHelper).markProcessed("coupon:claim", "msg-1", 86400L);
         verify(businessMetrics).recordCouponAction("claim_stock_lag", false);
     }
 
@@ -61,7 +61,7 @@ class CouponClaimConsumerTest {
     @DisplayName("C-007 G35：DB 已持有 ≥ perUserLimit → 守卫跳过（不 insert、不 decrement）")
     void limitGuardSkipsWhenAlreadyAtLimit() {
         MessageExt message = message("msg-g1", "{\"userId\":1001,\"templateId\":1,\"claimNo\":\"claim-g1\"}");
-        when(idempotentHelper.isFirstProcess("coupon:claim", "msg-g1", 86400L)).thenReturn(true);
+        when(idempotentHelper.isProcessed("coupon:claim", "msg-g1")).thenReturn(false);
         CouponTemplate template = new CouponTemplate();
         template.setPerUserLimit(1);
         when(templateMapper.selectById(1L)).thenReturn(template);
@@ -72,13 +72,14 @@ class CouponClaimConsumerTest {
         verify(userCouponMapper, never()).insert(any(UserCoupon.class));
         verify(templateMapper, never()).decrementRemainCount(anyLong());
         verify(businessMetrics).recordCouponAction("claim_limit_guard_skip", true);
+        verify(idempotentHelper).markProcessed("coupon:claim", "msg-g1", 86400L);
     }
 
     @Test
     @DisplayName("C-007 G35：DB 未达限领 → 正常发券")
     void limitGuardPassesWhenBelowLimit() {
         MessageExt message = message("msg-g2", "{\"userId\":1001,\"templateId\":1,\"claimNo\":\"claim-g2\"}");
-        when(idempotentHelper.isFirstProcess("coupon:claim", "msg-g2", 86400L)).thenReturn(true);
+        when(idempotentHelper.isProcessed("coupon:claim", "msg-g2")).thenReturn(false);
         CouponTemplate template = new CouponTemplate();
         template.setPerUserLimit(2);
         when(templateMapper.selectById(1L)).thenReturn(template);
@@ -90,6 +91,7 @@ class CouponClaimConsumerTest {
 
         verify(userCouponMapper).insert(any(UserCoupon.class));
         verify(businessMetrics).recordCouponAction("claim_persist_ok", true);
+        verify(idempotentHelper).markProcessed("coupon:claim", "msg-g2", 86400L);
     }
 
     private MessageExt message(String msgId, String body) {
