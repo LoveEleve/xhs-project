@@ -110,7 +110,8 @@ if (idempotentHelper.isProcessed(BIZ_TYPE, msgId)) {
 }
 
 // 2) G35 投递时限领守卫：DB 已发券数 >= perUserLimit → 跳过（DLQ 重放 × 重领交叉）
-if (issued >= template.getPerUserLimit()) {
+if (template != null && template.getPerUserLimit() != null
+        && issued >= template.getPerUserLimit()) {
     idempotentHelper.markProcessed(BIZ_TYPE, msgId, TTL);
     return;
 }
