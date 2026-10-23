@@ -180,6 +180,7 @@ SCAN myxhs:coupon:*:claim:pending
 
 1. Redis 整体丢数据（pending ZSET 也丢）→ 无法知道 in-flight；只能按 `issued` 重建，**少卖**方向；需要 Redis 持久化（AOF）兜底。
 2. `consumed_at` 标记失败 → 重建等待/失败（安全），但可能阻塞领取；需告警人工。
+2.1 **Outbox 双次写入失败 ≠ 绝对无消息**：写超时可能已提交；回滚前应按 `claimNo` 回查（C-018 一并修）。
 3. 恢复任务与 Outbox 提交的竞态：writing 键 60s + 5min 阈值降低概率；极端长事务仍有窗口。
 4. `COUNT(t_user_coupon)` 在 32 分片是广播查询，重建慢；可接受（低频运维操作）。
 5. 无运行时验证：分片/ZSET/Lua 行为需真实 Redis 集群回归。

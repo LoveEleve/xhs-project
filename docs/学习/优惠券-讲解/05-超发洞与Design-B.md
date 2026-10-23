@@ -95,7 +95,11 @@ private String sendClaimEventSync(Long userId, Long templateId) {
 | Outbox 写入成功 / DuplicateKey | 继续发送 | 事实已落库，可补发 |
 | SEND_OK | `markSent` 尽力 | 标记失败不影响"已持久化" |
 | 非 SEND_OK / 超时 / 异常 | **保留 Outbox，返回成功** | 消息可能已在途；回滚会超发 |
-| **Outbox 双次写入失败** | 回滚 Redis + 报错 | 唯一能证明"无消息在途"的情况 |
+| **Outbox 双次写入失败** | 回滚 Redis + 报错 | 设计上唯一的回滚路径；但"写超时"可能已提交，**严格说仍需按 claimNo 回查**（当前未做，残余窗口） |
+
+> ⚠️ **"双次失败"不等于"绝对无消息"**：数据库写超时可能发生在 commit 之后；
+> 两次都超时，行仍可能已存在。更稳的做法是回滚前按 `claimNo` 回查 Outbox（有则按成功），
+> 当前实现没做这一步——这是 Design B 的**残余窗口**（概率极低，但别把它说成"可证"）。
 
 ### 2.2 消费端：至少一次 + 幂等
 
@@ -105,7 +109,13 @@ if (idempotentHelper.isProcessed(BIZ_TYPE, msgId)) {
     return;
 }
 
-// 2) 插券：uk_claim_no 兜底（Outbox 补发会换新 msgId，靠 claimNo 幂等）
+// 2) G35 投递时限领守卫：DB 已发券数 >= perUserLimit → 跳过（DLQ 重放 × 重领交叉）
+if (issued >= template.getPerUserLimit()) {
+    idempotentHelper.markProcessed(BIZ_TYPE, msgId, TTL);
+    return;
+}
+
+// 3) 插券：uk_claim_no 兜底（Outbox 补发会换新 msgId，靠 claimNo 幂等）
 try {
     userCouponMapper.insert(userCoupon);
 } catch (DuplicateKeyException e) {
@@ -113,7 +123,7 @@ try {
     return;
 }
 
-// 3) 扣模板 remain（派生账本；失败不阻断，对账兜底）
+// 4) 扣模板 remain（派生账本；失败不阻断，对账兜底）
 try {
     int affected = templateMapper.decrementRemainCount(templateId);
     if (affected != 1) {
@@ -123,7 +133,7 @@ try {
     businessMetrics.recordCouponAction("claim_stock_lag", false);
 }
 
-// 4) 处理成功后才置完成态
+// 5) 处理成功后才置完成态
 idempotentHelper.markProcessed(BIZ_TYPE, msgId, TTL);
 ```
 
@@ -154,11 +164,11 @@ idempotentHelper.markProcessed(BIZ_TYPE, msgId, TTL);
 | 发送超时 | 不判死 | ✅ 保留 + 补发 | 对齐 |
 | 消费幂等 | 唯一键 + 条件更新 | ✅ `uk_claim_no` + 完成态 | 对齐 |
 | 回滚边界 | 可证无消息在途 | ✅ 仅 Outbox 双败 | 对齐 |
-| DLQ 重放 | 有 | ✅ G35 守卫（09） | 对齐 |
+| DLQ 重放 | 有 | ✅ DLQ 重放 + G35 限领守卫（09） | 对齐 |
 | 崩溃窗口 | 意图/事务消息 | ⚠️ Lua→Outbox 窗口（C-018 规划） | 已知 |
 | 名额重建 | 受控重建 | ⚠️ 仍用 `remain_count` 补（C-018） | 已知 |
 
-## 4. 十个坑
+## 4. 十一个坑
 
 1. **发送超时当失败**：回滚 + 补投 = 超发。
 2. **SEND_OK 后 markSent 失败**：不能回滚/作废，行保留即可。
@@ -170,6 +180,7 @@ idempotentHelper.markProcessed(BIZ_TYPE, msgId, TTL);
 8. **remain 扣减失败不要回滚发券**：派生账本，对账兜底；回滚会制造"领了却没券"。
 9. **Lua→Outbox 崩溃窗口**：少卖方向，C-018 规划"领取意图"修复。
 10. **`-3` 重建可能补高**：C-018 规划受控重建；当前是已知风险。
+11. **双次写失败 ≠ 绝对无消息**：写超时可能已提交；回滚前应回查 `claimNo`（当前未做）。
 
 ## 5. 值不值得深挖 / 一句话
 
