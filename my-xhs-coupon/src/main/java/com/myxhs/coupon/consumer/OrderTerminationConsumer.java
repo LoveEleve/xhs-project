@@ -60,12 +60,14 @@ public class OrderTerminationConsumer implements RocketMQListener<MessageExt> {
             JsonNode couponIdNode = payload.get("couponId");
 
             String dedupKey = resolveDedupKey(msg);
-            if (!idempotentHelper.isFirstProcess(BIZ_TYPE, dedupKey, IDEMPOTENT_TTL_SECONDS)) {
+            // C-017 review：完成态标记（处理后置位）——避免"前置标记 + 崩溃"导致退券永久丢失
+            if (idempotentHelper.isProcessed(BIZ_TYPE, dedupKey)) {
                 return;
             }
 
             if (couponIdNode == null || couponIdNode.isNull()) {
                 log.info("[优惠券-终结消费] 订单未使用优惠券, 跳过: orderId={}", orderId);
+                idempotentHelper.markProcessed(BIZ_TYPE, dedupKey, IDEMPOTENT_TTL_SECONDS);
                 return;
             }
             Long couponId = resolveLong(couponIdNode, "couponId");
@@ -75,23 +77,23 @@ public class OrderTerminationConsumer implements RocketMQListener<MessageExt> {
             request.setOrderId(orderId);
             try {
                 couponService.returnCoupon(userId, request);
+                idempotentHelper.markProcessed(BIZ_TYPE, dedupKey, IDEMPOTENT_TTL_SECONDS);
                 log.info("[优惠券-终结消费] 退券完成: orderId={}, userCouponId={}", orderId, couponId);
             } catch (BizException e) {
                 if (ResultCode.COUPON_NOT_FOUND.getCode() == e.getCode()) {
                     // 券不存在/不属于该用户 → 数据已收敛，不重试（对齐 returnCoupon 幂等口径）
                     log.warn("[优惠券-终结消费] 退券跳过(券不存在/归属不符): orderId={}, userCouponId={}",
                             orderId, couponId);
+                    idempotentHelper.markProcessed(BIZ_TYPE, dedupKey, IDEMPOTENT_TTL_SECONDS);
                     return;
                 }
                 throw e;
             }
         } catch (RuntimeException e) {
-            // 失败时移除幂等标记，允许 MQ 重投重新处理
-            idempotentHelper.removeMark(BIZ_TYPE, resolveDedupKey(msg));
-            throw e; // 直接抛出触发 MQ 重试
+            // C-017 review：失败不置完成标记，MQ 重投可重新处理（returnCoupon 自身幂等）
+            throw e;
         } catch (Exception e) {
             log.error("[优惠券-终结消费] 消费失败: msgId={}", msg.getMsgId(), e);
-            idempotentHelper.removeMark(BIZ_TYPE, resolveDedupKey(msg));
             throw new RuntimeException("订单终结消息消费失败", e);
         } finally {
             MqTraceHelper.clearTraceId();

@@ -145,3 +145,10 @@ relations:
 2. **Lua→Outbox 崩溃窗口**：Lua 已扣 stock/claimed、Outbox 未写入时进程崩溃 → 少卖 + 用户丢券；claimed 对账可恢复限领，库存需对账/人工。彻底解决需"领取意图/原子补偿"设计。
 
 另修正 02 中"幂等"的表述：完成态标记按 `msgId`，Outbox 补发是新 msgId，跨重发靠 `uk_claim_no`。
+
+## 04 文章 Review（2026-10-23）
+
+发现 `OrderTerminationConsumer` 仍用 `isFirstProcess` **前置置位**（与 ClaimConsumer 同型）：
+标记后、`returnCoupon` 前崩溃 → 重投被拦 → **券永远不退回**。
+已改为 `isProcessed`（只读）+ `markProcessed`（处理后置位），并补 2 个单测。
+文章 04 同步改为"完成态标记 + 条件更新"。
