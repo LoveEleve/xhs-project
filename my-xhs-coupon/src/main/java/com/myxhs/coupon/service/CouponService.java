@@ -16,6 +16,7 @@ import com.myxhs.coupon.mapper.UserCouponMapper;
 import com.myxhs.common.id.IdGeneratorUtil;
 import com.myxhs.common.metrics.BusinessMetrics;
 import com.myxhs.coupon.validator.CouponValidator;
+import com.myxhs.coupon.validator.TemplateCreateValidator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.client.producer.SendResult;
@@ -65,6 +66,7 @@ public class CouponService {
     private final List<CouponValidator> validators; // Spring 自动注入所有校验器（按 @Order 排序）
     private final BusinessMetrics businessMetrics; // C-007：业务指标（领/用/退）
     private final CouponExpireDelayProducer expireDelayProducer; // C-017：过期延时消息
+    private final List<TemplateCreateValidator> createValidators; // C-017：创建责任链（@Order 排序）
 
     /** 【修复M15】Key 使用 {templateId} 作为 hash tag，保证 stock 和 claimed 落同 slot */
     private static final String STOCK_KEY_TPL = "myxhs:coupon:{%d}:stock";
@@ -86,16 +88,9 @@ public class CouponService {
      * </p>
      */
     public CouponTemplate createTemplate(CreateTemplateRequest request) {
-        // 参数校验：有效期结束必须晚于开始
-        if (request.getValidEnd().isBefore(request.getValidStart())) {
-            throw new BizException(ResultCode.PARAM_INVALID, "有效期结束时间必须晚于开始时间");
-        }
-        // 折扣券校验：折扣值必须在 0.1~9.9 之间
-        if (request.getType() == 2) {
-            if (request.getDiscountValue().compareTo(new BigDecimal("0.1")) < 0
-                    || request.getDiscountValue().compareTo(new BigDecimal("9.9")) > 0) {
-                throw new BizException(ResultCode.PARAM_INVALID, "折扣值必须在0.1~9.9之间");
-            }
+        // C-017：创建责任链（有效期 → 优惠值 → 库存/限领 → 类型规则）
+        for (TemplateCreateValidator validator : createValidators) {
+            validator.validate(request);
         }
 
         CouponTemplate template = new CouponTemplate();

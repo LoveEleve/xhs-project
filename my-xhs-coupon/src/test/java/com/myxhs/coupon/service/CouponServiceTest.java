@@ -15,6 +15,10 @@ import com.myxhs.coupon.mapper.CouponTemplateMapper;
 import com.myxhs.coupon.mapper.UserCouponMapper;
 import com.myxhs.coupon.mq.CouponExpireDelayProducer;
 import com.myxhs.coupon.validator.CouponValidator;
+import com.myxhs.coupon.validator.DiscountCreateValidator;
+import com.myxhs.coupon.validator.StockCreateValidator;
+import com.myxhs.coupon.validator.TimeWindowCreateValidator;
+import com.myxhs.coupon.validator.TypeRuleCreateValidator;
 import org.apache.rocketmq.client.producer.SendResult;
 import org.apache.rocketmq.client.producer.SendStatus;
 import org.apache.rocketmq.spring.core.RocketMQTemplate;
@@ -98,7 +102,9 @@ class CouponServiceTest {
                 claimCouponScript, returnCouponScript,
                 validators,
                 mock(com.myxhs.common.metrics.BusinessMetrics.class),
-                expireDelayProducer
+                expireDelayProducer,
+                java.util.List.of(new TimeWindowCreateValidator(), new DiscountCreateValidator(),
+                        new StockCreateValidator(), new TypeRuleCreateValidator())
         );
     }
 
@@ -138,6 +144,20 @@ class CouponServiceTest {
         couponService.createTemplate(request);
 
         verify(expireDelayProducer).schedule(eq(TEMPLATE_ID), eq(request.getValidEnd()));
+    }
+
+    @Test
+    @DisplayName("创建模板 - 责任链拦截：每人限领不能超过发放总量")
+    void createTemplateRejectsPerUserLimitOverTotal() {
+        CreateTemplateRequest request = buildCreateTemplateRequest();
+        request.setTotalCount(100);
+        request.setPerUserLimit(200);
+
+        assertThatThrownBy(() -> couponService.createTemplate(request))
+                .isInstanceOf(com.myxhs.common.exception.BizException.class)
+                .hasMessageContaining("每人限领不能超过发放总量");
+
+        verify(templateMapper, never()).insert(any(CouponTemplate.class));
     }
 
     // ==================== 领券 ====================

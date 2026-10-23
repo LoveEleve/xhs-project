@@ -113,3 +113,26 @@ relations:
 
 可写：32 分片（user_id 路由、模板/Outbox 单表）、Redis Lua、RocketMQ 异步落账 + Outbox、**23h 分段延时 + Job 兜底**、分桶/批分割/共享线程池推送、跨库事务拆分（remain 派生 + 对账）。
 不可写：千万级/5 万 QPS/10 万 msg/s、完整用户画像、template_id 分片映射、20% 空分片/影子库/onlineDDL、生产验证。
+
+## 第三轮：JD 对齐补齐（2026-10-23）
+
+| JD 能力 | 实现 |
+|---|---|
+| 责任链模式实现券创建 + 规则配置 | 新增 `TemplateCreateValidator` 责任链（`@Order`）：有效期 → 优惠值 → 库存/限领 → 类型规则；`createTemplate` 不再内联 if |
+| 双层过期检测·预检层 | 新增 `couponExpirePrecheckJob`：每日扫未来 24h 到期模板，补排/续排延时消息（与延时消费、过期 Job 三层） |
+| 推送·每分片 1000 用户 | `coupon.push.bucket-size`（默认 1000）+ `coupon.push.scan-limit`（默认 5000）可配置；`UserBucketSplitter` 仍受 800KB 限制 |
+| 三级库存 | Redis Lua ✅ / RocketMQ 异步落账 ✅ / 32 分片 ✅ |
+| 亿级分表 | 32 分片 ✅；**未做**：20% 空分片、影子库、onlineDDL、template_id 映射（模板为全局单表） |
+| 画像分片 | **未做**完整画像；最小版按 user_id 分桶，行为标签分桶仍是设计 |
+
+### 第三轮验证
+
+- coupon：43 全绿（新增创建责任链拒绝 1 + 预检 Job 1）；
+- 全仓：759 全绿（15 模块 745 + user 14）。
+
+### 仍不能声称（非代码可补）
+
+- 5 万 QPS / 10 万 msg/s / 千万 MAU（需压测/容量验证）；
+- 20% 空分片/影子库/onlineDDL（基础设施/运维方案）；
+- 完整用户画像/实时特征平台；
+- 生产验证（项目口径：编译 + 单测）。

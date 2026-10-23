@@ -48,9 +48,15 @@ public class CouponExpiryPushJob {
     private final ObjectMapper objectMapper;
     private final BusinessMetrics businessMetrics;
 
-    private static final int SCAN_LIMIT = 5000;
-    private static final int BATCH_SIZE = 200;
     private static final int MAX_BYTES = 800 * 1024;
+
+    /** 单次扫描条数（游标分页） */
+    @org.springframework.beans.factory.annotation.Value("${coupon.push.scan-limit:5000}")
+    private int scanLimit = 5000;
+
+    /** 每个推送批次/分桶的用户数（JD：每分片 1000 用户） */
+    @org.springframework.beans.factory.annotation.Value("${coupon.push.bucket-size:1000}")
+    private int bucketSize = 1000;
 
     @XxlJob("couponExpiryPushJob")
     public void push() {
@@ -81,7 +87,7 @@ public class CouponExpiryPushJob {
             long lastId = 0L;
             while (true) {
                 List<UserCoupon> coupons = userCouponMapper.selectUnusedByCoupon(
-                        template.getId(), lastId, SCAN_LIMIT);
+                        template.getId(), lastId, scanLimit);
                 if (coupons.isEmpty()) {
                     break;
                 }
@@ -100,7 +106,7 @@ public class CouponExpiryPushJob {
                             coupon.getUserId(), template.getValidEnd()));
                 }
                 lastId = coupons.get(coupons.size() - 1).getId();
-                if (coupons.size() < SCAN_LIMIT) {
+                if (coupons.size() < scanLimit) {
                     break;
                 }
             }
@@ -110,7 +116,7 @@ public class CouponExpiryPushJob {
         }
 
         List<List<CouponPushTarget>> batches = UserBucketSplitter.split(
-                targets, BATCH_SIZE, MAX_BYTES, this::serialize);
+                targets, bucketSize, MAX_BYTES, this::serialize);
         AtomicInteger sent = new AtomicInteger();
         AtomicInteger failed = new AtomicInteger();
         List<Future<?>> futures = new ArrayList<>();
