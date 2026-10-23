@@ -52,6 +52,14 @@ rules:
           standard:
             shardingColumn: user_id
             shardingAlgorithmName: coupon-table-inline
+  # 全局单表（模板/Outbox）：固定 ds_0，避免依赖“默认数据源”的隐式行为
+  - !SINGLE
+    tables:
+      - t_coupon_template
+      - t_coupon_outbox
+      - t_coupon_push_record
+    defaultDataSource: ds_0
+
     shardingAlgorithms:
       coupon-db-inline:
         type: INLINE

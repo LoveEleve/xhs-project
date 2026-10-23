@@ -15,7 +15,6 @@ import org.apache.rocketmq.common.message.MessageExt;
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
 import org.springframework.dao.DuplicateKeyException;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Component;
 
 /**
@@ -50,7 +49,6 @@ public class CouponClaimConsumer implements RocketMQListener<MessageExt> {
     private static final long IDEMPOTENT_TTL_SECONDS = 86400; // 24 小时
 
     @Override
-    @Transactional(rollbackFor = Exception.class)
     public void onMessage(MessageExt msg) {
         MqTraceHelper.restoreTraceId(msg);
         String msgId = msg.getMsgId();
@@ -99,12 +97,20 @@ public class CouponClaimConsumer implements RocketMQListener<MessageExt> {
                 return;
             }
 
-            // 4. 扣减模板剩余数量
-            int affected = templateMapper.decrementRemainCount(event.templateId());
-            if (affected != 1) {
-                throw new IllegalStateException("优惠券库存扣减失败: templateId=" + event.templateId());
+            // 4. 扣减模板剩余数量（派生账本；C-017 分片后与 user_coupon 可能跨库，不能放进同一本地事务）
+            //    Redis 才是领取闸门；remain 落后由 CouponReconcileJob（每小时，以 Redis 为准）修复。
+            try {
+                int affected = templateMapper.decrementRemainCount(event.templateId());
+                if (affected != 1) {
+                    log.error("[优惠券MQ] 模板剩余数量扣减未命中(对账兜底): templateId={}", event.templateId());
+                    businessMetrics.recordCouponAction("claim_stock_lag", false);
+                } else {
+                    businessMetrics.recordCouponAction("claim_persist_ok", true);
+                }
+            } catch (Exception e) {
+                log.error("[优惠券MQ] 模板剩余数量扣减异常(对账兜底): templateId={}", event.templateId(), e);
+                businessMetrics.recordCouponAction("claim_stock_lag", false);
             }
-            businessMetrics.recordCouponAction("claim_persist_ok", true);
 
             log.info("[优惠券MQ] 领券持久化成功: userId={}, templateId={}, userCouponId={}, stockUpdated={}",
                     event.userId(), event.templateId(), userCoupon.getId());

@@ -18,7 +18,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.nio.charset.StandardCharsets;
 
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -44,19 +43,18 @@ class CouponClaimConsumerTest {
     }
 
     @Test
-    void stockDecrementFailureFailsConsumption() {
+    @DisplayName("C-017：模板 remain 扣减失败不回滚发券（派生账本，对账兜底）")
+    void stockDecrementLagDoesNotFailConsumption() {
         MessageExt message = message("msg-1", "{\"userId\":1001,\"templateId\":1,\"claimNo\":\"claim-1\"}");
         when(idempotentHelper.isFirstProcess("coupon:claim", "msg-1", 86400L)).thenReturn(true);
         when(userCouponMapper.insert(any(UserCoupon.class))).thenReturn(1);
         when(templateMapper.decrementRemainCount(1L)).thenReturn(0);
 
-        assertThatThrownBy(() -> consumer.onMessage(message))
-                .isInstanceOf(RuntimeException.class)
-                .hasMessage("领券消费失败");
+        consumer.onMessage(message);
 
         verify(templateMapper).decrementRemainCount(1L);
-        verify(idempotentHelper).removeMark("coupon:claim", "msg-1");
-        verify(businessMetrics).recordCouponAction("claim_persist_fail", false);
+        verify(idempotentHelper, never()).removeMark("coupon:claim", "msg-1");
+        verify(businessMetrics).recordCouponAction("claim_stock_lag", false);
     }
 
     @Test

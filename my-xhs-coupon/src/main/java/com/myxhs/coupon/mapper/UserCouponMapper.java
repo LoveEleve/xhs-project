@@ -66,4 +66,10 @@ public interface UserCouponMapper extends BaseMapper<UserCoupon> {
             "WHERE coupon_id = #{couponId} AND status = 0 " +
             "LIMIT #{batchSize}")
     int batchExpireByCoupon(@Param("couponId") Long couponId, @Param("batchSize") int batchSize);
+
+    /** C-017 P3：扫描某模板下未使用券（到期推送；分片模式为广播查询，生产可改按分片扫描） */
+    @org.apache.ibatis.annotations.Select("SELECT * FROM t_user_coupon " +
+            "WHERE coupon_id = #{couponId} AND status = 0 ORDER BY id ASC LIMIT #{limit}")
+    java.util.List<UserCoupon> selectUnusedByCoupon(@Param("couponId") Long couponId,
+                                                    @Param("limit") int limit);
 }

@@ -57,12 +57,39 @@ relations:
 - `CouponExpireJob` 保留兜底（改为按模板循环）；
 - 新增 `CouponExpireDelayConsumerTest` + 创建模板发送断言。
 
-### P3 推送引擎（设计完成，不实现）
+### P3 推送引擎（最小实现完成）
 
-- `docs/学习/优惠券-讲解/07-推送引擎设计（可选）.md`。
+- `push/`：`CouponPushTarget`、`UserBucketSplitter`（条数+800KB 字节双限）、`SharedThreadPool`（ThreadPoolExecutor + Semaphore 背压）、`CouponPushSender`（发 `NOTIFICATION_TOPIC`，不直接依赖 notification）；
+- `CouponExpiryPushJob`（XXL-Job `couponExpiryPushJob`）：扫"明天到期"未使用券 → 幂等记录 → 分桶 → 批任务并发推送；
+- `t_coupon_push_record`（uk(template_id,user_id,push_date)）：已发送跳过、失败重试；
+- 画像：最小版用 user_id 分桶；行为标签轻量聚合保留在 `07-推送引擎设计`（未实现，明确标注）。
 
 ### 验证
 
 - coupon 测试：31 全绿（24 基线 + 7 新增）；
 - 全仓测试：747 全绿（15 模块基线 733 + user 14）；
 - 运行时（分片路由/延时消息/推送）按项目口径后置，不在本次验证范围。
+
+## Review（2026-10-23）
+
+### 已修复
+
+| 级别 | 问题 | 修复 |
+|---|---|---|
+| **高** | `CouponClaimConsumer` 的"插 user_coupon（分片）+ 扣 template.remain（ds_0）"在分片后是**跨库本地事务**，ShardingSphere 本地事务不保证跨 DS 原子性 | 改为"插券为准、remain 派生"：扣减失败只记 `claim_stock_lag`，由 `CouponReconcileJob`（以 Redis 为准）修复；不再抛异常回滚 |
+| **中** | 模板/Outbox 依赖"未配置表走默认数据源"的隐式行为 | 显式 `!SINGLE`（template/outbox/push_record → ds_0） |
+| **中** | `SharedThreadPool` 在 CPU 核数 > permits*2 时 `core > max` 抛 IllegalArgumentException（测试暴露） | `core = min(max, max(2, cpus))` |
+| **低** | 推送计数 `int[]` 并发自增有竞态 | 改 `AtomicInteger` |
+| **低** | 无跳过时也打 `push_skip` 指标；sender 把 targetType 写成"订单" | 仅 skipped>0 记录；移除 targetType |
+
+### 残余风险（已记录，不修/后置）
+
+1. 过期 Job 与推送 Job 按 `coupon_id` 查询在分片模式下是**广播**（32 表）；量级大时应改"按分片扫描/离线表"。
+2. `COUPON_EXPIRE_TOPIC` 需在 Broker 预创建（RocketMQ 生产通常关闭自动建 Topic）。
+3. `sql/mysql-coupon-sharding-init.sql` 的存量迁移是**演示级直插**（停机窗口/小数据量）；生产应双写迁移。
+4. 运行时（分片路由、延时投递、推送并发）未验证——按项目口径（编译+单测）。
+
+### 最终验证
+
+- coupon：38 全绿（24 基线 + 14 新增：P1 路由 2、P2 消费者 4 + 创建发送 1、P3 7）；
+- 全仓：754 全绿（15 模块 740 + user 14）。

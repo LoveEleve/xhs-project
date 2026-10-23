@@ -57,7 +57,7 @@ public class CouponExpireDelayConsumer implements RocketMQListener<MessageExt> {
                 return;
             }
             if (template.getValidEnd() != null && template.getValidEnd().isAfter(LocalDateTime.now())) {
-                log.info("[券过期延时] 消息提前到达(validEnd 未到)，忽略: templateId={}, validEnd={}",
+                log.info("[券过期延时] 消息提前到达(validEnd 未到)，忽略(Job 兜底): templateId={}, validEnd={}",
                         templateId, template.getValidEnd());
                 return;
             }
@@ -69,8 +69,12 @@ public class CouponExpireDelayConsumer implements RocketMQListener<MessageExt> {
                 if (affected < BATCH_SIZE) {
                     break;
                 }
+                Thread.sleep(100);
             }
             log.info("[券过期延时] 模板券已置过期: templateId={}, affected={}", templateId, total);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.warn("[券过期延时] 消费被中断: msgId={}", msg.getMsgId());
         } catch (Exception e) {
             log.error("[券过期延时] 消费失败(触发重试): msgId={}", msg.getMsgId(), e);
             throw new RuntimeException("券过期延时消费失败", e);
