@@ -146,6 +146,7 @@ public class CouponService {
         }
         // 定向更新 status（原生 SQL）：updateById 全字段写会覆盖并发的 decrementRemainCount（丢失扣减）
         templateMapper.updateStatusOnly(templateId, status);
+        template.setStatus(status); // C-017：同步内存对象，供下面的延时消息判断
 
         // 清除模板缓存（状态变更后必须失效）
         evictTemplateCache(templateId);
