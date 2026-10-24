@@ -81,7 +81,7 @@ public class SpuService {
     private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
 
     /** 【修复m12】自定义有界线程池，替代 ForkJoinPool.commonPool()，避免阻塞公共线程池 */
-    /** 【O2修复】MdcAwareExecutorService 包装，异步任务（缓存刷新/延迟双删/布隆加载）日志携带 traceId */
+    /** 【O2修复】MdcAwareExecutorService 包装，异步任务（缓存刷新/布隆加载）日志携带 traceId */
     private static final java.util.concurrent.ExecutorService SPU_ASYNC_EXECUTOR =
             new com.myxhs.common.trace.MdcAwareExecutorService(
                     new java.util.concurrent.ThreadPoolExecutor(
