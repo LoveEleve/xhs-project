@@ -2,9 +2,12 @@ package com.myxhs.search.service;
 
 import co.elastic.clients.elasticsearch._types.FieldValue;
 import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONObject;
 import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -40,22 +43,41 @@ public abstract class AbstractSearchService {
             return null;
         }
         List<Object> values = sortValues.stream()
-                .map(this::extractFieldValue)
+                .map(this::encodeFieldValue)
                 .collect(Collectors.toList());
         return JSON.toJSONString(values);
     }
 
     /**
-     * 提取 FieldValue 的实际值
+     * 带类型标签编码：{"t":"d","v":1.0} / {"t":"l","v":10086} ...
+     * <p>
+     * 不能只输出裸数字：JSON 不保留 double/long 类型，1.0 与 1 无法区分，
+     * 会导致 Search After 对 _score/price（double）翻页时类型不匹配。
+     * </p>
      */
-    private Object extractFieldValue(FieldValue fv) {
-        if (fv == null) return null;
-        if (fv.isDouble()) return fv.doubleValue();
-        if (fv.isLong()) return fv.longValue();
-        if (fv.isString()) return fv.stringValue();
-        if (fv.isBoolean()) return fv.booleanValue();
-        if (fv.isNull()) return null;
-        return fv.toString();
+    private Object encodeFieldValue(FieldValue fv) {
+        Map<String, Object> encoded = new LinkedHashMap<>();
+        if (fv == null || fv.isNull()) {
+            encoded.put("t", "n");
+            return encoded;
+        }
+        if (fv.isDouble()) {
+            encoded.put("t", "d");
+            encoded.put("v", fv.doubleValue());
+        } else if (fv.isLong()) {
+            encoded.put("t", "l");
+            encoded.put("v", fv.longValue());
+        } else if (fv.isBoolean()) {
+            encoded.put("t", "b");
+            encoded.put("v", fv.booleanValue());
+        } else if (fv.isString()) {
+            encoded.put("t", "s");
+            encoded.put("v", fv.stringValue());
+        } else {
+            encoded.put("t", "s");
+            encoded.put("v", fv.toString());
+        }
+        return encoded;
     }
 
     /**
@@ -69,21 +91,38 @@ public abstract class AbstractSearchService {
     protected List<FieldValue> parseSearchAfter(String searchAfter) {
         List<Object> values = JSON.parseArray(searchAfter, Object.class);
         return values.stream()
-                .map(v -> {
-                    if (v instanceof Number) {
-                        Number num = (Number) v;
-                        // 判断是否为浮点数：double 值与 long 值不同时说明有小数部分
-                        if (num.doubleValue() != num.longValue()) {
-                            return FieldValue.of(num.doubleValue());
-                        }
-                        return FieldValue.of(num.longValue());
-                    } else if (v instanceof String) {
-                        return FieldValue.of((String) v);
-                    } else {
-                        return FieldValue.of(v.toString());
-                    }
-                })
+                .map(this::decodeFieldValue)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * 解析游标：优先类型标签（新格式）；裸数字走旧格式启发式（兼容历史游标）。
+     */
+    private FieldValue decodeFieldValue(Object v) {
+        if (v instanceof JSONObject obj && obj.containsKey("t")) {
+            String type = obj.getString("t");
+            return switch (type) {
+                case "d" -> FieldValue.of(obj.getDoubleValue("v"));
+                case "l" -> FieldValue.of(obj.getLongValue("v"));
+                case "b" -> FieldValue.of(obj.getBooleanValue("v"));
+                case "n" -> FieldValue.NULL;
+                default -> FieldValue.of(obj.getString("v"));
+            };
+        }
+        // 旧格式兼容：裸数字只能靠启发式（整数值 double 会被判 long——历史游标的已知边界）
+        if (v instanceof Number num) {
+            if (num.doubleValue() != num.longValue()) {
+                return FieldValue.of(num.doubleValue());
+            }
+            return FieldValue.of(num.longValue());
+        }
+        if (v instanceof String str) {
+            return FieldValue.of(str);
+        }
+        if (v instanceof Boolean bool) {
+            return FieldValue.of(bool);
+        }
+        return FieldValue.of(String.valueOf(v));
     }
 
     /**
