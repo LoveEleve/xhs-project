@@ -44,7 +44,7 @@ Lua 扣库存/限领 → syncSend 超时（消息可能已写入 Broker）
 | **发送超时** | **超时 ≠ 失败**（消息可能已写入）；保留事实，交给补发/去重 |
 | **消费幂等** | 业务唯一键 + 唯一索引/条件更新；重复消息无害 |
 | **兜底** | 补发任务 + DLQ + 对账；记录不丢 |
-| **回滚边界** | 只有"可证无消息在途"时才回滚（如 Outbox 双次写入失败） |
+| **回滚边界** | 设计上只在 Outbox 双次写入失败时回滚；但"写超时"可能已提交，严格说仍需按 `claimNo` 回查（残余窗口） |
 
 > 淘宝具体实现不公开；上面是分布式消息的通用做法。本项目的 Design B 就是这套。
 
@@ -67,7 +67,7 @@ private String sendClaimEventSync(Long userId, Long templateId) {
         } catch (DuplicateKeyException dup) {
             // 已存在 → 按成功继续
         } catch (Exception second) {
-            return null;   // 唯一回滚路径：双次写入失败（可证无消息在途）
+            return null;   // 设计上唯一回滚路径：双次写入失败（写超时可能已提交，残余窗口）
         }
     }
 
@@ -164,7 +164,7 @@ idempotentHelper.markProcessed(BIZ_TYPE, msgId, TTL);
 | 可靠发送 | Outbox/事务消息 | ✅ Outbox + 补发 | 对齐 |
 | 发送超时 | 不判死 | ✅ 保留 + 补发 | 对齐 |
 | 消费幂等 | 唯一键 + 条件更新 | ✅ `uk_claim_no` + 完成态 | 对齐 |
-| 回滚边界 | 可证无消息在途 | ✅ 仅 Outbox 双败 | 对齐 |
+| 回滚边界 | 可证无消息在途 | ⚠️ 仅 Outbox 双败（残余窗口） | 近似对齐 |
 | DLQ 重放 | 有 | ✅ DLQ 重放 + G35 限领守卫（09） | 对齐 |
 | 崩溃窗口 | 意图/事务消息 | ⚠️ Lua→Outbox 窗口（C-018 规划） | 已知 |
 | 名额重建 | 受控重建 | ⚠️ 仍用 `remain_count` 补（C-018） | 已知 |
@@ -174,7 +174,7 @@ idempotentHelper.markProcessed(BIZ_TYPE, msgId, TTL);
 1. **发送超时当失败**：回滚 + 补投 = 超发。
 2. **SEND_OK 后 markSent 失败**：不能回滚/作废，行保留即可。
 3. **Outbox 写入超时**：同 claimNo 重试；DuplicateKey=实际已写，按成功。
-4. **回滚只允许在"可证无消息在途"时**：即 Outbox 双次写入失败。
+4. **回滚只在 Outbox 双写失败时**（设计上）；但写超时可能已提交，严格说需按 `claimNo` 回查。
 5. **消费幂等不能只靠 msgId**：Outbox 补发换新 msgId，必须有 `uk_claim_no`。
 6. **完成态标记要后置**：处理成功再置位；前置标记 + 崩溃会丢券。
 7. **DLQ 重放可能再发券**：靠 G35 限领守卫 + `uk_claim_no`（09）。
@@ -187,7 +187,7 @@ idempotentHelper.markProcessed(BIZ_TYPE, msgId, TTL);
 
 - **值得**：两个超发场景、回滚掩码、三分支、两层幂等——这是分布式消息最经典的题；
 - **一句话带过**：Outbox 退避参数、Job cron；
-- **一句话**：**发送结果不确定时，保留事实（Outbox）+ 至少一次 + 消费幂等；只有"可证无消息在途"才回滚。**
+- **一句话**：**发送结果不确定时，保留事实（Outbox）+ 至少一次 + 消费幂等；只有 Outbox 双写失败才回滚（设计上；残余窗口需回查）。**
 - 分片/延时/推送见 **06**；DLQ/G35 见 **09**。
 
 **面试口径**："领券发送链用 Design B：Outbox 先落，发送超时/非 OK 一律保留并补发，只有 Outbox 双写失败才回滚；消费端用完成态标记 + uk_claim_no 幂等。旧实现'发送失败就回滚 Redis'会在消息已入 Broker 时造成超发。"
