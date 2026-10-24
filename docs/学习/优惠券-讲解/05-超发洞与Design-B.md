@@ -164,7 +164,7 @@ idempotentHelper.markProcessed(BIZ_TYPE, msgId, TTL);
 | 可靠发送 | Outbox/事务消息 | ✅ Outbox + 补发 | 对齐 |
 | 发送超时 | 不判死 | ✅ 保留 + 补发 | 对齐 |
 | 消费幂等 | 唯一键 + 条件更新 | ✅ `uk_claim_no` + 完成态 | 对齐 |
-| 回滚边界 | 可证无消息在途 | ⚠️ 仅 Outbox 双败（残余窗口） | 近似对齐 |
+| 回滚边界 | 设计上无消息在途（近似） | ⚠️ 仅 Outbox 双败（残余窗口） | 近似对齐 |
 | DLQ 重放 | 有 | ✅ DLQ 重放 + G35 限领守卫（09） | 对齐 |
 | 崩溃窗口 | 意图/事务消息 | ⚠️ Lua→Outbox 窗口（C-018 规划） | 已知 |
 | 名额重建 | 受控重建 | ⚠️ 仍用 `remain_count` 补（C-018） | 已知 |
