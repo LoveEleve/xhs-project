@@ -54,7 +54,8 @@ public class CartItem {          // 不继承 BaseEntity（无 deleted 逻辑删
 ```
 
 - `UNIQUE uk_user_sku(user_id, sku_id)`：同一 SKU 只有一行，UPSERT 基础；
-- `updated_at DATETIME(3)`：毫秒精度，供同步链路时间戳 CAS（03）。
+- `updated_at DATETIME(3)`：毫秒精度，供同步链路时间戳 CAS（03）；
+  ⚠️ 两处 DDL 不一致：`sql/init-all.sql` 是 `DATETIME(3)`，`sql/migration/content/V1__init_content.sql` 仍是 `DATETIME`（无毫秒）——以实际部署脚本为准，属 schema 漂移。
 
 **`t_cart_event`**（append-only 事件流水，30 天）：
 

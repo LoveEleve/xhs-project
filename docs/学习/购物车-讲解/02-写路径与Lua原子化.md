@@ -123,7 +123,7 @@ return 1
 
 ### 2.5 TTL：脚本内 + Service 统一刷新
 
-- `cart_add`/`cart_merge_item` 在脚本内刷新三键 TTL；
+- `cart_add`/`cart_merge_item` 在脚本内刷新三键 TTL；`add` 还会在 Service 再 `refreshTTL`（双保险）；
 - 其他写（改量/删除/勾选/全选）**不在脚本内**刷新，由 `CartService.refreshTTL`（三键原子 EXPIRE 的 Lua）统一续期；
 - `clear` 删键 + marker TTL；
 - 维护时**两处都要看**：只改脚本或只改 Service 都会漏。
