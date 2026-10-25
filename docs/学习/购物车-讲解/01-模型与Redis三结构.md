@@ -94,7 +94,7 @@ private static final long CART_TTL_DAYS = 30;  // 滑动 TTL
 | `cleared` | String | 清空标记（区分"空车" vs "Redis 丢了"） |
 
 - **`{userId}` 同 slot**：同一用户三键在 Cluster 同 slot，Lua 多 key 不 CROSSSLOT；
-- **30 天滑动 TTL**：每次写操作在 Lua 内刷新（脚本内设置，避免 Java 侧刷新失败导致永不过期）；
+- **30 天 TTL**：**加购/合并时在 Lua 内刷新**；改量/勾选/删除**不刷新**（当前实现，与模块文档"每次写刷新"不一致，登记为债）；
 - **cleared 标记**：清空时原子写入（TTL 30 天），对账/读路径据此判断"真空车"还是"Redis 数据丢失"。
 
 ### 2.3 为什么 Redis 是权威
@@ -131,8 +131,8 @@ private static final long CART_TTL_DAYS = 30;  // 滑动 TTL
 ## 4. 十个坑
 
 1. **Key 不加 hash tag**：三键跨 slot，Lua CROSSSLOT；必须 `{userId}`。
-2. **三结构不同步**：items 有、checked/sort 没有 → 列表/全选错乱；所有写必须原子改三结构。
-3. **TTL 不在 Lua 内刷新**：Java 侧刷新失败 → Key 永不过期；脚本内设置。
+2. **三结构不同步**：items 有、checked/sort 没有 → 列表/全选错乱；涉及增删/清空的写必须原子改对应结构（改量只 items、勾选只 checked，不是所有写都改三结构）。
+3. **以为所有写都刷新 TTL**：只有 add/merge 刷新；改量/勾选/删除不续期，持续只改量可能 30 天后过期（与文档不一致，债）。
 4. **cleared 标记语义**：没有它，分不清"用户清空"与"Redis 丢失"；对账会误删/误恢复。
 5. **UK 不建/不捕获 DuplicateKey**：并发 UPSERT 冲突；`uk_user_sku` + 捕获转 UPDATE。
 6. **事件流水不幂等**：`uk_msg_id` 兜底；CLEAR 哨兵 sku_id=0。
@@ -145,7 +145,7 @@ private static final long CART_TTL_DAYS = 30;  // 滑动 TTL
 
 - **值得**：三结构设计、同 slot、TTL/cleared、Redis 权威 vs MySQL 兜底——购物车模型的核心；
 - **一句话带过**：字段名、TTL 天数；
-- **一句话**：**购物车 = 用户×SKU×数量×勾选；Redis 三结构 + cleared 权威，MySQL 兜底 + 事件流水，对账收敛。**
+- **一句话**：**购物车 = 用户×SKU×数量×勾选；Redis 三结构 + cleared 权威，MySQL 兜底 + 事件流水，对账收敛；TTL 只在 add/merge 刷新（已知债）。**
 - 写路径见 **02**；同步见 **03**；对账见 **05**。
 
 **面试口径**："购物车按用户维度存 SKU/数量/勾选/加购时间；本项目用 Redis Hash(items)+Set(checked)+ZSet(sort)，`{userId}` 同 slot、30 天滑动 TTL，清空有 cleared 标记；MySQL 只做异步兜底和事件流水，Redis 是权威，靠对账收敛。"
