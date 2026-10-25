@@ -52,6 +52,8 @@
 | `cart_merge_item` | 三结构 | 已有 `max(qty)`；新项上限+SADD/ZADD+TTL | 新项 qty；旧项 `merged+10000`；`0` 满 |
 
 > 模块文档曾说"7 个脚本"——C-006 新增 `cart_remove_batch` 后实际是 **8 个**。
+>
+> 上限口径：**add/merge 在 Lua 内截断 99**；**改量（update_quantity）的 99 由 DTO `@Max(99)` 保证**，脚本本身不截断——别把 99 的兜底全指望 Lua。
 
 ### 2.2 关键脚本：`cart_add`
 
